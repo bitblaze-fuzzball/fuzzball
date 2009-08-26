@@ -6,37 +6,161 @@
 
 module V = Vine;;
 
-let usage = "trans_eval [options]* file.ir\n"
-let infile = ref ""
-let infile_set = ref false
-let arg_name s = infile := s; infile_set := true
+class virtual memory = object(self)
+  method virtual store_byte : Int64.t -> int -> unit
+  method virtual maybe_load_byte : Int64.t -> int option
+  method virtual clear : unit -> unit
 
-let new_memory () =
-  Array.init 0x100000 (fun _ -> None)
+  method load_byte addr =
+    match (self#maybe_load_byte addr) with
+      | Some b -> b
+      | None -> 0
 
-let memory_store_byte mem addr b =
-  let page = Int64.to_int (Int64.shift_right addr 12) and
-      idx = Int64.to_int (Int64.logand addr 0xfffL) in
-  let page_str = match mem.(page) with
-    | Some page_str -> page_str
-    | None ->
-	let new_page = String.make 4096 '\x00' in
-	  mem.(page) <- Some new_page;
-	  new_page
-  in
-    page_str.[idx] <- Char.chr b
+  method store_short addr s =
+    self#store_byte addr (s land 0xFF);
+    self#store_byte (Int64.add addr 1L) ((s lsr 8) land 0xFF)
 
-let memory_load_byte mem addr =
-  let page = Int64.to_int (Int64.shift_right addr 12) and
-      idx = Int64.to_int (Int64.logand addr 0xfffL) in
-  let page_str = match mem.(page) with
-    | Some page_str -> page_str
-    | None ->
-	let new_page = String.make 4096 '\x00' in
-	  mem.(page) <- Some new_page;
-	  new_page
-  in
-   Char.code page_str.[idx]
+  method store_word addr w =
+    self#store_byte addr (Int64.to_int (Int64.logand 0xFFL w));
+    self#store_byte (Int64.add addr 1L)
+      (Int64.to_int (Int64.logand 0xFFL (Int64.shift_right w 8)));
+    self#store_byte (Int64.add addr 2L)
+      (Int64.to_int (Int64.logand 0xFFL (Int64.shift_right w 16)));
+    self#store_byte (Int64.add addr 3L)
+      (Int64.to_int (Int64.logand 0xFFL (Int64.shift_right w 24)))
+
+  method store_long addr l =
+    self#store_byte addr (Int64.to_int (Int64.logand 0xFFL l));
+    self#store_byte (Int64.add addr 1L)
+      (Int64.to_int (Int64.logand 0xFFL (Int64.shift_right l 8)));
+    self#store_byte (Int64.add addr 2L)
+      (Int64.to_int (Int64.logand 0xFFL (Int64.shift_right l 16)));
+    self#store_byte (Int64.add addr 3L)
+      (Int64.to_int (Int64.logand 0xFFL (Int64.shift_right l 24)));
+    self#store_byte (Int64.add addr 4L)
+      (Int64.to_int (Int64.logand 0xFFL (Int64.shift_right l 32)));
+    self#store_byte (Int64.add addr 5L)
+      (Int64.to_int (Int64.logand 0xFFL (Int64.shift_right l 40)));
+    self#store_byte (Int64.add addr 6L)
+      (Int64.to_int (Int64.logand 0xFFL (Int64.shift_right l 48)));
+    self#store_byte (Int64.add addr 7L)
+      (Int64.to_int (Int64.logand 0xFFL (Int64.shift_right l 56)))
+
+  method load_short addr =
+    let b1 = self#load_byte addr
+    and b2 = self#load_byte (Int64.add addr 1L)
+    in
+      b1 lor (b2 lsl 8)
+
+  method load_word addr =
+    let b1 = Int64.of_int (self#load_byte addr)
+    and b2 = Int64.of_int (self#load_byte (Int64.add addr 1L))
+    and b3 = Int64.of_int (self#load_byte (Int64.add addr 2L))
+    and b4 = Int64.of_int (self#load_byte (Int64.add addr 3L))
+    in
+      Int64.logor 
+	(Int64.logor b1 (Int64.shift_left b2 8))
+	(Int64.logor (Int64.shift_left b3 16) (Int64.shift_left b4 24))
+
+  method load_long addr =
+    let b1 = Int64.of_int (self#load_byte addr)
+    and b2 = Int64.of_int (self#load_byte (Int64.add addr 1L))
+    and b3 = Int64.of_int (self#load_byte (Int64.add addr 2L))
+    and b4 = Int64.of_int (self#load_byte (Int64.add addr 3L))
+    and b5 = Int64.of_int (self#load_byte (Int64.add addr 4L))
+    and b6 = Int64.of_int (self#load_byte (Int64.add addr 5L))
+    and b7 = Int64.of_int (self#load_byte (Int64.add addr 6L))
+    and b8 = Int64.of_int (self#load_byte (Int64.add addr 7L))
+    in
+      Int64.logor
+	(Int64.logor 
+	   (Int64.logor b1 (Int64.shift_left b2 8))
+	   (Int64.logor (Int64.shift_left b3 16) (Int64.shift_left b4 24)))
+	(Int64.logor 
+	   (Int64.logor (Int64.shift_left b5 32) (Int64.shift_left b6 40))
+	   (Int64.logor (Int64.shift_left b7 48) (Int64.shift_left b8 56)))
+end
+
+class string_memory = object(self)
+  inherit memory
+
+  (* The extra page is a hacky way to not crash on address wrap-around *)
+  val mem = Array.init 0x100001 (fun _ -> None)
+
+  method store_byte addr b =
+    let page = Int64.to_int (Int64.shift_right addr 12) and
+	idx = Int64.to_int (Int64.logand addr 0xfffL) in
+    let page_str = match mem.(page) with
+      | Some page_str -> page_str
+      | None ->
+	  let new_page = String.make 4096 '\x00' in
+	    mem.(page) <- Some new_page;
+	    new_page
+    in
+      page_str.[idx] <- Char.chr b
+
+  method load_byte addr =
+    let page = Int64.to_int (Int64.shift_right addr 12) and
+	idx = Int64.to_int (Int64.logand addr 0xfffL) in
+    let page_str = match mem.(page) with
+      | Some page_str -> page_str
+      | None ->
+	  let new_page = String.make 4096 '\x00' in
+	    mem.(page) <- Some new_page;
+	    new_page
+    in
+      Char.code page_str.[idx]
+
+  method maybe_load_byte addr = Some (self#load_byte addr)
+
+  method clear () =
+    Array.fill mem 0 0x100001 None
+end
+
+class hash_memory = object(self)
+  inherit memory
+
+  val mem = Hashtbl.create 1000
+
+  method store_byte addr b =
+    Hashtbl.replace mem addr b
+
+  method maybe_load_byte addr =
+    try
+      Some (Hashtbl.find mem addr)
+    with
+	Not_found -> None
+
+  method clear () =
+    Hashtbl.clear mem
+end
+
+class snapshot_memory main diff = object(self)
+  inherit memory
+    
+  val mutable have_snap = false
+
+  method store_byte addr b =
+    (if have_snap then diff else main)#store_byte addr b
+
+  method maybe_load_byte addr =
+    if have_snap then
+      match diff#maybe_load_byte addr with
+	| Some b -> Some b
+	| None -> main#maybe_load_byte addr
+    else
+      main#maybe_load_byte addr
+
+  method clear () = 
+    diff#clear ();
+    main#clear ()
+
+  method make_snap () =
+    have_snap <- true
+
+  method reset () = 
+    diff#clear ()
+end
 
 let nofix x = x
 
@@ -60,12 +184,18 @@ let fix_s ty x =
 
 let bool64 f = fun a b -> if (f a b) then 1L else 0L
 
+let move_hash src dest =
+  V.VarHash.clear dest;
+  V.VarHash.iter (fun a b -> V.VarHash.add dest a b) src
+
 class frag_machine () = object(self)
-  val mem = new_memory ()
+  val mem = new snapshot_memory (new string_memory) (new hash_memory)
   val reg_store = V.VarHash.create 100
   val temps = V.VarHash.create 100
   val mutable frag = ([], [])
   val mutable insns = []
+
+  val mutable snap = (V.VarHash.create 1, V.VarHash.create 1)
 
   method init_prog (dl, sl) =
     List.iter (fun v -> V.VarHash.add reg_store v 0L) dl;
@@ -81,76 +211,28 @@ class frag_machine () = object(self)
     List.iter (fun v -> V.VarHash.add temps v 0L) dl;
     insns <- sl
 
-  method store_byte addr b =
-    memory_store_byte mem addr (Int64.to_int b)
+  method store_byte  addr b = mem#store_byte  addr (Int64.to_int b)
+  method store_short addr s = mem#store_short addr (Int64.to_int s)
+  method store_word  addr w = mem#store_word  addr w
+  method store_long  addr l = mem#store_long  addr l
 
-  method store_short addr s =
-    memory_store_byte mem addr (Int64.to_int (Int64.logand 0xFFL s));
-    memory_store_byte mem (Int64.add addr 1L)
-      (Int64.to_int (Int64.logand 0xFFL (Int64.shift_right s 8)))
+  method load_byte  addr = Int64.of_int (mem#load_byte  addr)
+  method load_short addr = Int64.of_int (mem#load_short addr)
+  method load_word  addr =               mem#load_word  addr
+  method load_long  addr =               mem#load_long  addr
 
-  method store_word addr w =
-    memory_store_byte mem addr (Int64.to_int (Int64.logand 0xFFL w));
-    memory_store_byte mem (Int64.add addr 1L)
-      (Int64.to_int (Int64.logand 0xFFL (Int64.shift_right w 8)));
-    memory_store_byte mem (Int64.add addr 2L)
-      (Int64.to_int (Int64.logand 0xFFL (Int64.shift_right w 16)));
-    memory_store_byte mem (Int64.add addr 3L)
-      (Int64.to_int (Int64.logand 0xFFL (Int64.shift_right w 24)))
+  method make_mem_snap () = mem#make_snap ()
+  method mem_reset () = mem#reset ()
 
-  method store_long addr l =
-    memory_store_byte mem addr (Int64.to_int (Int64.logand 0xFFL l));
-    memory_store_byte mem (Int64.add addr 1L)
-      (Int64.to_int (Int64.logand 0xFFL (Int64.shift_right l 8)));
-    memory_store_byte mem (Int64.add addr 2L)
-      (Int64.to_int (Int64.logand 0xFFL (Int64.shift_right l 16)));
-    memory_store_byte mem (Int64.add addr 3L)
-      (Int64.to_int (Int64.logand 0xFFL (Int64.shift_right l 24)));
-    memory_store_byte mem (Int64.add addr 4L)
-      (Int64.to_int (Int64.logand 0xFFL (Int64.shift_right l 32)));
-    memory_store_byte mem (Int64.add addr 5L)
-      (Int64.to_int (Int64.logand 0xFFL (Int64.shift_right l 40)));
-    memory_store_byte mem (Int64.add addr 6L)
-      (Int64.to_int (Int64.logand 0xFFL (Int64.shift_right l 48)));
-    memory_store_byte mem (Int64.add addr 7L)
-      (Int64.to_int (Int64.logand 0xFFL (Int64.shift_right l 56)))
+  method make_snap () =
+    self#make_mem_snap ();
+    snap <- (V.VarHash.copy reg_store, V.VarHash.copy temps)
 
-  method load_byte addr =
-    Int64.of_int (memory_load_byte mem addr)
-
-  method load_short addr =
-    let b1 = Int64.of_int (memory_load_byte mem addr)
-    and b2 = Int64.of_int (memory_load_byte mem (Int64.add addr 1L))
-    in
-      Int64.logor b1 (Int64.shift_left b2 8)
-
-  method load_word addr =
-    let b1 = Int64.of_int (memory_load_byte mem addr)
-    and b2 = Int64.of_int (memory_load_byte mem (Int64.add addr 1L))
-    and b3 = Int64.of_int (memory_load_byte mem (Int64.add addr 2L))
-    and b4 = Int64.of_int (memory_load_byte mem (Int64.add addr 3L))
-    in
-      Int64.logor 
-	(Int64.logor b1 (Int64.shift_left b2 8))
-	(Int64.logor (Int64.shift_left b3 16) (Int64.shift_left b4 24))
-
-  method load_long addr =
-    let b1 = Int64.of_int (memory_load_byte mem addr)
-    and b2 = Int64.of_int (memory_load_byte mem (Int64.add addr 1L))
-    and b3 = Int64.of_int (memory_load_byte mem (Int64.add addr 2L))
-    and b4 = Int64.of_int (memory_load_byte mem (Int64.add addr 3L))
-    and b5 = Int64.of_int (memory_load_byte mem (Int64.add addr 4L))
-    and b6 = Int64.of_int (memory_load_byte mem (Int64.add addr 5L))
-    and b7 = Int64.of_int (memory_load_byte mem (Int64.add addr 6L))
-    and b8 = Int64.of_int (memory_load_byte mem (Int64.add addr 7L))
-    in
-      Int64.logor
-	(Int64.logor 
-	   (Int64.logor b1 (Int64.shift_left b2 8))
-	   (Int64.logor (Int64.shift_left b3 16) (Int64.shift_left b4 24)))
-	(Int64.logor 
-	   (Int64.logor (Int64.shift_left b5 32) (Int64.shift_left b6 40))
-	   (Int64.logor (Int64.shift_left b7 48) (Int64.shift_left b8 56)))
+  method reset () =
+    self#mem_reset ();
+    match snap with (r, t) ->
+      move_hash r reg_store;
+      move_hash t temps;
 
   method get_int_var ((_,_,ty) as var) =
     fix_u ty (self#eval_int_exp (V.Lval(V.Temp(var))))
@@ -336,6 +418,18 @@ class frag_machine () = object(self)
 
   method run () = self#run_sl insns
 
+  method store_byte_idx base idx b =
+    self#store_byte (Int64.add base (Int64.of_int idx)) b
+
+  method store_str base idx str =
+    for i = 0 to (String.length str - 1) do
+      self#store_byte_idx (Int64.add base idx)
+	i (Int64.of_int (Char.code str.[i]))
+    done
+
+  method store_cstr base idx str =
+    self#store_str base idx str;
+    self#store_byte_idx (Int64.add base idx) (String.length str) 0L
 end
 
 (* class fake_frag_machine ((dl, sl) as prog) = object(self)
@@ -815,7 +909,7 @@ let errno err =
     | Unix.EOVERFLOW -> 75
     | Unix.EUNKNOWNERR(i) -> i
 
-let rec runloop (*ce*) fm eip_var eip mem_var gpr_vars asmir_gamma =
+let rec runloop (*ce*) fm eip_var eip mem_var gpr_vars asmir_gamma until =
   let load_byte addr = Int64.to_int (fm#load_byte addr) in
   let load_word addr = fm#load_word addr in
   let lea base i step off =
@@ -918,7 +1012,7 @@ let rec runloop (*ce*) fm eip_var eip mem_var gpr_vars asmir_gamma =
     with
 	Not_found ->
 	  Hashtbl.add trans_cache eip
-	    (simplify_frag (decode_insns eip 10 true));
+	    (simplify_frag (decode_insns eip 1 true));
 	  Hashtbl.find trans_cache eip
   in
   let print_gprs () =
@@ -1402,7 +1496,9 @@ let rec runloop (*ce*) fm eip_var eip mem_var gpr_vars asmir_gamma =
 		    Printf.printf "Unhandled system call %d\n" syscall_num;
 		    [V.Jmp(V.Name("abort_unk_syscall"))])
 	      in
-	     [V.Comment(c1)] @ new_sl @ [V.Jmp(e)])
+	     (* [V.Comment(c1)] @ new_sl @ [V.Jmp(e)] *)
+	     [V.Comment(c1)] @ List.rev_append (List.rev new_sl) [V.Jmp(e)]
+	  )
       | _ -> sl
   in
   let (dl, sl) = decode_insns_cached eip in
@@ -1433,15 +1529,47 @@ let rec runloop (*ce*) fm eip_var eip mem_var gpr_vars asmir_gamma =
     fm#set_frag prog;
     flush stdout;
     let s = fm#run () in
-    let new_eip = label_to_eip s in
-      if new_eip = 0L then failwith "Jump to 0" else
-	((*Printf.printf "Next EIP will be %Lx\n" new_eip;*)
-	  (*print_gprs ();*)
-	  runloop fm eip_var new_eip mem_var gpr_vars asmir_gamma)
-      (*| Vine_eval.EvalError("Cannot evaluate special(\"int 0x80\");\n ")
-	-> (let syscall_num = Int64.to_int (read_reg32 eax_var) in
-	      Printf.printf "Unhandled system call %d\n" syscall_num) *)
+      if s = "halt_0" then () else
+	let new_eip = label_to_eip s in
+	  match (new_eip, until) with
+	    | (e1, Some e2) when e1 = e2 -> ()
+	    | (0L, _) -> failwith "Jump to 0"
+	    | _ ->
+		runloop fm eip_var new_eip mem_var gpr_vars asmir_gamma until
 
+let usage = "trans_eval [options]* file.ir\n"
+let infile = ref ""
+let infile_set = ref false
+let arg_name s = infile := s; infile_set := true
+
+let random_regex len =
+  let str = String.create len in
+    for i = 0 to len - 1 do
+      let c = match (Random.int 18) with
+	| 0 -> 'a'
+	| 1 -> 'b'
+	| 2 -> 'c'
+	| 3 -> '|'
+	| 4 -> '+'
+	| 5 -> '*'
+	| 6 -> '('
+	| 7 -> ')'
+	| 8 -> '['
+	| 9 -> ']'
+	| 10 -> '{'
+	| 11 -> '}'
+	| 12 -> ','
+	| 13 -> '0'
+	| 14 -> '1'
+	| 15 -> '2'
+	| 16 -> '4'
+	| 17 -> '^'
+	| _ -> failwith "random integer too big"
+      in
+	str.[i] <- c
+    done;
+    str
+    
 let main argc argv = 
   let speclist = Vine_parser.defspecs in 
   let speclist = [] @ speclist in 
@@ -1471,7 +1599,24 @@ let main argc argv =
       fm#init_prog prog;
       let eip = fm#get_int_var eip_var
       in
-	runloop fm eip_var eip mem_var gpr_vars asmir_gamma
+	runloop fm eip_var eip mem_var gpr_vars asmir_gamma (Some 0x0804855eL);
+	fm#make_snap (); Printf.printf "Took snapshot\n";
+	while true do
+	  let regex = random_regex 8 and
+	      old_tcs = Hashtbl.length trans_cache in
+	    fm#store_cstr 0x8049820L 0L regex;
+	    (try
+	       runloop fm eip_var 0x0804855eL mem_var gpr_vars asmir_gamma
+		 (Some 0x0804859dL);
+	     with
+	       | Failure("Jump to 0") -> () (* equivalent of segfault *)
+	    );
+	    if (Hashtbl.length trans_cache - old_tcs > 0) then
+	      Printf.printf "Coverage increased to %d with %s\n"
+		(Hashtbl.length trans_cache) regex
+	    else ();
+	    fm#reset ();
+	done
 ;;
 
 main (Array.length Sys.argv) Sys.argv;;
