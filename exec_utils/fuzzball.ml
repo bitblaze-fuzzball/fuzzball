@@ -2057,7 +2057,8 @@ object(self)
 	     Printf.printf "Unhandled system call %d\n" syscall_num;
 	     failwith "Unhandled Linux system call");
     Printf.printf " = %Ld (0x%08Lx)\n"
-      (fix_s V.REG_32 (fm#get_int_var eax_var)) (fm#get_int_var eax_var)
+      (fix_s V.REG_32 (fm#get_int_var eax_var)) (fm#get_int_var eax_var);
+    flush stdout
 
   method handle_special str =
     match str with
@@ -2154,40 +2155,42 @@ let rec runloop fm eip_var eip mem_var asmir_gamma until =
 	 | _ -> true)
       sl
   in
-  let (dl, sl) = decode_insns_cached eip in
-  let prog = (dl, (remove_known_unknowns sl)) in
-    (* Libasmir.print_disasm_rawbytes Libasmir.Bfd_arch_i386 eip insn_bytes;
-    print_string "\n"; *)
-    (* Printf.printf "EIP is %08Lx\n" eip; *)
-    (* Printf.printf "Watchpoint val is %02x\n" (load_byte 0x501650e8L); *)
-    (* Printf.printf ("Insn bytes are %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x\n") (load_byte eip)
-      (load_byte (Int64.add eip (Int64.of_int 1)))
-      (load_byte (Int64.add eip (Int64.of_int 2)))
-      (load_byte (Int64.add eip (Int64.of_int 3)))
-      (load_byte (Int64.add eip (Int64.of_int 4)))
-      (load_byte (Int64.add eip (Int64.of_int 5)))
-      (load_byte (Int64.add eip (Int64.of_int 6)))
-      (load_byte (Int64.add eip (Int64.of_int 7)))
-      (load_byte (Int64.add eip (Int64.of_int 8)))
-      (load_byte (Int64.add eip (Int64.of_int 9)))
-      (load_byte (Int64.add eip (Int64.of_int 10)))
-      (load_byte (Int64.add eip (Int64.of_int 11)))
-      (load_byte (Int64.add eip (Int64.of_int 12)))
-      (load_byte (Int64.add eip (Int64.of_int 13)))
-      (load_byte (Int64.add eip (Int64.of_int 14)))
-      (load_byte (Int64.add eip (Int64.of_int 15))); *)
-    (* print_gprs (); *)
-    (* V.pp_program print_string prog; *)
-    fm#set_frag prog;
-    flush stdout;
-    let s = fm#run () in
-      if s = "halt_0" then () else
-	let new_eip = label_to_eip s in
-	  match (new_eip, until) with
-	    | (e1, Some e2) when e1 = e2 -> ()
-	    | (0L, _) -> failwith "Jump to 0"
-	    | _ ->
-		runloop fm eip_var new_eip mem_var asmir_gamma until
+  let rec loop eip =
+    let (dl, sl) = decode_insns_cached eip in
+    let prog = (dl, (remove_known_unknowns sl)) in
+      (* Libasmir.print_disasm_rawbytes Libasmir.Bfd_arch_i386 eip insn_bytes;
+	 print_string "\n"; *)
+      (* Printf.printf "EIP is %08Lx\n" eip; *)
+      (* Printf.printf "Watchpoint val is %02x\n" (load_byte 0x501650e8L); *)
+      (* Printf.printf ("Insn bytes are %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x\n") (load_byte eip)
+	 (load_byte (Int64.add eip (Int64.of_int 1)))
+	 (load_byte (Int64.add eip (Int64.of_int 2)))
+	 (load_byte (Int64.add eip (Int64.of_int 3)))
+	 (load_byte (Int64.add eip (Int64.of_int 4)))
+	 (load_byte (Int64.add eip (Int64.of_int 5)))
+	 (load_byte (Int64.add eip (Int64.of_int 6)))
+	 (load_byte (Int64.add eip (Int64.of_int 7)))
+	 (load_byte (Int64.add eip (Int64.of_int 8)))
+	 (load_byte (Int64.add eip (Int64.of_int 9)))
+	 (load_byte (Int64.add eip (Int64.of_int 10)))
+	 (load_byte (Int64.add eip (Int64.of_int 11)))
+	 (load_byte (Int64.add eip (Int64.of_int 12)))
+	 (load_byte (Int64.add eip (Int64.of_int 13)))
+	 (load_byte (Int64.add eip (Int64.of_int 14)))
+	 (load_byte (Int64.add eip (Int64.of_int 15))); *)
+      (* print_gprs (); *)
+      (* V.pp_program print_string prog; *)
+      fm#set_frag prog;
+      (* flush stdout; *)
+      let s = fm#run () in
+	if s = "halt_0" then () else
+	  let new_eip = label_to_eip s in
+	    match (new_eip, until) with
+	      | (e1, Some e2) when e1 = e2 -> ()
+	      | (0L, _) -> failwith "Jump to 0"
+	      | _ -> loop new_eip
+  in
+    loop eip
 
 let usage = "trans_eval [options]* file.ir\n"
 let infile = ref ""
@@ -2276,6 +2279,7 @@ let main argc argv =
 		  (Hashtbl.length trans_cache) regex !iter
 	      else ();
 	      fm#reset ();
+	      flush stdout
 	  done
 ;;
 
