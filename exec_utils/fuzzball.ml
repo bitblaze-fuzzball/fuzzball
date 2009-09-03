@@ -52,6 +52,10 @@ class virtual memory = object(self)
     in
       b1 lor (b2 lsl 8)
 
+  method maybe_load_short addr = Some (self#load_short addr)
+  method maybe_load_word  addr = Some (self#load_word  addr)
+  method maybe_load_long  addr = Some (self#load_long  addr)
+
   method load_word addr =
     let b1 = Int64.of_int (self#load_byte addr)
     and b2 = Int64.of_int (self#load_byte (Int64.add addr 1L))
@@ -162,6 +166,399 @@ class snapshot_memory main diff = object(self)
     diff#clear ()
 end
 
+let endianness = V.Little
+
+let endian_i n k = 
+  match endianness with
+    | V.Little -> k
+    | V.Big -> n - k
+  
+let extract_8_from_64 l which =
+  Int64.to_int (Int64.logand 0xFFL
+		  (Int64.shift_right l (8 * (endian_i 8 which))))
+        
+let extract_8_from_32 l which =
+  Int64.to_int (Int64.logand 0xFFL
+		  (Int64.shift_right l (8 * (endian_i 4 which))))
+
+let extract_8_from_16 l which =
+  Int64.to_int (Int64.logand 0xFFL
+		  (Int64.shift_right l (8 * (endian_i 2 which))))
+
+let extract_16_from_64 l which =
+  Int64.to_int (Int64.logand 0xFFFFL
+		  (Int64.shift_right l (8 * (endian_i 8 which))))
+
+let extract_16_from_32 l which =
+  Int64.to_int (Int64.logand 0xFFFFL
+		  (Int64.shift_right l (8 * (endian_i 4 which))))
+
+let extract_32_from_64 l which =
+  Int64.logand 0xFFFFFFFFL (Int64.shift_right l (8 * (endian_i 8 which)))
+
+let split64 l =
+  ((extract_32_from_64 l 0), (extract_32_from_64 l 4))
+
+let split32 l =
+  ((extract_16_from_32 l 0), (extract_16_from_32 l 2))
+
+let split16 l =
+  ((extract_8_from_16 l 0), (extract_8_from_16 l 1))
+
+let assemble16 b1 b2 =
+  match endianness with
+    | V.Little -> b1 lor (b2 lsl 8)
+    | V.Big    -> b2 lor (b1 lsl 8)
+
+let assemble32 s1 s2 =
+  match endianness with
+    | V.Little -> Int64.logor (Int64.of_int s1)
+	                      (Int64.shift_left (Int64.of_int s2) 16)
+    | V.Big    -> Int64.logor (Int64.of_int s2)
+	                      (Int64.shift_left (Int64.of_int s1) 16)
+
+let assemble64 w1 w2 =
+  match endianness with
+    | V.Little -> Int64.logor w1 (Int64.shift_left w2 32)
+    | V.Big    -> Int64.logor w2 (Int64.shift_left w1 32)
+
+type gran8 = Byte of int64
+  
+type gran16 = Short of int64
+	      | Gran8s of gran8 * gran8
+		  
+type gran32 = Word of int64
+	      | Gran16s of gran16 * gran16
+		    
+type gran64 = Long of int64
+	      | Gran32s of gran32 * gran32
+
+let gran8_get_byte (Byte l) = Int64.to_int l
+
+let gran16_get_byte g16 which =
+  assert(which >= 0); assert(which < 2);
+  match g16 with
+    | Short(l) -> extract_8_from_16 l which
+    | Gran8s(g1, g2) ->
+	if which < 1 then
+	  gran8_get_byte g1
+	else
+	  gran8_get_byte g2
+		  
+let gran32_get_byte g32 which =
+  assert(which >= 0); assert(which < 4);
+  match g32 with
+    | Word(l) -> extract_8_from_32 l which
+    | Gran16s(g1, g2) ->
+	if which < 2 then
+	  gran16_get_byte g1 which
+	else
+	  gran16_get_byte g2 (which - 2)
+
+let gran64_get_byte g64 which =
+  assert(which >= 0); assert(which < 8);
+  match g64 with
+    | Long(l) -> extract_8_from_64 l which
+    | Gran32s(g1, g2) ->
+	if which < 4 then
+	  gran32_get_byte g1 which
+	else
+	  gran32_get_byte g2 (which - 4)
+
+let gran16_get_short g16 =
+  match g16 with
+    | Short(l) -> Int64.to_int l
+    | Gran8s(g1, g2) -> assemble16 (gran8_get_byte g1) (gran8_get_byte g2)
+
+let gran32_get_short g32 which =
+  assert(which = 0 or which = 2);
+  match g32 with
+    | Word(l) -> extract_16_from_32 l which
+    | Gran16s(g1, g2) ->
+	if which < 2 then
+	  gran16_get_short g1
+	else
+	  gran16_get_short g2
+
+let gran64_get_short g64 which =
+  assert(which = 0 or which = 2 or which = 4 or which = 6);
+  match g64 with
+    | Long(l) -> extract_16_from_64 l which
+    | Gran32s(g1, g2) ->
+	if which < 4 then
+	  gran32_get_short g1 which
+	else
+	  gran32_get_short g2 (which - 4)
+
+let gran32_get_word g32 =
+  match g32 with
+    | Word(l) -> l
+    | Gran16s(g1, g2) -> assemble32 (gran16_get_short g1) (gran16_get_short g2)
+
+let gran64_get_word g64 which =
+  assert(which = 0 or which = 4);
+  match g64 with
+    | Long(l) -> extract_32_from_64 l which
+    | Gran32s(g1, g2) ->
+	if which < 4 then
+	  gran32_get_word g1
+	else
+	  gran32_get_word g2
+
+let gran64_get_long g64 =
+  match g64 with
+    | Long(l) -> l
+    | Gran32s(g1, g2) -> assemble64 (gran32_get_word g1) (gran32_get_word g2)
+
+let gran64_split g64 = 
+  match g64 with
+    | Gran32s(g1, g2) -> (g1, g2)
+    | Long(l) -> let (w1, w2) = split64 l in (Word(w1), Word(w2))
+
+let gran32_split g32 = 
+  match g32 with
+    | Gran16s(g1, g2) -> (g1, g2)
+    | Word(l) ->
+	let (s1, s2) = split32 l in
+	  (Short(Int64.of_int s1), Short(Int64.of_int s2))
+	    
+let gran16_split g16 = 
+  match g16 with
+    | Gran8s(g1, g2) -> (g1, g2)
+    | Short(l) ->
+	let (b1, b2) = split16 l in
+	  (Byte(Int64.of_int b1),
+	   Byte(Int64.of_int b2))
+
+let gran16_put_byte g16 which b =
+  assert(which = 0 or which = 1);
+  let (g1, g2) = gran16_split g16 in
+    if which < 1 then
+      Gran8s(Byte(Int64.of_int b), g2)
+    else
+      Gran8s(g1, Byte(Int64.of_int b))
+
+let gran32_put_byte g32 which b =
+  assert(which >= 0); assert(which < 4);
+  let (g1, g2) = gran32_split g32 in
+    if which < 2 then
+      Gran16s((gran16_put_byte g1 which b), g2)
+    else
+      Gran16s(g1, (gran16_put_byte g2 (which - 2) b))
+
+let gran64_put_byte g64 which b =
+  assert(which >= 0); assert(which < 8);
+  let (g1, g2) = gran64_split g64 in
+    if which < 4 then
+      Gran32s((gran32_put_byte g1 which b), g2)
+    else
+      Gran32s(g1, (gran32_put_byte g2 (which - 4) b))
+
+let gran32_put_short g32 which s =
+  assert(which = 0 or which = 2);
+  let (g1, g2) = gran32_split g32 in
+    if which < 2 then
+      Gran16s(Short(Int64.of_int s), g2)
+    else
+      Gran16s(g1, Short(Int64.of_int s))
+
+let gran64_put_short g64 which s =
+  assert(which = 0 or which = 2 or which = 4 or which = 6);
+  let (g1, g2) = gran64_split g64 in
+    if which < 4 then
+      Gran32s((gran32_put_short g1 which s), g2)
+    else
+      Gran32s(g1, (gran32_put_short g2 (which - 4) s))
+
+let gran64_put_word g64 which w =
+  assert(which = 0 or which = 4);
+  let (g1, g2) = gran64_split g64 in
+    if which < 4 then
+      Gran32s(Word(w), g2)
+    else
+      Gran32s(g1, Word(w))
+
+type page = (gran64 option) array
+
+class granular_memory = object(self)
+  (* The extra page is a hacky way to not crash on address wrap-around *)
+  val mem = Array.init 0x100001 (fun _ -> None)
+
+  method maybe_load_byte addr =
+    let page = Int64.to_int (Int64.shift_right addr 12) and
+	idx = Int64.to_int (Int64.logand addr 0xfffL) in
+    match mem.(page) with
+      | None -> None
+      | Some page ->
+	  let chunk = idx asr 3 and
+	      which = idx land 0x7 in
+	    match page.(chunk) with
+	      | None -> None
+	      | Some g64 -> Some (gran64_get_byte g64 which)
+
+  method maybe_load_short addr =
+    if (Int64.logand addr 1L) = 0L then
+      ((* aligned fast path *)
+	let page = Int64.to_int (Int64.shift_right addr 12) and
+	    idx = Int64.to_int (Int64.logand addr 0xfffL) in
+	  match mem.(page) with
+	    | None -> None
+	    | Some page ->
+		let chunk = idx asr 3 and
+		    which = idx land 0x7 in
+		  match page.(chunk) with
+		    | None -> None
+		    | Some g64 -> Some (gran64_get_short g64 which))
+    else
+      (* unaligned slow path *)
+      let mb0 = self#maybe_load_byte addr and
+	  mb1 = self#maybe_load_byte (Int64.add addr 1L) in
+	match (mb0, mb1) with
+	  | (Some b0, Some b1) -> Some (assemble16 b0 b1)
+	  | _ -> None
+
+  method maybe_load_word addr =
+    if (Int64.logand addr 3L) = 0L then
+      ((* aligned fast path *)
+	let page = Int64.to_int (Int64.shift_right addr 12) and
+	    idx = Int64.to_int (Int64.logand addr 0xfffL) in
+	  match mem.(page) with
+	    | None -> None
+	    | Some page ->
+		let chunk = idx asr 3 and
+		    which = idx land 0x7 in
+		  match page.(chunk) with
+		    | None -> None
+		    | Some g64 -> Some (gran64_get_word g64 which))
+    else
+      (* unaligned slow path *)
+      let ms0 = self#maybe_load_short addr and
+	  ms1 = self#maybe_load_short (Int64.add addr 2L) in
+	match (ms0, ms1) with
+	  | (Some s0, Some s1) -> Some (assemble32 s0 s1)
+	  | _ -> None
+
+  method maybe_load_long addr =
+    if (Int64.logand addr 7L) = 0L then
+      ((* aligned fast path *)
+	let page = Int64.to_int (Int64.shift_right addr 12) and
+	    idx = Int64.to_int (Int64.logand addr 0xfffL) in
+	  match mem.(page) with
+	    | None -> None
+	    | Some page ->
+		let chunk = idx asr 3 in
+		  match page.(chunk) with
+		    | None -> None
+		    | Some g64 -> Some (gran64_get_long g64))
+    else
+      (* unaligned slow path *)
+      let mw0 = self#maybe_load_word addr and
+	  mw1 = self#maybe_load_word (Int64.add addr 4L) in
+	match (mw0, mw1) with
+	  | (Some w0, Some w1) -> Some (assemble64 w0 w1)
+	  | _ -> None
+
+  method load_byte addr =
+    match self#maybe_load_byte addr with
+      | None -> 0
+      | Some b -> b
+
+  method load_short addr =
+    match self#maybe_load_short addr with
+      | None -> 0
+      | Some s -> s
+
+  method load_word addr =
+    match self#maybe_load_word addr with
+      | None -> 0L
+      | Some w -> w
+
+  method load_long addr =
+    match self#maybe_load_long addr with
+      | None -> 0L
+      | Some l -> l
+
+  method private get_page addr =
+    let page_n = Int64.to_int (Int64.shift_right addr 12) in
+      match mem.(page_n) with
+	| Some page -> page
+	| None ->
+	    let new_page = Array.init 512 (fun _ -> None) in
+	      mem.(page_n) <- Some new_page;
+	      new_page
+
+  method store_byte addr b =
+    let page = self#get_page addr and
+	idx = Int64.to_int (Int64.logand addr 0xfffL) in
+    let chunk = idx asr 3 and
+	which = idx land 0x7 in
+    let old_chunk =
+      (match page.(chunk) with
+	 | None -> Long(0L)
+	 | Some g64 -> g64) in
+      page.(chunk) <- Some (gran64_put_byte old_chunk which b)
+
+  method store_short addr s =
+    if (Int64.logand addr 1L) = 0L then
+      ((* aligned fast path *)
+	let page = self#get_page addr and
+	    idx = Int64.to_int (Int64.logand addr 0xfffL) in
+	let chunk = idx asr 3 and
+	    which = idx land 0x7 in
+	let old_chunk =
+	  (match page.(chunk) with
+	     | None -> Long(0L)
+	     | Some g64 -> g64) in
+	  page.(chunk) <- Some (gran64_put_short old_chunk which s))
+    else
+      (* unaligned slow path *)
+      let (b0, b1) = split16 (Int64.of_int s) in
+	self#store_byte addr b0;
+	self#store_byte (Int64.add addr 1L) b1
+
+  method store_word addr w =
+    if (Int64.logand addr 3L) = 0L then
+      ((* aligned fast path *)
+	let page = self#get_page addr and
+	    idx = Int64.to_int (Int64.logand addr 0xfffL) in
+	let chunk = idx asr 3 and
+	    which = idx land 0x7 in
+	let old_chunk =
+	  (match page.(chunk) with
+	     | None -> Long(0L)
+	     | Some g64 -> g64) in
+	  page.(chunk) <- Some (gran64_put_word old_chunk which w))
+    else
+      (* unaligned slow path *)
+      let (s0, s1) = split32 w in
+	self#store_short addr s0;
+	self#store_short (Int64.add addr 2L) s1
+
+  method store_long addr l =
+    if (Int64.logand addr 7L) = 0L then
+      ((* aligned fast path *)
+	let page = self#get_page addr and
+	    idx = Int64.to_int (Int64.logand addr 0xfffL) in
+	let chunk = idx asr 3 in
+	  page.(chunk) <- Some(Long(l)))
+    else
+      (* unaligned slow path *)
+      let (w0, w1) = split64 l in
+	self#store_word addr w0;
+	self#store_word (Int64.add addr 4L) w1
+
+  method clear () =
+    Array.fill mem 0 0x100001 None
+
+  method make_snap () =
+    failwith "make_snap unimplemented for granular_memory";
+    ()
+
+  method reset () =
+    failwith "reset unimplemented for granular_memory";
+    ()
+end
+
 let nofix x = x
 
 let fix_u ty x =
@@ -193,7 +590,8 @@ class virtual special_handler = object(self)
 end
 
 class ['a] frag_machine () = object(self)
-  val mem = new snapshot_memory (new string_memory) (new hash_memory)
+  (* val mem = new snapshot_memory (new string_memory) (new hash_memory) *)
+  val mem = new granular_memory
   val reg_store = V.VarHash.create 100
   val temps = V.VarHash.create 100
   val mutable frag = ([], [])
@@ -2233,6 +2631,34 @@ let random_regex maxlen =
     done;
     str
     
+let fuzz_pcre fm eip_var mem_var asmir_gamma =
+  let eip = fm#get_int_var eip_var
+  in
+    runloop fm eip_var eip mem_var asmir_gamma (Some 0x08048656L);
+    fm#make_snap (); Printf.printf "Took snapshot\n";
+    let iter = ref 0L in
+      while true do
+	iter := Int64.add !iter 1L;
+	let regex = random_regex 20 and
+	    old_tcs = Hashtbl.length trans_cache in
+	  Printf.printf "Iteration %Ld: %s\n" !iter regex;
+	  fm#store_cstr 0x08063c20L 0L regex;
+	  (try
+	     runloop fm eip_var 0x08048656L mem_var asmir_gamma
+	       (Some 0x080486d2L);
+	   with
+	     | Failure("Jump to 0") -> () (* equivalent of segfault *)
+	     | SimulatedExit(_) -> ()
+	  );
+	  if (Hashtbl.length trans_cache - old_tcs > 0) then
+	    Printf.printf "Coverage increased to %d with %s on %Ld\n"
+	      (Hashtbl.length trans_cache) regex !iter
+	  else ();
+	  fm#reset ();
+	  flush stdout
+      done
+
+
 let main argc argv = 
   let speclist = Vine_parser.defspecs in 
   let speclist = [] @ speclist in 
@@ -2256,31 +2682,9 @@ let main argc argv =
     (* let fm = new fake_frag_machine prog in *)
       fm#init_prog prog;
       fm#add_special_handler (new linux_special_handler fm);
-      let eip = fm#get_int_var eip_var
-      in
-	runloop fm eip_var eip mem_var asmir_gamma (Some 0x08048656L);
-	fm#make_snap (); Printf.printf "Took snapshot\n";
-	let iter = ref 0L in
-	  while true do
-	    iter := Int64.add !iter 1L;
-	    let regex = random_regex 20 and
-		old_tcs = Hashtbl.length trans_cache in
-	      Printf.printf "Iteration %Ld: %s\n" !iter regex;
-	      fm#store_cstr 0x08063c20L 0L regex;
-	      (try
-		 runloop fm eip_var 0x08048656L mem_var asmir_gamma
-		   (Some 0x080486d2L);
-	       with
-		 | Failure("Jump to 0") -> () (* equivalent of segfault *)
-		 | SimulatedExit(_) -> ()
-	      );
-	      if (Hashtbl.length trans_cache - old_tcs > 0) then
-		Printf.printf "Coverage increased to %d with %s on %Ld\n"
-		  (Hashtbl.length trans_cache) regex !iter
-	      else ();
-	      fm#reset ();
-	      flush stdout
-	  done
+      (* fuzz_pcre fm eip_var mem_var asmir_gamma *)
+      let eip = fm#get_int_var eip_var in
+	runloop fm eip_var eip mem_var asmir_gamma None (* run until exit *)
 ;;
 
 main (Array.length Sys.argv) Sys.argv;;
