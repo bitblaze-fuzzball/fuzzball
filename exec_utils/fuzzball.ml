@@ -378,6 +378,25 @@ let gran64_put_word g64 which w =
     else
       Gran32s(g1, Word(w))
 
+let gran8_to_string g8 =
+  match g8 with
+    | Byte(b) -> Printf.sprintf "%02Lx" b
+
+let gran16_to_string g16 =
+  match g16 with
+    | Short(s) -> Printf.sprintf "%04Lx" s
+    | Gran8s(g1, g2) -> (gran8_to_string g1) ^ "|" ^ (gran8_to_string g2)
+
+let gran32_to_string g32 =
+  match g32 with
+    | Word(w) -> Printf.sprintf "%08Lx" w
+    | Gran16s(g1, g2) -> (gran16_to_string g1) ^ "|" ^ (gran16_to_string g2)
+
+let gran64_to_string g64 =
+  match g64 with
+    | Long(l) -> Printf.sprintf "%016Lx" l
+    | Gran32s(g1, g2) -> (gran32_to_string g1) ^ "|" ^ (gran32_to_string g2)
+
 type page = (gran64 option) array
 
 class granular_memory = object(self)
@@ -547,16 +566,189 @@ class granular_memory = object(self)
 	self#store_word addr w0;
 	self#store_word (Int64.add addr 4L) w1
 
+  method private chunk_to_string addr =
+    let page = self#get_page addr and
+	idx = Int64.to_int (Int64.logand addr 0xfffL) in
+    let chunk = idx asr 3 in
+      match page.(chunk) with
+	| None -> "[...]"
+	| Some g64 -> "[" ^ (gran64_to_string g64) ^ "]"
+
+  method sync_chunk addr thunk =
+    (* Printf.printf "sync chunk %08Lx: " addr; *)
+    let page = self#get_page addr and
+	idx = Int64.to_int (Int64.logand addr 0xfffL) in
+    let chunk = idx asr 3 in
+      (match page.(chunk) with
+	 | None -> page.(chunk) <- Some (Long(thunk ()))
+	 | _ -> ())
+	(* Printf.printf "%s\n" (self#chunk_to_string addr) *)
+
   method clear () =
     Array.fill mem 0 0x100001 None
+end
+
+class granular_snapshot_memory main diff = object(self)
+  inherit memory
+
+  val mutable have_snap = false
+
+  method private sync_chunks addr1 addr2 =
+    let sync_chunk addr =
+      diff#sync_chunk addr
+	(fun () -> main#load_long addr)
+    in
+    let chunk1 = Int64.logand addr1 (Int64.lognot 7L) and
+	chunk2 = Int64.logand addr2 (Int64.lognot 7L) in
+      sync_chunk chunk1;
+      if chunk1 <> chunk2 then
+	sync_chunk chunk2
+      else ()
+
+  method store_byte addr b =
+    if have_snap then
+      (self#sync_chunks addr addr;
+       diff#store_byte addr b)
+    else
+      main#store_byte addr b
+
+  method store_short addr s =
+    if have_snap then
+      (self#sync_chunks addr (Int64.add addr 1L);
+       diff#store_short addr s)
+    else
+      main#store_short addr s
+
+  method store_word addr w =
+    if have_snap then
+      (self#sync_chunks addr (Int64.add addr 3L);
+       diff#store_word addr w)
+    else
+      main#store_word addr w
+
+  method store_long addr l =
+    if have_snap then
+      (self#sync_chunks addr (Int64.add addr 7L);
+       diff#store_long addr l)
+    else
+      main#store_long addr l
+
+  method maybe_load_byte addr =
+    if have_snap then
+      match diff#maybe_load_byte addr with
+	| Some b -> Some b
+	| None -> main#maybe_load_byte addr
+    else
+      main#maybe_load_byte addr
+
+  method maybe_load_short addr =
+    if have_snap then
+      match diff#maybe_load_short addr with
+	| Some s -> Some s
+	| None -> main#maybe_load_short addr
+    else
+      main#maybe_load_short addr
+
+  method maybe_load_word addr =
+    if have_snap then
+      match diff#maybe_load_word addr with
+	| Some w -> Some w
+	| None -> main#maybe_load_word addr
+    else
+      main#maybe_load_word addr
+
+  method maybe_load_long addr =
+    if have_snap then
+      match diff#maybe_load_long addr with
+	| Some l -> Some l
+	| None -> main#maybe_load_long addr
+    else
+      main#maybe_load_long addr
+
+  method clear () = 
+    diff#clear ();
+    main#clear ()
 
   method make_snap () =
-    failwith "make_snap unimplemented for granular_memory";
-    ()
+    have_snap <- true
 
-  method reset () =
-    failwith "reset unimplemented for granular_memory";
-    ()
+  method reset () = 
+    diff#clear (); ()
+end
+
+class parallel_check_memory mem1 mem2 = object(self)
+  inherit memory
+
+  method store_byte addr b =
+    Printf.printf "mem[%08Lx]:b := %02x\n" addr b;
+    mem1#store_byte addr b;
+    mem2#store_byte addr b
+
+  method store_short addr s =
+    Printf.printf "mem[%08Lx]:s := %04x\n" addr s;
+    mem1#store_short addr s;
+    mem2#store_short addr s
+
+  method store_word addr w =
+    Printf.printf "mem[%08Lx]:w := %08Lx\n" addr w;
+    mem1#store_word addr w;
+    mem2#store_word addr w
+
+  method store_long addr l =
+    Printf.printf "mem[%08Lx]:l := %016Lx\n" addr l;
+    mem1#store_long addr l;
+    mem2#store_long addr l
+
+  method load_byte addr =
+    let b1 = mem1#load_byte addr and
+	b2 = mem2#load_byte addr in
+      if b1 = b2 then
+	Printf.printf "mem[%08Lx] is %02x\n" addr b1
+      else
+	(Printf.printf "mem[%08Lx] mismatch %02x vs %02x\n" addr b1 b2;
+	 failwith "Mismatch in load_byte");
+      b1
+
+  method load_short addr =
+    let s1 = mem1#load_short addr and
+	s2 = mem2#load_short addr in
+      if s1 = s2 then
+	Printf.printf "mem[%08Lx] is %04x\n" addr s1
+      else
+	(Printf.printf "mem[%08Lx] mismatch %04x vs %04x\n" addr s1 s2;
+	 failwith "Mismatch in load_short");
+      s1
+
+  method load_word addr =
+    let w1 = mem1#load_word addr and
+	w2 = mem2#load_word addr in
+      if w1 = w2 then
+	Printf.printf "mem[%08Lx] is %08Lx\n" addr w1
+      else
+	(Printf.printf "mem[%08Lx] mismatch %08Lx vs %08Lx\n" addr w1 w2;
+	 failwith "Mismatch in load_word");
+      w1
+
+  method load_long addr =
+    let l1 = mem1#load_long addr and
+	l2 = mem2#load_long addr in
+      if l1 = l2 then
+	Printf.printf "mem[%08Lx] is %016Lx\n" addr l1
+      else
+	(Printf.printf "mem[%08Lx] mismatch %016Lx vs %016Lx\n" addr l1 l2;
+	 failwith "Mismatch in load_long");
+      l1
+
+  method maybe_load_byte addr = Some (self#load_byte addr)
+
+  method clear     () = mem1#clear ();     mem2#clear ();
+    Printf.printf "-------- clear --------\n"
+
+  method make_snap () = mem1#make_snap (); mem2#make_snap ();
+    Printf.printf "-------- make_snap --------\n"
+
+  method reset     () = mem1#reset ();     mem2#reset ();
+    Printf.printf "-------- reset --------\n"
 end
 
 let nofix x = x
@@ -591,7 +783,15 @@ end
 
 class ['a] frag_machine () = object(self)
   (* val mem = new snapshot_memory (new string_memory) (new hash_memory) *)
-  val mem = new granular_memory
+
+  val mem = (new granular_snapshot_memory (new granular_memory)
+	       (new granular_memory))
+
+  (* val mem = new parallel_check_memory
+    (new snapshot_memory (new string_memory) (new hash_memory))
+    (new granular_snapshot_memory (new granular_memory)
+       (new granular_memory)) *)
+
   val reg_store = V.VarHash.create 100
   val temps = V.VarHash.create 100
   val mutable frag = ([], [])
@@ -2682,9 +2882,9 @@ let main argc argv =
     (* let fm = new fake_frag_machine prog in *)
       fm#init_prog prog;
       fm#add_special_handler (new linux_special_handler fm);
-      (* fuzz_pcre fm eip_var mem_var asmir_gamma *)
-      let eip = fm#get_int_var eip_var in
-	runloop fm eip_var eip mem_var asmir_gamma None (* run until exit *)
+      fuzz_pcre fm eip_var mem_var asmir_gamma
+      (* let eip = fm#get_int_var eip_var in
+	runloop fm eip_var eip mem_var asmir_gamma None (* run until exit *) *)
 ;;
 
 main (Array.length Sys.argv) Sys.argv;;
