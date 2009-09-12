@@ -32,6 +32,7 @@ let fix_s32 x = Int64.shift_right (Int64.shift_left x 32) 32
 
 class concrete_domain (v:int64) = object(self)
   method v = v
+  method e : V.exp = failwith "there is no e"
 
   method from_concrete_1  v = new concrete_domain (Int64.of_int v)
   method from_concrete_8  v = new concrete_domain (Int64.of_int v)
@@ -82,6 +83,8 @@ class concrete_domain (v:int64) = object(self)
   method to_string_64 = Printf.sprintf "0x%016Lx" (self#to_concrete_64)
 
   method uninit = new concrete_domain 0L
+
+  method simplify = v
 
   method plus1  (d2:concrete_domain) = new concrete_domain (Int64.add v d2#v)
   method plus8  (d2:concrete_domain) = new concrete_domain (Int64.add v d2#v)
@@ -318,10 +321,29 @@ class concrete_domain (v:int64) = object(self)
   method cast64h32 = self#cast_high 32
 end
 
-exception NotConcrete
+exception NotConcrete of V.exp
+
+let rec constant_fold_rec e =
+  match e with
+    | V.BinOp(op, e1, e2) ->
+	Vine_opt.constant_fold_more (fun _ -> None)
+	  (V.BinOp(op, constant_fold_rec e1, constant_fold_rec e2))
+    | V.UnOp(op, e) ->
+	Vine_opt.constant_fold_more (fun _ -> None)
+	  (V.UnOp(op, constant_fold_rec e))
+    | V.Cast(op, ty, e) ->
+	Vine_opt.constant_fold_more (fun _ -> None)
+	  (V.Cast(op, ty, constant_fold_rec e))
+    | V.Lval(lv) -> V.Lval(constant_fold_rec_lv lv)
+    | _ -> e
+and constant_fold_rec_lv lv =
+  match lv with
+    | V.Mem(v, e, ty) -> V.Mem(v, constant_fold_rec e, ty)
+    | _ -> lv
 
 class symbolic_domain (e:V.exp) = object(self)
   method e = e
+  method v : int64 = failwith "there is no v"
 
   method from_concrete_1 v  = new symbolic_domain
     (V.Constant(V.Int(V.REG_1,  (Int64.of_int v))))
@@ -334,33 +356,32 @@ class symbolic_domain (e:V.exp) = object(self)
   method from_concrete_64 v = new symbolic_domain
     (V.Constant(V.Int(V.REG_64, v)))
 
-  method private cfold =
-    (Vine_opt.constant_fold_more (fun _ -> None) e)
+  method private cfold = (constant_fold_rec e)
 
   method to_concrete_1 = match self#cfold with
     | V.Constant(V.Int(V.REG_1,  v)) -> (Int64.to_int v)
     | V.Constant(V.Int(_,  v)) -> failwith "bad type in to_concrete_1"
-    | _ -> raise NotConcrete
+    | _ -> raise (NotConcrete e)
 
   method to_concrete_8 = match self#cfold with
     | V.Constant(V.Int(V.REG_8,  v)) -> (Int64.to_int v)
     | V.Constant(V.Int(_,  v)) -> failwith "bad type in to_concrete_8"
-    | _ -> raise NotConcrete
+    | _ -> raise (NotConcrete e)
 
   method to_concrete_16 = match self#cfold with
     | V.Constant(V.Int(V.REG_16, v)) -> (Int64.to_int v)
     | V.Constant(V.Int(_,  v)) -> failwith "bad type in to_concrete_16"
-    | _ -> raise NotConcrete
+    | _ -> raise (NotConcrete e)
 
   method to_concrete_32 = match self#cfold with
     | V.Constant(V.Int(V.REG_32, v)) -> v
     | V.Constant(V.Int(_,  v)) -> failwith "bad type in to_concrete_32"
-    | _ -> raise NotConcrete
+    | _ -> raise (NotConcrete e)
 
   method to_concrete_64 = match self#cfold with
     | V.Constant(V.Int(V.REG_64, v)) -> v
     | V.Constant(V.Int(_,  v)) -> failwith "bad type in to_concrete_64"
-    | _ -> raise NotConcrete
+    | _ -> raise (NotConcrete e)
 
   method private make_extract t which =
     V.Cast(V.CAST_LOW, t, 
@@ -435,13 +456,15 @@ class symbolic_domain (e:V.exp) = object(self)
 		       (self#from_concrete_8 32)#e)))
 
   method private to_string = V.exp_to_string e
-  method to_string1  = self#to_string
-  method to_string8  = self#to_string
-  method to_string16 = self#to_string
-  method to_string32 = self#to_string
-  method to_string64 = self#to_string
+  method to_string_1  = self#to_string
+  method to_string_8  = self#to_string
+  method to_string_16 = self#to_string
+  method to_string_32 = self#to_string
+  method to_string_64 = self#to_string
 
   method uninit = new symbolic_domain (V.Unknown("uninit"))
+
+  method simplify = new symbolic_domain (self#cfold)
 
   method private binop op (d2:symbolic_domain) =
     new symbolic_domain (V.BinOp(op, e, d2#e))
@@ -559,6 +582,20 @@ class symbolic_domain (e:V.exp) = object(self)
   method sle16 d2 = self#binop V.SLE d2
   method sle32 d2 = self#binop V.SLE d2
   method sle64 d2 = self#binop V.SLE d2
+
+  method private unop op = new symbolic_domain (V.UnOp(op, e))
+
+  method neg1  = self#unop V.NEG
+  method neg8  = self#unop V.NEG
+  method neg16 = self#unop V.NEG
+  method neg32 = self#unop V.NEG
+  method neg64 = self#unop V.NEG
+
+  method not1  = self#unop V.NOT
+  method not8  = self#unop V.NOT
+  method not16 = self#unop V.NOT
+  method not32 = self#unop V.NOT
+  method not64 = self#unop V.NOT
 
   method private cast kind ty = new symbolic_domain (V.Cast(kind, ty, e))
 
@@ -1263,94 +1300,6 @@ object(self)
     diff#clear (); ()
 end
 
-class concrete_granular_snapshot_memory main diff = object(self)
-  inherit memory
-
-  val mutable have_snap = false
-
-  method private sync_chunks addr1 addr2 =
-    let sync_chunk addr =
-      diff#sync_chunk addr
-	(fun () -> main#load_long addr)
-    in
-    let chunk1 = Int64.logand addr1 (Int64.lognot 7L) and
-	chunk2 = Int64.logand addr2 (Int64.lognot 7L) in
-      sync_chunk chunk1;
-      if chunk1 <> chunk2 then
-	sync_chunk chunk2
-      else ()
-
-  method store_byte addr b =
-    if have_snap then
-      (self#sync_chunks addr addr;
-       diff#store_byte addr b)
-    else
-      main#store_byte addr b
-
-  method store_short addr s =
-    if have_snap then
-      (self#sync_chunks addr (Int64.add addr 1L);
-       diff#store_short addr s)
-    else
-      main#store_short addr s
-
-  method store_word addr w =
-    if have_snap then
-      (self#sync_chunks addr (Int64.add addr 3L);
-       diff#store_word addr w)
-    else
-      main#store_word addr w
-
-  method store_long addr l =
-    if have_snap then
-      (self#sync_chunks addr (Int64.add addr 7L);
-       diff#store_long addr l)
-    else
-      main#store_long addr l
-
-  method maybe_load_byte addr =
-    if have_snap then
-      match diff#maybe_load_byte addr with
-	| Some b -> Some b
-	| None -> main#maybe_load_byte addr
-    else
-      main#maybe_load_byte addr
-
-  method maybe_load_short addr =
-    if have_snap then
-      match diff#maybe_load_short addr with
-	| Some s -> Some s
-	| None -> main#maybe_load_short addr
-    else
-      main#maybe_load_short addr
-
-  method maybe_load_word addr =
-    if have_snap then
-      match diff#maybe_load_word addr with
-	| Some w -> Some w
-	| None -> main#maybe_load_word addr
-    else
-      main#maybe_load_word addr
-
-  method maybe_load_long addr =
-    if have_snap then
-      match diff#maybe_load_long addr with
-	| Some l -> Some l
-	| None -> main#maybe_load_long addr
-    else
-      main#maybe_load_long addr
-
-  method clear () = 
-    diff#clear ();
-    main#clear ()
-
-  method make_snap () =
-    have_snap <- true
-
-  method reset () = 
-    diff#clear (); ()
-end
-
 class parallel_check_memory mem1 mem2 = object(self)
   inherit memory
 
@@ -1440,8 +1389,12 @@ class ['d] frag_machine factory = object(self)
   (* val mem = new snapshot_memory (new string_memory) (new hash_memory) *)
 
   val mem = (new granular_snapshot_memory
-	       (new granular_memory (new concrete_domain 0L))
-	       (new granular_memory (new concrete_domain 0L)))
+	       (* (new granular_memory (new concrete_domain 0L)) *)
+	       (new granular_memory
+		  (new symbolic_domain (V.Unknown("factory"))))
+	       (new granular_memory
+		  (new symbolic_domain (V.Unknown("factory"))))
+	    )
   
   (* val mem = new granular_memory (new concrete_domain 0L) *)
 
@@ -1794,11 +1747,11 @@ class ['d] frag_machine factory = object(self)
 		   else
 		     self#jump (self#eval_label_exp l2)
 	     | V.Move(V.Temp(v), e) ->
-		 self#set_int_var v (self#eval_int_exp e);
+		 self#set_int_var v (self#eval_int_exp e)#simplify;
 		 self#run_sl rest
 	     | V.Move(V.Mem(memv, idx_e, ty), rhs_e) ->
 		 let addr = (self#eval_int_exp idx_e)#to_concrete_32 and
-		     value = self#eval_int_exp rhs_e in
+		     value = (self#eval_int_exp rhs_e)#simplify in
 		   (match ty with
 		      | V.REG_8 -> self#store_byte addr value
 		      | V.REG_16 -> self#store_short addr value
@@ -1863,24 +1816,6 @@ class ['d] frag_machine factory = object(self)
 end
 
 let trans_cache = Hashtbl.create 100000 
-
-let rec constant_fold_rec e =
-  match e with
-    | V.BinOp(op, e1, e2) ->
-	Vine_opt.constant_fold_more (fun _ -> None)
-	  (V.BinOp(op, constant_fold_rec e1, constant_fold_rec e2))
-    | V.UnOp(op, e) ->
-	Vine_opt.constant_fold_more (fun _ -> None)
-	  (V.UnOp(op, constant_fold_rec e))
-    | V.Cast(op, ty, e) ->
-	Vine_opt.constant_fold_more (fun _ -> None)
-	  (V.Cast(op, ty, constant_fold_rec e))
-    | V.Lval(lv) -> V.Lval(constant_fold_rec_lv lv)
-    | _ -> e
-and constant_fold_rec_lv lv =
-  match lv with
-    | V.Mem(v, e, ty) -> V.Mem(v, constant_fold_rec e, ty)
-    | _ -> lv
 
 let cfold_exprs (dl, sl) =
   let sl' = List.map
@@ -3622,12 +3557,18 @@ let main argc argv =
     let eip_var = List.find (fun (i, s, t) -> s = "R_EIP") dl in
     let mem_var = List.find (fun (i, s, t) -> s = "mem") dl in
     let asmir_gamma = Asmir.gamma_create mem_var dl in
-    let fm = new frag_machine (new concrete_domain 0L) in
+    let fm = new frag_machine (new symbolic_domain (V.Unknown("factory"))) in
     (* let fm = new fake_frag_machine prog in *)
       fm#init_prog prog;
       fm#add_special_handler
 	((new linux_special_handler fm) :> special_handler);
-      fuzz_pcre fm eip_var mem_var asmir_gamma
+      
+      try
+	fuzz_pcre fm eip_var mem_var asmir_gamma
+      with
+	  NotConcrete e ->
+	    Printf.printf "Unexpected symbolic value: %s\n" (V.exp_to_string e)
+
       (* let eip = fm#get_word_var eip_var in
 	runloop fm eip_var eip mem_var asmir_gamma None (* run until exit *) *)
 ;;
