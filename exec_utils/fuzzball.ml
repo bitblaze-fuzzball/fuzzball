@@ -40,11 +40,30 @@ class concrete_domain (v:int64) = object(self)
   method from_concrete_32 v = new concrete_domain v
   method from_concrete_64 v = new concrete_domain v 
 
+  method fresh_symbolic_1  (s:string) : concrete_domain
+    = failwith "fresh_symbolic in concrete"
+  method fresh_symbolic_8  (s:string) : concrete_domain
+    = failwith "fresh_symbolic in concrete"
+  method fresh_symbolic_16 (s:string) : concrete_domain
+    = failwith "fresh_symbolic in concrete"
+  method fresh_symbolic_32 (s:string) : concrete_domain
+    = failwith "fresh_symbolic in concrete"
+  method fresh_symbolic_64 (s:string) : concrete_domain
+    = failwith "fresh_symbolic in concrete"
+
   method to_concrete_1  = Int64.to_int (Int64.logand v 0x1L)
   method to_concrete_8  = Int64.to_int (Int64.logand v 0xffL)
   method to_concrete_16 = Int64.to_int (Int64.logand v 0xffffL)
   method to_concrete_32 = Int64.logand v 0xffffffffL
   method to_concrete_64 = v
+
+  method to_symbolic_1  : V.exp = failwith "to_symbolic in concrete"
+  method to_symbolic_8  : V.exp = failwith "to_symbolic in concrete"
+  method to_symbolic_16 : V.exp = failwith "to_symbolic in concrete"
+  method to_symbolic_32 : V.exp = failwith "to_symbolic in concrete"
+  method to_symbolic_64 : V.exp = failwith "to_symbolic in concrete"
+
+  method measure_size = 1
 
   method extract_8_from_64 which =
     new concrete_domain (Int64.shift_right v (8 * which))
@@ -341,6 +360,20 @@ and constant_fold_rec_lv lv =
     | V.Mem(v, e, ty) -> V.Mem(v, constant_fold_rec e, ty)
     | _ -> lv
 
+let rec expr_size e =
+  match e with
+    | V.BinOp(_, e1, e2) -> 1 + (expr_size e1) + (expr_size e2)
+    | V.UnOp(_, e1) -> 1 + (expr_size e1)
+    | V.Constant(_) -> 1
+    | V.Lval(V.Temp(_)) -> 2
+    | V.Lval(V.Mem(_, e1, _)) -> 2 + (expr_size e1)
+    | V.Name(_) -> 1
+    | V.Cast(_, _, e1) -> 1 + (expr_size e1)
+    | V.Unknown(_) -> 1
+    | V.Let(_, _, _) -> failwith "Unexpected let in expr_size"
+
+let input_vars = Hashtbl.create 30
+
 class symbolic_domain (e:V.exp) = object(self)
   method e = e
   method v : int64 = failwith "there is no v"
@@ -355,6 +388,20 @@ class symbolic_domain (e:V.exp) = object(self)
     (V.Constant(V.Int(V.REG_32, v)))
   method from_concrete_64 v = new symbolic_domain
     (V.Constant(V.Int(V.REG_64, v)))
+
+  method private fresh_symbolic s ty =
+    let v = try Hashtbl.find input_vars s with
+	Not_found ->
+	  Hashtbl.replace input_vars s (V.newvar s ty);
+	  Hashtbl.find input_vars s
+    in
+      new symbolic_domain (V.Lval(V.Temp(v)))
+
+  method fresh_symbolic_1  s = self#fresh_symbolic s V.REG_1
+  method fresh_symbolic_8  s = self#fresh_symbolic s V.REG_8
+  method fresh_symbolic_16 s = self#fresh_symbolic s V.REG_16
+  method fresh_symbolic_32 s = self#fresh_symbolic s V.REG_32
+  method fresh_symbolic_64 s = self#fresh_symbolic s V.REG_64
 
   method private cfold = (constant_fold_rec e)
 
@@ -382,6 +429,14 @@ class symbolic_domain (e:V.exp) = object(self)
     | V.Constant(V.Int(V.REG_64, v)) -> v
     | V.Constant(V.Int(_,  v)) -> failwith "bad type in to_concrete_64"
     | _ -> raise (NotConcrete e)
+
+  method to_symbolic_1  = e
+  method to_symbolic_8  = e
+  method to_symbolic_16 = e
+  method to_symbolic_32 = e
+  method to_symbolic_64 = e
+
+  method measure_size = expr_size e
 
   method private make_extract t which =
     V.Cast(V.CAST_LOW, t, 
@@ -643,6 +698,64 @@ class symbolic_domain (e:V.exp) = object(self)
   method cast64h16 = self#cast V.CAST_HIGH V.REG_16
   method cast64h32 = self#cast V.CAST_HIGH V.REG_32
 end
+
+let path_cond = ref []
+
+let stp_vc = Stpvc.create_validity_checker ()
+
+let match_input_var s =
+  try
+    if (String.sub s 0 5) = "input" then
+      let wo_input = String.sub s 5 ((String.length s) - 5) in
+      let uscore_loc = String.index wo_input '_' in
+      let n_str = String.sub wo_input 0 uscore_loc in
+	Some (int_of_string n_str)
+    else
+      None
+  with
+    | Not_found -> None
+    | Failure "int_of_string" -> None
+	
+let maybe_extend_path_cond cond =
+  let vars = Hashtbl.fold (fun s v l -> v :: l) input_vars [] in
+  let stp_ctx = Vine_stpvc.new_ctx stp_vc vars in
+  let pc = (constant_fold_rec
+	      (List.fold_left (fun a b -> V.BinOp(V.BITAND, a, b))
+		 V.exp_true (!path_cond @ [cond]))) in
+    (*Printf.printf "PC is %s\n" (V.exp_to_string pc); *)
+    Libstp.vc_push stp_vc;
+    let stp_pc = (Stpvc.e_simplify stp_vc
+		    (Stpvc.e_not stp_vc
+		       (Stpvc.e_bvbitextract stp_vc		       
+			  (Vine_stpvc.vine_to_stp stp_vc stp_ctx pc) 0))) in
+      (* Printf.printf "STP formula is %s\n" (Stpvc.to_string stp_pc);
+      flush stdout; *)
+    let time_before = Sys.time () in
+    let is_sat =
+      if Stpvc.query stp_vc stp_pc then
+	(Printf.printf "Unsatisfiable\n";
+	 false)
+      else
+	(Printf.printf "Satisfiable ";
+	 let str = String.make 30 ' ' in
+	   List.iter
+	     (fun (sym, stp_exp) ->
+		match match_input_var (Stpvc.to_string sym) with
+		  | Some n -> str.[n] <- 
+		      (char_of_int (Int64.to_int (Stpvc.int64_of_e stp_exp)))
+		  | None -> ())
+	     (Stpvc.get_true_counterexample stp_vc);
+	    Printf.printf "by \"%s\"\n" (String.escaped str);
+	    path_cond := !path_cond @ [cond];
+	    true)
+    in
+      (if ((Sys.time ()) -. time_before) > 1.0 then
+	 Printf.printf "Slow STP query (%f sec): %s\n"
+	   ((Sys.time ()) -. time_before) (Stpvc.to_string stp_pc)
+       else ());
+      flush stdout;
+      Libstp.vc_pop stp_vc;
+      is_sat
 
 class virtual memory = object(self)
   method virtual store_byte : Int64.t -> int -> unit
@@ -986,6 +1099,25 @@ let gran64_to_string g64 =
     | Long(l) -> l#to_string_64
     | Gran32s(g1, g2) -> (gran32_to_string g1) ^ "|" ^ (gran32_to_string g2)
 
+let gran8_size g8 =
+  match g8 with
+    | Byte(b) -> b#measure_size
+
+let gran16_size g16 =
+  match g16 with
+    | Short(s) -> s#measure_size
+    | Gran8s(g1, g2) -> (gran8_size g1) + (gran8_size g2)
+
+let gran32_size g32 =
+  match g32 with
+    | Word(w) -> w#measure_size
+    | Gran16s(g1, g2) -> (gran16_size g1) + (gran16_size g2)
+
+let gran64_size g64 =
+  match g64 with
+    | Long(l) -> l#measure_size
+    | Gran32s(g1, g2) -> (gran32_size g1) + (gran32_size g2)
+
 type 'a page = ('a gran64 option) array
 
 class ['d] granular_memory (factory:'d) = object(self)
@@ -1176,8 +1308,17 @@ class ['d] granular_memory (factory:'d) = object(self)
   method clear () =
     Array.fill mem 0 0x100001 None
 
-  (* method make_snap () = failwith "make_snap unsupported"; ()
-     method reset () = failwith "reset unsupported"; () *)
+  method measure_size =
+    let sum_some f ary =
+      Array.fold_left
+	(fun n x -> n + match x with None -> 0 | Some(x') -> f x') 0 ary
+    in
+      sum_some
+	(fun page -> sum_some 
+	   (fun g64 -> gran64_size g64) page) mem
+	 
+(* method make_snap () = failwith "make_snap unsupported"; ()
+   method reset () = failwith "reset unsupported"; () *)
 end
 
 class ['d] granular_snapshot_memory
@@ -1289,6 +1430,8 @@ object(self)
     else
       main#load_long addr
 
+  method measure_size = diff#measure_size + main#measure_size
+
   method clear () = 
     diff#clear ();
     main#clear ()
@@ -1384,6 +1527,8 @@ let move_hash src dest =
 class virtual special_handler = object(self)
   method virtual handle_special : string -> bool
 end
+
+exception SymbolicAddress of V.exp
 
 class ['d] frag_machine factory = object(self)
   (* val mem = new snapshot_memory (new string_memory) (new hash_memory) *)
@@ -1649,7 +1794,7 @@ class ['d] frag_machine factory = object(self)
       | V.Constant(V.Int(_, _)) -> failwith "unexpected integer constant type"
       | V.Lval(V.Temp((_,_,ty) as var)) -> (self#get_int_var var), ty
       | V.Lval(V.Mem(memv, idx, ty)) ->
-	  let addr = (self#eval_int_exp idx)#to_concrete_32 in
+	  let addr = self#eval_addr_exp idx in
 	  let v =
 	    (match ty with
 	       | V.REG_8 -> self#load_byte addr
@@ -1712,8 +1857,38 @@ class ['d] frag_machine factory = object(self)
       v
 
   method eval_bool_exp exp =
-    if (self#eval_int_exp exp)#to_concrete_1 = 1 then true else false
-      
+    let v = self#eval_int_exp exp in
+      try
+	if v#to_concrete_1 = 1 then true else false
+      with
+	  NotConcrete _ ->
+	    (* Printf.printf "Symbolic branch condition %s\n"
+	      (V.exp_to_string v#to_symbolic_1); *)
+	    let try1 = Random.bool () in	
+	      Printf.printf "Trying %B: " try1;	      
+	      let cond = (if try1 then v#to_symbolic_1
+			  else V.UnOp(V.NOT, v#to_symbolic_1)) in
+		if (maybe_extend_path_cond cond) then
+		  try1
+		else
+		  (Printf.printf "Okay, trying %B: " (not try1);
+		   let cond = (if (not try1) then v#to_symbolic_1
+			       else V.UnOp(V.NOT, v#to_symbolic_1)) in
+		     if (maybe_extend_path_cond cond) then
+		       (not try1)
+		     else
+		       failwith "Both directions of branch are unsat")
+		
+
+  method eval_addr_exp exp =
+    let v = self#eval_int_exp exp in
+      try v#to_concrete_32
+      with
+	  NotConcrete e ->
+	    Printf.printf "Symbolic address %s\n"
+	      (V.exp_to_string v#to_symbolic_32);
+	    raise (SymbolicAddress e)
+
   method eval_label_exp e =
     match e with
       | V.Name(lab) -> lab
@@ -1750,7 +1925,7 @@ class ['d] frag_machine factory = object(self)
 		 self#set_int_var v (self#eval_int_exp e)#simplify;
 		 self#run_sl rest
 	     | V.Move(V.Mem(memv, idx_e, ty), rhs_e) ->
-		 let addr = (self#eval_int_exp idx_e)#to_concrete_32 and
+		 let addr = self#eval_addr_exp idx_e and
 		     value = (self#eval_int_exp rhs_e)#simplify in
 		   (match ty with
 		      | V.REG_8 -> self#store_byte addr value
@@ -1786,6 +1961,12 @@ class ['d] frag_machine factory = object(self)
 
   method run () = self#run_sl insns
 
+  method measure_size =
+    let measure_add k v n = n + v#measure_size in
+      mem#measure_size
+      + (V.VarHash.fold measure_add reg_store 0)
+      + (V.VarHash.fold measure_add temps 0)
+
   method store_byte_idx base idx b =
     self#store_byte (Int64.add base (Int64.of_int idx)) 
       (factory#from_concrete_8 b)
@@ -1794,6 +1975,13 @@ class ['d] frag_machine factory = object(self)
     for i = 0 to (String.length str - 1) do
       self#store_byte_idx (Int64.add base idx) i (Char.code str.[i])
     done
+
+  method store_symbolic_cstr base len =
+    for i = 0 to len - 1 do
+      self#store_byte (Int64.add base (Int64.of_int i))
+	(factory#fresh_symbolic_8 ("input" ^ (string_of_int i)))
+    done;
+    self#store_byte_idx base len 0
 
   method store_cstr base idx str =
     self#store_str base idx str;
@@ -3437,7 +3625,7 @@ let rec runloop fm eip_var eip mem_var asmir_gamma until =
     let prog = (dl, (remove_known_unknowns sl)) in
       (* Libasmir.print_disasm_rawbytes Libasmir.Bfd_arch_i386 eip insn_bytes;
 	 print_string "\n"; *)
-      (* Printf.printf "EIP is %08Lx\n" eip; *)
+      (* Printf.printf "EIP is %08Lx\n" eip;*)
       (* Printf.printf "Watchpoint val is %02x\n" (load_byte 0x501650e8L); *)
       (* Printf.printf ("Insn bytes are %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x\n") (load_byte eip)
 	 (load_byte (Int64.add eip (Int64.of_int 1)))
@@ -3517,21 +3705,29 @@ let fuzz_pcre fm eip_var mem_var asmir_gamma =
     fm#make_snap (); Printf.printf "Took snapshot\n";
     let iter = ref 0L in
       while true do
+      (* for l_iter = 1 to 50 do *)
 	iter := Int64.add !iter 1L;
-	let regex = random_regex 20 and
+	let (* regex = random_regex 20 and *)
 	    old_tcs = Hashtbl.length trans_cache in
-	  Printf.printf "Iteration %Ld: %s\n" !iter regex;
-	  fm#store_cstr 0x08063c20L 0L regex;
+	  (* Printf.printf "Iteration %Ld: %s\n" !iter regex; *)
+	  (* fm#store_cstr 0x08063c20L 0L regex; *)
+	  Printf.printf "Iteration %Ld:\n" !iter;
+	  path_cond := [];
+	  fm#store_symbolic_cstr 0x08063c20L 20;
 	  (try
 	     runloop fm eip_var 0x08048656L mem_var asmir_gamma
 	       (Some 0x080486d2L);
 	   with
 	     | Failure("Jump to 0") -> () (* equivalent of segfault *)
 	     | SimulatedExit(_) -> ()
+	     | SymbolicAddress e ->
+		 Printf.printf "Giving up on symbolic address\n"
 	  );
 	  if (Hashtbl.length trans_cache - old_tcs > 0) then
-	    Printf.printf "Coverage increased to %d with %s on %Ld\n"
-	      (Hashtbl.length trans_cache) regex !iter
+	    (* Printf.printf "Coverage increased to %d with %s on %Ld\n"
+	      (Hashtbl.length trans_cache) regex !iter *)
+	    Printf.printf "Coverage increased to %d on %Ld\n"
+	      (Hashtbl.length trans_cache) !iter
 	  else ();
 	  fm#reset ();
 	  flush stdout
@@ -3547,8 +3743,8 @@ let main argc argv =
     );
     let prog = (
       let p = Vine_parser.parse_file !infile in 
-      let () = if !Vine_parser.flag_typecheck then
-	Vine_typecheck.typecheck p else () in 
+      (* let () = if !Vine_parser.flag_typecheck then
+	Vine_typecheck.typecheck p else () in  *)
 	p
     ) in 
     let () = if !Vine_parser.flag_pp then 
