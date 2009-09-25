@@ -103,7 +103,13 @@ class concrete_domain (v:int64) = object(self)
 
   method uninit = new concrete_domain 0L
 
-  method simplify = v
+  method private simplify = v
+
+  method simplify1 = self#simplify
+  method simplify8 = self#simplify
+  method simplify16 = self#simplify
+  method simplify32 = self#simplify
+  method simplify64 = self#simplify
 
   method plus1  (d2:concrete_domain) = new concrete_domain (Int64.add v d2#v)
   method plus8  (d2:concrete_domain) = new concrete_domain (Int64.add v d2#v)
@@ -374,6 +380,10 @@ let rec expr_size e =
 
 let input_vars = Hashtbl.create 30
 
+let exprs_hash = Hashtbl.create 1001
+let exprs_hash_back = V.VarHash.create 1001
+let expr_num = ref 0
+
 class symbolic_domain (e:V.exp) = object(self)
   method e = e
   method v : int64 = failwith "there is no v"
@@ -519,7 +529,28 @@ class symbolic_domain (e:V.exp) = object(self)
 
   method uninit = new symbolic_domain (V.Unknown("uninit"))
 
-  method simplify = new symbolic_domain (self#cfold)
+  method simplify ty =
+    let e' = self#cfold in
+      if expr_size e' < 10 then
+	new symbolic_domain e'
+      else
+	let var =
+	  (try Hashtbl.find exprs_hash e' with
+	       Not_found ->
+		 let s = "t" ^ (string_of_int !expr_num) in
+		   expr_num := !expr_num + 1;
+		   let var = V.newvar s ty in
+ 		     Hashtbl.replace exprs_hash e' var;
+ 		     V.VarHash.replace exprs_hash_back var e';
+		     (* Printf.printf "%s = %s\n" s (V.exp_to_string e'); *)
+		     var) in
+	  new symbolic_domain (V.Lval(V.Temp(var)))
+	    
+  method simplify1  = self#simplify V.REG_1
+  method simplify8  = self#simplify V.REG_8
+  method simplify16 = self#simplify V.REG_16
+  method simplify32 = self#simplify V.REG_32
+  method simplify64 = self#simplify V.REG_64
 
   method private binop op (d2:symbolic_domain) =
     new symbolic_domain (V.BinOp(op, e, d2#e))
@@ -701,6 +732,15 @@ end
 
 let path_cond = ref []
 
+let add_to_path_cond cond =
+  path_cond := !path_cond @ [cond]
+
+let restore_path_cond f =
+  let saved_pc = !path_cond in
+  let ret = f () in
+    path_cond := saved_pc;
+    ret
+
 let stp_vc = Stpvc.create_validity_checker ()
 
 let match_input_var s =
@@ -715,39 +755,73 @@ let match_input_var s =
   with
     | Not_found -> None
     | Failure "int_of_string" -> None
-	
-let maybe_extend_path_cond cond =
-  let vars = Hashtbl.fold (fun s v l -> v :: l) input_vars [] in
-  let stp_ctx = Vine_stpvc.new_ctx stp_vc vars in
+
+let walk_temps f exp =
+  let h = V.VarHash.create 21 in
+  let rec walk = function
+    | V.BinOp(_, e1, e2) -> (walk e1) @ (walk e2)
+    | V.UnOp(_, e1) -> walk e1
+    | V.Constant(_) -> []
+    | V.Lval(V.Temp(var)) ->
+	if (try V.VarHash.find h var; true with Not_found -> false) then
+	  []
+	else
+	  (try 
+	     let e = V.VarHash.find exprs_hash_back var in
+	       (walk e) @ [f var e]
+	   with Not_found -> [])
+    | V.Lval(V.Mem(_, e1, _)) -> walk e1
+    | V.Name(_) -> []
+    | V.Cast(_, _, e1) -> walk e1
+    | V.Unknown(_) -> []
+    | V.Let(_, _, _) -> failwith "Unhandled let in walk_temps"
+  in
+    walk exp
+
+let query_with_path_cond cond verbose =
+  let i_vars = Hashtbl.fold (fun s v l -> v :: l) input_vars [] in
   let pc = (constant_fold_rec
 	      (List.fold_left (fun a b -> V.BinOp(V.BITAND, a, b))
 		 V.exp_true (!path_cond @ [cond]))) in
-    (*Printf.printf "PC is %s\n" (V.exp_to_string pc); *)
+  let temps = walk_temps (fun var e -> (var, e)) pc in
+  let t_vars = List.map (fun (v, _) -> v) temps in
+  let stp_ctx = Vine_stpvc.new_ctx stp_vc (i_vars @ t_vars) in
     Libstp.vc_push stp_vc;
+    List.iter
+      (fun (v, exp) ->
+	 let form = V.BinOp(V.EQ, V.Lval(V.Temp(v)), exp) in
+	   (* Printf.printf "Asserting %s\n" (V.exp_to_string form); *)
+	   Stpvc.do_assert stp_vc
+	     (Stpvc.e_bvbitextract stp_vc
+		(Vine_stpvc.vine_to_stp stp_vc stp_ctx form) 0))
+      temps;
+    (* Printf.printf "PC is %s\n" (V.exp_to_string pc); *)
+    (* Printf.printf "Condition is %s\n" (V.exp_to_string cond); *)
     let stp_pc = (Stpvc.e_simplify stp_vc
 		    (Stpvc.e_not stp_vc
-		       (Stpvc.e_bvbitextract stp_vc		       
+		       (Stpvc.e_bvbitextract stp_vc
 			  (Vine_stpvc.vine_to_stp stp_vc stp_ctx pc) 0))) in
       (* Printf.printf "STP formula is %s\n" (Stpvc.to_string stp_pc);
       flush stdout; *)
     let time_before = Sys.time () in
     let is_sat =
       if Stpvc.query stp_vc stp_pc then
-	(Printf.printf "Unsatisfiable\n";
+	((*Printf.printf "Unsatisfiable\n"; *)
 	 false)
       else
-	(Printf.printf "Satisfiable ";
-	 let str = String.make 30 ' ' in
-	   List.iter
-	     (fun (sym, stp_exp) ->
-		match match_input_var (Stpvc.to_string sym) with
-		  | Some n -> str.[n] <- 
-		      (char_of_int (Int64.to_int (Stpvc.int64_of_e stp_exp)))
-		  | None -> ())
-	     (Stpvc.get_true_counterexample stp_vc);
-	    Printf.printf "by \"%s\"\n" (String.escaped str);
-	    path_cond := !path_cond @ [cond];
-	    true)
+	(if verbose then
+	   (Printf.printf "Satisfiable ";
+	    let str = String.make 30 ' ' in
+	      List.iter
+		(fun (sym, stp_exp) ->
+		   match match_input_var (Stpvc.to_string sym) with
+		     | Some n -> str.[n] <- 
+			 (char_of_int (Int64.to_int
+					 (Stpvc.int64_of_e stp_exp)))
+		     | None -> ())
+		(Stpvc.get_true_counterexample stp_vc);
+	      Printf.printf "by \"%s\"\n" (String.escaped str));
+	 true)
     in
       (if ((Sys.time ()) -. time_before) > 1.0 then
 	 Printf.printf "Slow STP query (%f sec): %s\n"
@@ -756,6 +830,27 @@ let maybe_extend_path_cond cond =
       flush stdout;
       Libstp.vc_pop stp_vc;
       is_sat
+
+let query_with_pc_random cond verbose =
+  let try1 = Random.bool () in	
+    if verbose then Printf.printf "Trying %B: " try1;	      
+    let cond1 = (if try1 then cond
+		else V.UnOp(V.NOT, cond)) in
+      if (query_with_path_cond cond1 verbose) then
+	(try1, cond1)
+      else
+	(if verbose then Printf.printf "Okay, trying %B: " (not try1);
+	 let cond2 = (if (not try1) then cond
+		     else V.UnOp(V.NOT, cond)) in
+	   if (query_with_path_cond cond2 verbose) then
+	     ((not try1), cond2)
+	   else
+	     failwith "Both directions of condition are unsat")
+
+let extend_pc_random cond verbose =
+  let (result, cond') = query_with_pc_random cond verbose in
+    path_cond := !path_cond @ [cond'];
+    result
 
 class virtual memory = object(self)
   method virtual store_byte : Int64.t -> int -> unit
@@ -1574,7 +1669,7 @@ class ['d] frag_machine factory = object(self)
       List.map
 	(fun name -> List.find (fun (i, s, t) -> s = name) dl)
 	["R_EAX"; "R_EBX"; "R_ECX"; "R_EDX";
-	 "R_ESI"; "R_EDI"; "R_ESP"; "R_EBP"; "EFLAGS";
+	 "R_ESI"; "R_EDI"; "R_ESP"; "R_EBP";
 	 "R_GS"; "R_GDT"]    
 
   method store_byte  addr b = mem#store_byte  addr b
@@ -1856,6 +1951,15 @@ class ['d] frag_machine factory = object(self)
     let (v, _) = self#eval_int_exp_ty exp in
       v
 
+  method eval_int_exp_simplify exp =
+    match self#eval_int_exp_ty exp with
+      | (v, V.REG_1) -> v#simplify1
+      | (v, V.REG_8) -> v#simplify8
+      | (v, V.REG_16) -> v#simplify16
+      | (v, V.REG_32) -> v#simplify32
+      | (v, V.REG_64) -> v#simplify64
+      | _ -> failwith "Unexpected type in eval_int_exp_simplify"
+
   method eval_bool_exp exp =
     let v = self#eval_int_exp exp in
       try
@@ -1864,30 +1968,31 @@ class ['d] frag_machine factory = object(self)
 	  NotConcrete _ ->
 	    (* Printf.printf "Symbolic branch condition %s\n"
 	      (V.exp_to_string v#to_symbolic_1); *)
-	    let try1 = Random.bool () in	
-	      Printf.printf "Trying %B: " try1;	      
-	      let cond = (if try1 then v#to_symbolic_1
-			  else V.UnOp(V.NOT, v#to_symbolic_1)) in
-		if (maybe_extend_path_cond cond) then
-		  try1
-		else
-		  (Printf.printf "Okay, trying %B: " (not try1);
-		   let cond = (if (not try1) then v#to_symbolic_1
-			       else V.UnOp(V.NOT, v#to_symbolic_1)) in
-		     if (maybe_extend_path_cond cond) then
-		       (not try1)
-		     else
-		       failwith "Both directions of branch are unsat")
-		
+	    extend_pc_random v#to_symbolic_1 true
 
   method eval_addr_exp exp =
+    let c32 x = V.Constant(V.Int(V.REG_32, x)) in
     let v = self#eval_int_exp exp in
       try v#to_concrete_32
       with
-	  NotConcrete e ->
-	    Printf.printf "Symbolic address %s\n"
-	      (V.exp_to_string v#to_symbolic_32);
-	    raise (SymbolicAddress e)
+	  NotConcrete _ ->
+	    let e = v#to_symbolic_32 in
+	      Printf.printf "Symbolic address %s\n" (V.exp_to_string e);
+	      let bits = ref 0L in
+		restore_path_cond
+		  (fun () ->
+		     for b = 31 downto 0 do
+		       let bit = extend_pc_random
+			 (V.Cast(V.CAST_LOW, V.REG_1,
+				 (V.BinOp(V.ARSHIFT, e,
+					  (c32 (Int64.of_int b)))))) false
+		       in
+			 bits := (Int64.logor (Int64.shift_left !bits 1)
+				    (if bit then 1L else 0L));
+		     done);
+		Printf.printf "Picked concrete value 0x%Lx\n" !bits;
+		add_to_path_cond (V.BinOp(V.EQ, e, (c32 !bits)));
+		!bits
 
   method eval_label_exp e =
     match e with
@@ -1922,11 +2027,11 @@ class ['d] frag_machine factory = object(self)
 		   else
 		     self#jump (self#eval_label_exp l2)
 	     | V.Move(V.Temp(v), e) ->
-		 self#set_int_var v (self#eval_int_exp e)#simplify;
+		 self#set_int_var v (self#eval_int_exp_simplify e);
 		 self#run_sl rest
 	     | V.Move(V.Mem(memv, idx_e, ty), rhs_e) ->
 		 let addr = self#eval_addr_exp idx_e and
-		     value = (self#eval_int_exp rhs_e)#simplify in
+		     value = (self#eval_int_exp_simplify rhs_e) in
 		   (match ty with
 		      | V.REG_8 -> self#store_byte addr value
 		      | V.REG_16 -> self#store_short addr value
@@ -2327,10 +2432,10 @@ exception SimulatedExit of int64
 
 class linux_special_handler fm =
   let (eax_var, ebx_var, ecx_var, edx_var, esi_var, edi_var,
-       esp_var, ebp_var, eflags_var, gs_var, gdt_var) =
+       esp_var, ebp_var, gs_var, gdt_var) =
     match fm#get_x86_gprs () with
-      | [a; b; c; d; si; di; sp; bp; fl; gs; gd]
-	-> (a, b, c, d, si, di, sp, bp, fl, gs, gd)
+      | [a; b; c; d; si; di; sp; bp; gs; gd]
+	-> (a, b, c, d, si, di, sp, bp, gs, gd)
       | _ -> failwith "Bad length for gpr_vars"
   in
   let put_reg var v = fm#set_word_var var v in
@@ -2628,7 +2733,7 @@ object(self)
       let len = Int64.to_int length in
       let old_loc = Unix.lseek (self#get_fd fd) 0 Unix.SEEK_CUR in
       let _ = Unix.lseek (self#get_fd fd) (4096*pgoffset) Unix.SEEK_SET in
-      let nr = self#do_unix_read (self#get_fd fd) addr len in
+      let _ = self#do_unix_read (self#get_fd fd) addr len in
       let _ = Unix.lseek (self#get_fd fd) old_loc Unix.SEEK_SET in
 	(* assert(nr = len); *)
 	addr
@@ -3534,14 +3639,14 @@ end
 
 let rec runloop fm eip_var eip mem_var asmir_gamma until =
   let load_byte addr = fm#load_byte_conc addr in
-  let read_reg32 var = fm#get_word_var var in
+  (* let read_reg32 var = fm#get_word_var var in
   let (eax_var, ebx_var, ecx_var, edx_var, esi_var, edi_var,
        esp_var, ebp_var, eflags_var, gs_var, gdt_var) =
     match fm#get_x86_gprs () with
       | [a; b; c; d; si; di; sp; bp; fl; gs; gd]
 	-> (a, b, c, d, si, di, sp, bp, fl, gs, gd)
       | _ -> failwith "Bad length for gpr_vars"
-  in
+  in *)
   let decode_insn eip =
     let insn_bytes = Array.init 16
       (fun i -> Char.chr (load_byte (Int64.add eip (Int64.of_int i))))
@@ -3590,7 +3695,7 @@ let rec runloop fm eip_var eip mem_var asmir_gamma until =
 	    (simplify_frag (decode_insns eip 10 true));
 	  Hashtbl.find trans_cache eip
   in
-  let print_gprs () =
+  (* let print_gprs () =
     Printf.printf "eax:%08Lx ebx:%08Lx ecx:%08Lx edx:%08Lx\n"
       (read_reg32 eax_var) (read_reg32 ebx_var) 
       (read_reg32 ecx_var) (read_reg32 edx_var);
@@ -3599,7 +3704,7 @@ let rec runloop fm eip_var eip mem_var asmir_gamma until =
       (read_reg32 esp_var) (read_reg32 ebp_var);
     Printf.printf "eip:%08Lx eflags:%08Lx\n"
       eip (read_reg32 eflags_var)
-  in
+  in *)
   (* Remove "unknown" statments it seems safe to ignore *)
   let remove_known_unknowns sl =
     List.filter
@@ -3705,7 +3810,7 @@ let fuzz_pcre fm eip_var mem_var asmir_gamma =
     fm#make_snap (); Printf.printf "Took snapshot\n";
     let iter = ref 0L in
       while true do
-      (* for l_iter = 1 to 50 do *)
+      (* for l_iter = 1 to 5 do *)
 	iter := Int64.add !iter 1L;
 	let (* regex = random_regex 20 and *)
 	    old_tcs = Hashtbl.length trans_cache in
@@ -3758,7 +3863,7 @@ let main argc argv =
       fm#init_prog prog;
       fm#add_special_handler
 	((new linux_special_handler fm) :> special_handler);
-      
+     
       try
 	fuzz_pcre fm eip_var mem_var asmir_gamma
       with
