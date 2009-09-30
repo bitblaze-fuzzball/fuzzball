@@ -378,6 +378,28 @@ let rec expr_size e =
     | V.Unknown(_) -> 1
     | V.Let(_, _, _) -> failwith "Unexpected let in expr_size"
 
+let rec stmt_size = function
+  | V.Jmp(e) -> 1 + (expr_size e)
+  | V.CJmp(e1, e2, e3) -> 1 + (expr_size e1) + (expr_size e2) + (expr_size e3)
+  | V.Move(lv, e) -> 1 + (expr_size (V.Lval(lv))) + (expr_size e)
+  | V.Special(_) -> 1
+  | V.Label(_) -> 1
+  | V.ExpStmt(e) -> 1 + (expr_size e)
+  | V.Comment(_) -> 1
+  | V.Block(dl, sl) -> 1 + (List.length dl) +
+      (List.fold_left (+) 0 (List.map stmt_size sl))
+  | V.Function(_, _, dl, _, st_o) ->
+      3 + (List.length dl) +
+	(match st_o with None -> 0 | Some st -> stmt_size st)
+  | V.Return(None) -> 1
+  | V.Return(Some e) -> (1+ expr_size e)
+  | V.Call(lv_o, e1, e_l) -> 1 +
+      (match lv_o with None -> 0 | Some(lv) -> expr_size (V.Lval(lv)))
+      + (expr_size e1) + (List.fold_left (+) 0 (List.map expr_size e_l))
+  | V.Attr(st, _) -> 1 + (stmt_size st)
+  | V.Assert(e) -> 1 + (expr_size e)
+  | V.Halt(e) -> 1 + (expr_size e)
+
 let input_vars = Hashtbl.create 30
 
 let exprs_hash = Hashtbl.create 1001
@@ -741,7 +763,132 @@ let restore_path_cond f =
     path_cond := saved_pc;
     ret
 
-let stp_vc = Stpvc.create_validity_checker ()
+class virtual query_engine = object(self)
+  method virtual prepare : V.var list -> V.var list -> unit
+  method virtual assert_eq : V.var -> V.exp -> unit
+  method virtual query : V.exp -> bool * ((string * (unit -> int64)) list)
+  method virtual unprepare : unit
+end
+
+class stpvc_engine = object(self)
+  inherit query_engine
+
+  val vc = Stpvc.create_validity_checker ()
+  val mutable ctx = None
+
+  method private ctx =
+    match ctx with
+      | Some c -> c
+      | None -> failwith "Missing ctx in stpvc_engine"
+
+  method prepare free_vars temp_vars =
+    Libstp.vc_push vc;
+    ctx <- Some(Vine_stpvc.new_ctx vc (free_vars @ temp_vars))
+
+  method assert_eq var rhs =
+    let form = V.BinOp(V.EQ, V.Lval(V.Temp(var)), rhs) in
+      (* Printf.printf "Asserting %s\n" (V.exp_to_string form); *)
+      Stpvc.do_assert vc
+	(Stpvc.e_bvbitextract vc
+	   (Vine_stpvc.vine_to_stp vc self#ctx form) 0)
+
+  method query e =
+    let s = (Stpvc.e_simplify vc
+	       (Stpvc.e_not vc
+		  (Stpvc.e_bvbitextract vc
+		     (Vine_stpvc.vine_to_stp vc self#ctx e) 0)))
+    in
+      (* Printf.printf "STP formula is %s\n" (Stpvc.to_string s);
+	 flush stdout; *)
+    let result = Stpvc.query vc s in
+    let ce = if result then [] else
+      List.map
+	(fun (sym, stp_exp) ->
+	   ((Stpvc.to_string sym), (fun () -> (Stpvc.int64_of_e stp_exp))))
+	(Stpvc.get_true_counterexample vc)
+    in
+      (result, ce)
+
+  method unprepare =
+    Libstp.vc_pop vc;
+    ctx <- None
+end
+
+let map_lines f chan =
+  let results = ref [] in
+    (try while true do
+       results := (f (input_line chan)) :: !results
+     done
+     with End_of_file -> ());
+    List.rev !results
+
+let parse_counterex line =
+  assert((String.sub line 0 8) = "ASSERT( ");
+  assert((String.sub line ((String.length line) - 4) 4) = "  );");
+  let trimmed = String.sub line 8 ((String.length line) - 12) in
+  let eq_loc = String.index trimmed '=' in
+  let lhs = String.sub trimmed 0 eq_loc and
+      rhs = (String.sub trimmed (eq_loc + 1)
+	       ((String.length trimmed) - eq_loc - 1)) in
+  (* let uscore_loc = String.index lhs '_' in
+     let varname = String.sub lhs 0 uscore_loc in *)
+    assert((String.sub lhs ((String.length lhs) - 2) 2) = "  ");
+    let varname = String.sub lhs 0 ((String.length lhs) - 2) in
+      assert((String.sub rhs 0 5) = " 0hex");
+      let hex_val = String.sub rhs 5 ((String.length rhs) - 5) in
+	(* Printf.printf "%s = %Lx\n" varname
+	   (Int64.of_string ("0x" ^ hex_val)); *)
+	(varname, (Int64.of_string ("0x" ^ hex_val)))
+
+class stp_external_engine fname = object(self)
+  inherit query_engine
+
+  val mutable chan = None
+  val mutable visitor = None
+
+  method private chan =
+    match chan with
+      | Some c -> c
+      | None -> failwith "Missing output channel in stp_external_engine"
+
+  method private visitor =
+    match visitor with
+      | Some v -> v
+      | None -> failwith "Missing visitor in stp_external_engine"
+
+  method prepare free_vars temp_vars =
+    chan <- Some(open_out fname);
+    visitor <- Some(new Stp.vine_cvcl_print_visitor (output_string self#chan));
+    List.iter self#visitor#declare_var free_vars
+
+  method assert_eq var rhs =
+    self#visitor#declare_var_value var rhs
+
+  method query e =
+    output_string self#chan "QUERY(0bin0 = ";
+    ignore(V.exp_accept (self#visitor :> V.vine_visitor) e);
+    output_string self#chan ");\n";
+    output_string self#chan "COUNTEREXAMPLE;\n";
+    close_out self#chan;
+    chan <- None;
+    let rcode = Sys.command ("stp " ^ fname ^ " >" ^ fname ^ ".out") in
+    let results = open_in (fname ^ ".out") in
+      if rcode <> 0 then
+	(ignore(Sys.command ("cat " ^ fname ^ ".out"));
+	 failwith "Fatal STP error");
+      let result_s = input_line results in
+	assert(result_s = "Valid." or result_s = "Invalid.");
+	let result = (result_s = "Valid.") in
+	let ce = map_lines parse_counterex results in
+	  close_in results;
+	  (result, (List.map (fun (a, b) -> (a, (fun () -> b))) ce))
+
+  method unprepare =
+    visitor <- None
+end
+
+(* let query_engine = new stpvc_engine *)
+let query_engine = new stp_external_engine "fuzz.stp"
 
 let match_input_var s =
   try
@@ -758,25 +905,29 @@ let match_input_var s =
 
 let walk_temps f exp =
   let h = V.VarHash.create 21 in
+  let temps = ref [] in
   let rec walk = function
-    | V.BinOp(_, e1, e2) -> (walk e1) @ (walk e2)
+    | V.BinOp(_, e1, e2) -> walk e1; walk e2
     | V.UnOp(_, e1) -> walk e1
-    | V.Constant(_) -> []
+    | V.Constant(_) -> ()
     | V.Lval(V.Temp(var)) ->
 	if (try V.VarHash.find h var; true with Not_found -> false) then
-	  []
+	  ()
 	else
 	  (try 
 	     let e = V.VarHash.find exprs_hash_back var in
-	       (walk e) @ [f var e]
-	   with Not_found -> [])
+	       V.VarHash.replace h var ();
+	       walk e;
+	       temps := (f var e) :: !temps;
+	   with Not_found -> ())
     | V.Lval(V.Mem(_, e1, _)) -> walk e1
-    | V.Name(_) -> []
+    | V.Name(_) -> ()
     | V.Cast(_, _, e1) -> walk e1
-    | V.Unknown(_) -> []
+    | V.Unknown(_) -> ()
     | V.Let(_, _, _) -> failwith "Unhandled let in walk_temps"
   in
-    walk exp
+    walk exp;
+    List.rev !temps
 
 let query_with_path_cond cond verbose =
   let i_vars = Hashtbl.fold (fun s v l -> v :: l) input_vars [] in
@@ -785,50 +936,30 @@ let query_with_path_cond cond verbose =
 		 V.exp_true (!path_cond @ [cond]))) in
   let temps = walk_temps (fun var e -> (var, e)) pc in
   let t_vars = List.map (fun (v, _) -> v) temps in
-  let stp_ctx = Vine_stpvc.new_ctx stp_vc (i_vars @ t_vars) in
-    Libstp.vc_push stp_vc;
-    List.iter
-      (fun (v, exp) ->
-	 let form = V.BinOp(V.EQ, V.Lval(V.Temp(v)), exp) in
-	   (* Printf.printf "Asserting %s\n" (V.exp_to_string form); *)
-	   Stpvc.do_assert stp_vc
-	     (Stpvc.e_bvbitextract stp_vc
-		(Vine_stpvc.vine_to_stp stp_vc stp_ctx form) 0))
-      temps;
+    query_engine#prepare i_vars t_vars;
+    List.iter (fun (v, exp) -> (query_engine#assert_eq v exp)) temps;
     (* Printf.printf "PC is %s\n" (V.exp_to_string pc); *)
     (* Printf.printf "Condition is %s\n" (V.exp_to_string cond); *)
-    let stp_pc = (Stpvc.e_simplify stp_vc
-		    (Stpvc.e_not stp_vc
-		       (Stpvc.e_bvbitextract stp_vc
-			  (Vine_stpvc.vine_to_stp stp_vc stp_ctx pc) 0))) in
-      (* Printf.printf "STP formula is %s\n" (Stpvc.to_string stp_pc);
-      flush stdout; *)
     let time_before = Sys.time () in
-    let is_sat =
-      if Stpvc.query stp_vc stp_pc then
-	((*Printf.printf "Unsatisfiable\n"; *)
-	 false)
-      else
-	(if verbose then
-	   (Printf.printf "Satisfiable ";
-	    let str = String.make 30 ' ' in
-	      List.iter
-		(fun (sym, stp_exp) ->
-		   match match_input_var (Stpvc.to_string sym) with
-		     | Some n -> str.[n] <- 
-			 (char_of_int (Int64.to_int
-					 (Stpvc.int64_of_e stp_exp)))
-		     | None -> ())
-		(Stpvc.get_true_counterexample stp_vc);
-	      Printf.printf "by \"%s\"\n" (String.escaped str));
-	 true)
-    in
-      (if ((Sys.time ()) -. time_before) > 1.0 then
-	 Printf.printf "Slow STP query (%f sec): %s\n"
-	   ((Sys.time ()) -. time_before) (Stpvc.to_string stp_pc)
-       else ());
+    let (result, ce) = query_engine#query pc in
+    let is_sat = not result in
+      if is_sat && verbose then
+	(Printf.printf "Satisfiable ";
+	 let str = String.make 30 ' ' in
+	   List.iter
+	     (fun (var_s, value) ->
+		match match_input_var var_s with
+		  | Some n -> str.[n] <- 
+		      (char_of_int (Int64.to_int (value ())))
+		  | None -> ())
+	     ce;
+	   Printf.printf "by \"%s\"\n" (String.escaped str));
+      if ((Sys.time ()) -. time_before) > 1.0 then
+	Printf.printf "Slow query (%f sec)\n"
+	  ((Sys.time ()) -. time_before)
+      else ();
       flush stdout;
-      Libstp.vc_pop stp_vc;
+      query_engine#unprepare;
       is_sat
 
 let query_with_pc_random cond verbose =
@@ -3802,21 +3933,34 @@ let random_regex maxlen =
 	str.[i] <- c
     done;
     str
+
+let check_memory_size () =
+  let chan = open_in "/proc/self/status" in
+    for i = 1 to 11 do ignore(input_line chan) done;
+    let line = input_line chan in 
+      close_in chan;
+      assert((String.sub line 0 7) = "VmSize:");
+      String.sub line 7 ((String.length line) - 7)
     
 let fuzz_pcre fm eip_var mem_var asmir_gamma =
   let eip = fm#get_word_var eip_var
   in
     runloop fm eip_var eip mem_var asmir_gamma (Some 0x08048656L);
     fm#make_snap (); Printf.printf "Took snapshot\n";
-    let iter = ref 0L in
+    let iter = ref 0L and
+	start_wtime = Unix.gettimeofday () and
+        start_ctime = Sys.time () in
       while true do
       (* for l_iter = 1 to 5 do *)
 	iter := Int64.add !iter 1L;
 	let (* regex = random_regex 20 and *)
-	    old_tcs = Hashtbl.length trans_cache in
+	    old_tcs = Hashtbl.length trans_cache and
+	    old_wtime = Unix.gettimeofday () and
+            old_ctime = Sys.time () in
 	  (* Printf.printf "Iteration %Ld: %s\n" !iter regex; *)
 	  (* fm#store_cstr 0x08063c20L 0L regex; *)
 	  Printf.printf "Iteration %Ld:\n" !iter;
+	  Random.init (Int64.to_int !iter);
 	  path_cond := [];
 	  fm#store_symbolic_cstr 0x08063c20L 20;
 	  (try
@@ -3834,6 +3978,19 @@ let fuzz_pcre fm eip_var mem_var asmir_gamma =
 	    Printf.printf "Coverage increased to %d on %Ld\n"
 	      (Hashtbl.length trans_cache) !iter
 	  else ();
+ 	  Printf.printf "Counted size is %d\n"
+	    (fm#measure_size +
+	       (Hashtbl.fold
+		  (fun k (dl, sl) s -> s + (stmt_size (V.Block(dl,sl))))
+		  trans_cache 0));
+	  Printf.printf "/proc size is %s\n" (check_memory_size ());
+	  Printf.printf "OCaml GC size is %f\n" (Gc.allocated_bytes ());
+	  (let ctime = Sys.time() in
+             Printf.printf "CPU time %f sec, %f total\n"
+                        (ctime -. old_ctime) (ctime -. start_ctime));
+	  (let wtime = Unix.gettimeofday() in
+             Printf.printf "Wall time %f sec, %f total\n"
+                        (wtime -. old_wtime) (wtime -. start_wtime));
 	  fm#reset ();
 	  flush stdout
       done
