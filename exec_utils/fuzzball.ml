@@ -775,15 +775,17 @@ class stpvc_engine = object(self)
 
   val vc = Stpvc.create_validity_checker ()
   val mutable ctx = None
+  val mutable free_vars = []
 
   method private ctx =
     match ctx with
       | Some c -> c
       | None -> failwith "Missing ctx in stpvc_engine"
 
-  method prepare free_vars temp_vars =
+  method prepare free_vars_a temp_vars =
     Libstp.vc_push vc;
-    ctx <- Some(Vine_stpvc.new_ctx vc (free_vars @ temp_vars))
+    free_vars <- free_vars_a;
+    ctx <- Some(Vine_stpvc.new_ctx vc (free_vars_a @ temp_vars))
 
   method assert_eq var rhs =
     let form = V.BinOp(V.EQ, V.Lval(V.Temp(var)), rhs) in
@@ -802,16 +804,30 @@ class stpvc_engine = object(self)
 	 flush stdout; *)
     let result = Stpvc.query vc s in
     let ce = if result then [] else
+      (*
       List.map
 	(fun (sym, stp_exp) ->
 	   ((Stpvc.to_string sym), (fun () -> (Stpvc.int64_of_e stp_exp))))
-	(Stpvc.get_true_counterexample vc)
+	(Stpvc.get_true_counterexample vc) *)
+      let wce = Stpvc.get_whole_counterexample vc in
+	List.map
+	  (fun var ->
+	     let var_e = V.Lval(V.Temp(var)) in
+	     let var_s = Vine_stpvc.vine_to_stp vc self#ctx var_e
+	     in
+	       (Stpvc.to_string var_s, 
+		fun () -> 
+		  Stpvc.int64_of_e
+		    (Stpvc.get_term_from_counterexample vc var_s wce)))
+	  free_vars
     in
       (result, ce)
 
   method unprepare =
     Libstp.vc_pop vc;
-    ctx <- None
+    ctx <- None;
+    Libstp.vc_push vc;
+    Libstp.vc_pop vc;
 end
 
 let map_lines f chan =
@@ -887,8 +903,8 @@ class stp_external_engine fname = object(self)
     visitor <- None
 end
 
-(* let query_engine = new stpvc_engine *)
-let query_engine = new stp_external_engine "fuzz.stp"
+let query_engine = new stpvc_engine
+(* let query_engine = new stp_external_engine "fuzz.stp" *)
 
 let match_input_var s =
   try
@@ -957,7 +973,18 @@ let query_with_path_cond cond verbose =
 		      (char_of_int (Int64.to_int (value ())))
 		  | None -> ())
 	     ce;
-	   Printf.printf "by \"%s\"\n" (String.escaped str));
+	   let str' = ref str in
+	     (try 
+		while String.rindex !str' ' ' = (String.length !str') - 1 do
+		  str' := String.sub !str' 0 ((String.length !str') - 1)
+		done;
+	      with Not_found -> ());
+	     (try
+		while String.rindex !str' '\000' = (String.length !str') - 1 do
+		  str' := String.sub !str' 0 ((String.length !str') - 1)
+		done;
+	      with Not_found -> ());
+	     Printf.printf "by \"%s\"\n" (String.escaped !str'));
       if ((Sys.time ()) -. time_before) > 1.0 then
 	Printf.printf "Slow query (%f sec)\n"
 	  ((Sys.time ()) -. time_before)
@@ -3954,8 +3981,8 @@ let fuzz_pcre fm eip_var mem_var asmir_gamma =
     let iter = ref 0L and
 	start_wtime = Unix.gettimeofday () and
         start_ctime = Sys.time () in
-      while true do
-      (* for l_iter = 1 to 5 do *)
+      (* while true do *)
+      for l_iter = 1 to 5 do
 	iter := Int64.add !iter 1L;
 	let (* regex = random_regex 20 and *)
 	    old_tcs = Hashtbl.length trans_cache and
@@ -3988,7 +4015,10 @@ let fuzz_pcre fm eip_var mem_var asmir_gamma =
 		  (fun k (dl, sl) s -> s + (stmt_size (V.Block(dl,sl))))
 		  trans_cache 0));
 	  Printf.printf "/proc size is %s\n" (check_memory_size ());
-	  Printf.printf "OCaml GC size is %f\n" (Gc.allocated_bytes ());
+	  (* Gc.compact ();
+	   let st = Gc.quick_stat () in
+	     Printf.printf "OCaml GC size is %d\n" st.Gc.live_words*)
+	  Gc.print_stat stdout;
 	  (let ctime = Sys.time() in
              Printf.printf "CPU time %f sec, %f total\n"
                         (ctime -. old_ctime) (ctime -. start_ctime));
@@ -3997,7 +4027,9 @@ let fuzz_pcre fm eip_var mem_var asmir_gamma =
                         (wtime -. old_wtime) (wtime -. start_wtime));
 	  fm#reset ();
 	  flush stdout
-      done
+      done;
+      Gc.full_major (); (* for the benefit of leak checking *)
+      Gc.print_stat stdout
 
 
 let main argc argv = 
