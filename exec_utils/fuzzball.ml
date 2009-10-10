@@ -6,20 +6,6 @@
 
 module V = Vine;;
 
-(* At the moment, there are still some calls to endian_i, but there
-   are places where endianness checking is missing, so assume
-   little-endian for the time being.
-
-  let endianness = V.Little
-
-  let endian_i n k = 
-    match endianness with
-      | V.Little -> k
-      | V.Big -> n - k  
-*)
-
-let endian_i n k = k
-
 let fix_u1  x = Int64.logand x 0x1L
 let fix_u8  x = Int64.logand x 0xffL
 let fix_u16 x = Int64.logand x 0xffffL
@@ -752,17 +738,6 @@ class symbolic_domain (e:V.exp) = object(self)
   method cast64h32 = self#cast V.CAST_HIGH V.REG_32
 end
 
-let path_cond = ref []
-
-let add_to_path_cond cond =
-  path_cond := !path_cond @ [cond]
-
-let restore_path_cond f =
-  let saved_pc = !path_cond in
-  let ret = f () in
-    path_cond := saved_pc;
-    ret
-
 class virtual query_engine = object(self)
   method virtual prepare : V.var list -> V.var list -> unit
   method virtual assert_eq : V.var -> V.exp -> unit
@@ -902,117 +877,6 @@ class stp_external_engine fname = object(self)
   method unprepare =
     visitor <- None
 end
-
-let query_engine = new stpvc_engine
-(* let query_engine = new stp_external_engine "fuzz.stp" *)
-
-let match_input_var s =
-  try
-    if (String.sub s 0 5) = "input" then
-      let wo_input = String.sub s 5 ((String.length s) - 5) in
-	try
-	  let uscore_loc = String.index wo_input '_' in
-	  let n_str = String.sub wo_input 0 uscore_loc in
-	    Some (int_of_string n_str)
-	with
-	  | Not_found ->
-	      Some (int_of_string wo_input)
-    else
-      None
-  with
-    | Not_found -> None
-    | Failure "int_of_string" -> None
-
-let walk_temps f exp =
-  let h = V.VarHash.create 21 in
-  let temps = ref [] in
-  let rec walk = function
-    | V.BinOp(_, e1, e2) -> walk e1; walk e2
-    | V.UnOp(_, e1) -> walk e1
-    | V.Constant(_) -> ()
-    | V.Lval(V.Temp(var)) ->
-	if (try V.VarHash.find h var; true with Not_found -> false) then
-	  ()
-	else
-	  (try 
-	     let e = V.VarHash.find exprs_hash_back var in
-	       V.VarHash.replace h var ();
-	       walk e;
-	       temps := (f var e) :: !temps;
-	   with Not_found -> ())
-    | V.Lval(V.Mem(_, e1, _)) -> walk e1
-    | V.Name(_) -> ()
-    | V.Cast(_, _, e1) -> walk e1
-    | V.Unknown(_) -> ()
-    | V.Let(_, _, _) -> failwith "Unhandled let in walk_temps"
-  in
-    walk exp;
-    List.rev !temps
-
-let query_with_path_cond cond verbose =
-  let i_vars = Hashtbl.fold (fun s v l -> v :: l) input_vars [] in
-  let pc = (constant_fold_rec
-	      (List.fold_left (fun a b -> V.BinOp(V.BITAND, a, b))
-		 V.exp_true (!path_cond @ [cond]))) in
-  let temps = walk_temps (fun var e -> (var, e)) pc in
-  let t_vars = List.map (fun (v, _) -> v) temps in
-    query_engine#prepare i_vars t_vars;
-    List.iter (fun (v, exp) -> (query_engine#assert_eq v exp)) temps;
-    (* Printf.printf "PC is %s\n" (V.exp_to_string pc); *)
-    (* Printf.printf "Condition is %s\n" (V.exp_to_string cond); *)
-    let time_before = Sys.time () in
-    let (result, ce) = query_engine#query pc in
-    let is_sat = not result in
-      if is_sat && verbose then
-	(Printf.printf "Satisfiable ";
-	 let str = String.make 30 ' ' in
-	   List.iter
-	     (fun (var_s, value) ->
-		match match_input_var var_s with
-		  | Some n -> str.[n] <- 
-		      (char_of_int (Int64.to_int (value ())))
-		  | None -> ())
-	     ce;
-	   let str' = ref str in
-	     (try 
-		while String.rindex !str' ' ' = (String.length !str') - 1 do
-		  str' := String.sub !str' 0 ((String.length !str') - 1)
-		done;
-	      with Not_found -> ());
-	     (try
-		while String.rindex !str' '\000' = (String.length !str') - 1 do
-		  str' := String.sub !str' 0 ((String.length !str') - 1)
-		done;
-	      with Not_found -> ());
-	     Printf.printf "by \"%s\"\n" (String.escaped !str'));
-      if ((Sys.time ()) -. time_before) > 1.0 then
-	Printf.printf "Slow query (%f sec)\n"
-	  ((Sys.time ()) -. time_before)
-      else ();
-      flush stdout;
-      query_engine#unprepare;
-      is_sat
-
-let query_with_pc_random cond verbose =
-  let try1 = Random.bool () in	
-    if verbose then Printf.printf "Trying %B: " try1;	      
-    let cond1 = (if try1 then cond
-		else V.UnOp(V.NOT, cond)) in
-      if (query_with_path_cond cond1 verbose) then
-	(try1, cond1)
-      else
-	(if verbose then Printf.printf "Okay, trying %B: " (not try1);
-	 let cond2 = (if (not try1) then cond
-		     else V.UnOp(V.NOT, cond)) in
-	   if (query_with_path_cond cond2 verbose) then
-	     ((not try1), cond2)
-	   else
-	     failwith "Both directions of condition are unsat")
-
-let extend_pc_random cond verbose =
-  let (result, cond') = query_with_pc_random cond verbose in
-    path_cond := !path_cond @ [cond'];
-    result
 
 class virtual memory = object(self)
   method virtual store_byte : Int64.t -> int -> unit
@@ -1182,6 +1046,20 @@ let split32 l =
 
 let split16 l =
   ((l#extract_8_from_16 0), (l#extract_8_from_16 1))
+
+(* At the moment, there are still some calls to endian_i, but there
+   are places where endianness checking is missing, so assume
+   little-endian for the time being.
+
+  let endianness = V.Little
+
+  let endian_i n k = 
+    match endianness with
+      | V.Little -> k
+      | V.Big -> n - k  
+*)
+
+let endian_i n k = k
 
 type 'a gran8 = Byte of 'a
   
@@ -1785,8 +1663,6 @@ class virtual special_handler = object(self)
   method virtual handle_special : string -> bool
 end
 
-exception SymbolicAddress of V.exp
-
 class ['d] frag_machine factory = object(self)
   (* val mem = new snapshot_memory (new string_memory) (new hash_memory) *)
 
@@ -1872,8 +1748,6 @@ class ['d] frag_machine factory = object(self)
       move_hash t temps;
 
   val mutable special_handler_list = ([] : #special_handler list)
-
-  method virtual add_special_handler : (#special_handler -> unit)
 
   method add_special_handler (h:special_handler) =
     special_handler_list <- h :: special_handler_list
@@ -2124,37 +1998,11 @@ class ['d] frag_machine factory = object(self)
 
   method eval_bool_exp exp =
     let v = self#eval_int_exp exp in
-      try
 	if v#to_concrete_1 = 1 then true else false
-      with
-	  NotConcrete _ ->
-	    (* Printf.printf "Symbolic branch condition %s\n"
-	      (V.exp_to_string v#to_symbolic_1); *)
-	    extend_pc_random v#to_symbolic_1 true
 
   method eval_addr_exp exp =
-    let c32 x = V.Constant(V.Int(V.REG_32, x)) in
     let v = self#eval_int_exp exp in
-      try v#to_concrete_32
-      with
-	  NotConcrete _ ->
-	    let e = v#to_symbolic_32 in
-	      Printf.printf "Symbolic address %s\n" (V.exp_to_string e);
-	      let bits = ref 0L in
-		restore_path_cond
-		  (fun () ->
-		     for b = 31 downto 0 do
-		       let bit = extend_pc_random
-			 (V.Cast(V.CAST_LOW, V.REG_1,
-				 (V.BinOp(V.ARSHIFT, e,
-					  (c32 (Int64.of_int b)))))) false
-		       in
-			 bits := (Int64.logor (Int64.shift_left !bits 1)
-				    (if bit then 1L else 0L));
-		     done);
-		Printf.printf "Picked concrete value 0x%Lx\n" !bits;
-		add_to_path_cond (V.BinOp(V.EQ, e, (c32 !bits)));
-		!bits
+      v#to_concrete_32
 
   method eval_label_exp e =
     match e with
@@ -2268,6 +2116,171 @@ class ['d] frag_machine factory = object(self)
       String.concat ""
 	(List.map (fun b -> String.make 1 (Char.chr b))
 	   (bytes_loop 0))
+end
+
+class ['d] sym_path_frag_machine factory = object(self)
+  inherit ['d] frag_machine factory as fm
+
+  val mutable path_cond = []
+
+  method add_to_path_cond cond =
+    path_cond <- cond :: path_cond
+      
+  method restore_path_cond f =
+    let saved_pc = path_cond in
+    let ret = f () in
+      path_cond <- saved_pc;
+      ret
+
+  val query_engine = new stpvc_engine
+    (* val query_engine = new stp_external_engine "fuzz.stp" *)
+
+  method match_input_var s =
+    try
+      if (String.sub s 0 5) = "input" then
+	let wo_input = String.sub s 5 ((String.length s) - 5) in
+	try
+	  let uscore_loc = String.index wo_input '_' in
+	  let n_str = String.sub wo_input 0 uscore_loc in
+	    Some (int_of_string n_str)
+	with
+	  | Not_found ->
+	      Some (int_of_string wo_input)
+      else
+	None
+    with
+      | Not_found -> None
+      | Failure "int_of_string" -> None
+
+  method walk_temps f exp =
+    let h = V.VarHash.create 21 in
+    let temps = ref [] in
+    let rec walk = function
+      | V.BinOp(_, e1, e2) -> walk e1; walk e2
+      | V.UnOp(_, e1) -> walk e1
+      | V.Constant(_) -> ()
+      | V.Lval(V.Temp(var)) ->
+	  if (try V.VarHash.find h var; true with Not_found -> false) then
+	    ()
+	  else
+	    (try 
+	       let e = V.VarHash.find exprs_hash_back var in
+		 V.VarHash.replace h var ();
+		 walk e;
+		 temps := (f var e) :: !temps;
+	     with Not_found -> ())
+      | V.Lval(V.Mem(_, e1, _)) -> walk e1
+      | V.Name(_) -> ()
+      | V.Cast(_, _, e1) -> walk e1
+      | V.Unknown(_) -> ()
+      | V.Let(_, _, _) -> failwith "Unhandled let in walk_temps"
+    in
+      walk exp;
+      List.rev !temps
+
+  method query_with_path_cond cond verbose =
+    let i_vars = Hashtbl.fold (fun s v l -> v :: l) input_vars [] in
+    let pc = (constant_fold_rec
+		(List.fold_left (fun a b -> V.BinOp(V.BITAND, a, b))
+		   V.exp_true (List.rev (cond :: path_cond)))) in
+    let temps = self#walk_temps (fun var e -> (var, e)) pc in
+    let t_vars = List.map (fun (v, _) -> v) temps in
+      query_engine#prepare i_vars t_vars;
+      List.iter (fun (v, exp) -> (query_engine#assert_eq v exp)) temps;
+      (* Printf.printf "PC is %s\n" (V.exp_to_string pc); *)
+      (* Printf.printf "Condition is %s\n" (V.exp_to_string cond); *)
+      let time_before = Sys.time () in
+      let (result, ce) = query_engine#query pc in
+      let is_sat = not result in
+	if is_sat && verbose then
+	  (Printf.printf "Satisfiable ";
+	   let str = String.make 30 ' ' in
+	     List.iter
+	       (fun (var_s, value) ->
+		  match self#match_input_var var_s with
+		    | Some n -> str.[n] <- 
+			(char_of_int (Int64.to_int (value ())))
+		    | None -> ())
+	       ce;
+	     let str' = ref str in
+	       (try 
+		  while String.rindex !str' ' ' = (String.length !str') - 1 do
+		    str' := String.sub !str' 0 ((String.length !str') - 1)
+		  done;
+		with Not_found -> ());
+	       (try
+		  while String.rindex !str' '\000' = (String.length !str') - 1
+		  do
+		    str' := String.sub !str' 0 ((String.length !str') - 1)
+		  done;
+		with Not_found -> ());
+	       Printf.printf "by \"%s\"\n" (String.escaped !str'));
+	if ((Sys.time ()) -. time_before) > 1.0 then
+	  Printf.printf "Slow query (%f sec)\n"
+	    ((Sys.time ()) -. time_before)
+	else ();
+	flush stdout;
+	query_engine#unprepare;
+	is_sat
+
+  method query_with_pc_random cond verbose =
+    let try1 = Random.bool () in	
+      if verbose then Printf.printf "Trying %B: " try1;	      
+      let cond1 = (if try1 then cond
+		   else V.UnOp(V.NOT, cond)) in
+	if (self#query_with_path_cond cond1 verbose) then
+	  (try1, cond1)
+	else
+	  (if verbose then Printf.printf "Okay, trying %B: " (not try1);
+	   let cond2 = (if (not try1) then cond
+			else V.UnOp(V.NOT, cond)) in
+	     if (self#query_with_path_cond cond2 verbose) then
+	       ((not try1), cond2)
+	     else
+	       failwith "Both directions of condition are unsat")
+	    
+  method extend_pc_random cond verbose =
+    let (result, cond') = self#query_with_pc_random cond verbose in
+      path_cond <- cond' :: path_cond;
+      result
+
+  method eval_bool_exp exp =
+    let v = self#eval_int_exp exp in
+      try
+	if v#to_concrete_1 = 1 then true else false
+      with
+	  NotConcrete _ ->
+	    (* Printf.printf "Symbolic branch condition %s\n"
+	      (V.exp_to_string v#to_symbolic_1); *)
+	    self#extend_pc_random v#to_symbolic_1 true
+
+  method eval_addr_exp exp =
+    let c32 x = V.Constant(V.Int(V.REG_32, x)) in
+    let v = self#eval_int_exp exp in
+      try v#to_concrete_32
+      with
+	  NotConcrete _ ->
+	    let e = v#to_symbolic_32 in
+	      Printf.printf "Symbolic address %s\n" (V.exp_to_string e);
+	      let bits = ref 0L in
+		self#restore_path_cond
+		  (fun () ->
+		     for b = 31 downto 0 do
+		       let bit = self#extend_pc_random
+			 (V.Cast(V.CAST_LOW, V.REG_1,
+				 (V.BinOp(V.ARSHIFT, e,
+					  (c32 (Int64.of_int b)))))) false
+		       in
+			 bits := (Int64.logor (Int64.shift_left !bits 1)
+				    (if bit then 1L else 0L));
+		     done);
+		Printf.printf "Picked concrete value 0x%Lx\n" !bits;
+		self#add_to_path_cond (V.BinOp(V.EQ, e, (c32 !bits)));
+		!bits
+
+  method reset () =
+    fm#reset ();
+    path_cond <- []
 end
 
 let trans_cache = Hashtbl.create 100000 
@@ -3004,7 +3017,11 @@ object(self)
       | Unix.Unix_error(err, _, _) -> self#put_errno err
 
   method sys_fstat64 fd buf_addr =
-    let oc_buf = Unix.fstat (self#get_fd fd) in
+    let oc_buf =
+      (if (fd <> 1) then
+	 Unix.fstat (self#get_fd fd)
+       else
+	 Unix.stat "/etc/group") (* pretend stdout is always redirected *) in
       self#write_oc_statbuf buf_addr oc_buf;
       put_reg eax_var 0L (* success *)
 
@@ -3972,7 +3989,21 @@ let check_memory_size () =
       close_in chan;
       assert((String.sub line 0 7) = "VmSize:");
       String.sub line 7 ((String.length line) - 7)
-    
+
+let check_memory_usage fm =
+  Printf.printf "Counted size is %d\n"
+    (fm#measure_size +
+       (Hashtbl.fold
+	  (fun k (dl, sl) s -> s + (stmt_size (V.Block(dl,sl))))
+	  trans_cache 0));
+  Printf.printf "/proc size is %s\n" (check_memory_size ());
+  Printf.printf "Outstanding STP objects: %Ld\n"
+    (0L (*Stpvc.finalizer_stats ()*));
+  Gc.print_stat stdout
+
+let for_breakpoint () =
+  Printf.printf "Breakpoint here\n"
+
 let fuzz_pcre fm eip_var mem_var asmir_gamma =
   let eip = fm#get_word_var eip_var
   in
@@ -3982,7 +4013,7 @@ let fuzz_pcre fm eip_var mem_var asmir_gamma =
 	start_wtime = Unix.gettimeofday () and
         start_ctime = Sys.time () in
       (* while true do *)
-      for l_iter = 1 to 5 do
+      for l_iter = 1 to 30 do
 	iter := Int64.add !iter 1L;
 	let (* regex = random_regex 20 and *)
 	    old_tcs = Hashtbl.length trans_cache and
@@ -3992,7 +4023,6 @@ let fuzz_pcre fm eip_var mem_var asmir_gamma =
 	  (* fm#store_cstr 0x08063c20L 0L regex; *)
 	  Printf.printf "Iteration %Ld:\n" !iter;
 	  Random.init (Int64.to_int !iter);
-	  path_cond := [];
 	  fm#store_symbolic_cstr 0x08063c20L 20;
 	  (try
 	     runloop fm eip_var 0x08048656L mem_var asmir_gamma
@@ -4000,8 +4030,6 @@ let fuzz_pcre fm eip_var mem_var asmir_gamma =
 	   with
 	     | Failure("Jump to 0") -> () (* equivalent of segfault *)
 	     | SimulatedExit(_) -> ()
-	     | SymbolicAddress e ->
-		 Printf.printf "Giving up on symbolic address\n"
 	  );
 	  if (Hashtbl.length trans_cache - old_tcs > 0) then
 	    (* Printf.printf "Coverage increased to %d with %s on %Ld\n"
@@ -4009,22 +4037,19 @@ let fuzz_pcre fm eip_var mem_var asmir_gamma =
 	    Printf.printf "Coverage increased to %d on %Ld\n"
 	      (Hashtbl.length trans_cache) !iter
 	  else ();
- 	  Printf.printf "Counted size is %d\n"
-	    (fm#measure_size +
-	       (Hashtbl.fold
-		  (fun k (dl, sl) s -> s + (stmt_size (V.Block(dl,sl))))
-		  trans_cache 0));
-	  Printf.printf "/proc size is %s\n" (check_memory_size ());
-	  (* Gc.compact ();
-	   let st = Gc.quick_stat () in
-	     Printf.printf "OCaml GC size is %d\n" st.Gc.live_words*)
-	  Gc.print_stat stdout;
 	  (let ctime = Sys.time() in
              Printf.printf "CPU time %f sec, %f total\n"
                         (ctime -. old_ctime) (ctime -. start_ctime));
 	  (let wtime = Unix.gettimeofday() in
              Printf.printf "Wall time %f sec, %f total\n"
                         (wtime -. old_wtime) (wtime -. start_wtime));
+	  check_memory_usage fm;
+	  if (Int64.rem !iter 27L) = 0L then
+	    (for_breakpoint ();
+	     Gc.full_major();
+	     for_breakpoint ();
+	     Printf.printf "After full collection:\n";
+	     check_memory_usage fm);	  
 	  fm#reset ();
 	  flush stdout
       done;
@@ -4051,7 +4076,8 @@ let main argc argv =
     let eip_var = List.find (fun (i, s, t) -> s = "R_EIP") dl in
     let mem_var = List.find (fun (i, s, t) -> s = "mem") dl in
     let asmir_gamma = Asmir.gamma_create mem_var dl in
-    let fm = new frag_machine (new symbolic_domain (V.Unknown("factory"))) in
+    let fm = new sym_path_frag_machine
+      (new symbolic_domain (V.Unknown("factory"))) in
     (* let fm = new fake_frag_machine prog in *)
       fm#init_prog prog;
       fm#add_special_handler
