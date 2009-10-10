@@ -2173,31 +2173,49 @@ class decision_tree = object(self)
       | (true,  _, Some None) ->
 	  failwith "Tried to extend an unsat branch"
 
-  method try_branches (trans_func : bool -> V.exp)
+  method record_unsat b =
+    match (b, cur.f_child, cur.t_child) with
+      | (false, None, _) ->
+	  cur.f_child <- Some None
+      | (true,  _, None) ->
+	  cur.t_child <- Some None
+      | (false, Some None, _)
+      | (true,  _, Some None) -> () (* already recorded *)
+      | (false, Some (Some _), _)
+      | (true,  _, Some (Some _)) ->
+	  failwith "Trying to make sat branch unsat in record_unsat"
+
+  method try_extend (trans_func : bool -> V.exp)
     try_func (non_try_func : bool -> unit) =
     match (cur.f_child, cur.t_child) with
       | (Some(Some f_kid), Some(Some t_kid)) ->
 	  let b = Random.bool () in
 	    non_try_func b;
+	    self#extend b;
 	    (b, (trans_func b))
       | (Some(Some f_kid), Some None) ->
 	  non_try_func false;
+	  self#extend false;
 	  (false, (trans_func false))
       | (Some None, Some(Some t_kid)) ->
 	  non_try_func true;
+	  self#extend true;
 	  (true, (trans_func true))
       | (Some None, Some None) -> failwith "Unsat node in try_branches"
       | _ ->
 	  let b = Random.bool () in
 	  let c = trans_func b in
 	    if try_func b c then
-	      (b, c)
-	    else 
-	      let c' = trans_func (not b) in
-		if try_func (not b) c' then
-		  ((not b), c')
-		else
-		  failwith "Both branches unsat in try_branches"
+	      (self#extend b;
+	       (b, c))
+            else
+	      (self#record_unsat b;
+	       let c' = trans_func (not b) in
+		 if try_func (not b) c' then
+		   (self#extend (not b);
+		    ((not b), c'))
+		 else
+		   failwith "Both branches unsat in try_branches")
    
   method reset =
     cur <- root
@@ -2320,12 +2338,11 @@ class ['d] sym_path_frag_machine factory = object(self)
     let non_try_func b =
       if verbose then Printf.printf "Known %B\n" b
     in
-      dt#try_branches trans_func try_func non_try_func
-	    
+      dt#try_extend trans_func try_func non_try_func
+
   method extend_pc_random cond verbose =
     let (result, cond') = self#query_with_pc_random cond verbose in
       path_cond <- cond' :: path_cond;
-      dt#extend result;
       result
 
   method eval_bool_exp exp =
@@ -4103,8 +4120,8 @@ let fuzz_pcre fm eip_var mem_var asmir_gamma =
     let iter = ref 0L and
 	start_wtime = Unix.gettimeofday () and
         start_ctime = Sys.time () in
-      (* while true do *)
-      for l_iter = 1 to 30 do
+      while true do
+      (* for l_iter = 1 to 30 do *)
 	iter := Int64.add !iter 1L;
 	let (* regex = random_regex 20 and *)
 	    old_tcs = Hashtbl.length trans_cache and
@@ -4136,7 +4153,7 @@ let fuzz_pcre fm eip_var mem_var asmir_gamma =
              Printf.printf "Wall time %f sec, %f total\n"
                         (wtime -. old_wtime) (wtime -. start_wtime));
 	  check_memory_usage fm;
-	  if (Int64.rem !iter 27L) = 0L then
+	  if (Int64.rem !iter 10L) = 0L then
 	    (for_breakpoint ();
 	     Gc.full_major();
 	     for_breakpoint ();
