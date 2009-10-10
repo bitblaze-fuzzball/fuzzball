@@ -2118,10 +2118,96 @@ class ['d] frag_machine factory = object(self)
 	   (bytes_loop 0))
 end
 
+type decision_tree_node = {
+  mutable parent : decision_tree_node option;
+  (* None: unexplored; Some None: unsat; Some Some n: sat *)
+  mutable f_child : decision_tree_node option option;
+  mutable t_child : decision_tree_node option option;
+  mutable all_seen : bool}
+
+let new_dt_node the_parent =
+  {parent = the_parent;
+   f_child = None; t_child = None;
+   all_seen = false}
+
+class decision_tree = object(self)
+  val root = new_dt_node None
+  val mutable cur = new_dt_node None (* garbage *)
+
+  method init = cur <- root; self
+
+  method get_hist =
+    let child_is kid n =
+      match kid with
+	| Some (Some n') -> n' == n
+	| _ -> false
+    in
+    let last_choice n p =
+      if child_is p.f_child n then
+	false
+      else if child_is p.t_child n then
+	true
+      else
+	failwith "Parent invariant failure in get_hist"
+    in
+    let rec loop n =
+      match n.parent with
+	| None -> []
+	| Some p -> (last_choice n p) :: loop p
+    in
+      loop cur
+
+  method extend b =
+    match (b, cur.f_child, cur.t_child) with
+      | (false, Some(Some kid), _) -> cur <- kid
+      | (true,  _, Some(Some kid)) -> cur <- kid
+      | (false, None, _) ->
+	  let new_kid = new_dt_node (Some cur) in
+	    cur.f_child <- Some (Some new_kid);
+	    cur <- new_kid
+      | (true,  _, None) ->
+	  let new_kid = new_dt_node (Some cur) in
+	    cur.t_child <- Some (Some new_kid);
+	    cur <- new_kid
+      | (false, Some None, _)
+      | (true,  _, Some None) ->
+	  failwith "Tried to extend an unsat branch"
+
+  method try_branches (trans_func : bool -> V.exp)
+    try_func (non_try_func : bool -> unit) =
+    match (cur.f_child, cur.t_child) with
+      | (Some(Some f_kid), Some(Some t_kid)) ->
+	  let b = Random.bool () in
+	    non_try_func b;
+	    (b, (trans_func b))
+      | (Some(Some f_kid), Some None) ->
+	  non_try_func false;
+	  (false, (trans_func false))
+      | (Some None, Some(Some t_kid)) ->
+	  non_try_func true;
+	  (true, (trans_func true))
+      | (Some None, Some None) -> failwith "Unsat node in try_branches"
+      | _ ->
+	  let b = Random.bool () in
+	  let c = trans_func b in
+	    if try_func b c then
+	      (b, c)
+	    else 
+	      let c' = trans_func (not b) in
+		if try_func (not b) c' then
+		  ((not b), c')
+		else
+		  failwith "Both branches unsat in try_branches"
+   
+  method reset =
+    cur <- root
+end
+
 class ['d] sym_path_frag_machine factory = object(self)
   inherit ['d] frag_machine factory as fm
 
   val mutable path_cond = []
+  val dt = (new decision_tree)#init
 
   method add_to_path_cond cond =
     path_cond <- cond :: path_cond
@@ -2224,24 +2310,22 @@ class ['d] sym_path_frag_machine factory = object(self)
 	is_sat
 
   method query_with_pc_random cond verbose =
-    let try1 = Random.bool () in	
-      if verbose then Printf.printf "Trying %B: " try1;	      
-      let cond1 = (if try1 then cond
-		   else V.UnOp(V.NOT, cond)) in
-	if (self#query_with_path_cond cond1 verbose) then
-	  (try1, cond1)
-	else
-	  (if verbose then Printf.printf "Okay, trying %B: " (not try1);
-	   let cond2 = (if (not try1) then cond
-			else V.UnOp(V.NOT, cond)) in
-	     if (self#query_with_path_cond cond2 verbose) then
-	       ((not try1), cond2)
-	     else
-	       failwith "Both directions of condition are unsat")
+    let trans_func b =
+      if b then cond else V.UnOp(V.NOT, cond)
+    in
+    let try_func b cond' =
+      if verbose then Printf.printf "Trying %B: " b;
+      self#query_with_path_cond cond' verbose
+    in
+    let non_try_func b =
+      if verbose then Printf.printf "Known %B\n" b
+    in
+      dt#try_branches trans_func try_func non_try_func
 	    
   method extend_pc_random cond verbose =
     let (result, cond') = self#query_with_pc_random cond verbose in
       path_cond <- cond' :: path_cond;
+      dt#extend result;
       result
 
   method eval_bool_exp exp =
@@ -2278,9 +2362,16 @@ class ['d] sym_path_frag_machine factory = object(self)
 		self#add_to_path_cond (V.BinOp(V.EQ, e, (c32 !bits)));
 		!bits
 
+  method finish_path =
+    let path_str = String.concat ""
+      (List.map (fun b -> if b then "1" else "0") (List.rev dt#get_hist));
+    in
+      Printf.printf "Path: %s\n" path_str
+
   method reset () =
     fm#reset ();
-    path_cond <- []
+    path_cond <- [];
+    dt#reset
 end
 
 let trans_cache = Hashtbl.create 100000 
@@ -3998,7 +4089,7 @@ let check_memory_usage fm =
 	  trans_cache 0));
   Printf.printf "/proc size is %s\n" (check_memory_size ());
   Printf.printf "Outstanding STP objects: %Ld\n"
-    (0L (*Stpvc.finalizer_stats ()*));
+    (0L (* Stpvc.finalizer_stats ()*));
   Gc.print_stat stdout
 
 let for_breakpoint () =
@@ -4031,6 +4122,7 @@ let fuzz_pcre fm eip_var mem_var asmir_gamma =
 	     | Failure("Jump to 0") -> () (* equivalent of segfault *)
 	     | SimulatedExit(_) -> ()
 	  );
+	  fm#finish_path;
 	  if (Hashtbl.length trans_cache - old_tcs > 0) then
 	    (* Printf.printf "Coverage increased to %d with %s on %Ld\n"
 	      (Hashtbl.length trans_cache) regex !iter *)
