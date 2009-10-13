@@ -883,6 +883,8 @@ class virtual memory = object(self)
   method virtual maybe_load_byte : Int64.t -> int option
   method virtual clear : unit -> unit
 
+  method measure_size = 0
+
   method load_byte addr =
     match (self#maybe_load_byte addr) with
       | Some b -> b
@@ -991,6 +993,11 @@ class string_memory = object(self)
 
   method clear () =
     Array.fill mem 0 0x100001 None
+
+  method measure_size = 
+    Array.fold_right
+      (fun page c -> c + match page with None -> 0 | Some _ -> 4096)
+      mem 0
 end
 
 class hash_memory = object(self)
@@ -1578,6 +1585,34 @@ object(self)
     diff#clear (); ()
 end
 
+class ['d] concrete_adaptor_memory (mem:memory) factory = object(self)
+  method store_byte  addr (b:'d) = mem#store_byte  addr b#to_concrete_8
+  method store_short addr (s:'d) = mem#store_short addr s#to_concrete_16
+  method store_word  addr (w:'d) = mem#store_word  addr w#to_concrete_32
+  method store_long  addr (l:'d) = mem#store_word  addr l#to_concrete_64
+
+  method load_byte  addr :'d = factory#from_concrete_8 (mem#load_byte  addr)
+  method load_short addr :'d = factory#from_concrete_16(mem#load_short addr)
+  method load_word  addr :'d = factory#from_concrete_32(mem#load_word  addr)
+  method load_long  addr :'d = factory#from_concrete_64(mem#load_long  addr)
+
+  method maybe_load_byte  addr = match mem#maybe_load_byte addr with
+    | None -> None | Some b -> Some(factory#from_concrete_8 b)
+  method maybe_load_short  addr = match mem#maybe_load_short addr with
+    | None -> None | Some s -> Some(factory#from_concrete_16 s)
+  method maybe_load_word  addr = match mem#maybe_load_word addr with
+    | None -> None | Some w -> Some(factory#from_concrete_32 w)
+  method maybe_load_long  addr = match mem#maybe_load_long addr with
+    | None -> None | Some l -> Some(factory#from_concrete_64 l)
+
+  method sync_chunk addr thunk =
+    self#store_long addr (thunk ())
+
+  method measure_size = mem#measure_size
+
+  method clear () = mem#clear ()
+end
+
 class parallel_check_memory mem1 mem2 = object(self)
   inherit memory
 
@@ -1668,7 +1703,7 @@ class ['d] frag_machine factory = object(self)
 
   val mem = (new granular_snapshot_memory
 	       (* (new granular_memory (new concrete_domain 0L)) *)
-	       (new granular_memory
+	       (new concrete_adaptor_memory (new string_memory)
 		  (new symbolic_domain (V.Unknown("factory"))))
 	       (new granular_memory
 		  (new symbolic_domain (V.Unknown("factory"))))
