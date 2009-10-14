@@ -2151,6 +2151,16 @@ class ['d] frag_machine factory = object(self)
       String.concat ""
 	(List.map (fun b -> String.make 1 (Char.chr b))
 	   (bytes_loop 0))
+
+  method print_backtrace =
+    let rec loop ebp =
+      let prev_ebp = self#load_word_conc ebp and
+	  ret_addr = self#load_word_conc (Int64.add ebp 4L) in
+	Printf.printf "0x%08Lx 0x%08Lx 0x%08Lx\n" ebp prev_ebp ret_addr;
+	if (prev_ebp <> 0L) then
+	  loop prev_ebp
+    in
+      loop (self#get_word_var (List.nth (self#get_x86_gprs ()) 7))
 end
 
 type decision_tree_node = {
@@ -2428,6 +2438,8 @@ end
 
 let trans_cache = Hashtbl.create 100000 
 
+exception Simplify_failure of string
+
 let cfold_exprs (dl, sl) =
   let sl' = List.map
     (fun st -> match st with
@@ -2472,7 +2484,8 @@ let rec cfold_with_type e =
 	let (e1', ty1) = cfold_with_type e1 in
 	let e' = if ty = ty1 then e1' else V.Cast(kind, ty, e1') in
 	  (e', ty)
-    | V.Unknown(_) -> failwith "unhandled unknown in cfold_with_type"
+    | V.Unknown(_) ->
+	raise (Simplify_failure "unhandled unknown in cfold_with_type")
     | V.Let(_) -> failwith "unhandled let in cfold_with_type"
 
 let cfold_exprs_w_type (dl, sl) =
@@ -2982,6 +2995,39 @@ object(self)
       store_word addr 89 ino;     (* low bits of 64-bit inode *)
       store_word addr 92 0L;      (* high bits of 64-bit inode *)
 
+  method write_fake_statfs64buf addr =
+    (* OCaml's Unix module doesn't provide an interface for this
+       information, so we just make it up. *)
+    let f_type   = 0x52654973L (* REISERFS_SUPER_MAGIC *) and
+	f_bsize  = 4096L and
+	f_blocks = 244182546L and
+	f_bfree  = 173460244L and
+	f_bavail = 173460244L and
+	f_files  = 0L and
+	f_ffree  = 0L and
+	f_fsid_0 = 0L and
+	f_fsid_1 = 0L and
+	f_namelen = 255L and
+	f_frsize = 4096L
+    in
+      store_word addr  0 f_type;
+      store_word addr  4 f_bsize;
+      store_word addr  8 f_blocks;
+      store_word addr 12 0L;     (* high word of f_blocks *)
+      store_word addr 16 f_bfree;
+      store_word addr 20 0L;     (* high word of f_bfree *)
+      store_word addr 24 f_bavail;
+      store_word addr 28 0L;     (* high word of f_bavail *)
+      store_word addr 32 f_files;
+      store_word addr 36 0L;     (* high word of f_files *)
+      store_word addr 40 f_ffree;
+      store_word addr 44 0L;     (* high word of f_ffree *)
+      store_word addr 48 f_fsid_0;
+      store_word addr 52 f_fsid_1;
+      store_word addr 56 f_namelen;
+      store_word addr 60 f_frsize
+      (* offsets 64, 68, 72, 76, 80: f_spare[5] reserved *)
+
   method sys_access path mode =
     let oc_mode =
       (if   (mode land 0x7)= 0 then [Unix.F_OK] else []) @
@@ -3016,7 +3062,7 @@ object(self)
   method sys_futex uaddr op value timebuf uaddr2 val3 =
     let ret = 
       match (op, value) with
-	| (129 (* FUTEX_WAKE_PRIVATE *), 1L) ->
+	| (129 (* FUTEX_WAKE_PRIVATE *), _) ->
 	    0L (* never anyone to wake *)
 	| _ -> failwith "Unhandled futex operation"
     in
@@ -3167,6 +3213,11 @@ object(self)
 	 Unix.stat "/etc/group") (* pretend stdout is always redirected *) in
       self#write_oc_statbuf buf_addr oc_buf;
       put_reg eax_var 0L (* success *)
+
+  method sys_statfs64 path buf_len struct_buf =
+    assert(buf_len = 84);
+    self#write_fake_statfs64buf struct_buf;
+    put_reg eax_var 0L (* success *)
 
   method sys_time addr =
     let time = Int64.of_float (Unix.time ()) in
@@ -3837,7 +3888,13 @@ object(self)
 	 | 259 -> (* timer_create *)
 	     failwith "Unhandled Linux system call timer_create (259)"
 	 | 268 -> (* statfs64 *)
-	     failwith "Unhandled Linux system call statfs64 (268)"
+	     let path_buf = ebx and
+		 buf_len = Int64.to_int ecx and
+		 struct_buf = edx in
+	     let path = fm#read_cstr path_buf in
+	       Printf.printf "statfs64(\"%s\", %d, 0x%08Lx)"
+		 path buf_len struct_buf;
+	       self#sys_statfs64 path buf_len struct_buf
 	 | 269 -> (* fstatfs64 *)
 	     failwith "Unhandled Linux system call fstatfs64 (269)"
 	 | 270 -> (* tgkill *)
@@ -4052,7 +4109,7 @@ let rec runloop fm eip_var eip mem_var asmir_gamma until =
     let prog = (dl, (remove_known_unknowns sl)) in
       (* Libasmir.print_disasm_rawbytes Libasmir.Bfd_arch_i386 eip insn_bytes;
 	 print_string "\n"; *)
-      (* Printf.printf "EIP is %08Lx\n" eip;*)
+      (* Printf.printf "EIP is %08Lx\n" eip; *)
       (* Printf.printf "Watchpoint val is %02x\n" (load_byte 0x501650e8L); *)
       (* Printf.printf ("Insn bytes are %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x\n") (load_byte eip)
 	 (load_byte (Int64.add eip (Int64.of_int 1)))
@@ -4230,8 +4287,11 @@ let main argc argv =
       try
 	fuzz_pcre fm eip_var mem_var asmir_gamma
       with
-	  NotConcrete e ->
+	| NotConcrete e ->
 	    Printf.printf "Unexpected symbolic value: %s\n" (V.exp_to_string e)
+	| Simplify_failure s ->
+	    Printf.printf "Simplify failure <%s> at:\n" s;
+	    fm#print_backtrace;
 
       (* let eip = fm#get_word_var eip_var in
 	runloop fm eip_var eip mem_var asmir_gamma None (* run until exit *) *)
