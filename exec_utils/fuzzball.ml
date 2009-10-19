@@ -799,6 +799,7 @@ class stpvc_engine = object(self)
       (result, ce)
 
   method unprepare =
+    Libstp.vc_clearDecls vc;
     Libstp.vc_pop vc;
     ctx <- None;
     Libstp.vc_push vc;
@@ -4197,12 +4198,8 @@ let check_memory_usage fm =
 	  (fun k (dl, sl) s -> s + (stmt_size (V.Block(dl,sl))))
 	  trans_cache 0));
   Printf.printf "/proc size is %s\n" (check_memory_size ());
-  Printf.printf "Outstanding STP objects: %Ld\n"
-    (0L (* Stpvc.finalizer_stats ()*));
+  flush stdout;
   Gc.print_stat stdout
-
-let for_breakpoint () =
-  Printf.printf "Breakpoint here\n"
 
 let fuzz_pcre fm eip_var mem_var asmir_gamma =
   let eip = fm#get_word_var eip_var
@@ -4245,12 +4242,6 @@ let fuzz_pcre fm eip_var mem_var asmir_gamma =
              Printf.printf "Wall time %f sec, %f total\n"
                         (wtime -. old_wtime) (wtime -. start_wtime));
 	  check_memory_usage fm;
-	  if (Int64.rem !iter 10L) = 0L then
-	    (for_breakpoint ();
-	     Gc.full_major();
-	     for_breakpoint ();
-	     Printf.printf "After full collection:\n";
-	     check_memory_usage fm);	  
 	  fm#reset ();
 	  flush stdout
       done;
