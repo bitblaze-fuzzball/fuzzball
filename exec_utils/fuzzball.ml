@@ -4019,14 +4019,6 @@ end
 
 let rec runloop fm eip_var eip mem_var asmir_gamma until =
   let load_byte addr = fm#load_byte_conc addr in
-  (* let read_reg32 var = fm#get_word_var var in
-  let (eax_var, ebx_var, ecx_var, edx_var, esi_var, edi_var,
-       esp_var, ebp_var, eflags_var, gs_var, gdt_var) =
-    match fm#get_x86_gprs () with
-      | [a; b; c; d; si; di; sp; bp; fl; gs; gd]
-	-> (a, b, c, d, si, di, sp, bp, fl, gs, gd)
-      | _ -> failwith "Bad length for gpr_vars"
-  in *)
   let decode_insn eip =
     let insn_bytes = Array.init 16
       (fun i -> Char.chr (load_byte (Int64.add eip (Int64.of_int i))))
@@ -4142,11 +4134,6 @@ let rec runloop fm eip_var eip mem_var asmir_gamma until =
   in
     loop eip
 
-let usage = "trans_eval [options]* file.ir\n"
-let infile = ref ""
-let infile_set = ref false
-let arg_name s = infile := s; infile_set := true
-
 let random_regex maxlen =
   let len = Random.int maxlen in
   let str = String.create len in
@@ -4201,53 +4188,66 @@ let check_memory_usage fm =
   flush stdout;
   Gc.print_stat stdout
 
-let fuzz_pcre fm eip_var mem_var asmir_gamma =
-  let eip = fm#get_word_var eip_var
-  in
-    runloop fm eip_var eip mem_var asmir_gamma (Some 0x08048656L);
-    fm#make_snap (); Printf.printf "Took snapshot\n";
-    let iter = ref 0L and
-	start_wtime = Unix.gettimeofday () and
-        start_ctime = Sys.time () in
-      while true do
-      (* for l_iter = 1 to 30 do *)
-	iter := Int64.add !iter 1L;
-	let (* regex = random_regex 20 and *)
-	    old_tcs = Hashtbl.length trans_cache and
-	    old_wtime = Unix.gettimeofday () and
+let loop_w_stats count fn =
+  let iter = ref 0L and
+      start_wtime = Unix.gettimeofday () and
+      start_ctime = Sys.time () in
+    while (match count with
+	     | None -> true
+	     | Some i -> (Int64.to_int !iter) < i)
+    do
+      iter := Int64.add !iter 1L;
+	let old_wtime = Unix.gettimeofday () and
             old_ctime = Sys.time () in
-	  (* Printf.printf "Iteration %Ld: %s\n" !iter regex; *)
-	  (* fm#store_cstr 0x08063c20L 0L regex; *)
 	  Printf.printf "Iteration %Ld:\n" !iter;
-	  Random.init (Int64.to_int !iter);
-	  fm#store_symbolic_cstr 0x08063c20L 20;
-	  (try
-	     runloop fm eip_var 0x08048656L mem_var asmir_gamma
-	       (Some 0x080486d2L);
-	   with
-	     | Failure("Jump to 0") -> () (* equivalent of segfault *)
-	     | SimulatedExit(_) -> ()
-	  );
-	  fm#finish_path;
-	  if (Hashtbl.length trans_cache - old_tcs > 0) then
-	    (* Printf.printf "Coverage increased to %d with %s on %Ld\n"
-	      (Hashtbl.length trans_cache) regex !iter *)
-	    Printf.printf "Coverage increased to %d on %Ld\n"
-	      (Hashtbl.length trans_cache) !iter
-	  else ();
+	  fn !iter;
 	  (let ctime = Sys.time() in
              Printf.printf "CPU time %f sec, %f total\n"
-                        (ctime -. old_ctime) (ctime -. start_ctime));
+               (ctime -. old_ctime) (ctime -. start_ctime));
 	  (let wtime = Unix.gettimeofday() in
              Printf.printf "Wall time %f sec, %f total\n"
-                        (wtime -. old_wtime) (wtime -. start_wtime));
-	  check_memory_usage fm;
-	  fm#reset ();
+               (wtime -. old_wtime) (wtime -. start_wtime));
 	  flush stdout
-      done;
-      Gc.full_major (); (* for the benefit of leak checking *)
-      Gc.print_stat stdout
+    done;
+    Gc.full_major () (* for the benefit of leak checking *)
 
+let fuzz_sym_str start_eip end_eip buf_addr buf_len 
+    fm eip_var mem_var asmir_gamma
+    =
+  let eip = fm#get_word_var eip_var
+  in
+    runloop fm eip_var eip mem_var asmir_gamma (Some start_eip);
+    fm#make_snap (); Printf.printf "Took snapshot\n";
+    loop_w_stats None
+      (fun iter ->
+	 let old_tcs = Hashtbl.length trans_cache in
+	   Random.init (Int64.to_int iter);
+	   fm#store_symbolic_cstr buf_addr buf_len;
+	   (try
+	      runloop fm eip_var start_eip mem_var asmir_gamma (Some end_eip);
+	    with
+	      | Failure("Jump to 0") -> () (* equivalent of segfault *)
+	      | SimulatedExit(_) -> ()
+	   );
+	   fm#finish_path;
+	   if (Hashtbl.length trans_cache - old_tcs > 0) then
+	     (* Printf.printf "Coverage increased to %d with %s on %Ld\n"
+		(Hashtbl.length trans_cache) regex iter *)
+	     Printf.printf "Coverage increased to %d on %Ld\n"
+	       (Hashtbl.length trans_cache) iter
+	   else ();
+	   check_memory_usage fm;
+	   fm#reset ()
+      );
+    Gc.print_stat stdout
+
+let fuzz_pcre (fm : symbolic_domain sym_path_frag_machine) =
+  fuzz_sym_str 0x08048656L 0x080486d2L 0x08063c20L 20 fm
+
+let usage = "trans_eval [options]* file.ir\n"
+let infile = ref ""
+let infile_set = ref false
+let arg_name s = infile := s; infile_set := true
 
 let main argc argv = 
   let speclist = Vine_parser.defspecs in 
