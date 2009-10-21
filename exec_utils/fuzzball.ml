@@ -879,7 +879,7 @@ class stp_external_engine fname = object(self)
     visitor <- None
 end
 
-class virtual memory = object(self)
+class virtual concrete_memory = object(self)
   method virtual store_byte : Int64.t -> int -> unit
   method virtual maybe_load_byte : Int64.t -> int option
   method virtual clear : unit -> unit
@@ -960,8 +960,8 @@ class virtual memory = object(self)
 	   (Int64.logor (Int64.shift_left b7 48) (Int64.shift_left b8 56)))
 end
 
-class string_memory = object(self)
-  inherit memory
+class concrete_string_memory = object(self)
+  inherit concrete_memory
 
   (* The extra page is a hacky way to not crash on address wrap-around *)
   val mem = Array.init 0x100001 (fun _ -> None)
@@ -1001,8 +1001,8 @@ class string_memory = object(self)
       mem 0
 end
 
-class hash_memory = object(self)
-  inherit memory
+class concrete_hash_memory = object(self)
+  inherit concrete_memory
 
   val mem = Hashtbl.create 1000
 
@@ -1019,8 +1019,8 @@ class hash_memory = object(self)
     Hashtbl.clear mem
 end
 
-class snapshot_memory main diff = object(self)
-  inherit memory
+class concrete_snapshot_memory main diff = object(self)
+  inherit concrete_memory
     
   val mutable have_snap = false
 
@@ -1046,576 +1046,8 @@ class snapshot_memory main diff = object(self)
     diff#clear ()
 end
 
-let split64 l =
-  ((l#extract_32_from_64 0), (l#extract_32_from_64 4))
-
-let split32 l =
-  ((l#extract_16_from_32 0), (l#extract_16_from_32 2))
-
-let split16 l =
-  ((l#extract_8_from_16 0), (l#extract_8_from_16 1))
-
-(* At the moment, there are still some calls to endian_i, but there
-   are places where endianness checking is missing, so assume
-   little-endian for the time being.
-
-  let endianness = V.Little
-
-  let endian_i n k = 
-    match endianness with
-      | V.Little -> k
-      | V.Big -> n - k  
-*)
-
-let endian_i n k = k
-
-type 'a gran8 = Byte of 'a
-  
-type 'a gran16 = Short of 'a
-	      | Gran8s of 'a gran8 * 'a gran8
-		  
-type 'a gran32 = Word of 'a
-	      | Gran16s of 'a gran16 * 'a gran16
-		    
-type 'a gran64 = Long of 'a
-	      | Gran32s of 'a gran32 * 'a gran32
-
-let gran8_get_byte (Byte l) = l
-
-let gran16_get_byte g16 which =
-  assert(which >= 0); assert(which < 2);
-  match g16 with
-    | Short(l) -> l#extract_8_from_16 (endian_i 2 which)
-    | Gran8s(g1, g2) ->
-	if which < 1 then
-	  gran8_get_byte g1
-	else
-	  gran8_get_byte g2
-		  
-let gran32_get_byte g32 which =
-  assert(which >= 0); assert(which < 4);
-  match g32 with
-    | Word(l) -> l#extract_8_from_32 (endian_i 4 which)
-    | Gran16s(g1, g2) ->
-	if which < 2 then
-	  gran16_get_byte g1 which
-	else
-	  gran16_get_byte g2 (which - 2)
-
-let gran64_get_byte g64 which =
-  assert(which >= 0); assert(which < 8);
-  match g64 with
-    | Long(l) -> l#extract_8_from_64 (endian_i 8 which)
-    | Gran32s(g1, g2) ->
-	if which < 4 then
-	  gran32_get_byte g1 which
-	else
-	  gran32_get_byte g2 (which - 4)
-
-let gran16_get_short g16 =
-  match g16 with
-    | Short(l) -> l
-    | Gran8s(g1, g2) -> (gran8_get_byte g1)#assemble16 (gran8_get_byte g2)
-
-let gran32_get_short g32 which =
-  assert(which = 0 or which = 2);
-  match g32 with
-    | Word(l) -> l#extract_16_from_32 (endian_i 4 which)
-    | Gran16s(g1, g2) ->
-	if which < 2 then
-	  gran16_get_short g1
-	else
-	  gran16_get_short g2
-
-let gran64_get_short g64 which =
-  assert(which = 0 or which = 2 or which = 4 or which = 6);
-  match g64 with
-    | Long(l) -> l#extract_16_from_64 (endian_i 8 which)
-    | Gran32s(g1, g2) ->
-	if which < 4 then
-	  gran32_get_short g1 which
-	else
-	  gran32_get_short g2 (which - 4)
-
-let gran32_get_word g32 =
-  match g32 with
-    | Word(l) -> l
-    | Gran16s(g1, g2) -> ((gran16_get_short g1)#assemble32
-			    (gran16_get_short g2))
-
-let gran64_get_word g64 which =
-  assert(which = 0 or which = 4);
-  match g64 with
-    | Long(l) -> l#extract_32_from_64 (endian_i 8 which)
-    | Gran32s(g1, g2) ->
-	if which < 4 then
-	  gran32_get_word g1
-	else
-	  gran32_get_word g2
-
-let gran64_get_long g64 =
-  match g64 with
-    | Long(l) -> l
-    | Gran32s(g1, g2) -> (gran32_get_word g1)#assemble64 (gran32_get_word g2)
-
-let gran64_split g64 = 
-  match g64 with
-    | Gran32s(g1, g2) -> (g1, g2)
-    | Long(l) -> let (w1, w2) = split64 l in (Word(w1), Word(w2))
-
-let gran32_split g32 = 
-  match g32 with
-    | Gran16s(g1, g2) -> (g1, g2)
-    | Word(l) ->
-	let (s1, s2) = split32 l in (Short(s1), Short(s2))
-	    
-let gran16_split g16 = 
-  match g16 with
-    | Gran8s(g1, g2) -> (g1, g2)
-    | Short(l) ->
-	let (b1, b2) = split16 l in (Byte(b1), Byte(b2))
-
-let gran16_put_byte g16 which b =
-  assert(which = 0 or which = 1);
-  let (g1, g2) = gran16_split g16 in
-    if which < 1 then
-      Gran8s(Byte(b), g2)
-    else
-      Gran8s(g1, Byte(b))
-
-let gran32_put_byte g32 which b =
-  assert(which >= 0); assert(which < 4);
-  let (g1, g2) = gran32_split g32 in
-    if which < 2 then
-      Gran16s((gran16_put_byte g1 which b), g2)
-    else
-      Gran16s(g1, (gran16_put_byte g2 (which - 2) b))
-
-let gran64_put_byte g64 which b =
-  assert(which >= 0); assert(which < 8);
-  let (g1, g2) = gran64_split g64 in
-    if which < 4 then
-      Gran32s((gran32_put_byte g1 which b), g2)
-    else
-      Gran32s(g1, (gran32_put_byte g2 (which - 4) b))
-
-let gran32_put_short g32 which s =
-  assert(which = 0 or which = 2);
-  let (g1, g2) = gran32_split g32 in
-    if which < 2 then
-      Gran16s(Short(s), g2)
-    else
-      Gran16s(g1, Short(s))
-
-let gran64_put_short g64 which s =
-  assert(which = 0 or which = 2 or which = 4 or which = 6);
-  let (g1, g2) = gran64_split g64 in
-    if which < 4 then
-      Gran32s((gran32_put_short g1 which s), g2)
-    else
-      Gran32s(g1, (gran32_put_short g2 (which - 4) s))
-
-let gran64_put_word g64 which w =
-  assert(which = 0 or which = 4);
-  let (g1, g2) = gran64_split g64 in
-    if which < 4 then
-      Gran32s(Word(w), g2)
-    else
-      Gran32s(g1, Word(w))
-
-let gran8_to_string g8 =
-  match g8 with
-    | Byte(b) -> b#to_string_8
-
-let gran16_to_string g16 =
-  match g16 with
-    | Short(s) -> s#to_string_16
-    | Gran8s(g1, g2) -> (gran8_to_string g1) ^ "|" ^ (gran8_to_string g2)
-
-let gran32_to_string g32 =
-  match g32 with
-    | Word(w) -> w#to_string_32
-    | Gran16s(g1, g2) -> (gran16_to_string g1) ^ "|" ^ (gran16_to_string g2)
-
-let gran64_to_string g64 =
-  match g64 with
-    | Long(l) -> l#to_string_64
-    | Gran32s(g1, g2) -> (gran32_to_string g1) ^ "|" ^ (gran32_to_string g2)
-
-let gran8_size g8 =
-  match g8 with
-    | Byte(b) -> b#measure_size
-
-let gran16_size g16 =
-  match g16 with
-    | Short(s) -> s#measure_size
-    | Gran8s(g1, g2) -> (gran8_size g1) + (gran8_size g2)
-
-let gran32_size g32 =
-  match g32 with
-    | Word(w) -> w#measure_size
-    | Gran16s(g1, g2) -> (gran16_size g1) + (gran16_size g2)
-
-let gran64_size g64 =
-  match g64 with
-    | Long(l) -> l#measure_size
-    | Gran32s(g1, g2) -> (gran32_size g1) + (gran32_size g2)
-
-type 'a page = ('a gran64 option) array
-
-class ['d] granular_memory (factory:'d) = object(self)
-  (* The extra page is a hacky way to not crash on address wrap-around *)
-  val mem = Array.init 0x100001 (fun _ -> None)
-
-  method maybe_load_byte addr =
-    let page = Int64.to_int (Int64.shift_right addr 12) and
-	idx = Int64.to_int (Int64.logand addr 0xfffL) in
-    match mem.(page) with
-      | None -> None
-      | Some page ->
-	  let chunk = idx asr 3 and
-	      which = idx land 0x7 in
-	    match page.(chunk) with
-	      | None -> None
-	      | Some g64 -> Some (gran64_get_byte g64 which)
-
-  method maybe_load_short addr =
-    if (Int64.logand addr 1L) = 0L then
-      ((* aligned fast path *)
-	let page = Int64.to_int (Int64.shift_right addr 12) and
-	    idx = Int64.to_int (Int64.logand addr 0xfffL) in
-	  match mem.(page) with
-	    | None -> None
-	    | Some page ->
-		let chunk = idx asr 3 and
-		    which = idx land 0x7 in
-		  match page.(chunk) with
-		    | None -> None
-		    | Some g64 -> Some (gran64_get_short g64 which))
-    else
-      (* unaligned slow path *)
-      let mb0 = self#maybe_load_byte addr and
-	  mb1 = self#maybe_load_byte (Int64.add addr 1L) in
-	match (mb0, mb1) with
-	  | (Some b0, Some b1) -> Some (b0#assemble16 b1)
-	  | _ -> None
-
-  method maybe_load_word addr =
-    if (Int64.logand addr 3L) = 0L then
-      ((* aligned fast path *)
-	let page = Int64.to_int (Int64.shift_right addr 12) and
-	    idx = Int64.to_int (Int64.logand addr 0xfffL) in
-	  match mem.(page) with
-	    | None -> None
-	    | Some page ->
-		let chunk = idx asr 3 and
-		    which = idx land 0x7 in
-		  match page.(chunk) with
-		    | None -> None
-		    | Some g64 -> Some (gran64_get_word g64 which))
-    else
-      (* unaligned slow path *)
-      let ms0 = self#maybe_load_short addr and
-	  ms1 = self#maybe_load_short (Int64.add addr 2L) in
-	match (ms0, ms1) with
-	  | (Some s0, Some s1) -> Some (s0#assemble32 s1)
-	  | _ -> None
-
-  method maybe_load_long addr =
-    if (Int64.logand addr 7L) = 0L then
-      ((* aligned fast path *)
-	let page = Int64.to_int (Int64.shift_right addr 12) and
-	    idx = Int64.to_int (Int64.logand addr 0xfffL) in
-	  match mem.(page) with
-	    | None -> None
-	    | Some page ->
-		let chunk = idx asr 3 in
-		  match page.(chunk) with
-		    | None -> None
-		    | Some g64 -> Some (gran64_get_long g64))
-    else
-      (* unaligned slow path *)
-      let mw0 = self#maybe_load_word addr and
-	  mw1 = self#maybe_load_word (Int64.add addr 4L) in
-	match (mw0, mw1) with
-	  | (Some w0, Some w1) -> Some (w0#assemble64 w1)
-	  | _ -> None
-
-  method load_byte addr =
-    match self#maybe_load_byte addr with
-      | None -> factory#from_concrete_8 0
-      | Some b -> b
-
-  method load_short addr =
-    match self#maybe_load_short addr with
-      | None -> factory#from_concrete_16 0
-      | Some s -> s
-
-  method load_word addr =
-    match self#maybe_load_word addr with
-      | None -> factory#from_concrete_32 0L
-      | Some w -> w
-
-  method load_long addr =
-    match self#maybe_load_long addr with
-      | None -> factory#from_concrete_64 0L
-      | Some l -> l
-
-  method private get_page addr =
-    let page_n = Int64.to_int (Int64.shift_right addr 12) in
-      match mem.(page_n) with
-	| Some page -> page
-	| None ->
-	    let new_page = Array.init 512 (fun _ -> None) in
-	      mem.(page_n) <- Some new_page;
-	      new_page
-
-  method store_byte addr b =
-    let page = self#get_page addr and
-	idx = Int64.to_int (Int64.logand addr 0xfffL) in
-    let chunk = idx asr 3 and
-	which = idx land 0x7 in
-    let old_chunk =
-      (match page.(chunk) with
-	 | None -> Long(factory#from_concrete_64 0L)
-	 | Some g64 -> g64) in
-      page.(chunk) <- Some (gran64_put_byte old_chunk which b)
-
-  method store_short addr s =
-    if (Int64.logand addr 1L) = 0L then
-      ((* aligned fast path *)
-	let page = self#get_page addr and
-	    idx = Int64.to_int (Int64.logand addr 0xfffL) in
-	let chunk = idx asr 3 and
-	    which = idx land 0x7 in
-	let old_chunk =
-	  (match page.(chunk) with
-	     | None -> Long(factory#from_concrete_64 0L)
-	     | Some g64 -> g64) in
-	  page.(chunk) <- Some (gran64_put_short old_chunk which s))
-    else
-      (* unaligned slow path *)
-      let (b0, b1) = split16 s in
-	self#store_byte addr b0;
-	self#store_byte (Int64.add addr 1L) b1
-
-  method store_word addr w =
-    if (Int64.logand addr 3L) = 0L then
-      ((* aligned fast path *)
-	let page = self#get_page addr and
-	    idx = Int64.to_int (Int64.logand addr 0xfffL) in
-	let chunk = idx asr 3 and
-	    which = idx land 0x7 in
-	let old_chunk =
-	  (match page.(chunk) with
-	     | None -> Long(factory#from_concrete_64 0L)
-	     | Some g64 -> g64) in
-	  page.(chunk) <- Some (gran64_put_word old_chunk which w))
-    else
-      (* unaligned slow path *)
-      let (s0, s1) = split32 w in
-	self#store_short addr s0;
-	self#store_short (Int64.add addr 2L) s1
-
-  method store_long addr l =
-    if (Int64.logand addr 7L) = 0L then
-      ((* aligned fast path *)
-	let page = self#get_page addr and
-	    idx = Int64.to_int (Int64.logand addr 0xfffL) in
-	let chunk = idx asr 3 in
-	  page.(chunk) <- Some(Long(l)))
-    else
-      (* unaligned slow path *)
-      let (w0, w1) = split64 l in
-	self#store_word addr w0;
-	self#store_word (Int64.add addr 4L) w1
-
-  method private chunk_to_string addr =
-    let page = self#get_page addr and
-	idx = Int64.to_int (Int64.logand addr 0xfffL) in
-    let chunk = idx asr 3 in
-      match page.(chunk) with
-	| None -> "[...]"
-	| Some g64 -> "[" ^ (gran64_to_string g64) ^ "]"
-
-  method sync_chunk addr thunk =
-    (* Printf.printf "sync chunk %08Lx: " addr; *)
-    let page = self#get_page addr and
-	idx = Int64.to_int (Int64.logand addr 0xfffL) in
-    let chunk = idx asr 3 in
-      (match page.(chunk) with
-	 | None -> page.(chunk) <- Some (Long(thunk ()))
-	 | _ -> ())
-	(* Printf.printf "%s\n" (self#chunk_to_string addr) *)
-
-  method clear () =
-    Array.fill mem 0 0x100001 None
-
-  method measure_size =
-    let sum_some f ary =
-      Array.fold_left
-	(fun n x -> n + match x with None -> 0 | Some(x') -> f x') 0 ary
-    in
-      sum_some
-	(fun page -> sum_some 
-	   (fun g64 -> gran64_size g64) page) mem
-	 
-(* method make_snap () = failwith "make_snap unsupported"; ()
-   method reset () = failwith "reset unsupported"; () *)
-end
-
-class ['d] granular_snapshot_memory
-  (main:'d granular_memory) (diff:'d granular_memory) =
-object(self)
-  val mutable have_snap = false
-    
-  method private sync_chunks addr1 addr2 =
-    let sync_chunk addr =
-      diff#sync_chunk addr
-	(fun () -> main#load_long addr)
-    in
-    let chunk1 = Int64.logand addr1 (Int64.lognot 7L) and
-	chunk2 = Int64.logand addr2 (Int64.lognot 7L) in
-      sync_chunk chunk1;
-      if chunk1 <> chunk2 then
-	sync_chunk chunk2
-      else ()
-
-  method store_byte addr b =
-    if have_snap then
-      (self#sync_chunks addr addr;
-       diff#store_byte addr b)
-    else
-      main#store_byte addr b
-
-  method store_short addr s =
-    if have_snap then
-      (self#sync_chunks addr (Int64.add addr 1L);
-       diff#store_short addr s)
-    else
-      main#store_short addr s
-
-  method store_word addr w =
-    if have_snap then
-      (self#sync_chunks addr (Int64.add addr 3L);
-       diff#store_word addr w)
-    else
-      main#store_word addr w
-
-  method store_long addr l =
-    if have_snap then
-      (self#sync_chunks addr (Int64.add addr 7L);
-       diff#store_long addr l)
-    else
-      main#store_long addr l
-
-  method maybe_load_byte addr =
-    if have_snap then
-      match diff#maybe_load_byte addr with
-	| Some b -> Some b
-	| None -> main#maybe_load_byte addr
-    else
-      main#maybe_load_byte addr
-
-  method load_byte addr =
-    if have_snap then
-      match diff#maybe_load_byte addr with
-	| Some b -> b
-	| None -> main#load_byte addr
-    else
-      main#load_byte addr
-
-  method maybe_load_short addr =
-    if have_snap then
-      match diff#maybe_load_short addr with
-	| Some s -> Some s
-	| None -> main#maybe_load_short addr
-    else
-      main#maybe_load_short addr
-
-  method load_short addr =
-    if have_snap then
-      match diff#maybe_load_short addr with
-	| Some s -> s
-	| None -> main#load_short addr
-    else
-      main#load_short addr
-
-  method maybe_load_word addr =
-    if have_snap then
-      match diff#maybe_load_word addr with
-	| Some w -> Some w
-	| None -> main#maybe_load_word addr
-    else
-      main#maybe_load_word addr
-
-  method load_word addr =
-    if have_snap then
-      match diff#maybe_load_word addr with
-	| Some w -> w
-	| None -> main#load_word addr
-    else
-      main#load_word addr
-
-  method maybe_load_long addr =
-    if have_snap then
-      match diff#maybe_load_long addr with
-	| Some l -> Some l
-	| None -> main#maybe_load_long addr
-    else
-      main#maybe_load_long addr
-
-  method load_long addr =
-    if have_snap then
-      match diff#maybe_load_long addr with
-	| Some l -> l
-	| None -> main#load_long addr
-    else
-      main#load_long addr
-
-  method measure_size = diff#measure_size + main#measure_size
-
-  method clear () = 
-    diff#clear ();
-    main#clear ()
-
-  method make_snap () =
-    have_snap <- true
-
-  method reset () = 
-    diff#clear (); ()
-end
-
-class ['d] concrete_adaptor_memory (mem:memory) factory = object(self)
-  method store_byte  addr (b:'d) = mem#store_byte  addr b#to_concrete_8
-  method store_short addr (s:'d) = mem#store_short addr s#to_concrete_16
-  method store_word  addr (w:'d) = mem#store_word  addr w#to_concrete_32
-  method store_long  addr (l:'d) = mem#store_word  addr l#to_concrete_64
-
-  method load_byte  addr :'d = factory#from_concrete_8 (mem#load_byte  addr)
-  method load_short addr :'d = factory#from_concrete_16(mem#load_short addr)
-  method load_word  addr :'d = factory#from_concrete_32(mem#load_word  addr)
-  method load_long  addr :'d = factory#from_concrete_64(mem#load_long  addr)
-
-  method maybe_load_byte  addr = match mem#maybe_load_byte addr with
-    | None -> None | Some b -> Some(factory#from_concrete_8 b)
-  method maybe_load_short  addr = match mem#maybe_load_short addr with
-    | None -> None | Some s -> Some(factory#from_concrete_16 s)
-  method maybe_load_word  addr = match mem#maybe_load_word addr with
-    | None -> None | Some w -> Some(factory#from_concrete_32 w)
-  method maybe_load_long  addr = match mem#maybe_load_long addr with
-    | None -> None | Some l -> Some(factory#from_concrete_64 l)
-
-  method sync_chunk addr thunk =
-    self#store_long addr (thunk ())
-
-  method measure_size = mem#measure_size
-
-  method clear () = mem#clear ()
-end
-
 class parallel_check_memory mem1 mem2 = object(self)
-  inherit memory
+  inherit concrete_memory
 
   method store_byte addr b =
     Printf.printf "mem[%08Lx]:b := %02x\n" addr b;
@@ -1689,6 +1121,754 @@ class parallel_check_memory mem1 mem2 = object(self)
     Printf.printf "-------- reset --------\n"
 end
 
+let split64 l =
+  ((l#extract_32_from_64 0), (l#extract_32_from_64 4))
+
+let split32 l =
+  ((l#extract_16_from_32 0), (l#extract_16_from_32 2))
+
+let split16 l =
+  ((l#extract_8_from_16 0), (l#extract_8_from_16 1))
+
+(* At the moment, there are still some calls to endian_i, but there
+   are places where endianness checking is missing, so assume
+   little-endian for the time being.
+
+  let endianness = V.Little
+
+  let endian_i n k = 
+    match endianness with
+      | V.Little -> k
+      | V.Big -> n - k  
+*)
+
+let endian_i n k = k
+
+type 'a gran8 = Byte of 'a
+		| Absent8
+  
+type 'a gran16 = Short of 'a
+	      | Gran8s of 'a gran8 * 'a gran8
+	      | Absent16
+		  
+type 'a gran32 = Word of 'a
+	      | Gran16s of 'a gran16 * 'a gran16
+	      | Absent32
+		    
+type 'a gran64 = Long of 'a
+	      | Gran32s of 'a gran32 * 'a gran32
+	      | Absent64
+
+let  gran8_get_byte  g8  missing addr =
+  match g8 with
+    | Byte l -> (l, g8)
+    | Absent8 ->
+	let l = missing 8 addr in
+	  (l, Byte l)
+
+let gran16_get_byte  g16 missing addr which =
+  assert(which >= 0); assert(which < 2);
+  match g16, Absent8, Absent8 with
+    | Short(l),_,_ -> (l#extract_8_from_16 (endian_i 2 which), g16)
+    | Gran8s(g1, g2),_,_
+    | Absent16, g1, g2 ->
+	if which < 1 then
+	  let (l, g1') = gran8_get_byte g1 missing addr in
+	    (l, Gran8s(g1', g2))
+	else
+	  let (l, g2') = gran8_get_byte g2 missing (Int64.add addr 1L) in
+	    (l, Gran8s(g1, g2'))
+
+let gran32_get_byte  g32 missing addr which =
+  assert(which >= 0); assert(which < 4);
+  match g32, Absent16, Absent16 with
+    | Word(l),_,_ -> (l#extract_8_from_32 (endian_i 4 which), g32)
+    | Gran16s(g1, g2),_,_
+    | Absent32, g1, g2 ->
+	if which < 2 then
+	  let (l, g1') = gran16_get_byte g1 missing addr which in
+	    (l, Gran16s(g1', g2))
+	else
+	  let (l, g2') = gran16_get_byte g2 missing (Int64.add addr 2L) 
+	    (which - 2) in
+	    (l, Gran16s(g1, g2'))
+
+let gran64_get_byte  g64 missing addr which =
+  assert(which >= 0); assert(which < 8);
+  match g64, Absent32, Absent32 with
+    | Long(l),_,_ -> (l#extract_8_from_64 (endian_i 8 which), g64)
+    | Gran32s(g1, g2),_,_
+    | Absent64, g1, g2 ->
+	if which < 4 then
+	  let (l, g1') = gran32_get_byte g1 missing addr which in
+	    (l, Gran32s(g1', g2))
+	else
+	  let (l, g2') = gran32_get_byte g2 missing (Int64.add addr 4L)
+	    (which - 4) in
+	    (l, Gran32s(g1, g2'))
+
+let gran16_get_short g16 missing addr =
+  match g16 with
+    | Short(l) -> (l, g16)
+    | Gran8s(g1, g2) ->
+	let (b1, g1') = gran8_get_byte g1 missing addr and
+	    (b2, g2') = gran8_get_byte g2 missing (Int64.add addr 1L) in
+	  (b1#assemble16 b2, Gran8s(g1', g2'))
+    | Absent16 ->
+	let l = missing 16 addr in
+	  (l, Short l)
+
+let gran32_get_short g32 missing addr which =
+  assert(which = 0 or which = 2);
+  match g32, Absent16, Absent16 with
+    | Word(l),_,_ -> (l#extract_16_from_32 (endian_i 4 which), g32)
+    | Gran16s(g1, g2),_,_
+    | Absent32, g1, g2 ->
+	if which < 2 then
+	  let (l, g1') = gran16_get_short g1 missing addr in
+	    (l, Gran16s(g1', g2))
+	else
+	  let (l, g2') = gran16_get_short g2 missing (Int64.add addr 2L) in
+	    (l, Gran16s(g1, g2'))
+
+let gran64_get_short g64 missing addr which =
+  assert(which = 0 or which = 2 or which = 4 or which = 6);
+  match g64, Absent32, Absent32 with
+    | Long(l),_,_ -> (l#extract_16_from_64 (endian_i 8 which), g64)
+    | Gran32s(g1, g2),_,_
+    | Absent64, g1, g2 ->
+	if which < 4 then
+	  let (l, g1') = gran32_get_short g1 missing addr which in
+	    (l, Gran32s(g1', g2))
+	else
+	  let (l, g2') = gran32_get_short g2 missing (Int64.add addr 4L) 
+	    (which - 4) in
+	    (l, Gran32s(g1, g2'))
+
+let gran32_get_word  g32 missing addr =
+  match g32 with
+    | Word(l) -> (l, g32)
+    | Gran16s(g1, g2) ->
+	let (s1, g1') = gran16_get_short g1 missing addr and
+	    (s2, g2') = gran16_get_short g2 missing (Int64.add addr 2L) in
+	  (s1#assemble32 s2, Gran16s(g1', g2'))
+    | Absent32 ->
+	let l = missing 32 addr in
+	  (l, Word l)
+
+let gran64_get_word  g64 missing addr which =
+  assert(which = 0 or which = 4);
+  match g64, Absent32, Absent32 with
+    | Long(l),_,_ -> (l#extract_32_from_64 (endian_i 8 which), g64)
+    | Gran32s(g1, g2),_,_
+    | Absent64, g1, g2 ->
+	if which < 4 then
+	  let (l, g1') = gran32_get_word g1 missing addr in
+	    (l, Gran32s(g1', g2))
+	else
+	  let (l, g2') = gran32_get_word g2 missing (Int64.add addr 4L) in
+	    (l, Gran32s(g1, g2'))
+
+let gran64_get_long  g64 missing addr  =
+  match g64 with
+    | Long(l) -> (l, g64)
+    | Gran32s(g1, g2) ->
+	let (w1, g1') = gran32_get_word g1 missing addr and
+	    (w2, g2') = gran32_get_word g2 missing (Int64.add addr 4L) in
+	  (w1#assemble64 w2, Gran32s(g1', g2'))
+    | Absent64 -> 
+	let l = missing 64 addr in
+	  (l, Long l)
+
+let gran64_split g64 = 
+  match g64 with
+    | Gran32s(g1, g2) -> (g1, g2)
+    | Long(l) -> let (w1, w2) = split64 l in (Word(w1), Word(w2))
+    | Absent64 -> (Absent32, Absent32)
+
+let gran32_split g32 = 
+  match g32 with
+    | Gran16s(g1, g2) -> (g1, g2)
+    | Word(l) ->
+	let (s1, s2) = split32 l in (Short(s1), Short(s2))
+    | Absent32 -> (Absent16, Absent16)
+	    
+let gran16_split g16 = 
+  match g16 with
+    | Gran8s(g1, g2) -> (g1, g2)
+    | Short(l) ->
+	let (b1, b2) = split16 l in (Byte(b1), Byte(b2))
+    | Absent16 -> (Absent8, Absent8)
+
+let gran16_put_byte g16 which b =
+  assert(which = 0 or which = 1);
+  let (g1, g2) = gran16_split g16 in
+    if which < 1 then
+      Gran8s(Byte(b), g2)
+    else
+      Gran8s(g1, Byte(b))
+
+let gran32_put_byte g32 which b =
+  assert(which >= 0); assert(which < 4);
+  let (g1, g2) = gran32_split g32 in
+    if which < 2 then
+      Gran16s((gran16_put_byte g1 which b), g2)
+    else
+      Gran16s(g1, (gran16_put_byte g2 (which - 2) b))
+
+let gran64_put_byte g64 which b =
+  assert(which >= 0); assert(which < 8);
+  let (g1, g2) = gran64_split g64 in
+    if which < 4 then
+      Gran32s((gran32_put_byte g1 which b), g2)
+    else
+      Gran32s(g1, (gran32_put_byte g2 (which - 4) b))
+
+let gran32_put_short g32 which s =
+  assert(which = 0 or which = 2);
+  let (g1, g2) = gran32_split g32 in
+    if which < 2 then
+      Gran16s(Short(s), g2)
+    else
+      Gran16s(g1, Short(s))
+
+let gran64_put_short g64 which s =
+  assert(which = 0 or which = 2 or which = 4 or which = 6);
+  let (g1, g2) = gran64_split g64 in
+    if which < 4 then
+      Gran32s((gran32_put_short g1 which s), g2)
+    else
+      Gran32s(g1, (gran32_put_short g2 (which - 4) s))
+
+let gran64_put_word g64 which w =
+  assert(which = 0 or which = 4);
+  let (g1, g2) = gran64_split g64 in
+    if which < 4 then
+      Gran32s(Word(w), g2)
+    else
+      Gran32s(g1, Word(w))
+
+let gran8_to_string g8 =
+  match g8 with
+    | Byte(b) -> b#to_string_8
+    | Absent8 -> "__"
+
+let gran16_to_string g16 =
+  match g16 with
+    | Short(s) -> s#to_string_16
+    | Gran8s(g1, g2) -> (gran8_to_string g1) ^ "|" ^ (gran8_to_string g2)
+    | Absent16 -> "____"
+
+let gran32_to_string g32 =
+  match g32 with
+    | Word(w) -> w#to_string_32
+    | Gran16s(g1, g2) -> (gran16_to_string g1) ^ "|" ^ (gran16_to_string g2)
+    | Absent32 -> "________"
+
+let gran64_to_string g64 =
+  match g64 with
+    | Long(l) -> l#to_string_64
+    | Gran32s(g1, g2) -> (gran32_to_string g1) ^ "|" ^ (gran32_to_string g2)
+    | Absent64 -> "________________"
+
+let gran8_size g8 =
+  match g8 with
+    | Byte(b) -> b#measure_size
+    | Absent8 -> 1
+
+let gran16_size g16 =
+  match g16 with
+    | Short(s) -> s#measure_size
+    | Gran8s(g1, g2) -> (gran8_size g1) + (gran8_size g2)
+    | Absent16 -> 1
+
+let gran32_size g32 =
+  match g32 with
+    | Word(w) -> w#measure_size
+    | Gran16s(g1, g2) -> (gran16_size g1) + (gran16_size g2)
+    | Absent32 -> 1
+
+let gran64_size g64 =
+  match g64 with
+    | Long(l) -> l#measure_size
+    | Gran32s(g1, g2) -> (gran32_size g1) + (gran32_size g2)
+    | Absent64 -> 1
+
+type 'a page = ('a gran64) array
+
+class ['d] granular_memory (factory:'d) = object(self)
+  (* The extra page is a hacky way to not crash on address wrap-around *)
+  val mem = Array.init 0x100001 (fun _ -> None)
+
+  val mutable missing : (int -> int64 -> 'd) =
+    (fun _ -> failwith "Must call on_missing")
+
+  method on_missing m = missing <- m
+
+  method private with_chunk addr fn =
+    let page = Int64.to_int (Int64.shift_right addr 12) and
+	idx = Int64.to_int (Int64.logand addr 0xfffL) in
+    match mem.(page) with
+      | None -> None
+      | Some page ->
+	  let chunk_n = idx asr 3 and
+	      which = idx land 0x7 in
+	  let caddr = (Int64.sub addr (Int64.of_int which)) and
+	      chunk = page.(chunk_n) in 
+	    match chunk with
+	      | Absent64 -> None
+	      | g64 ->
+		  let (l, chunk') = fn page.(chunk_n) caddr which in
+		    page.(chunk_n) <- chunk';
+		    Some l
+
+  method private maybe_load_divided addr bits bytes load assemble =
+      let mb0 = load addr and
+	  mb1 = load (Int64.add addr bytes) in
+	match (mb0, mb1) with
+	  | (None, None) -> None
+	  | _ ->
+	      let b0 = (match mb0 with
+			  | Some b -> b
+			  | None -> (missing bits addr)) and
+		  b1 = (match mb1 with
+			  | Some b -> b
+			  | None -> (missing bits (Int64.add addr bytes))) in
+		Some (assemble b0 b1)
+
+  method maybe_load_byte addr =
+    self#with_chunk addr
+      (fun chunk caddr which -> gran64_get_byte chunk missing caddr which)
+
+  method maybe_load_short addr =
+    if (Int64.logand addr 1L) = 0L then
+      self#with_chunk addr
+	(fun chunk caddr which -> gran64_get_short chunk missing caddr which)
+    else
+      self#maybe_load_divided addr 8 1L self#maybe_load_byte
+	(fun b0 b1 -> b0#assemble16 b1)
+
+  method maybe_load_word addr =
+    if (Int64.logand addr 3L) = 0L then
+      self#with_chunk addr
+	(fun chunk caddr which -> gran64_get_word chunk missing caddr which)
+    else
+      self#maybe_load_divided addr 16 2L self#maybe_load_short
+	(fun b0 b1 -> b0#assemble32 b1)
+
+  method maybe_load_long addr =
+    if (Int64.logand addr 7L) = 0L then
+      self#with_chunk addr
+	(fun chunk caddr _ -> gran64_get_long chunk missing caddr)
+    else
+      self#maybe_load_divided addr 32 4L self#maybe_load_word
+	(fun b0 b1 -> b0#assemble64 b1)
+
+  method load_byte addr =
+    match self#maybe_load_byte addr with
+      | Some b -> b
+      | None ->
+	  let b = missing 8 addr in 
+	    self#store_byte addr b;
+	    b
+
+  method load_short addr =
+    match self#maybe_load_short addr with
+      | Some s -> s
+      | None ->
+	  let s = missing 16 addr in
+	    self#store_short addr s;
+	    s
+
+  method load_word addr =
+    match self#maybe_load_word addr with
+      | Some w -> w
+      | None ->
+	  let w = missing 32 addr in
+	    self#store_word addr w;
+	    w
+
+  method load_long addr =
+    match self#maybe_load_long addr with
+      | Some l -> l
+      | None ->
+	  let l = missing 64 addr in
+	    self#store_word addr l;
+	    l
+
+  method private get_page addr =
+    let page_n = Int64.to_int (Int64.shift_right addr 12) in
+      match mem.(page_n) with
+	| Some page -> page
+	| None ->
+	    let new_page = Array.init 512 (fun _ -> Absent64) in
+	      mem.(page_n) <- Some new_page;
+	      new_page
+
+  method private store_common_fast addr fn =
+    let page = self#get_page addr and
+	idx = Int64.to_int (Int64.logand addr 0xfffL) in
+    let chunk = idx asr 3 and
+	which = idx land 0x7 in
+      page.(chunk) <- fn page.(chunk) which
+
+  method store_byte addr b =
+    self#store_common_fast addr
+      (fun chunk which -> gran64_put_byte chunk which b)
+
+  method store_short addr s =
+    if (Int64.logand addr 1L) = 0L then
+      self#store_common_fast addr
+	(fun chunk which -> gran64_put_short chunk which s)
+    else
+      (* unaligned slow path *)
+      let (b0, b1) = split16 s in
+	self#store_byte addr b0;
+	self#store_byte (Int64.add addr 1L) b1
+
+  method store_word addr w =
+    if (Int64.logand addr 3L) = 0L then
+      self#store_common_fast addr
+	(fun chunk which -> gran64_put_word chunk which w)
+    else
+      (* unaligned slow path *)
+      let (s0, s1) = split32 w in
+	self#store_short addr s0;
+	self#store_short (Int64.add addr 2L) s1
+
+  method store_long addr l =
+    if (Int64.logand addr 7L) = 0L then
+      self#store_common_fast addr
+	(fun _ _ -> Long(l))
+    else
+      (* unaligned slow path *)
+      let (w0, w1) = split64 l in
+	self#store_word addr w0;
+	self#store_word (Int64.add addr 4L) w1
+
+  method private chunk_to_string addr =
+    let page = self#get_page addr and
+	idx = Int64.to_int (Int64.logand addr 0xfffL) in
+    let chunk = idx asr 3 in
+      "[" ^ (gran64_to_string page.(chunk)) ^ "]"
+
+  method clear () =
+    Array.fill mem 0 0x100001 None
+
+  method measure_size =
+    let sum_some f ary =
+      Array.fold_left
+	(fun n x -> n + match x with None -> 0 | Some(x') -> f x') 0 ary
+    in
+      sum_some
+	(fun page -> Array.fold_left 
+	   (fun n g64 -> n+ gran64_size g64) 0 page) mem
+	 
+(* method make_snap () = failwith "make_snap unsupported"; ()
+   method reset () = failwith "reset unsupported"; () *)
+end
+
+class ['d] granular_snapshot_memory
+  (main:'d granular_memory) (diff:'d granular_memory) =
+object(self)
+  val mutable have_snap = false
+
+  method on_missing main_missing =
+    main#on_missing main_missing;
+    diff#on_missing
+      (fun size addr ->
+	 match size with
+	   | 8 -> main#load_byte addr
+	   | 16 -> main#load_short addr
+	   | 32 -> main#load_word addr
+	   | 64 -> main#load_long addr
+	   | _ -> failwith "Bad size in missing")
+
+  method store_byte addr b =
+    if have_snap then
+      diff#store_byte addr b
+    else
+      main#store_byte addr b
+
+  method store_short addr s =
+    if have_snap then
+      diff#store_short addr s
+    else
+      main#store_short addr s
+
+  method store_word addr w =
+    if have_snap then
+      diff#store_word addr w
+    else
+      main#store_word addr w
+
+  method store_long addr l =
+    if have_snap then
+      diff#store_long addr l
+    else
+      main#store_long addr l
+
+  method maybe_load_byte addr =
+    if have_snap then
+      match diff#maybe_load_byte addr with
+	| Some b -> Some b
+	| None -> main#maybe_load_byte addr
+    else
+      main#maybe_load_byte addr
+
+  method load_byte addr =
+    if have_snap then
+      match diff#maybe_load_byte addr with
+	| Some b -> b
+	| None -> main#load_byte addr
+    else
+      main#load_byte addr
+
+  method maybe_load_short addr =
+    if have_snap then
+      match diff#maybe_load_short addr with
+	| Some s -> Some s
+	| None -> main#maybe_load_short addr
+    else
+      main#maybe_load_short addr
+
+  method load_short addr =
+    if have_snap then
+      match diff#maybe_load_short addr with
+	| Some s -> s
+	| None -> main#load_short addr
+    else
+      main#load_short addr
+
+  method maybe_load_word addr =
+    if have_snap then
+      match diff#maybe_load_word addr with
+	| Some w -> Some w
+	| None -> main#maybe_load_word addr
+    else
+      main#maybe_load_word addr
+
+  method load_word addr =
+    if have_snap then
+      match diff#maybe_load_word addr with
+	| Some w -> w
+	| None -> main#load_word addr
+    else
+      main#load_word addr
+
+  method maybe_load_long addr =
+    if have_snap then
+      match diff#maybe_load_long addr with
+	| Some l -> Some l
+	| None -> main#maybe_load_long addr
+    else
+      main#maybe_load_long addr
+
+  method load_long addr =
+    if have_snap then
+      match diff#maybe_load_long addr with
+	| Some l -> l
+	| None -> main#load_long addr
+    else
+      main#load_long addr
+
+  method measure_size = diff#measure_size + main#measure_size + 1
+
+  method clear () = 
+    diff#clear ();
+    main#clear ()
+
+  method make_snap () =
+    have_snap <- true
+
+  method reset () = 
+    diff#clear (); ()
+end
+
+class ['d] concrete_adaptor_memory (mem:concrete_memory) factory = object(self)
+  method on_missing (m:int -> int64 -> 'd) = ()
+
+  method store_byte  addr (b:'d) = mem#store_byte  addr b#to_concrete_8
+  method store_short addr (s:'d) = mem#store_short addr s#to_concrete_16
+  method store_word  addr (w:'d) = mem#store_word  addr w#to_concrete_32
+  method store_long  addr (l:'d) = mem#store_word  addr l#to_concrete_64
+
+  method load_byte  addr :'d = factory#from_concrete_8 (mem#load_byte  addr)
+  method load_short addr :'d = factory#from_concrete_16(mem#load_short addr)
+  method load_word  addr :'d = factory#from_concrete_32(mem#load_word  addr)
+  method load_long  addr :'d = factory#from_concrete_64(mem#load_long  addr)
+
+  method maybe_load_byte  addr = match mem#maybe_load_byte addr with
+    | None -> None | Some b -> Some(factory#from_concrete_8 b)
+  method maybe_load_short  addr = match mem#maybe_load_short addr with
+    | None -> None | Some s -> Some(factory#from_concrete_16 s)
+  method maybe_load_word  addr = match mem#maybe_load_word addr with
+    | None -> None | Some w -> Some(factory#from_concrete_32 w)
+  method maybe_load_long  addr = match mem#maybe_load_long addr with
+    | None -> None | Some l -> Some(factory#from_concrete_64 l)
+
+  method measure_size = mem#measure_size
+
+  method clear () = mem#clear ()
+end
+
+class string_maybe_memory = object(self)
+  inherit concrete_memory
+
+  (* The extra page is a hacky way to not crash on address wrap-around *)
+  val mem = Array.init 0x100001 (fun _ -> None)
+  val bitmaps = Array.init 0x100001 (fun _ -> None)
+
+  method private maybe_get_pages addr = 
+    let page = Int64.to_int (Int64.shift_right addr 12) and
+	idx = Int64.to_int (Int64.logand addr 0xfffL) in
+      match (mem.(page), bitmaps.(page)) with
+	| (Some page_str, Some bitmap) -> Some (page_str, bitmap, idx)
+	| (None, None) -> None
+	| _ -> failwith "mem vs. bitmaps inconsistency in string_maybe_memory"
+
+  method private get_pages addr = 
+    let page = Int64.to_int (Int64.shift_right addr 12) and
+	idx = Int64.to_int (Int64.logand addr 0xfffL) in
+      match (mem.(page), bitmaps.(page)) with
+	| (Some page_str, Some bitmap) -> (page_str, bitmap, idx)
+	| (None, None) ->
+	    let new_page = String.make 4096 '\x00' and
+		new_bitmap = String.make 512 '\x00' in
+	      mem.(page) <- Some new_page;
+	      bitmaps.(page) <- Some new_bitmap;
+	      (new_page, new_bitmap, idx)
+	| _ -> failwith "mem vs. bitmaps inconsistency in string_maybe_memory"
+
+  method store_byte addr b =
+    let (page_str, bitmap, idx) = self#get_pages addr in
+      page_str.[idx] <- Char.chr b;
+      let bit = 1 lsl (idx land 7) and
+	  bidx = idx lsr 3 in
+	bitmap.[bidx] <- (Char.chr ((Char.code bitmap.[bidx]) lor bit))
+	
+  method maybe_load_byte addr =
+    match (self#maybe_get_pages addr) with
+      | None -> None
+      | Some(page_str, bitmap, idx) ->
+	  let bit = 1 lsl (idx land 7) and
+	      bidx = idx lsr 3 in
+	    if (Char.code bitmap.[bidx]) land bit = 0 then
+	      None
+	    else
+	      Some (Char.code page_str.[idx])
+
+  method load_byte addr =
+    let (page_str, _, idx) = self#get_pages addr in
+      Char.code page_str.[idx]
+
+  method clear () =
+    Array.fill mem 0 0x100001 None;
+    Array.fill bitmaps 0 0x100001 None
+
+  method measure_size = 
+    (Array.fold_right
+       (fun page c -> c + match page with None -> 0 | Some _ -> 4096)
+       mem 0) +
+    (Array.fold_right
+       (fun page c -> c + match page with None -> 0 | Some _ -> 512)
+       bitmaps 0)
+end
+
+class ['d] concrete_maybe_adaptor_memory
+  (mem:concrete_memory) factory = object(self)
+  val mutable missing : (int -> int64 -> 'd) =
+    (fun _ -> failwith "Must call on_missing")
+
+  method on_missing m = missing <- m
+
+  method store_byte  addr (b:'d) = mem#store_byte  addr b#to_concrete_8
+  method store_short addr (s:'d) = mem#store_short addr s#to_concrete_16
+  method store_word  addr (w:'d) = mem#store_word  addr w#to_concrete_32
+  method store_long  addr (l:'d) = mem#store_word  addr l#to_concrete_64
+
+  method maybe_load_byte  addr =
+    match mem#maybe_load_byte addr with
+      | Some b -> Some(factory#from_concrete_8 b)
+      | None -> None
+
+  method private unmaybe mb addr = match mb with
+    | None -> missing 8 addr
+    | Some b -> factory#from_concrete_8 b
+
+  method maybe_load_short  addr =
+    let mb0 = mem#maybe_load_byte addr and
+	mb1 = mem#maybe_load_byte (Int64.add addr 1L) in
+      match (mb0, mb1) with
+	| (None, None) -> None
+	| _ ->
+	    let b0 = self#unmaybe mb0 addr and
+		b1 = self#unmaybe mb1 (Int64.add addr 1L) in
+	      Some(b0#assemble16 b1)
+
+  method maybe_load_word  addr =
+    let mb0 = mem#maybe_load_byte addr and
+	mb1 = mem#maybe_load_byte (Int64.add addr 1L) and
+	mb2 = mem#maybe_load_byte (Int64.add addr 2L) and
+	mb3 = mem#maybe_load_byte (Int64.add addr 3L) in
+      match (mb0, mb1, mb2, mb3) with
+	| (None, None, None, None) -> None
+	| _ ->
+	    let b0 = self#unmaybe mb0 addr and
+		b1 = self#unmaybe mb1 (Int64.add addr 1L) and
+		b2 = self#unmaybe mb2 (Int64.add addr 2L) and
+		b3 = self#unmaybe mb3 (Int64.add addr 3L) in
+	      Some((b0#assemble16 b1)#assemble32 (b2#assemble16 b3))
+
+  method maybe_load_long  addr =
+    let mb0 = mem#maybe_load_byte addr and
+	mb1 = mem#maybe_load_byte (Int64.add addr 1L) and
+	mb2 = mem#maybe_load_byte (Int64.add addr 2L) and
+	mb3 = mem#maybe_load_byte (Int64.add addr 3L) and
+	mb4 = mem#maybe_load_byte (Int64.add addr 4L) and
+	mb5 = mem#maybe_load_byte (Int64.add addr 5L) and
+	mb6 = mem#maybe_load_byte (Int64.add addr 6L) and
+	mb7 = mem#maybe_load_byte (Int64.add addr 7L) in
+      match (mb0, mb1, mb2, mb3, mb4, mb5, mb6, mb7) with
+	| (None, None, None, None, None, None, None, None) -> None
+	| _ ->
+	    let b0 = self#unmaybe mb0 addr and
+		b1 = self#unmaybe mb1 (Int64.add addr 1L) and
+		b2 = self#unmaybe mb2 (Int64.add addr 2L) and
+		b3 = self#unmaybe mb3 (Int64.add addr 3L) and
+		b4 = self#unmaybe mb4 (Int64.add addr 4L) and
+		b5 = self#unmaybe mb5 (Int64.add addr 5L) and
+		b6 = self#unmaybe mb6 (Int64.add addr 6L) and
+		b7 = self#unmaybe mb7 (Int64.add addr 7L) in
+	      Some(((b0#assemble16 b1)#assemble32 (b2#assemble16 b3))
+		     #assemble64
+		     ((b4#assemble16 b5)#assemble32 (b6#assemble16 b7)))
+
+  method load_byte  addr  = 
+    match self#maybe_load_byte addr with
+      | Some b -> b
+      | None -> missing 8 addr
+
+  method load_short addr  = 
+    match self#maybe_load_short addr with
+      | Some s -> s
+      | None -> missing 16 addr
+
+  method load_word  addr  = 
+    match self#maybe_load_word addr with
+      | Some w -> w
+      | None -> missing 32 addr
+
+  method load_long  addr  = 
+    match self#maybe_load_long addr with
+      | Some l -> l
+      | None -> missing 64 addr
+
+  method measure_size = mem#measure_size
+
+  method clear () = mem#clear ()
+end
+
 let bool64 f = fun a b -> if (f a b) then 1L else 0L
 
 let move_hash src dest =
@@ -1699,12 +1879,51 @@ class virtual special_handler = object(self)
   method virtual handle_special : string -> bool
 end
 
+type register_name = 
+  | R_EBP | R_ESP | R_ESI | R_EDI | R_EIP | R_EAX | R_EBX | R_ECX | R_EDX
+  | EFLAGSREST | R_CF | R_PF | R_AF | R_ZF | R_SF | R_OF
+  | R_CC_OP | R_CC_DEP1 | R_CC_DEP2 | R_CC_NDEP
+  | R_DFLAG | R_IDFLAG | R_ACFLAG | R_EMWARN
+  | R_LDT | R_GDT | R_CS | R_DS| R_ES | R_FS | R_GS | R_SS
+  | R_FTOP | R_FPROUND | R_FC3210 | R_SSEROUND
+
+let reg_to_regstr reg = match reg with
+  | R_EBP -> "R_EBP" | R_ESP -> "R_ESP" | R_ESI -> "R_ESI"
+  | R_EDI -> "R_EDI" | R_EIP -> "R_EIP" | R_EAX -> "R_EAX" | R_EBX -> "R_EBX"
+  | R_ECX -> "R_ECX" | R_EDX -> "R_EDX"
+  | EFLAGSREST -> "EFLAGSREST" | R_CF -> "R_CF" | R_PF -> "R_PF"
+  | R_AF -> "R_AF"| R_ZF -> "R_ZF" | R_SF -> "R_SF" | R_OF -> "R_OF"
+  | R_CC_OP -> "R_CC_OP" | R_CC_DEP1 -> "R_CC_DEP2"
+  | R_CC_DEP2 -> "R_CC_DEP2" | R_CC_NDEP -> "R_CC_NDEP"
+  | R_DFLAG -> "R_DFLAG" | R_IDFLAG -> "R_IDFLAG" | R_ACFLAG -> "R_ACFLAG"
+  | R_EMWARN -> "R_EMWARN"
+  | R_LDT -> "R_LDT" | R_GDT -> "R_GDT" | R_CS -> "R_CS" | R_DS -> "R_DS"
+  | R_ES -> "R_ES" | R_FS -> "R_FS" | R_GS -> "R_GS"| R_SS -> "R_SS"
+  | R_FTOP -> "R_FTOP" | R_FPROUND -> "R_FPROUND" | R_FC3210  -> "R_FC3210"
+  | R_SSEROUND -> "R_SSEROUND"
+
+let regstr_to_reg s = match s with
+  | "R_EBP" -> R_EBP | "R_ESP" -> R_ESP | "R_ESI" -> R_ESI
+  | "R_EDI" -> R_EDI | "R_EIP" -> R_EIP | "R_EAX" -> R_EAX | "R_EBX" -> R_EBX
+  | "R_ECX" -> R_ECX | "R_EDX" -> R_EDX
+  | "EFLAGSREST" -> EFLAGSREST | "R_CF" -> R_CF | "R_PF" -> R_PF
+  | "R_AF" -> R_AF| "R_ZF" -> R_ZF | "R_SF" -> R_SF | "R_OF" -> R_OF
+  | "R_CC_OP" -> R_CC_OP | "R_CC_DEP1" -> R_CC_DEP2
+  | "R_CC_DEP2" -> R_CC_DEP2 | "R_CC_NDEP" -> R_CC_NDEP
+  | "R_DFLAG" -> R_DFLAG | "R_IDFLAG" -> R_IDFLAG | "R_ACFLAG" -> R_ACFLAG
+  | "R_EMWARN" -> R_EMWARN
+  | "R_LDT" -> R_LDT | "R_GDT" -> R_GDT | "R_CS" -> R_CS | "R_DS" -> R_DS
+  | "R_ES" -> R_ES | "R_FS" -> R_FS | "R_GS" -> R_GS| "R_SS" -> R_SS
+  | "R_FTOP" -> R_FTOP | "R_FPROUND" -> R_FPROUND | "R_FC3210"  -> R_FC3210
+  | "R_SSEROUND" -> R_SSEROUND
+  | _ -> failwith ("Unrecognized register name " ^ s)
+
 class ['d] frag_machine factory = object(self)
   (* val mem = new snapshot_memory (new string_memory) (new hash_memory) *)
 
   val mem = (new granular_snapshot_memory
 	       (* (new granular_memory (new concrete_domain 0L)) *)
-	       (new concrete_adaptor_memory (new string_memory)
+	       (new concrete_maybe_adaptor_memory (new string_maybe_memory)
 		  (new symbolic_domain (V.Unknown("factory"))))
 	       (new granular_memory
 		  (new symbolic_domain (V.Unknown("factory"))))
@@ -1718,6 +1937,7 @@ class ['d] frag_machine factory = object(self)
        (new granular_memory)) *)
 
   val reg_store = V.VarHash.create 100
+  val reg_to_var = Hashtbl.create 100
   val temps = V.VarHash.create 100
   val mutable frag = ([], [])
   val mutable insns = []
@@ -1725,7 +1945,11 @@ class ['d] frag_machine factory = object(self)
   val mutable snap = (V.VarHash.create 1, V.VarHash.create 1)
 
   method init_prog (dl, sl) =
-    List.iter (fun v -> V.VarHash.add reg_store v (factory#uninit)) dl;
+    List.iter
+      (fun ((n,s,t) as v) ->
+	 if s <> "mem" then
+	   (V.VarHash.add reg_store v (factory#uninit);
+	    Hashtbl.add reg_to_var (regstr_to_reg s) v)) dl;
     self#set_frag (dl, sl);
     let result = self#run () in
       match result with
@@ -1735,16 +1959,45 @@ class ['d] frag_machine factory = object(self)
   method set_frag (dl, sl) =
     frag <- (dl, sl);
     V.VarHash.clear temps;
-    List.iter (fun v -> V.VarHash.add temps v (factory#uninit)) dl;
     insns <- sl
 
-  method get_x86_gprs () = 
-    let dl = V.VarHash.fold (fun k v l -> k :: l) reg_store [] in
-      List.map
-	(fun name -> List.find (fun (i, s, t) -> s = name) dl)
-	["R_EAX"; "R_EBX"; "R_ECX"; "R_EDX";
-	 "R_ESI"; "R_EDI"; "R_ESP"; "R_EBP";
-	 "R_GS"; "R_GDT"]    
+  method on_missing_zero =
+    mem#on_missing
+      (fun size _ -> match size with
+	 | 8  -> factory#from_concrete_8  0
+	 | 16 -> factory#from_concrete_16 0
+	 | 32 -> factory#from_concrete_32 0L
+	 | 64 -> factory#from_concrete_64 0L
+	 | _ -> failwith "Bad size in on_missing_zero")
+
+  method on_missing_symbol =
+    mem#on_missing
+      (fun size addr -> 
+	 let addr_str = (Printf.sprintf "0x%08Lx" addr) in
+	   match size with
+	     | 8  -> factory#fresh_symbolic_8  ("mem_byte_"  ^ addr_str)
+	     | 16 -> factory#fresh_symbolic_16 ("mem_short_" ^ addr_str)
+	     | 32 -> factory#fresh_symbolic_32 ("mem_word_"  ^ addr_str)
+	     | 64 -> factory#fresh_symbolic_64 ("mem_long_"  ^ addr_str)
+	     | _ -> failwith "Bad size in on_missing_symbol")
+
+  method make_x86_regs_symbolic =
+    self#set_int_var (Hashtbl.find reg_to_var R_EBP)
+      (factory#fresh_symbolic_32 "initial_ebp");
+    self#set_int_var (Hashtbl.find reg_to_var R_ESP)
+      (factory#from_concrete_32 0xbffff0000L);
+    self#set_int_var (Hashtbl.find reg_to_var R_ESI)
+      (factory#fresh_symbolic_32 "initial_esi");
+    self#set_int_var (Hashtbl.find reg_to_var R_EDI)
+      (factory#fresh_symbolic_32 "initial_edi");
+    self#set_int_var (Hashtbl.find reg_to_var R_EAX)
+      (factory#fresh_symbolic_32 "initial_eax");
+    self#set_int_var (Hashtbl.find reg_to_var R_EBX)
+      (factory#fresh_symbolic_32 "initial_ebx");
+    self#set_int_var (Hashtbl.find reg_to_var R_ECX)
+      (factory#fresh_symbolic_32 "initial_ecx");
+    self#set_int_var (Hashtbl.find reg_to_var R_EDX)
+      (factory#fresh_symbolic_32 "initial_edx");
 
   method store_byte  addr b = mem#store_byte  addr b
   method store_short addr s = mem#store_short addr s
@@ -1806,7 +2059,8 @@ class ['d] frag_machine factory = object(self)
 	     | Not_found -> V.pp_var print_string var; 
 		 failwith "Unknown variable")
 
-  method get_word_var var = (self#get_int_var var)#to_concrete_32
+  method get_word_var reg =
+    (self#get_int_var (Hashtbl.find reg_to_var reg))#to_concrete_32
 
   method set_int_var ((_,_,ty) as var) value =
     try
@@ -1816,7 +2070,15 @@ class ['d] frag_machine factory = object(self)
 	Not_found ->
 	  V.VarHash.replace temps var value
 
-  method set_word_var var v = self#set_int_var var (factory#from_concrete_32 v)
+  method set_word_var reg v =
+    self#set_int_var (Hashtbl.find reg_to_var reg) (factory#from_concrete_32 v)
+
+  val mutable symbol_uniq = 0
+      
+  method set_word_reg_symbolic reg s =
+    self#set_int_var (Hashtbl.find reg_to_var reg)
+      (factory#fresh_symbolic_32 (s ^ "_" ^ (string_of_int symbol_uniq)));
+    symbol_uniq <- symbol_uniq + 1
 
   method eval_int_exp_ty exp =
     match exp with
@@ -2044,7 +2306,7 @@ class ['d] frag_machine factory = object(self)
     match e with
       | V.Name(lab) -> lab
       | _ ->
-	  let addr = (self#eval_int_exp e)#to_concrete_32 in
+	  let addr = self#eval_addr_exp e in
 	    Printf.sprintf "pc_0x%Lx" addr
 
   method jump lab =
@@ -2161,7 +2423,7 @@ class ['d] frag_machine factory = object(self)
 	if (prev_ebp <> 0L) then
 	  loop prev_ebp
     in
-      loop (self#get_word_var (List.nth (self#get_x86_gprs ()) 7))
+      loop (self#get_word_var R_EBP)
 end
 
 type decision_tree_node = {
@@ -2763,14 +3025,7 @@ let simplify_frag (orig_dl, orig_sl) =
 exception SimulatedExit of int64
 
 class linux_special_handler fm =
-  let (eax_var, ebx_var, ecx_var, edx_var, esi_var, edi_var,
-       esp_var, ebp_var, gs_var, gdt_var) =
-    match fm#get_x86_gprs () with
-      | [a; b; c; d; si; di; sp; bp; gs; gd]
-	-> (a, b, c, d, si, di, sp, bp, gs, gd)
-      | _ -> failwith "Bad length for gpr_vars"
-  in
-  let put_reg var v = fm#set_word_var var v in
+  let put_reg reg v = fm#set_word_var reg v in
   let load_word addr = fm#load_word_conc addr in
   let lea base i step off =
     Int64.add base (Int64.add (Int64.mul (Int64.of_int i) (Int64.of_int step))
@@ -2875,7 +3130,7 @@ object(self)
       | Unix.EUNKNOWNERR(i) -> i
 
   method put_errno err =
-    put_reg eax_var (Int64.of_int ~-(self#errno err))
+    put_reg R_EAX (Int64.of_int ~-(self#errno err))
 
   val mutable next_fresh_addr = 0x50000000L
 
@@ -2892,14 +3147,14 @@ object(self)
     (try
        (match fd with
 	  | 1 -> Array.iter print_char bytes;
-	      put_reg eax_var (Int64.of_int count)
+	      put_reg R_EAX (Int64.of_int count)
 	  | _ ->
 	      let str = Array.fold_left (^) ""
 		(Array.map (String.make 1) bytes)
 	      in
 		match Unix.write (self#get_fd fd) str 0 (String.length str)
 		with
-		  | i when i = count -> put_reg eax_var (Int64.of_int count)
+		  | i when i = count -> put_reg R_EAX (Int64.of_int count)
 		  | _ -> raise (Unix.Unix_error(Unix.EINTR, "", "")))
      with
        | Unix.Unix_error(err, _, _) -> self#put_errno err);
@@ -2921,8 +3176,8 @@ object(self)
     let new_gs = Int64.logor (Int64.shift_left new_ent 3) 3L in
     let new_gdt = 0x60000000L in
     let descr = Int64.add new_gdt (Int64.shift_left new_ent 3) in
-      put_reg gdt_var new_gdt;
-      put_reg gs_var new_gs;
+      put_reg R_GDT new_gdt;
+      put_reg R_GS new_gs;
       store_word descr 0 (Int64.logand limit 0xffL);
       store_word descr 1 (Int64.logand 
 			    (Int64.shift_right limit 8) 0xffL);
@@ -3038,7 +3293,7 @@ object(self)
     in
       try
 	Unix.access path oc_mode;
-	put_reg eax_var 0L
+	put_reg R_EAX 0L
       with
 	| Unix.Unix_error(err, _, _) -> self#put_errno err
 
@@ -3047,13 +3302,13 @@ object(self)
       ()
     else
       the_break := addr;
-    put_reg eax_var !the_break;
+    put_reg R_EAX !the_break;
 
   method sys_close fd =
     try
       Unix.close (self#get_fd fd);
       Array.set unix_fds fd None;
-      put_reg eax_var 0L (* success *)
+      put_reg R_EAX 0L (* success *)
     with
       | Unix.Unix_error(err, _, _) -> self#put_errno err
 
@@ -3067,24 +3322,24 @@ object(self)
 	    0L (* never anyone to wake *)
 	| _ -> failwith "Unhandled futex operation"
     in
-      put_reg eax_var ret
+      put_reg R_EAX ret
 
   method sys_ugetrlimit rsrc buf =
     store_word buf 0 0xffffffffL; (* infinity *)
     store_word buf 4 0xffffffffL; (* infinity *)
-    put_reg eax_var 0L (* success *)
+    put_reg R_EAX 0L (* success *)
 
   method sys_getgid32 () = 
-    put_reg eax_var (Int64.of_int (Unix.getgid ()))
+    put_reg R_EAX (Int64.of_int (Unix.getgid ()))
 
   method sys_getegid32 () = 
-    put_reg eax_var (Int64.of_int (Unix.getegid ()))
+    put_reg R_EAX (Int64.of_int (Unix.getegid ()))
 
   method sys_getuid32 () = 
-    put_reg eax_var (Int64.of_int (Unix.getuid ()))
+    put_reg R_EAX (Int64.of_int (Unix.getuid ()))
 
   method sys_geteuid32 () = 
-    put_reg eax_var (Int64.of_int (Unix.geteuid ()))
+    put_reg R_EAX (Int64.of_int (Unix.geteuid ()))
 
   method sys_ioctl fd req argp =
     match req with
@@ -3124,15 +3379,15 @@ object(self)
 	    do_read addr
 	| _ -> failwith "Unhandled mmap operation"
     in
-      put_reg eax_var ret
+      put_reg R_EAX ret
 
   method sys_mprotect addr len prot =
     (* treat as no-op *)
-    put_reg eax_var 0L;
+    put_reg R_EAX 0L;
 
   method sys_munmap addr len =
     (* treat as no-op *)
-    put_reg eax_var 0L
+    put_reg R_EAX 0L
 
   method sys_open path flags mode =
     try
@@ -3140,7 +3395,7 @@ object(self)
       let oc_fd = Unix.openfile path oc_flags mode and
 	  vt_fd = self#fresh_fd () in
 	Array.set unix_fds vt_fd (Some oc_fd);
-	put_reg eax_var (Int64.of_int vt_fd)
+	put_reg R_EAX (Int64.of_int vt_fd)
     with
       | Unix.Unix_error(err, _, _) -> self#put_errno err
 
@@ -3148,16 +3403,16 @@ object(self)
     let str = String.create count in
     let num_read = Unix.read (self#get_fd fd) str 0 count in
       fm#store_str buf 0L (String.sub str 0 num_read);
-      put_reg eax_var (Int64.of_int num_read)
+      put_reg R_EAX (Int64.of_int num_read)
 
   method sys_readlink path out_buf buflen =
     let real = Unix.readlink path in
     let written = min buflen (String.length real) in
       fm#store_str out_buf 0L (String.sub real 0 written);
-      put_reg eax_var (Int64.of_int written);
+      put_reg R_EAX (Int64.of_int written);
 
   method sys_set_robust_list addr len =
-    put_reg eax_var 0L (* success *)
+    put_reg R_EAX 0L (* success *)
 
   method sys_set_thread_area uinfo =
     let old_ent = Int64.to_int (load_word (lea uinfo 0 0 0))
@@ -3171,12 +3426,12 @@ object(self)
 	     let new_ent = 12L in
 	       self#setup_tcb_seg new_ent base limit;
 	       store_word uinfo 0 new_ent;
-	       put_reg eax_var 0L (* success *)
+	       put_reg R_EAX 0L (* success *)
 	 | _ -> failwith "Unhandled args to set_thread_area")
 
   method sys_set_tid_address addr =
     let pid = Unix.getpid () in
-      put_reg eax_var (Int64.of_int pid)
+      put_reg R_EAX (Int64.of_int pid)
 
   method sys_rt_sigaction signum newbuf oldbuf setlen =
     (if oldbuf = 0L then () else
@@ -3191,18 +3446,18 @@ object(self)
 	store_word oldbuf 8 0L; (* restorer *)
 	store_word oldbuf 12 mask_low;
 	store_word oldbuf 12 mask_high);
-    put_reg eax_var 0L; (* success *)
+    put_reg R_EAX 0L; (* success *)
 
   method sys_rt_sigprocmask how newset oldset setlen =
     (if oldset = 0L then () else
        failwith "Can't report old mask");
-    put_reg eax_var 0L (* success *)
+    put_reg R_EAX 0L (* success *)
 
   method sys_stat64 path buf_addr =
     try
       let oc_buf = Unix.stat path in
 	self#write_oc_statbuf buf_addr oc_buf;
-	put_reg eax_var 0L (* success *)
+	put_reg R_EAX 0L (* success *)
     with
       | Unix.Unix_error(err, _, _) -> self#put_errno err
 
@@ -3213,18 +3468,18 @@ object(self)
        else
 	 Unix.stat "/etc/group") (* pretend stdout is always redirected *) in
       self#write_oc_statbuf buf_addr oc_buf;
-      put_reg eax_var 0L (* success *)
+      put_reg R_EAX 0L (* success *)
 
   method sys_statfs64 path buf_len struct_buf =
     assert(buf_len = 84);
     self#write_fake_statfs64buf struct_buf;
-    put_reg eax_var 0L (* success *)
+    put_reg R_EAX 0L (* success *)
 
   method sys_time addr =
     let time = Int64.of_float (Unix.time ()) in
       if addr != 0L then
 	store_word addr 0 time else ();
-      put_reg eax_var time
+      put_reg R_EAX time
 
   method sys_times addr =
     let float_to_clocks f = Int64.of_float (f *. 100.0) in
@@ -3238,7 +3493,7 @@ object(self)
       store_word addr 4 st;		 
       store_word addr 8 cut;
       store_word addr 12 cst;
-      put_reg eax_var (Int64.add ut st)
+      put_reg R_EAX (Int64.add ut st)
 
   method sys_uname buf =
     List.iter2
@@ -3252,7 +3507,7 @@ object(self)
        "i686"; (* machine *)
        "cs.berkeley.edu" (* domain *)
       ];
-    put_reg eax_var 0L (* success *)
+    put_reg R_EAX 0L (* success *)
 
   method sys_write fd bytes count =
     self#do_write fd bytes count
@@ -3269,13 +3524,13 @@ object(self)
       self#do_write fd bytes (Array.length bytes)
 
   method handle_linux_syscall () =
-    (let syscall_num = Int64.to_int (fm#get_word_var eax_var) and
-	 ebx = fm#get_word_var ebx_var and
-	 ecx = fm#get_word_var ecx_var and
-	 edx = fm#get_word_var edx_var and
-	 esi = fm#get_word_var esi_var and
-	 edi = fm#get_word_var edi_var and
-	 ebp = fm#get_word_var ebp_var in
+    (let syscall_num = Int64.to_int (fm#get_word_var R_EAX) and
+	 ebx = fm#get_word_var R_EBX and
+	 ecx = fm#get_word_var R_ECX and
+	 edx = fm#get_word_var R_EDX and
+	 esi = fm#get_word_var R_ESI and
+	 edi = fm#get_word_var R_EDI and
+	 ebp = fm#get_word_var R_EBP in
        match syscall_num with
 	 | 0 -> (* restart_syscall *)
 	     failwith "Unhandled Linux system call restart_syscall (0)"
@@ -4007,7 +4262,7 @@ object(self)
 	     Printf.printf "Unhandled system call %d\n" syscall_num;
 	     failwith "Unhandled Linux system call");
     Printf.printf " = %Ld (0x%08Lx)\n"
-      (fix_s32 (fm#get_word_var eax_var)) (fm#get_word_var eax_var);
+      (fix_s32 (fm#get_word_var R_EAX)) (fm#get_word_var R_EAX);
     flush stdout
 
   method handle_special str =
@@ -4017,7 +4272,15 @@ object(self)
 
 end
 
-let rec runloop fm eip_var eip mem_var asmir_gamma until =
+let call_replacements fm eip =
+  match eip with
+    | 0x0804836cL (* malloc *) ->
+	Some (fun () -> fm#set_word_reg_symbolic R_EAX "malloc")
+    | 0x0804834cL (* __ assert_fail *) ->
+	Some (fun () -> raise (SimulatedExit(-1L)))
+    | _ -> None
+
+let rec runloop fm eip asmir_gamma until =
   let load_byte addr = fm#load_byte_conc addr in
   let decode_insn eip =
     let insn_bytes = Array.init 16
@@ -4064,7 +4327,7 @@ let rec runloop fm eip_var eip mem_var asmir_gamma until =
     with
 	Not_found ->
 	  Hashtbl.add trans_cache eip
-	    (simplify_frag (decode_insns eip 10 true));
+	    (simplify_frag (decode_insns eip 1 true));
 	  Hashtbl.find trans_cache eip
   in
   (* let print_gprs () =
@@ -4121,16 +4384,20 @@ let rec runloop fm eip_var eip mem_var asmir_gamma until =
 	 (load_byte (Int64.add eip (Int64.of_int 14)))
 	 (load_byte (Int64.add eip (Int64.of_int 15))); *)
       (* print_gprs (); *)
-      (* V.pp_program print_string prog; *)
-      fm#set_frag prog;
+      let prog' = match call_replacements fm eip with
+	  | None -> prog
+	  | Some thunk ->
+	      thunk ();
+	      decode_insns_cached 0x080485f7L
+      in
+      (* V.pp_program print_string prog'; *)
+      fm#set_frag prog';
       (* flush stdout; *)
-      let s = fm#run () in
-	if s = "halt_0" then () else
-	  let new_eip = label_to_eip s in
-	    match (new_eip, until) with
-	      | (e1, Some e2) when e1 = e2 -> ()
-	      | (0L, _) -> failwith "Jump to 0"
-	      | _ -> loop new_eip
+      let new_eip = label_to_eip (fm#run ()) in
+	match (new_eip, until) with
+	  | (e1, Some e2) when e1 = e2 -> ()
+	  | (0L, _) -> failwith "Jump to 0"
+	  | _ -> loop new_eip
   in
     loop eip
 
@@ -4211,12 +4478,11 @@ let loop_w_stats count fn =
     done;
     Gc.full_major () (* for the benefit of leak checking *)
 
-let fuzz_sym_str start_eip end_eip buf_addr buf_len 
-    fm eip_var mem_var asmir_gamma
+let fuzz_sym_str start_eip end_eip buf_addr buf_len fm asmir_gamma
     =
-  let eip = fm#get_word_var eip_var
+  let eip = fm#get_word_var R_EIP
   in
-    runloop fm eip_var eip mem_var asmir_gamma (Some start_eip);
+    runloop fm eip asmir_gamma (Some start_eip);
     fm#make_snap (); Printf.printf "Took snapshot\n";
     loop_w_stats None
       (fun iter ->
@@ -4224,7 +4490,7 @@ let fuzz_sym_str start_eip end_eip buf_addr buf_len
 	   Random.init (Int64.to_int iter);
 	   fm#store_symbolic_cstr buf_addr buf_len;
 	   (try
-	      runloop fm eip_var start_eip mem_var asmir_gamma (Some end_eip);
+	      runloop fm start_eip asmir_gamma (Some end_eip);
 	    with
 	      | Failure("Jump to 0") -> () (* equivalent of segfault *)
 	      | SimulatedExit(_) -> ()
@@ -4243,6 +4509,33 @@ let fuzz_sym_str start_eip end_eip buf_addr buf_len
 
 let fuzz_pcre (fm : symbolic_domain sym_path_frag_machine) =
   fuzz_sym_str 0x08048656L 0x080486d2L 0x08063c20L 20 fm
+
+let fuzz_static start_eip end_eip fm asmir_gamma =
+  fm#make_x86_regs_symbolic;
+  fm#make_snap (); Printf.printf "Took snapshot\n";
+  loop_w_stats None
+    (fun iter ->
+       let old_tcs = Hashtbl.length trans_cache in
+	 Random.init (Int64.to_int iter);
+	 (try
+	    runloop fm start_eip asmir_gamma (Some end_eip);
+	  with
+	    | Failure("Jump to 0") -> () (* equivalent of segfault *)
+	    | SimulatedExit(_) -> ()
+	 );
+	 fm#finish_path;
+	 if (Hashtbl.length trans_cache - old_tcs > 0) then
+	   (* Printf.printf "Coverage increased to %d with %s on %Ld\n"
+	      (Hashtbl.length trans_cache) regex iter *)
+	   Printf.printf "Coverage increased to %d on %Ld\n"
+	     (Hashtbl.length trans_cache) iter
+	 else ();
+	   fm#reset ()
+    );
+  Gc.print_stat stdout
+
+let fuzz_vxalloc (fm : symbolic_domain sym_path_frag_machine) =
+  fuzz_static 0x08048434L 0x80485f7L fm
 
 let usage = "trans_eval [options]* file.ir\n"
 let infile = ref ""
@@ -4265,27 +4558,28 @@ let main argc argv =
     let () = if !Vine_parser.flag_pp then 
       Vine.pp_program (print_string) prog in
     let (dl, sl) = prog in
-    let eip_var = List.find (fun (i, s, t) -> s = "R_EIP") dl in
-    let mem_var = List.find (fun (i, s, t) -> s = "mem") dl in
-    let asmir_gamma = Asmir.gamma_create mem_var dl in
+    let asmir_gamma = Asmir.gamma_create
+      (List.find (fun (i, s, t) -> s = "mem") dl) dl in
     let fm = new sym_path_frag_machine
       (new symbolic_domain (V.Unknown("factory"))) in
     (* let fm = new fake_frag_machine prog in *)
+      fm#on_missing_symbol;
       fm#init_prog prog;
       fm#add_special_handler
 	((new linux_special_handler fm) :> special_handler);
      
       try
-	fuzz_pcre fm eip_var mem_var asmir_gamma
+	(* fuzz_pcre *) fuzz_vxalloc fm asmir_gamma
       with
-	| NotConcrete e ->
+	(* | NotConcrete e ->
 	    Printf.printf "Unexpected symbolic value: %s\n" (V.exp_to_string e)
+	*)
 	| Simplify_failure s ->
 	    Printf.printf "Simplify failure <%s> at:\n" s;
 	    fm#print_backtrace;
 
-      (* let eip = fm#get_word_var eip_var in
-	runloop fm eip_var eip mem_var asmir_gamma None (* run until exit *) *)
+      (* let eip = fm#get_word_var R_EIP in
+	runloop fm eip asmir_gamma None (* run until exit *) *)
 ;;
 
 main (Array.length Sys.argv) Sys.argv;;
