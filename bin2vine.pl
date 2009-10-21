@@ -5,6 +5,8 @@ my $root = "/";
 
 my $load_base = 0x08048000;
 
+my $is_static = 1;
+
 my %memory;
 
 use strict;
@@ -76,6 +78,7 @@ sub write_segment {
     if ($phr->{"type"} == 1 and $phr->{"flags"} == 5) {
 	$type_str = "text";
     } elsif ($phr->{"type"} == 1 and $phr->{"flags"} == 6) {
+	return if $is_static;
 	$type_str = "data";
     } elsif ($phr->{"type"} == 2) {
 	$type_str = "DYNAMIC";
@@ -227,108 +230,112 @@ for my $ph_num (1 .. $prog_eh{"phnum"}) {
     }
 }
 
-my %env;
-my %string_locs;
-for my $k (qw(DISPLAY EDITOR HOME LANG LOGNAME PAGER PATH PWD SHELL TERM
-	      USER USERNAME XAUTHORITY)) {
-    $env{$k} = $ENV{$k};
-    $string_locs{"$k=$env{$k}\0"} = 0;
-}
-# Hmm, this means that argv entries with the same value will share storage.
-# Is that kosher?
-for my $str (@argv, "i686") {
-    $string_locs{"$str\0"} = 0;
-}
-my $stack_top = 0xc0000000;
-my $stack_size = 4096;
-my $stack_start = $stack_top - $stack_size;
-my $stack = "\0" x $stack_size;
-my $esp = $stack_top;
-for my $str (sort keys %string_locs) {
-    $esp -= length $str;
-    substr($stack, $esp-$stack_start, length $str) = $str;
-    $string_locs{$str} = $esp;
-}
-$esp &= ~0xf; # 16-byte align
-my %auxv =
-  (3 => $load_base + $prog_eh{"phoff"},  # AT_PHDR
-   4 => $prog_eh{"phentsize"},           # AT_PHENT,
-   5 => $prog_eh{"phnum"},               # AT_PHNUM,
-   6 => 4096,                            # AT_PAGESZ
-   7 => $ldso_base,                      # AT_BASE: dynamic loader, if present
-   8 => 0,                               # AT_FLAGS, no flags
-   9 => $prog_eh{"entry"},               # AT_ENTRY,
-   11 => $<,                             # AT_UID
-   12 => $>,                             # AT_EUID
-   13 => $(,                             # AT_GID
-   14 => $),                             # AT_EGID
-   15 => $string_locs{"i686\0"},         # AT_PLATFORM
-#   16 => 0xbfebfbff,                     # AT_HWCAP, Core 2 Duo
-   16 => 0x0,                            # AT_HWCAP, presumably bare-bones
-   17 => 100,                            # AT_CLKTCK
-   23 => 0,                              # AT_SECURE
-   # Let's see if we can avoid bothering with AT_SYSINFO
-  );
-$esp -= 8 if keys(%auxv) & 1;
-for my $k (sort {$a <=> $b} keys %auxv) {
-    $esp -= 8;
-    substr($stack, $esp-$stack_start, 8) = pack("II", $k, $auxv{$k});
-}
-$esp -= 4; # 0 byte marking end of environment
-for my $k (reverse sort keys %env) {
+sub write_startup_state {
+    my %env;
+    my %string_locs;
+    for my $k (qw(DISPLAY EDITOR HOME LANG LOGNAME PAGER PATH PWD SHELL TERM
+		  USER USERNAME XAUTHORITY)) {
+	$env{$k} = $ENV{$k};
+	$string_locs{"$k=$env{$k}\0"} = 0;
+    }
+    # Hmm, this means that argv entries with the same value will share storage.
+    # Is that kosher?
+    for my $str (@argv, "i686") {
+	$string_locs{"$str\0"} = 0;
+    }
+    my $stack_top = 0xc0000000;
+    my $stack_size = 4096;
+    my $stack_start = $stack_top - $stack_size;
+    my $stack = "\0" x $stack_size;
+    my $esp = $stack_top;
+    for my $str (sort keys %string_locs) {
+	$esp -= length $str;
+	substr($stack, $esp-$stack_start, length $str) = $str;
+	$string_locs{$str} = $esp;
+    }
+    $esp &= ~0xf; # 16-byte align
+    my %auxv =
+      (3 => $load_base + $prog_eh{"phoff"},  # AT_PHDR
+       4 => $prog_eh{"phentsize"},           # AT_PHENT,
+       5 => $prog_eh{"phnum"},               # AT_PHNUM,
+       6 => 4096,                            # AT_PAGESZ
+       7 => $ldso_base,                      # AT_BASE: dynamic loader, if any
+       8 => 0,                               # AT_FLAGS, no flags
+       9 => $prog_eh{"entry"},               # AT_ENTRY,
+       11 => $<,                             # AT_UID
+       12 => $>,                             # AT_EUID
+       13 => $(,                             # AT_GID
+       14 => $),                             # AT_EGID
+       15 => $string_locs{"i686\0"},         # AT_PLATFORM
+       #   16 => 0xbfebfbff,                 # AT_HWCAP, Core 2 Duo
+       16 => 0x0,                            # AT_HWCAP, presumably bare-bones
+       17 => 100,                            # AT_CLKTCK
+       23 => 0,                              # AT_SECURE
+       # Let's see if we can avoid bothering with AT_SYSINFO
+      );
+    $esp -= 8 if keys(%auxv) & 1;
+    for my $k (sort {$a <=> $b} keys %auxv) {
+	$esp -= 8;
+	substr($stack, $esp-$stack_start, 8) = pack("II", $k, $auxv{$k});
+    }
+    $esp -= 4; # 0 byte marking end of environment
+    for my $k (reverse sort keys %env) {
+	$esp -= 4;
+	substr($stack, $esp-$stack_start, 4)
+	  = pack("I", $string_locs{"$k=$env{$k}\0"});
+    }
+    $esp -= 4; # 0 byte marking end of argv
+    for my $str (reverse @argv) {
+	$esp -= 4;
+	substr($stack, $esp-$stack_start, 4)
+	  = pack("I", $string_locs{"$str\0"});
+    }
     $esp -= 4;
-    substr($stack, $esp-$stack_start, 4)
-      = pack("I", $string_locs{"$k=$env{$k}\0"});
+    substr($stack, $esp-$stack_start, 4) = pack("I", scalar @argv); # argc
+
+    die "Stack was too big" if $esp < $stack_start;
+    write_page($stack_start, $stack, $stack_size);
+
+    printf "R_ESP:reg32_t = 0x%08x:reg32_t;\n", $esp;
+    printf "R_EDX:reg32_t = 0x%08x:reg32_t;\n", 0; # Nothing for atexit()
+
+    my $entry;
+    if ($ldso_entry != -1) {
+	# Run the dynamic linker first
+	$entry = $ldso_entry;
+    } else {
+	# Run the main program first
+	$entry = $prog_eh{"entry"};
+    }
+    printf "R_EIP:reg32_t = 0x%08x:reg32_t;\n", $entry;
+
+    # ABI says: other GPRs undefined
+    # But zero out some that the Vine translations or the code will
+    # actually read, to avoid spurious uninit value warnings from Vine.
+
+    # Callee-saved registers, saved in startup code
+    printf "R_EBP:reg32_t = 0x%08x:reg32_t;\n", 0;
+    printf "R_EDI:reg32_t = 0x%08x:reg32_t;\n", 0;
+    printf "R_ESI:reg32_t = 0x%08x:reg32_t;\n", 0;
+    printf "R_EBX:reg32_t = 0x%08x:reg32_t;\n", 0;
+
+    # LDT, read even when not used
+    printf "R_LDT:reg32_t = 0x%08x:reg32_t;\n", 0;
+
+    # Caller-saved registers, printed for debugging purposes
+    printf "R_EAX:reg32_t = 0x%08x:reg32_t;\n", 0;
+    printf "R_ECX:reg32_t = 0x%08x:reg32_t;\n", 0;
+
+    my $eflags = 0; # ABI says: unspecified, except DF clear
+    printf "EFLAGS:reg32_t = 0x%08x:reg32_t;\n", $eflags;
+
+    printf "R_CF:reg1_t = 0x%01x:reg1_t;\n", !!($eflags & 0x001);
+    printf "R_PF:reg1_t = 0x%01x:reg1_t;\n", !!($eflags & 0x004);
+    printf "R_AF:reg1_t = 0x%01x:reg1_t;\n", !!($eflags & 0x010);
+    printf "R_ZF:reg1_t = 0x%01x:reg1_t;\n", !!($eflags & 0x040);
+    printf "R_SF:reg1_t = 0x%01x:reg1_t;\n", !!($eflags & 0x080);
+    printf "R_OF:reg1_t = 0x%01x:reg1_t;\n", !!($eflags & 0x800);
+    printf "R_DFLAG:reg32_t = 0x%08x:reg32_t;\n", (-1)**(!!($eflags & 0x400));
 }
-$esp -= 4; # 0 byte marking end of argv
-for my $str (reverse @argv) {
-    $esp -= 4;
-    substr($stack, $esp-$stack_start, 4) = pack("I", $string_locs{"$str\0"});
-}
-$esp -= 4;
-substr($stack, $esp-$stack_start, 4) = pack("I", scalar @argv); # argc
-
-die "Stack was too big" if $esp < $stack_start;
-write_page($stack_start, $stack, $stack_size);
-
-printf "R_ESP:reg32_t = 0x%08x:reg32_t;\n", $esp;
-printf "R_EDX:reg32_t = 0x%08x:reg32_t;\n", 0; # Nothing for atexit()
-
-my $entry;
-if ($ldso_entry != -1) {
-    # Run the dynamic linker first
-    $entry = $ldso_entry;
-} else {
-    # Run the main program first
-    $entry = $prog_eh{"entry"};
-}
-printf "R_EIP:reg32_t = 0x%08x:reg32_t;\n", $entry;
-
-# ABI says: other GPRs undefined
-# But zero out some that the Vine translations or the code will
-# actually read, to avoid spurious uninit value warnings from Vine.
-
-# Callee-saved registers, saved in startup code
-printf "R_EBP:reg32_t = 0x%08x:reg32_t;\n", 0;
-printf "R_EDI:reg32_t = 0x%08x:reg32_t;\n", 0;
-printf "R_ESI:reg32_t = 0x%08x:reg32_t;\n", 0;
-printf "R_EBX:reg32_t = 0x%08x:reg32_t;\n", 0;
-
-# LDT, read even when not used
-printf "R_LDT:reg32_t = 0x%08x:reg32_t;\n", 0;
-
-# Caller-saved registers, printed for debugging purposes
-printf "R_EAX:reg32_t = 0x%08x:reg32_t;\n", 0;
-printf "R_ECX:reg32_t = 0x%08x:reg32_t;\n", 0;
-
-my $eflags = 0; # ABI says: unspecified, except DF clear
-printf "EFLAGS:reg32_t = 0x%08x:reg32_t;\n", $eflags;
-
-printf "R_CF:reg1_t = 0x%01x:reg1_t;\n", !!($eflags & 0x001);
-printf "R_PF:reg1_t = 0x%01x:reg1_t;\n", !!($eflags & 0x004);
-printf "R_AF:reg1_t = 0x%01x:reg1_t;\n", !!($eflags & 0x010);
-printf "R_ZF:reg1_t = 0x%01x:reg1_t;\n", !!($eflags & 0x040);
-printf "R_SF:reg1_t = 0x%01x:reg1_t;\n", !!($eflags & 0x080);
-printf "R_OF:reg1_t = 0x%01x:reg1_t;\n", !!($eflags & 0x800);
-printf "R_DFLAG:reg32_t = 0x%08x:reg32_t;\n", (-1)**(!!($eflags & 0x400));
 		
+write_startup_state() if not $is_static;
