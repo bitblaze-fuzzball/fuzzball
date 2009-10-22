@@ -2431,12 +2431,18 @@ type decision_tree_node = {
   (* None: unexplored; Some None: unsat; Some Some n: sat *)
   mutable f_child : decision_tree_node option option;
   mutable t_child : decision_tree_node option option;
-  mutable all_seen : bool}
+  mutable all_seen : bool;
+  mutable ident : int }
+
+let next_dt_ident = ref 1
 
 let new_dt_node the_parent =
+  next_dt_ident := !next_dt_ident + 1;
   {parent = the_parent;
    f_child = None; t_child = None;
-   all_seen = false}
+   all_seen = false; ident = !next_dt_ident}
+
+exception BoringPath
 
 class decision_tree = object(self)
   val root = new_dt_node None
@@ -2465,21 +2471,30 @@ class decision_tree = object(self)
     in
       loop cur
 
-  method extend b =
+  method add_kid b =
     match (b, cur.f_child, cur.t_child) with
-      | (false, Some(Some kid), _) -> cur <- kid
-      | (true,  _, Some(Some kid)) -> cur <- kid
+      | (false, Some(Some kid), _)
+      | (true,  _, Some(Some kid)) -> () (* already there *)
       | (false, None, _) ->
 	  let new_kid = new_dt_node (Some cur) in
-	    cur.f_child <- Some (Some new_kid);
-	    cur <- new_kid
+	    cur.f_child <- Some (Some new_kid)
       | (true,  _, None) ->
 	  let new_kid = new_dt_node (Some cur) in
-	    cur.t_child <- Some (Some new_kid);
-	    cur <- new_kid
+	    cur.t_child <- Some (Some new_kid)
       | (false, Some None, _)
       | (true,  _, Some None) ->
 	  failwith "Tried to extend an unsat branch"
+
+  method extend b =
+    self#add_kid b;
+    match (b, cur.f_child, cur.t_child) with
+      | (false, Some(Some kid), _) -> cur <- kid
+      | (true,  _, Some(Some kid)) -> cur <- kid
+      | (false, None, _)
+      | (true,  _, None)
+      | (false, Some None, _)
+      | (true,  _, Some None) ->
+	  failwith "Add_kid failed in extend"
 
   method record_unsat b =
     match (b, cur.f_child, cur.t_child) with
@@ -2495,36 +2510,129 @@ class decision_tree = object(self)
 
   method try_extend (trans_func : bool -> V.exp)
     try_func (non_try_func : bool -> unit) =
-    match (cur.f_child, cur.t_child) with
-      | (Some(Some f_kid), Some(Some t_kid)) ->
-	  let b = Random.bool () in
-	    non_try_func b;
-	    self#extend b;
-	    (b, (trans_func b))
-      | (Some(Some f_kid), Some None) ->
-	  non_try_func false;
-	  self#extend false;
-	  (false, (trans_func false))
-      | (Some None, Some(Some t_kid)) ->
-	  non_try_func true;
-	  self#extend true;
-	  (true, (trans_func true))
-      | (Some None, Some None) -> failwith "Unsat node in try_branches"
-      | _ ->
-	  let b = Random.bool () in
-	  let c = trans_func b in
-	    if try_func b c then
-	      (self#extend b;
-	       (b, c))
-            else
-	      (self#record_unsat b;
-	       let c' = trans_func (not b) in
-		 if try_func (not b) c' then
-		   (self#extend (not b);
-		    ((not b), c'))
-		 else
-		   failwith "Both branches unsat in try_branches")
-   
+    let known b = 
+      non_try_func b;
+      self#extend b;
+      (b, (trans_func b))
+    in
+    let known_check b =
+      let c = trans_func b in
+	if try_func b c then
+	  (self#extend b; (b, c))
+	else
+	  failwith "Unexpected unsat in try_extend"
+    in
+    let try_or_boring b =
+      let c = trans_func b in
+	if try_func b c then
+	  (self#extend b; (b, c))
+	else
+	  (self#record_unsat b;
+	   self#mark_all_seen_node cur;
+	   known (not b))
+    in
+    let try_both () =
+      let b = Random.bool () in
+      let c = trans_func b and
+	  c' = trans_func (not b) in
+	if try_func b c then
+	  (if try_func (not b) c' then
+	     self#add_kid (not b)
+	   else
+	     self#record_unsat (not b);
+	   self#extend b;
+	   (b, c))
+        else
+	  (self#record_unsat b;
+	   if try_func (not b) c' then
+	     (self#extend (not b);
+	      ((not b), c'))
+	   else
+	     failwith "Both branches unsat in try_extend")
+    in
+      assert(not cur.all_seen);
+      match (cur.f_child, cur.t_child) with
+	| (Some(Some f_kid), Some(Some t_kid)) ->
+	    (match (f_kid.all_seen, t_kid.all_seen) with
+	       | (true, true) -> 
+		   if cur.all_seen then
+		     known (Random.bool ())
+		   else
+		     failwith "all_seen invariant failure"
+	       | (false, true) -> known false
+	       | (true, false) -> known true
+	       | (false, false) -> known (Random.bool ()))
+	| (Some(Some f_kid), Some None) ->
+	    assert(not f_kid.all_seen);
+	    known false
+	| (Some None, Some(Some t_kid)) ->
+	    assert(not t_kid.all_seen);
+	    known true
+	| (Some None, Some None) -> failwith "Unsat node in try_extend"
+	| (Some(Some f_kid), None) ->
+	    if f_kid.all_seen then
+	      try_or_boring true
+	    else
+	      try_both ()
+	| (None, Some(Some t_kid)) ->
+	    if t_kid.all_seen then
+	      try_or_boring false
+	    else
+	      try_both ()
+	| (None, Some None) -> known_check false
+	| (Some None, None) -> known_check true
+	| (None, None) ->
+	    try_both ()
+
+  method private mark_all_seen_node node =
+    let rec loop n = 
+      n.all_seen <- true;
+      match n.parent with
+	| None -> ()
+	| Some p ->
+	    (match (p.all_seen, p.t_child, p.f_child) with
+	       | (false, Some(Some f_kid), Some(Some t_kid))
+		   when f_kid.all_seen && t_kid.all_seen ->
+		   loop p
+	       | (false, Some(Some f_kid), Some None)
+		   when f_kid.all_seen ->
+		   loop p
+	       | (false, Some None, Some(Some t_kid))
+		   when t_kid.all_seen ->
+		   loop p
+	       | _ -> ())
+    in
+      loop node
+
+  method mark_all_seen = self#mark_all_seen_node cur
+
+  method try_again_p = not root.all_seen
+
+  method print_tree chan =
+    let kid_to_string mmn =
+      match mmn with
+	| None -> "unknown"
+	| Some None -> "none"
+	| Some(Some kid) -> string_of_int kid.ident
+    in
+    let print_node n =
+      Printf.fprintf chan "%d: " n.ident;
+      Printf.fprintf chan "%s %s " (kid_to_string n.f_child)
+	(kid_to_string n.t_child);
+      Printf.fprintf chan "%s %s\n" (if n.all_seen then "*" else "?")
+	(kid_to_string (Some n.parent))
+    in
+    let rec loop n =
+      print_node n;
+      (match n.f_child with
+	 | Some(Some kid) -> loop kid
+	 | _ -> ());
+      (match n.t_child with
+	 | Some(Some kid) -> loop kid
+	 | _ -> ());
+    in
+      loop root
+
   method reset =
     cur <- root
 end
@@ -2650,7 +2758,7 @@ class ['d] sym_path_frag_machine factory = object(self)
 
   method extend_pc_random cond verbose =
     let (result, cond') = self#query_with_pc_random cond verbose in
-      path_cond <- cond' :: path_cond;
+      self#add_to_path_cond cond';
       result
 
   method eval_bool_exp exp =
@@ -2688,10 +2796,14 @@ class ['d] sym_path_frag_machine factory = object(self)
 		!bits
 
   method finish_path =
-    let path_str = String.concat ""
-      (List.map (fun b -> if b then "1" else "0") (List.rev dt#get_hist));
-    in
-      Printf.printf "Path: %s\n" path_str
+    dt#mark_all_seen;
+    (let path_str = String.concat ""
+       (List.map (fun b -> if b then "1" else "0") (List.rev dt#get_hist));
+     in
+       Printf.printf "Path: %s\n" path_str);
+    dt#try_again_p
+
+  method print_tree chan = dt#print_tree chan
 
   method reset () =
     fm#reset ();
@@ -4274,9 +4386,24 @@ end
 
 let call_replacements fm eip =
   match eip with
+    (* vx_alloc: *)
     | 0x0804836cL (* malloc *) ->
 	Some (fun () -> fm#set_word_reg_symbolic R_EAX "malloc")
-    | 0x0804834cL (* __ assert_fail *) ->
+    | 0x0804834cL (* __assert_fail *) ->
+	Some (fun () -> raise (SimulatedExit(-1L)))
+
+    (* hv_fetch: *)
+    | 0x08063550L (* pthread_getspecific *) ->
+	Some (fun () -> fm#set_word_reg_symbolic R_EAX "pthread_thingie")
+    | 0x08063b80L (* malloc *) ->
+	Some (fun () -> fm#set_word_reg_symbolic R_EAX "malloc")
+    | 0x080633b0L (* calloc *) ->
+	Some (fun () -> fm#set_word_reg_symbolic R_EAX "calloc")
+    | 0x080638f0L (* strlen *) ->
+	Some (fun () -> fm#set_word_reg_symbolic R_EAX "strlen")
+    | 0x08063160L (* __errno_location *) ->
+	Some (fun () -> fm#set_word_reg_symbolic R_EAX "errno_loc")
+    | 0x08063410L (* write *) ->
 	Some (fun () -> raise (SimulatedExit(-1L)))
     | _ -> None
 
@@ -4365,7 +4492,7 @@ let rec runloop fm eip asmir_gamma until =
     let prog = (dl, (remove_known_unknowns sl)) in
       (* Libasmir.print_disasm_rawbytes Libasmir.Bfd_arch_i386 eip insn_bytes;
 	 print_string "\n"; *)
-      (* Printf.printf "EIP is %08Lx\n" eip; *)
+      Printf.printf "EIP is %08Lx\n" eip;
       (* Printf.printf "Watchpoint val is %02x\n" (load_byte 0x501650e8L); *)
       (* Printf.printf ("Insn bytes are %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x\n") (load_byte eip)
 	 (load_byte (Int64.add eip (Int64.of_int 1)))
@@ -4388,11 +4515,11 @@ let rec runloop fm eip asmir_gamma until =
 	  | None -> prog
 	  | Some thunk ->
 	      thunk ();
-	      decode_insns_cached 0x080485f7L
+	      decode_insns_cached 0x081517e9L (* 0x080485f7L *)
       in
       (* V.pp_program print_string prog'; *)
       fm#set_frag prog';
-      (* flush stdout; *)
+      flush stdout;
       let new_eip = label_to_eip (fm#run ()) in
 	match (new_eip, until) with
 	  | (e1, Some e2) when e1 = e2 -> ()
@@ -4455,27 +4582,32 @@ let check_memory_usage fm =
   flush stdout;
   Gc.print_stat stdout
 
+exception LastIteration
+
 let loop_w_stats count fn =
   let iter = ref 0L and
       start_wtime = Unix.gettimeofday () and
       start_ctime = Sys.time () in
-    while (match count with
-	     | None -> true
-	     | Some i -> (Int64.to_int !iter) < i)
-    do
-      iter := Int64.add !iter 1L;
-	let old_wtime = Unix.gettimeofday () and
-            old_ctime = Sys.time () in
-	  Printf.printf "Iteration %Ld:\n" !iter;
-	  fn !iter;
-	  (let ctime = Sys.time() in
+    (try
+       while (match count with
+		| None -> true
+		| Some i -> (Int64.to_int !iter) < i)
+       do
+	 iter := Int64.add !iter 1L;
+	 let old_wtime = Unix.gettimeofday () and
+             old_ctime = Sys.time () in
+	   Printf.printf "Iteration %Ld:\n" !iter;
+	   fn !iter;
+	   (let ctime = Sys.time() in
              Printf.printf "CPU time %f sec, %f total\n"
                (ctime -. old_ctime) (ctime -. start_ctime));
-	  (let wtime = Unix.gettimeofday() in
-             Printf.printf "Wall time %f sec, %f total\n"
-               (wtime -. old_wtime) (wtime -. start_wtime));
-	  flush stdout
-    done;
+	   (let wtime = Unix.gettimeofday() in
+              Printf.printf "Wall time %f sec, %f total\n"
+		(wtime -. old_wtime) (wtime -. start_wtime));
+	   flush stdout
+       done
+     with
+	 LastIteration -> ());
     Gc.full_major () (* for the benefit of leak checking *)
 
 let fuzz_sym_str start_eip end_eip buf_addr buf_len fm asmir_gamma
@@ -4494,14 +4626,14 @@ let fuzz_sym_str start_eip end_eip buf_addr buf_len fm asmir_gamma
 	    with
 	      | Failure("Jump to 0") -> () (* equivalent of segfault *)
 	      | SimulatedExit(_) -> ()
+	      | BoringPath -> Printf.printf "\n"
 	   );
-	   fm#finish_path;
+	   if not fm#finish_path then raise LastIteration;
 	   if (Hashtbl.length trans_cache - old_tcs > 0) then
 	     (* Printf.printf "Coverage increased to %d with %s on %Ld\n"
 		(Hashtbl.length trans_cache) regex iter *)
 	     Printf.printf "Coverage increased to %d on %Ld\n"
-	       (Hashtbl.length trans_cache) iter
-	   else ();
+	       (Hashtbl.length trans_cache) iter;
 	   check_memory_usage fm;
 	   fm#reset ()
       );
@@ -4509,6 +4641,11 @@ let fuzz_sym_str start_eip end_eip buf_addr buf_len fm asmir_gamma
 
 let fuzz_pcre (fm : symbolic_domain sym_path_frag_machine) =
   fuzz_sym_str 0x08048656L 0x080486d2L 0x08063c20L 20 fm
+
+let print_tree fm =
+  let chan = open_out "fuzz.tree" in
+    fm#print_tree chan;
+    close_out chan
 
 let fuzz_static start_eip end_eip fm asmir_gamma =
   fm#make_x86_regs_symbolic;
@@ -4522,20 +4659,26 @@ let fuzz_static start_eip end_eip fm asmir_gamma =
 	  with
 	    | Failure("Jump to 0") -> () (* equivalent of segfault *)
 	    | SimulatedExit(_) -> ()
+	    | BoringPath -> Printf.printf "\n"
 	 );
-	 fm#finish_path;
+	 if not fm#finish_path then raise LastIteration;
 	 if (Hashtbl.length trans_cache - old_tcs > 0) then
 	   (* Printf.printf "Coverage increased to %d with %s on %Ld\n"
 	      (Hashtbl.length trans_cache) regex iter *)
 	   Printf.printf "Coverage increased to %d on %Ld\n"
-	     (Hashtbl.length trans_cache) iter
-	 else ();
-	   fm#reset ()
+	     (Hashtbl.length trans_cache) iter;
+	 if Int64.rem iter 50L = 0L then
+	   print_tree fm;
+	 fm#reset ()
     );
+  print_tree fm;
   Gc.print_stat stdout
 
 let fuzz_vxalloc (fm : symbolic_domain sym_path_frag_machine) =
-  fuzz_static 0x08048434L 0x80485f7L fm
+  fuzz_static 0x08048434L 0x080485f7L fm
+
+let fuzz_hv_fetch (fm : symbolic_domain sym_path_frag_machine) =
+  fuzz_static 0x08151790L 0x081517e9L fm
 
 let usage = "trans_eval [options]* file.ir\n"
 let infile = ref ""
@@ -4569,7 +4712,7 @@ let main argc argv =
 	((new linux_special_handler fm) :> special_handler);
      
       try
-	(* fuzz_pcre *) fuzz_vxalloc fm asmir_gamma
+	(* fuzz_pcre *) fuzz_hv_fetch fm asmir_gamma
       with
 	(* | NotConcrete e ->
 	    Printf.printf "Unexpected symbolic value: %s\n" (V.exp_to_string e)
