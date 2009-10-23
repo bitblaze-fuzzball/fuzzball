@@ -1394,33 +1394,14 @@ let gran64_size g64 =
     | Gran32s(g1, g2) -> (gran32_size g1) + (gran32_size g2)
     | Absent64 -> 1
 
-type 'a page = ('a gran64) array
-
-class ['d] granular_memory (factory:'d) = object(self)
-  (* The extra page is a hacky way to not crash on address wrap-around *)
-  val mem = Array.init 0x100001 (fun _ -> None)
-
+class virtual ['d] granular_memory (factory:'d) = object(self)
   val mutable missing : (int -> int64 -> 'd) =
     (fun _ -> failwith "Must call on_missing")
 
   method on_missing m = missing <- m
 
-  method private with_chunk addr fn =
-    let page = Int64.to_int (Int64.shift_right addr 12) and
-	idx = Int64.to_int (Int64.logand addr 0xfffL) in
-    match mem.(page) with
-      | None -> None
-      | Some page ->
-	  let chunk_n = idx asr 3 and
-	      which = idx land 0x7 in
-	  let caddr = (Int64.sub addr (Int64.of_int which)) and
-	      chunk = page.(chunk_n) in 
-	    match chunk with
-	      | Absent64 -> None
-	      | g64 ->
-		  let (l, chunk') = fn page.(chunk_n) caddr which in
-		    page.(chunk_n) <- chunk';
-		    Some l
+  method private virtual with_chunk : int64 ->
+    ('d gran64 -> int64 -> int -> ('d * 'd gran64)) -> 'd option
 
   method private maybe_load_divided addr bits bytes load assemble =
       let mb0 = load addr and
@@ -1496,21 +1477,8 @@ class ['d] granular_memory (factory:'d) = object(self)
 	    self#store_word addr l;
 	    l
 
-  method private get_page addr =
-    let page_n = Int64.to_int (Int64.shift_right addr 12) in
-      match mem.(page_n) with
-	| Some page -> page
-	| None ->
-	    let new_page = Array.init 512 (fun _ -> Absent64) in
-	      mem.(page_n) <- Some new_page;
-	      new_page
-
-  method private store_common_fast addr fn =
-    let page = self#get_page addr and
-	idx = Int64.to_int (Int64.logand addr 0xfffL) in
-    let chunk = idx asr 3 and
-	which = idx land 0x7 in
-      page.(chunk) <- fn page.(chunk) which
+  method private virtual store_common_fast : int64 ->
+    ('d gran64 -> int -> 'd gran64) -> unit
 
   method store_byte addr b =
     self#store_common_fast addr
@@ -1546,6 +1514,53 @@ class ['d] granular_memory (factory:'d) = object(self)
 	self#store_word addr w0;
 	self#store_word (Int64.add addr 4L) w1
 
+  method virtual clear : unit -> unit
+
+  method virtual measure_size : int
+
+(* method make_snap () = failwith "make_snap unsupported"; ()
+   method reset () = failwith "reset unsupported"; () *)
+end
+
+class ['d] granular_page_memory (factory:'d) = object(self)
+  inherit ['d] granular_memory factory
+
+  (* The extra page is a hacky way to not crash on address wrap-around *)
+  val mem = Array.init 0x100001 (fun _ -> None)
+
+  method private with_chunk addr fn =
+    let page = Int64.to_int (Int64.shift_right addr 12) and
+	idx = Int64.to_int (Int64.logand addr 0xfffL) in
+    match mem.(page) with
+      | None -> None
+      | Some page ->
+	  let chunk_n = idx asr 3 and
+	      which = idx land 0x7 in
+	  let caddr = (Int64.sub addr (Int64.of_int which)) and
+	      chunk = page.(chunk_n) in 
+	    match chunk with
+	      | Absent64 -> None
+	      | g64 ->
+		  let (l, chunk') = fn page.(chunk_n) caddr which in
+		    page.(chunk_n) <- chunk';
+		    Some l
+
+  method private get_page addr =
+    let page_n = Int64.to_int (Int64.shift_right addr 12) in
+      match mem.(page_n) with
+	| Some page -> page
+	| None ->
+	    let new_page = Array.init 512 (fun _ -> Absent64) in
+	      mem.(page_n) <- Some new_page;
+	      new_page
+
+  method private store_common_fast addr fn =
+    let page = self#get_page addr and
+	idx = Int64.to_int (Int64.logand addr 0xfffL) in
+    let chunk = idx asr 3 and
+	which = idx land 0x7 in
+      page.(chunk) <- fn page.(chunk) which
+
   method private chunk_to_string addr =
     let page = self#get_page addr and
 	idx = Int64.to_int (Int64.logand addr 0xfffL) in
@@ -1563,9 +1578,47 @@ class ['d] granular_memory (factory:'d) = object(self)
       sum_some
 	(fun page -> Array.fold_left 
 	   (fun n g64 -> n+ gran64_size g64) 0 page) mem
-	 
-(* method make_snap () = failwith "make_snap unsupported"; ()
-   method reset () = failwith "reset unsupported"; () *)
+end
+
+class ['d] granular_hash_memory (factory:'d) = object(self)
+  inherit ['d] granular_memory factory
+
+  val mem = Hashtbl.create 101
+
+  method private with_chunk addr fn =
+    let which = Int64.to_int (Int64.logand addr 0x7L) in
+    let caddr = Int64.sub addr (Int64.of_int which) in
+      try
+	let chunk = Hashtbl.find mem caddr in
+	  match chunk with
+	    | Absent64 -> None
+	    | g64 -> 
+		let (l, chunk') = fn chunk caddr which in
+		  Hashtbl.replace mem caddr chunk';
+		  Some l
+      with
+	  Not_found -> None
+
+  method private store_common_fast addr fn =
+    let which = Int64.to_int (Int64.logand addr 0x7L) in
+    let caddr = Int64.sub addr (Int64.of_int which) in
+    let chunk = try
+      Hashtbl.find mem caddr
+    with Not_found ->
+      Absent64
+    in
+      Hashtbl.replace mem caddr (fn chunk which)
+
+  method private chunk_to_string addr =
+    let caddr = Int64.logand addr (Int64.lognot 0x7L) in
+    let chunk = Hashtbl.find mem caddr in
+      "[" ^ (gran64_to_string chunk) ^ "]"
+
+  method clear () =
+    Hashtbl.clear mem
+
+  method measure_size =
+    Hashtbl.fold (fun k v sum -> sum + gran64_size v) mem 0
 end
 
 class ['d] granular_snapshot_memory
@@ -1925,7 +1978,7 @@ class ['d] frag_machine factory = object(self)
 	       (* (new granular_memory (new concrete_domain 0L)) *)
 	       (new concrete_maybe_adaptor_memory (new string_maybe_memory)
 		  (new symbolic_domain (V.Unknown("factory"))))
-	       (new granular_memory
+	       (new granular_hash_memory
 		  (new symbolic_domain (V.Unknown("factory"))))
 	    )
   
@@ -1982,22 +2035,52 @@ class ['d] frag_machine factory = object(self)
 	     | _ -> failwith "Bad size in on_missing_symbol")
 
   method make_x86_regs_symbolic =
-    self#set_int_var (Hashtbl.find reg_to_var R_EBP)
-      (factory#fresh_symbolic_32 "initial_ebp");
-    self#set_int_var (Hashtbl.find reg_to_var R_ESP)
-      (factory#from_concrete_32 0xbffff0000L);
-    self#set_int_var (Hashtbl.find reg_to_var R_ESI)
-      (factory#fresh_symbolic_32 "initial_esi");
-    self#set_int_var (Hashtbl.find reg_to_var R_EDI)
-      (factory#fresh_symbolic_32 "initial_edi");
-    self#set_int_var (Hashtbl.find reg_to_var R_EAX)
-      (factory#fresh_symbolic_32 "initial_eax");
-    self#set_int_var (Hashtbl.find reg_to_var R_EBX)
-      (factory#fresh_symbolic_32 "initial_ebx");
-    self#set_int_var (Hashtbl.find reg_to_var R_ECX)
-      (factory#fresh_symbolic_32 "initial_ecx");
-    self#set_int_var (Hashtbl.find reg_to_var R_EDX)
-      (factory#fresh_symbolic_32 "initial_edx");
+    let reg r v =
+      self#set_int_var (Hashtbl.find reg_to_var r) v
+    in
+      reg R_EBP (factory#fresh_symbolic_32 "initial_ebp");
+      reg R_ESP (factory#from_concrete_32 0xbfff0000L);
+      reg R_ESI (factory#fresh_symbolic_32 "initial_esi");
+      reg R_EDI (factory#fresh_symbolic_32 "initial_edi");
+      reg R_EAX (factory#fresh_symbolic_32 "initial_eax");
+      reg R_EBX (factory#fresh_symbolic_32 "initial_ebx");
+      reg R_ECX (factory#fresh_symbolic_32 "initial_ecx");
+      reg R_EDX (factory#fresh_symbolic_32 "initial_edx");
+      reg R_CS (factory#from_concrete_16 0x23);
+      reg R_DS (factory#from_concrete_16 0x2b);
+      reg R_ES (factory#from_concrete_16 0x2b);
+      reg R_FS (factory#from_concrete_16 0x0);
+      reg R_GS (factory#from_concrete_16 0x63);
+      reg R_GDT (factory#from_concrete_32 0x60000000L);
+      reg R_LDT (factory#from_concrete_32 0x61000000L);
+      reg R_DFLAG (factory#from_concrete_32 1L);
+      (* CS segment: *)
+      self#store_byte_conc 0x60000020L 0xff;
+      self#store_byte_conc 0x60000021L 0xff;
+      self#store_byte_conc 0x60000022L 0x00;
+      self#store_byte_conc 0x60000023L 0x00;
+      self#store_byte_conc 0x60000024L 0x00;
+      self#store_byte_conc 0x60000025L 0xf3;
+      self#store_byte_conc 0x60000026L 0xcf;
+      self#store_byte_conc 0x60000027L 0x00;
+      (* DS/ES segment: *)
+      self#store_byte_conc 0x60000028L 0xff;
+      self#store_byte_conc 0x60000029L 0xff;
+      self#store_byte_conc 0x6000002aL 0x00;
+      self#store_byte_conc 0x6000002bL 0x00;
+      self#store_byte_conc 0x6000002cL 0x00;
+      self#store_byte_conc 0x6000002dL 0xf3;
+      self#store_byte_conc 0x6000002eL 0xcf;
+      self#store_byte_conc 0x6000002fL 0x00;
+      (* GS segment: *)
+      self#store_byte_conc 0x60000060L 0xff;
+      self#store_byte_conc 0x60000061L 0xff;
+      self#store_byte_conc 0x60000062L 0x00;
+      self#store_byte_conc 0x60000063L 0x00;
+      self#store_byte_conc 0x60000064L 0x00;
+      self#store_byte_conc 0x60000065L 0xf3;
+      self#store_byte_conc 0x60000066L 0xcf;
+      self#store_byte_conc 0x60000067L 0x62;
 
   method store_byte  addr b = mem#store_byte  addr b
   method store_short addr s = mem#store_short addr s
@@ -2447,6 +2530,7 @@ exception BoringPath
 class decision_tree = object(self)
   val root = new_dt_node None
   val mutable cur = new_dt_node None (* garbage *)
+  val mutable depth = 0
 
   method init = cur <- root; self
 
@@ -2487,6 +2571,9 @@ class decision_tree = object(self)
 
   method extend b =
     self#add_kid b;
+    depth <- depth + 1;
+    if depth > 2000 then
+      raise BoringPath;
     match (b, cur.f_child, cur.t_child) with
       | (false, Some(Some kid), _) -> cur <- kid
       | (true,  _, Some(Some kid)) -> cur <- kid
@@ -2634,7 +2721,8 @@ class decision_tree = object(self)
       loop root
 
   method reset =
-    cur <- root
+    cur <- root;
+    depth <- 0
 end
 
 class ['d] sym_path_frag_machine factory = object(self)
@@ -2773,7 +2861,7 @@ class ['d] sym_path_frag_machine factory = object(self)
 
   method eval_addr_exp exp =
     let c32 x = V.Constant(V.Int(V.REG_32, x)) in
-    let v = self#eval_int_exp exp in
+    let v = self#eval_int_exp_simplify exp in
       try v#to_concrete_32
       with
 	  NotConcrete _ ->
@@ -4387,24 +4475,28 @@ end
 let call_replacements fm eip =
   match eip with
     (* vx_alloc: *)
-    | 0x0804836cL (* malloc *) ->
-	Some (fun () -> fm#set_word_reg_symbolic R_EAX "malloc")
-    | 0x0804834cL (* __assert_fail *) ->
-	Some (fun () -> raise (SimulatedExit(-1L)))
+(*     | 0x0804836cL (* malloc *) -> *)
+(* 	Some (fun () -> fm#set_word_reg_symbolic R_EAX "malloc") *)
+(*     | 0x0804834cL (* __assert_fail *) -> *)
+(* 	Some (fun () -> raise (SimulatedExit(-1L))) *)
 
-    (* hv_fetch: *)
-    | 0x08063550L (* pthread_getspecific *) ->
-	Some (fun () -> fm#set_word_reg_symbolic R_EAX "pthread_thingie")
-    | 0x08063b80L (* malloc *) ->
-	Some (fun () -> fm#set_word_reg_symbolic R_EAX "malloc")
-    | 0x080633b0L (* calloc *) ->
-	Some (fun () -> fm#set_word_reg_symbolic R_EAX "calloc")
-    | 0x080638f0L (* strlen *) ->
-	Some (fun () -> fm#set_word_reg_symbolic R_EAX "strlen")
-    | 0x08063160L (* __errno_location *) ->
-	Some (fun () -> fm#set_word_reg_symbolic R_EAX "errno_loc")
-    | 0x08063410L (* write *) ->
-	Some (fun () -> raise (SimulatedExit(-1L)))
+    (* hv_fetch v1: *)
+(*     | 0x08063550L (* pthread_getspecific *) -> *)
+(* 	Some (fun () -> fm#set_word_reg_symbolic R_EAX "pthread_thingie") *)
+(*     | 0x08063b80L (* malloc *) -> *)
+(* 	Some (fun () -> fm#set_word_reg_symbolic R_EAX "malloc") *)
+(*     | 0x080633b0L (* calloc *) -> *)
+(* 	Some (fun () -> fm#set_word_reg_symbolic R_EAX "calloc") *)
+(*     | 0x080638f0L (* strlen *) -> *)
+(* 	Some (fun () -> fm#set_word_reg_symbolic R_EAX "strlen") *)
+(*     | 0x080634d0L (* memset *) -> *)
+(* 	Some (fun () -> fm#set_word_reg_symbolic R_EAX "memset") *)
+(*     | 0x08063cd0L (* memmove *) -> *)
+(* 	Some (fun () -> fm#set_word_reg_symbolic R_EAX "memmove") *)
+(*     | 0x08063160L (* __errno_location *) -> *)
+(* 	Some (fun () -> fm#set_word_reg_symbolic R_EAX "errno_loc") *)
+(*     | 0x08063410L (* write *) -> *)
+(* 	Some (fun () -> raise (SimulatedExit(-1L))) *)
     | _ -> None
 
 let rec runloop fm eip asmir_gamma until =
@@ -4660,6 +4752,8 @@ let fuzz_static start_eip end_eip fm asmir_gamma =
 	    | Failure("Jump to 0") -> () (* equivalent of segfault *)
 	    | SimulatedExit(_) -> ()
 	    | BoringPath -> Printf.printf "\n"
+	    (* | NotConcrete(_) -> () (* shouldn't happen *)
+	    | Simplify_failure(_) -> () (* shouldn't happen *)*)
 	 );
 	 if not fm#finish_path then raise LastIteration;
 	 if (Hashtbl.length trans_cache - old_tcs > 0) then
@@ -4678,7 +4772,10 @@ let fuzz_vxalloc (fm : symbolic_domain sym_path_frag_machine) =
   fuzz_static 0x08048434L 0x080485f7L fm
 
 let fuzz_hv_fetch (fm : symbolic_domain sym_path_frag_machine) =
-  fuzz_static 0x08151790L 0x081517e9L fm
+  fuzz_static 0x08294c03L 0x08294cadL fm
+
+let fuzz_list_find (fm : symbolic_domain sym_path_frag_machine) =
+  fuzz_static 0x08048394L 0x080483d1L fm
 
 let usage = "trans_eval [options]* file.ir\n"
 let infile = ref ""
@@ -4712,7 +4809,7 @@ let main argc argv =
 	((new linux_special_handler fm) :> special_handler);
      
       try
-	(* fuzz_pcre *) fuzz_hv_fetch fm asmir_gamma
+	(* fuzz_pcre *) fuzz_list_find fm asmir_gamma
       with
 	(* | NotConcrete e ->
 	    Printf.printf "Unexpected symbolic value: %s\n" (V.exp_to_string e)
