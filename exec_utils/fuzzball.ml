@@ -1981,7 +1981,7 @@ class ['d] frag_machine factory = object(self)
 	       (new granular_hash_memory
 		  (new symbolic_domain (V.Unknown("factory"))))
 	    )
-  
+
   (* val mem = new granular_memory (new concrete_domain 0L) *)
 
   (* val mem = new parallel_check_memory
@@ -2014,8 +2014,8 @@ class ['d] frag_machine factory = object(self)
     V.VarHash.clear temps;
     insns <- sl
 
-  method on_missing_zero =
-    mem#on_missing
+  method private on_missing_zero_m (m:'d granular_memory) =
+    m#on_missing
       (fun size _ -> match size with
 	 | 8  -> factory#from_concrete_8  0
 	 | 16 -> factory#from_concrete_16 0
@@ -2023,16 +2023,22 @@ class ['d] frag_machine factory = object(self)
 	 | 64 -> factory#from_concrete_64 0L
 	 | _ -> failwith "Bad size in on_missing_zero")
 
-  method on_missing_symbol =
-    mem#on_missing
+  method on_missing_zero =
+    self#on_missing_zero_m (mem :> 'd granular_memory)
+
+  method private on_missing_symbol_m (m:'d granular_memory) name =
+    m#on_missing
       (fun size addr -> 
 	 let addr_str = (Printf.sprintf "0x%08Lx" addr) in
 	   match size with
-	     | 8  -> factory#fresh_symbolic_8  ("mem_byte_"  ^ addr_str)
-	     | 16 -> factory#fresh_symbolic_16 ("mem_short_" ^ addr_str)
-	     | 32 -> factory#fresh_symbolic_32 ("mem_word_"  ^ addr_str)
-	     | 64 -> factory#fresh_symbolic_64 ("mem_long_"  ^ addr_str)
+	     | 8  -> factory#fresh_symbolic_8  (name ^ "_byte_"  ^ addr_str)
+	     | 16 -> factory#fresh_symbolic_16 (name ^ "_short_" ^ addr_str)
+	     | 32 -> factory#fresh_symbolic_32 (name ^ "_word_"  ^ addr_str)
+	     | 64 -> factory#fresh_symbolic_64 (name ^ "_long_"  ^ addr_str)
 	     | _ -> failwith "Bad size in on_missing_symbol")
+
+  method on_missing_symbol =
+    self#on_missing_symbol_m (mem :> 'd granular_memory) "mem"
 
   method make_x86_regs_symbolic =
     let reg r v =
@@ -2162,6 +2168,27 @@ class ['d] frag_machine factory = object(self)
     self#set_int_var (Hashtbl.find reg_to_var reg)
       (factory#fresh_symbolic_32 (s ^ "_" ^ (string_of_int symbol_uniq)));
     symbol_uniq <- symbol_uniq + 1
+
+  method handle_load addr_e ty =
+    let addr = self#eval_addr_exp addr_e in
+    let v =
+      (match ty with
+	 | V.REG_8 -> self#load_byte addr
+	 | V.REG_16 -> self#load_short addr
+	 | V.REG_32 -> self#load_word addr
+	 | V.REG_64 -> self#load_long addr
+	 | _ -> failwith "Unsupported memory type") in
+      (v, ty)
+
+  method handle_store addr_e ty rhs_e =
+    let addr = self#eval_addr_exp addr_e and
+	value = self#eval_int_exp_simplify rhs_e in
+      match ty with
+	| V.REG_8 -> self#store_byte addr value
+	| V.REG_16 -> self#store_short addr value
+	| V.REG_32 -> self#store_word addr value
+	| V.REG_64 -> self#store_long addr value
+	| _ -> failwith "Unsupported type in memory move"
 
   method eval_int_exp_ty exp =
     match exp with
@@ -2306,15 +2333,7 @@ class ['d] frag_machine factory = object(self)
       | V.Constant(V.Int(_, _)) -> failwith "unexpected integer constant type"
       | V.Lval(V.Temp((_,_,ty) as var)) -> (self#get_int_var var), ty
       | V.Lval(V.Mem(memv, idx, ty)) ->
-	  let addr = self#eval_addr_exp idx in
-	  let v =
-	    (match ty with
-	       | V.REG_8 -> self#load_byte addr
-	       | V.REG_16 -> self#load_short addr
-	       | V.REG_32 -> self#load_word addr
-	       | V.REG_64 -> self#load_long addr
-	       | _ -> failwith "Unsupported memory type") in
-	    (v, ty)
+	  self#handle_load idx ty
       | V.Cast(kind, ty, e) ->
 	  let (v1, ty1) = self#eval_int_exp_ty e in
 	  let result =
@@ -2421,15 +2440,8 @@ class ['d] frag_machine factory = object(self)
 		 self#set_int_var v (self#eval_int_exp_simplify e);
 		 self#run_sl rest
 	     | V.Move(V.Mem(memv, idx_e, ty), rhs_e) ->
-		 let addr = self#eval_addr_exp idx_e and
-		     value = (self#eval_int_exp_simplify rhs_e) in
-		   (match ty with
-		      | V.REG_8 -> self#store_byte addr value
-		      | V.REG_16 -> self#store_short addr value
-		      | V.REG_32 -> self#store_word addr value
-		      | V.REG_64 -> self#store_long addr value
-		      | _ -> failwith "Unsupported type in memory move");
-		   self#run_sl rest
+		 self#handle_store idx_e ty rhs_e;
+		 self#run_sl rest
 	     | V.Special(str) ->
 		 if self#handle_special str then
 		   self#run_sl rest
@@ -2897,6 +2909,111 @@ class ['d] sym_path_frag_machine factory = object(self)
     fm#reset ();
     path_cond <- [];
     dt#reset
+end
+
+class ['d] sym_region_frag_machine factory = object(self)
+  inherit ['d] sym_path_frag_machine factory as spfm
+
+  val mutable regions = []
+  val region_vals = V.VarHash.create 101
+
+  method private region r =
+    match r with
+      | None -> (mem :> ('d granular_memory))
+      | Some r_num -> List.nth regions r_num
+
+  method private fresh_region =
+    let new_idx = List.length regions in
+    let region = (new granular_hash_memory
+		    (new symbolic_domain (V.Unknown("factory")))) and
+	name = "region_" ^ (string_of_int new_idx) in
+      regions <- regions @ [region];
+      spfm#on_missing_symbol_m region name;
+      new_idx
+
+  method private region_for var =
+    try
+      V.VarHash.find region_vals var
+    with Not_found ->
+      let new_region = self#fresh_region in
+	V.VarHash.replace region_vals var new_region;
+	new_region
+
+  method private choose_conc_offset e =
+    let c32 x = V.Constant(V.Int(V.REG_32, x)) in
+    let bits = ref 0L in
+      self#restore_path_cond
+	(fun () ->
+	   for b = 31 downto 0 do
+	     let bit = self#extend_pc_random
+	       (V.Cast(V.CAST_LOW, V.REG_1,
+		       (V.BinOp(V.ARSHIFT, e,
+				(c32 (Int64.of_int b)))))) false
+	     in
+	       bits := (Int64.logor (Int64.shift_left !bits 1)
+			  (if bit then 1L else 0L));
+	   done);
+      Printf.printf "Picked concrete offset value 0x%Lx\n" !bits;
+      self#add_to_path_cond (V.BinOp(V.EQ, e, (c32 !bits)));
+      !bits
+
+  method eval_addr_exp_region exp =
+    let v = self#eval_int_exp_simplify exp in
+      try
+	(None, v#to_concrete_32)
+      with NotConcrete _ ->
+	let e = v#to_symbolic_32 in
+	  Printf.printf "Symbolic address %s\n" (V.exp_to_string e);
+	  match e with
+	    | V.Lval(V.Temp(var)) ->
+		(Some(self#region_for var), 0L)
+	    | V.BinOp(V.PLUS, V.Lval(V.Temp(var)),
+		      V.Constant(V.Int(V.REG_32, off))) ->
+		(Some(self#region_for var), off)
+	    | _ -> failwith "Unsupported symbolic address form"
+
+  method eval_addr_exp exp =
+    let (r, addr) = self#eval_addr_exp_region exp in
+      match r with
+	| None -> addr
+	| Some r_num -> failwith "Unexpected region in eval_addr_exp"
+
+  method store_byte_region  r addr b = (self#region r)#store_byte  addr b
+  method store_short_region r addr s = (self#region r)#store_short addr s
+  method store_word_region  r addr w = (self#region r)#store_word  addr w
+  method store_long_region  r addr l = (self#region r)#store_long  addr l
+
+  method load_byte_region  r addr = (self#region r)#load_byte  addr
+  method load_short_region r addr = (self#region r)#load_short addr
+  method load_word_region  r addr = (self#region r)#load_word  addr
+  method load_long_region  r addr = (self#region r)#load_long  addr
+
+  method handle_load addr_e ty =
+    let (r, addr) = self#eval_addr_exp_region addr_e in
+    let v =
+      (match ty with
+	 | V.REG_8 -> self#load_byte_region r addr
+	 | V.REG_16 -> self#load_short_region r addr
+	 | V.REG_32 -> self#load_word_region r addr
+	 | V.REG_64 -> self#load_long_region r addr
+	 | _ -> failwith "Unsupported memory type") in
+      (v, ty)
+
+  method handle_store addr_e ty rhs_e =
+    let (r, addr) = self#eval_addr_exp_region addr_e and
+	value = self#eval_int_exp_simplify rhs_e in
+      match ty with
+	| V.REG_8 -> self#store_byte_region r addr value
+	| V.REG_16 -> self#store_short_region r addr value
+	| V.REG_32 -> self#store_word_region r addr value
+	| V.REG_64 -> self#store_long_region r addr value
+	| _ -> failwith "Unsupported type in memory move"
+
+  method reset () =
+    spfm#reset ();
+    regions <- [];
+    V.VarHash.clear region_vals
+  
 end
 
 let trans_cache = Hashtbl.create 100000 
@@ -4731,7 +4848,7 @@ let fuzz_sym_str start_eip end_eip buf_addr buf_len fm asmir_gamma
       );
     Gc.print_stat stdout
 
-let fuzz_pcre (fm : symbolic_domain sym_path_frag_machine) =
+let fuzz_pcre (fm : symbolic_domain sym_region_frag_machine) =
   fuzz_sym_str 0x08048656L 0x080486d2L 0x08063c20L 20 fm
 
 let print_tree fm =
@@ -4768,13 +4885,13 @@ let fuzz_static start_eip end_eip fm asmir_gamma =
   print_tree fm;
   Gc.print_stat stdout
 
-let fuzz_vxalloc (fm : symbolic_domain sym_path_frag_machine) =
+let fuzz_vxalloc (fm : symbolic_domain sym_region_frag_machine) =
   fuzz_static 0x08048434L 0x080485f7L fm
 
-let fuzz_hv_fetch (fm : symbolic_domain sym_path_frag_machine) =
+let fuzz_hv_fetch (fm : symbolic_domain sym_region_frag_machine) =
   fuzz_static 0x08294c03L 0x08294cadL fm
 
-let fuzz_list_find (fm : symbolic_domain sym_path_frag_machine) =
+let fuzz_list_find (fm : symbolic_domain sym_region_frag_machine) =
   fuzz_static 0x08048394L 0x080483d1L fm
 
 let usage = "trans_eval [options]* file.ir\n"
@@ -4800,7 +4917,7 @@ let main argc argv =
     let (dl, sl) = prog in
     let asmir_gamma = Asmir.gamma_create
       (List.find (fun (i, s, t) -> s = "mem") dl) dl in
-    let fm = new sym_path_frag_machine
+    let fm = new sym_region_frag_machine
       (new symbolic_domain (V.Unknown("factory"))) in
     (* let fm = new fake_frag_machine prog in *)
       fm#on_missing_symbol;
