@@ -2088,6 +2088,21 @@ class ['d] frag_machine factory = object(self)
       self#store_byte_conc 0x60000066L 0xcf;
       self#store_byte_conc 0x60000067L 0x62;
 
+  method print_x86_regs =
+    let reg str r =
+      Printf.printf "%s: " str;
+      Printf.printf "%s\n"
+	(self#get_int_var (Hashtbl.find reg_to_var r))#to_string_32
+    in
+      reg "%eax" R_EAX;
+      reg "%ebx" R_EBX;
+      reg "%ecx" R_ECX;
+      reg "%edx" R_EDX;
+      reg "%esi" R_ESI;
+      reg "%edi" R_EDI;
+      reg "%esp" R_ESP;
+      reg "%ebp" R_EBP
+
   method store_byte  addr b = mem#store_byte  addr b
   method store_short addr s = mem#store_short addr s
   method store_word  addr w = mem#store_word  addr w
@@ -2861,6 +2876,18 @@ class ['d] sym_path_frag_machine factory = object(self)
       self#add_to_path_cond cond';
       result
 
+  method random_case_split verbose =
+    let trans_func b = V.Unknown("unused") in
+    let try_func b _ =
+      if verbose then Printf.printf "Trying %B: " b;
+      true
+    in
+    let non_try_func b =
+      if verbose then Printf.printf "Known %B\n" b
+    in
+    let (result, _) = dt#try_extend trans_func try_func non_try_func in
+      result
+
   method eval_bool_exp exp =
     let v = self#eval_int_exp exp in
       try
@@ -2910,6 +2937,9 @@ class ['d] sym_path_frag_machine factory = object(self)
     path_cond <- [];
     dt#reset
 end
+
+exception SymbolicJump
+exception NullDereference
 
 class ['d] sym_region_frag_machine factory = object(self)
   inherit ['d] sym_path_frag_machine factory as spfm
@@ -2968,15 +2998,72 @@ class ['d] sym_region_frag_machine factory = object(self)
 	    | V.Lval(V.Temp(var)) ->
 		(Some(self#region_for var), 0L)
 	    | V.BinOp(V.PLUS, V.Lval(V.Temp(var)),
-		      V.Constant(V.Int(V.REG_32, off))) ->
+		      V.Constant(V.Int(V.REG_32, off)))
+		when (Int64.abs (fix_s32 off)) < 0x4000L ->
 		(Some(self#region_for var), off)
+	    | V.BinOp(V.PLUS, V.Lval(V.Temp(var)),
+		      (V.BinOp(V.LSHIFT, _,
+			       V.Constant(V.Int(V.REG_8, (1L|2L|3L|4L))))
+			 as idx)) ->
+		(Some(self#region_for var), (self#choose_conc_offset idx))
+	    | V.BinOp(V.PLUS, V.Lval(V.Temp(var)),
+		      (V.BinOp(V.PLUS,
+			       V.BinOp(V.LSHIFT, _,
+				       V.Constant(V.Int(V.REG_8,
+							(1L|2L|3L|4L)))),
+			       V.Constant(V.Int(V.REG_32, off)))
+			 as idx))
+		when (Int64.abs (fix_s32 off)) < 0x4000L ->
+		(Some(self#region_for var), (self#choose_conc_offset idx))
+	    | V.BinOp(V.PLUS, (V.Lval(V.Temp(var1)) as var1_e),
+		      (V.Lval(V.Temp(var2)) as var2_e)) ->
+		if self#random_case_split true then
+		  (Some(self#region_for var1),
+		   (self#choose_conc_offset var2_e))
+		else
+		  (Some(self#region_for var2),
+		   (self#choose_conc_offset var1_e))
+	    | V.BinOp(V.PLUS, V.Lval(V.Temp(var1)),
+		      (V.UnOp(V.NEG, V.Lval(V.Temp(var2))) as idx)) ->
+		(Some(self#region_for var1),
+		 (self#choose_conc_offset idx))
+	    | V.BinOp(V.PLUS, V.Lval(V.Temp(var1)),
+		      (V.BinOp(V.PLUS, V.UnOp(V.NEG, _),
+			       V.Constant(V.Int(V.REG_32, off))) as idx))
+		when (Int64.abs (fix_s32 off)) < 0x4000L ->
+		(Some(self#region_for var1),
+		 (self#choose_conc_offset idx))
+	    | V.BinOp(V.PLUS, (V.Lval(V.Temp(var1)) as var1_e), 
+		      V.BinOp(V.PLUS, (V.Lval(V.Temp(var2)) as var2_e),
+			      V.Constant(V.Int(V.REG_32, off))))
+		when (Int64.abs (fix_s32 off)) < 0x4000L ->
+		if self#random_case_split true then
+		  (Some(self#region_for var1),
+		   (Int64.add off (self#choose_conc_offset var2_e)))
+		else
+		  (Some(self#region_for var2),
+		   (Int64.add off (self#choose_conc_offset var1_e)))
+	    | V.BinOp(V.PLUS, idx,
+		      V.Constant(V.Int(V.REG_32, off)))
+		when (fix_s32 off) > 0x8000000L ->
+		(None, (self#choose_conc_offset e))
+		  (* These patterns seem to usually represent null-pointer
+		     paths *)
+	    | V.BinOp(V.LSHIFT, _,
+		      V.Constant(V.Int(V.REG_8, (1L|2L|3L|4L)))) ->
+		raise NullDereference
+	    | V.BinOp(V.PLUS, V.UnOp(V.NEG, _),
+		      V.Constant(V.Int(V.REG_32, off)))
+		when (Int64.abs (fix_s32 off)) < 0x4000L ->
+		raise NullDereference
+		  (* | _ -> (None, (self#choose_conc_offset e)) *)
 	    | _ -> failwith "Unsupported symbolic address form"
 
   method eval_addr_exp exp =
     let (r, addr) = self#eval_addr_exp_region exp in
       match r with
 	| None -> addr
-	| Some r_num -> failwith "Unexpected region in eval_addr_exp"
+	| Some r_num -> raise SymbolicJump
 
   method store_byte_region  r addr b = (self#region r)#store_byte  addr b
   method store_short_region r addr s = (self#region r)#store_short addr s
@@ -2997,26 +3084,31 @@ class ['d] sym_region_frag_machine factory = object(self)
 	 | V.REG_32 -> self#load_word_region r addr
 	 | V.REG_64 -> self#load_long_region r addr
 	 | _ -> failwith "Unsupported memory type") in
+      (* Printf.printf "Load from %s "
+	 (match r with | None -> "conc. mem"
+	 | Some r_num -> "region " ^ (string_of_int r_num));
+	 Printf.printf "%08Lx = %s\n" addr v#to_string_32; *)
       (v, ty)
 
   method handle_store addr_e ty rhs_e =
     let (r, addr) = self#eval_addr_exp_region addr_e and
 	value = self#eval_int_exp_simplify rhs_e in
-      match ty with
-	| V.REG_8 -> self#store_byte_region r addr value
-	| V.REG_16 -> self#store_short_region r addr value
-	| V.REG_32 -> self#store_word_region r addr value
-	| V.REG_64 -> self#store_long_region r addr value
-	| _ -> failwith "Unsupported type in memory move"
+      (match ty with
+	 | V.REG_8 -> self#store_byte_region r addr value
+	 | V.REG_16 -> self#store_short_region r addr value
+	 | V.REG_32 -> self#store_word_region r addr value
+	 | V.REG_64 -> self#store_long_region r addr value
+	 | _ -> failwith "Unsupported type in memory move");
+      (* (match r with None -> () | Some r_num -> 
+	 Printf.printf "Store to region %d " r_num;
+	 Printf.printf "%08Lx = %s\n" addr value#to_string_32) *)
 
   method reset () =
     spfm#reset ();
     regions <- [];
     V.VarHash.clear region_vals
-  
+      
 end
-
-let trans_cache = Hashtbl.create 100000 
 
 exception Simplify_failure of string
 
@@ -3338,6 +3430,16 @@ let simplify_frag (orig_dl, orig_sl) =
        V.pp_program print_string (dl', sl');
        V.pp_program print_string (copy_prop (dl', sl')); *)
     (dl', sl')
+
+exception NoSyscalls
+
+class linux_special_nonhandler fm =
+object(self)
+  method handle_special str =
+    match str with
+      | "int 0x80" -> raise NoSyscalls
+      | _ -> false
+end
 
 exception SimulatedExit of int64
 
@@ -4614,7 +4716,21 @@ let call_replacements fm eip =
 (* 	Some (fun () -> fm#set_word_reg_symbolic R_EAX "errno_loc") *)
 (*     | 0x08063410L (* write *) -> *)
 (* 	Some (fun () -> raise (SimulatedExit(-1L))) *)
+
+      (* hv_fetch v2: *)
+    | 0x08302d70L (* __libc_malloc *) -> 
+ 	Some (fun () -> fm#set_word_reg_symbolic R_EAX "malloc")
+    | 0x082ee3e0L (* __assert_fail *) ->
+ 	Some (fun () -> raise (SimulatedExit(-1L)))
+    | 0x08302a50L (* __calloc *) ->
+	Some (fun () -> fm#set_word_reg_symbolic R_EAX "calloc")
     | _ -> None
+
+let trans_cache = Hashtbl.create 100000 
+
+let loop_detect = Hashtbl.create 1000
+
+exception TooManyIterations
 
 let rec runloop fm eip asmir_gamma until =
   let load_byte addr = fm#load_byte_conc addr in
@@ -4666,16 +4782,6 @@ let rec runloop fm eip asmir_gamma until =
 	    (simplify_frag (decode_insns eip 1 true));
 	  Hashtbl.find trans_cache eip
   in
-  (* let print_gprs () =
-    Printf.printf "eax:%08Lx ebx:%08Lx ecx:%08Lx edx:%08Lx\n"
-      (read_reg32 eax_var) (read_reg32 ebx_var) 
-      (read_reg32 ecx_var) (read_reg32 edx_var);
-    Printf.printf "esi:%08Lx edi:%08Lx esp:%08Lx ebp:%08Lx\n"
-      (read_reg32 esi_var) (read_reg32 edi_var) 
-      (read_reg32 esp_var) (read_reg32 ebp_var);
-    Printf.printf "eip:%08Lx eflags:%08Lx\n"
-      eip (read_reg32 eflags_var)
-  in *)
   (* Remove "unknown" statments it seems safe to ignore *)
   let remove_known_unknowns sl =
     List.filter
@@ -4697,10 +4803,20 @@ let rec runloop fm eip asmir_gamma until =
       sl
   in
   let rec loop eip =
+    (let old_count =
+       (try
+	  Hashtbl.find loop_detect eip
+	with Not_found ->
+	  Hashtbl.replace loop_detect eip 1;
+	  1)
+     in
+       Hashtbl.replace loop_detect eip (1 + old_count);
+       if old_count > 10 then raise TooManyIterations);
     let (dl, sl) = decode_insns_cached eip in
     let prog = (dl, (remove_known_unknowns sl)) in
       (* Libasmir.print_disasm_rawbytes Libasmir.Bfd_arch_i386 eip insn_bytes;
 	 print_string "\n"; *)
+      (* fm#print_x86_regs; *)
       Printf.printf "EIP is %08Lx\n" eip;
       (* Printf.printf "Watchpoint val is %02x\n" (load_byte 0x501650e8L); *)
       (* Printf.printf ("Insn bytes are %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x\n") (load_byte eip)
@@ -4719,12 +4835,11 @@ let rec runloop fm eip asmir_gamma until =
 	 (load_byte (Int64.add eip (Int64.of_int 13)))
 	 (load_byte (Int64.add eip (Int64.of_int 14)))
 	 (load_byte (Int64.add eip (Int64.of_int 15))); *)
-      (* print_gprs (); *)
       let prog' = match call_replacements fm eip with
 	  | None -> prog
 	  | Some thunk ->
 	      thunk ();
-	      decode_insns_cached 0x081517e9L (* 0x080485f7L *)
+	      decode_insns_cached 0x0829361dL (* 0x080485f7L *)
       in
       (* V.pp_program print_string prog'; *)
       fm#set_frag prog';
@@ -4735,6 +4850,7 @@ let rec runloop fm eip asmir_gamma until =
 	  | (0L, _) -> failwith "Jump to 0"
 	  | _ -> loop new_eip
   in
+    Hashtbl.clear loop_detect;
     loop eip
 
 let random_regex maxlen =
@@ -4869,9 +4985,14 @@ let fuzz_static start_eip end_eip fm asmir_gamma =
 	    | Failure("Jump to 0") -> () (* equivalent of segfault *)
 	    | SimulatedExit(_) -> ()
 	    | BoringPath -> Printf.printf "\n"
+	    | SymbolicJump -> Printf.printf "Stopping path at symbolic jump\n"
+	    | NoSyscalls -> Printf.printf "Stopping path at system call\n"
+	    | NullDereference -> Printf.printf "Stopping path at null deref\n"
+	    | TooManyIterations ->
+		Printf.printf "Stopping path after too many loop iterations\n"
 	    (* | NotConcrete(_) -> () (* shouldn't happen *)
 	    | Simplify_failure(_) -> () (* shouldn't happen *)*)
-	 );
+	 ); 
 	 if not fm#finish_path then raise LastIteration;
 	 if (Hashtbl.length trans_cache - old_tcs > 0) then
 	   (* Printf.printf "Coverage increased to %d with %s on %Ld\n"
@@ -4889,7 +5010,7 @@ let fuzz_vxalloc (fm : symbolic_domain sym_region_frag_machine) =
   fuzz_static 0x08048434L 0x080485f7L fm
 
 let fuzz_hv_fetch (fm : symbolic_domain sym_region_frag_machine) =
-  fuzz_static 0x08294c03L 0x08294cadL fm
+  fuzz_static 0x08293573L 0x0829361dL fm
 
 let fuzz_list_find (fm : symbolic_domain sym_region_frag_machine) =
   fuzz_static 0x08048394L 0x080483d1L fm
@@ -4923,10 +5044,10 @@ let main argc argv =
       fm#on_missing_symbol;
       fm#init_prog prog;
       fm#add_special_handler
-	((new linux_special_handler fm) :> special_handler);
+	((new linux_special_nonhandler fm) :> special_handler);
      
       try
-	(* fuzz_pcre *) fuzz_list_find fm asmir_gamma
+	(* fuzz_pcre *) fuzz_hv_fetch fm asmir_gamma
       with
 	(* | NotConcrete e ->
 	    Printf.printf "Unexpected symbolic value: %s\n" (V.exp_to_string e)
