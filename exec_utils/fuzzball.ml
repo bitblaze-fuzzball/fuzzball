@@ -741,7 +741,7 @@ end
 class virtual query_engine = object(self)
   method virtual prepare : V.var list -> V.var list -> unit
   method virtual assert_eq : V.var -> V.exp -> unit
-  method virtual query : V.exp -> bool * ((string * (unit -> int64)) list)
+  method virtual query : V.exp -> bool * ((string * int64) list)
   method virtual unprepare : unit
 end
 
@@ -785,16 +785,17 @@ class stpvc_engine = object(self)
 	   ((Stpvc.to_string sym), (fun () -> (Stpvc.int64_of_e stp_exp))))
 	(Stpvc.get_true_counterexample vc) *)
       let wce = Stpvc.get_whole_counterexample vc in
-	List.map
-	  (fun var ->
-	     let var_e = V.Lval(V.Temp(var)) in
-	     let var_s = Vine_stpvc.vine_to_stp vc self#ctx var_e
-	     in
-	       (Stpvc.to_string var_s, 
-		fun () -> 
-		  Stpvc.int64_of_e
-		    (Stpvc.get_term_from_counterexample vc var_s wce)))
-	  free_vars
+	List.map (fun (var, e) -> (var, Stpvc.int64_of_e e))
+	  (List.filter (fun (var, e) ->
+			  (Libstp.getExprKind e) = Libstp.BVCONST)
+	     (List.map
+		(fun ((n,s,t) as var) ->
+		   let var_e = V.Lval(V.Temp(var)) in
+		   let var_s = Vine_stpvc.vine_to_stp vc self#ctx var_e
+		   in
+		     (s ^ "_" ^ (string_of_int n), 
+		      (Stpvc.get_term_from_counterexample vc var_s wce)))
+		free_vars))
     in
       (result, ce)
 
@@ -873,7 +874,7 @@ class stp_external_engine fname = object(self)
 	let result = (result_s = "Valid.") in
 	let ce = map_lines parse_counterex results in
 	  close_in results;
-	  (result, (List.map (fun (a, b) -> (a, (fun () -> b))) ce))
+	  (result, ce)
 
   method unprepare =
     visitor <- None
@@ -1971,6 +1972,8 @@ let regstr_to_reg s = match s with
   | "R_SSEROUND" -> R_SSEROUND | "R_IP_AT_SYSCALL" -> R_IP_AT_SYSCALL
   | _ -> failwith ("Unrecognized register name " ^ s)
 
+exception TooManyIterations
+
 class ['d] frag_machine factory = object(self)
   (* val mem = new snapshot_memory (new string_memory) (new hash_memory) *)
 
@@ -1994,6 +1997,7 @@ class ['d] frag_machine factory = object(self)
   val temps = V.VarHash.create 100
   val mutable frag = ([], [])
   val mutable insns = []
+  val mutable loop_cnt = 0
 
   val mutable snap = (V.VarHash.create 1, V.VarHash.create 1)
 
@@ -2012,6 +2016,7 @@ class ['d] frag_machine factory = object(self)
   method set_frag (dl, sl) =
     frag <- (dl, sl);
     V.VarHash.clear temps;
+    loop_cnt <- 0;
     insns <- sl
 
   method private on_missing_zero_m (m:'d granular_memory) =
@@ -2433,11 +2438,13 @@ class ['d] frag_machine factory = object(self)
 	| V.Label(l) :: rest when l = lab -> Some sl
 	| st :: rest -> find_label lab rest
     in
-    let (_, sl) = frag in
-      match find_label lab sl with
-	| None -> lab
-	| Some sl ->
-	    self#run_sl sl
+      loop_cnt <- loop_cnt + 1;
+      if loop_cnt > 25 then raise TooManyIterations;
+      let (_, sl) = frag in
+	match find_label lab sl with
+	  | None -> lab
+	  | Some sl ->
+	      self#run_sl sl
 	      
   method run_sl sl =
     match sl with
@@ -2552,12 +2559,19 @@ let new_dt_node the_parent =
    f_child = None; t_child = None;
    all_seen = false; ident = !next_dt_ident}
 
+(* This hash algorithm is FNV-1a,
+   c.f. http://www.isthe.com/chongo/tech/comp/fnv/index.html *)
+let hash_round h x =
+  let h' = Int32.logxor h (Int32.of_int x) in
+    Int32.mul h' (Int32.of_int 0x1000193)
+
 exception BoringPath
 
 class decision_tree = object(self)
   val root = new_dt_node None
   val mutable cur = new_dt_node None (* garbage *)
   val mutable depth = 0
+  val mutable path_hash = Int64.to_int32 0x811c9dc5L
 
   method init = cur <- root; self
 
@@ -2601,6 +2615,8 @@ class decision_tree = object(self)
     depth <- depth + 1;
     if depth > 2000 then
       raise BoringPath;
+    path_hash <- hash_round path_hash (if b then 49 else 48);
+    Random.init (Int32.to_int path_hash);
     match (b, cur.f_child, cur.t_child) with
       | (false, Some(Some kid), _) -> cur <- kid
       | (true,  _, Some(Some kid)) -> cur <- kid
@@ -2609,6 +2625,12 @@ class decision_tree = object(self)
       | (false, Some None, _)
       | (true,  _, Some None) ->
 	  failwith "Add_kid failed in extend"
+
+  method set_iter_seed i =
+    path_hash <- hash_round path_hash i
+
+  method random_bit =
+    Random.bool ()
 
   method record_unsat b =
     match (b, cur.f_child, cur.t_child) with
@@ -2646,7 +2668,7 @@ class decision_tree = object(self)
 	   known (not b))
     in
     let try_both () =
-      let b = Random.bool () in
+      let b = self#random_bit in
       let c = trans_func b and
 	  c' = trans_func (not b) in
 	if try_func b c then
@@ -2670,12 +2692,12 @@ class decision_tree = object(self)
 	    (match (f_kid.all_seen, t_kid.all_seen) with
 	       | (true, true) -> 
 		   if cur.all_seen then
-		     known (Random.bool ())
+		     known (self#random_bit)
 		   else
 		     failwith "all_seen invariant failure"
 	       | (false, true) -> known false
 	       | (true, false) -> known true
-	       | (false, false) -> known (Random.bool ()))
+	       | (false, false) -> known (self#random_bit))
 	| (Some(Some f_kid), Some None) ->
 	    assert(not f_kid.all_seen);
 	    known false
@@ -2749,7 +2771,9 @@ class decision_tree = object(self)
 
   method reset =
     cur <- root;
-    depth <- 0
+    depth <- 0;
+    path_hash <- Int64.to_int32 0x811c9dc5L
+
 end
 
 class ['d] sym_path_frag_machine factory = object(self)
@@ -2813,6 +2837,39 @@ class ['d] sym_path_frag_machine factory = object(self)
       walk exp;
       List.rev !temps
 
+  method private ce_to_input_str ce =
+    let str = String.make 30 ' ' in
+      List.iter
+	(fun (var_s, value) ->
+	   match self#match_input_var var_s with
+	     | Some n -> str.[n] <- 
+		 char_of_int (Int64.to_int value)
+	     | None -> ())
+	ce;
+      let str' = ref str in
+	(try 
+	   while String.rindex !str' ' ' = (String.length !str') - 1 do
+	     str' := String.sub !str' 0 ((String.length !str') - 1)
+	   done;
+	 with Not_found -> ());
+	(try
+	   while String.rindex !str' '\000' = (String.length !str') - 1
+	   do
+	     str' := String.sub !str' 0 ((String.length !str') - 1)
+	   done;
+	 with Not_found -> ());
+	!str'
+
+  method print_ce ce =
+    List.iter
+      (fun (var_s, value) ->
+	 let nice_name = (try String.sub var_s 0 (String.rindex var_s '_') 
+			  with Not_found -> var_s) in
+	   if value <> 0L then
+	     Printf.printf "%s=0x%Lx " nice_name value)
+      ce;
+    Printf.printf "\n";
+
   method query_with_path_cond cond verbose =
     let i_vars = Hashtbl.fold (fun s v l -> v :: l) input_vars [] in
     let pc = (constant_fold_rec
@@ -2827,33 +2884,17 @@ class ['d] sym_path_frag_machine factory = object(self)
       let time_before = Sys.time () in
       let (result, ce) = query_engine#query pc in
       let is_sat = not result in
-	if is_sat && verbose then
-	  (Printf.printf "Satisfiable ";
-	   let str = String.make 30 ' ' in
-	     List.iter
-	       (fun (var_s, value) ->
-		  match self#match_input_var var_s with
-		    | Some n -> str.[n] <- 
-			(char_of_int (Int64.to_int (value ())))
-		    | None -> ())
-	       ce;
-	     let str' = ref str in
-	       (try 
-		  while String.rindex !str' ' ' = (String.length !str') - 1 do
-		    str' := String.sub !str' 0 ((String.length !str') - 1)
-		  done;
-		with Not_found -> ());
-	       (try
-		  while String.rindex !str' '\000' = (String.length !str') - 1
-		  do
-		    str' := String.sub !str' 0 ((String.length !str') - 1)
-		  done;
-		with Not_found -> ());
-	       Printf.printf "by \"%s\"\n" (String.escaped !str'));
+	if verbose then
+	  (if is_sat then
+	     (Printf.printf "Satisfiable ";
+	      Printf.printf "by \"%s\"\n"
+		(String.escaped (self#ce_to_input_str ce));
+	      self#print_ce ce)
+	   else
+	     Printf.printf "Unsatisfiable.\n");
 	if ((Sys.time ()) -. time_before) > 1.0 then
 	  Printf.printf "Slow query (%f sec)\n"
-	    ((Sys.time ()) -. time_before)
-	else ();
+	    ((Sys.time ()) -. time_before);
 	flush stdout;
 	query_engine#unprepare;
 	is_sat
@@ -2932,6 +2973,8 @@ class ['d] sym_path_frag_machine factory = object(self)
 
   method print_tree chan = dt#print_tree chan
 
+  method set_iter_seed i = dt#set_iter_seed i
+
   method reset () =
     fm#reset ();
     path_cond <- [];
@@ -2961,12 +3004,13 @@ class ['d] sym_region_frag_machine factory = object(self)
       spfm#on_missing_symbol_m region name;
       new_idx
 
-  method private region_for var =
+  method private region_for ((n,s,t) as var) =
     try
       V.VarHash.find region_vals var
     with Not_found ->
       let new_region = self#fresh_region in
 	V.VarHash.replace region_vals var new_region;
+	Printf.printf "Address %s is region %d\n" s new_region;
 	new_region
 
   method private choose_conc_offset e =
@@ -3084,6 +3128,8 @@ class ['d] sym_region_frag_machine factory = object(self)
 	 | V.REG_32 -> self#load_word_region r addr
 	 | V.REG_64 -> self#load_long_region r addr
 	 | _ -> failwith "Unsupported memory type") in
+      if r = None && (Int64.abs (fix_s32 addr)) < 4096L then
+	raise NullDereference;
       (* Printf.printf "Load from %s "
 	 (match r with | None -> "conc. mem"
 	 | Some r_num -> "region " ^ (string_of_int r_num));
@@ -3093,14 +3139,18 @@ class ['d] sym_region_frag_machine factory = object(self)
   method handle_store addr_e ty rhs_e =
     let (r, addr) = self#eval_addr_exp_region addr_e and
 	value = self#eval_int_exp_simplify rhs_e in
+      if r = None && (Int64.abs (fix_s32 addr)) < 4096L then
+	raise NullDereference;
       (match ty with
 	 | V.REG_8 -> self#store_byte_region r addr value
 	 | V.REG_16 -> self#store_short_region r addr value
 	 | V.REG_32 -> self#store_word_region r addr value
 	 | V.REG_64 -> self#store_long_region r addr value
 	 | _ -> failwith "Unsupported type in memory move");
-      (* (match r with None -> () | Some r_num -> 
-	 Printf.printf "Store to region %d " r_num;
+      (* if not (ty = V.REG_8 && r = None) then
+	(Printf.printf "Store to %s "
+	   (match r with | None -> "conc. mem"
+	      | Some r_num -> "region " ^ (string_of_int r_num));
 	 Printf.printf "%08Lx = %s\n" addr value#to_string_32) *)
 
   method reset () =
@@ -4724,13 +4774,15 @@ let call_replacements fm eip =
  	Some (fun () -> raise (SimulatedExit(-1L)))
     | 0x08302a50L (* __calloc *) ->
 	Some (fun () -> fm#set_word_reg_symbolic R_EAX "calloc")
+    | 0x08303180L (* __libc_realloc *) ->
+ 	Some (fun () -> fm#set_word_reg_symbolic R_EAX "realloc")	
+    | 0x08300610L (* __cfree *) ->
+ 	Some (fun () -> fm#set_word_var R_EAX 1L)	
     | _ -> None
 
 let trans_cache = Hashtbl.create 100000 
 
 let loop_detect = Hashtbl.create 1000
-
-exception TooManyIterations
 
 let rec runloop fm eip asmir_gamma until =
   let load_byte addr = fm#load_byte_conc addr in
@@ -4944,7 +4996,7 @@ let fuzz_sym_str start_eip end_eip buf_addr buf_len fm asmir_gamma
     loop_w_stats None
       (fun iter ->
 	 let old_tcs = Hashtbl.length trans_cache in
-	   Random.init (Int64.to_int iter);
+	   fm#set_iter_seed (Int64.to_int iter);
 	   fm#store_symbolic_cstr buf_addr buf_len;
 	   (try
 	      runloop fm start_eip asmir_gamma (Some end_eip);
@@ -4978,13 +5030,13 @@ let fuzz_static start_eip end_eip fm asmir_gamma =
   loop_w_stats None
     (fun iter ->
        let old_tcs = Hashtbl.length trans_cache in
-	 Random.init (Int64.to_int iter);
+	 fm#set_iter_seed (Int64.to_int iter);
 	 (try
 	    runloop fm start_eip asmir_gamma (Some end_eip);
 	  with
 	    | Failure("Jump to 0") -> () (* equivalent of segfault *)
 	    | SimulatedExit(_) -> ()
-	    | BoringPath -> Printf.printf "\n"
+	    | BoringPath -> Printf.printf "Stopping on boring path\n"
 	    | SymbolicJump -> Printf.printf "Stopping path at symbolic jump\n"
 	    | NoSyscalls -> Printf.printf "Stopping path at system call\n"
 	    | NullDereference -> Printf.printf "Stopping path at null deref\n"
