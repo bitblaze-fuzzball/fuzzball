@@ -16,320 +16,448 @@ let fix_s8  x = Int64.shift_right (Int64.shift_left x 56) 56
 let fix_s16 x = Int64.shift_right (Int64.shift_left x 48) 48
 let fix_s32 x = Int64.shift_right (Int64.shift_left x 32) 32
 
-class concrete_domain (v:int64) = object(self)
-  method v = v
-  method e : V.exp = failwith "there is no e"
+module type DOMAIN = sig
+  type t
 
-  method from_concrete_1  v = new concrete_domain (Int64.of_int v)
-  method from_concrete_8  v = new concrete_domain (Int64.of_int v)
-  method from_concrete_16 v = new concrete_domain (Int64.of_int v)
-  method from_concrete_32 v = new concrete_domain v
-  method from_concrete_64 v = new concrete_domain v 
+  val from_concrete_1  : int -> t
+  val from_concrete_8  : int -> t
+  val from_concrete_16 : int -> t
+  val from_concrete_32 : int64 -> t
+  val from_concrete_64 : int64 -> t
 
-  method fresh_symbolic_1  (s:string) : concrete_domain
-    = failwith "fresh_symbolic in concrete"
-  method fresh_symbolic_8  (s:string) : concrete_domain
-    = failwith "fresh_symbolic in concrete"
-  method fresh_symbolic_16 (s:string) : concrete_domain
-    = failwith "fresh_symbolic in concrete"
-  method fresh_symbolic_32 (s:string) : concrete_domain
-    = failwith "fresh_symbolic in concrete"
-  method fresh_symbolic_64 (s:string) : concrete_domain
-    = failwith "fresh_symbolic in concrete"
+  val to_concrete_1  : t -> int
+  val to_concrete_8  : t -> int
+  val to_concrete_16 : t -> int
+  val to_concrete_32 : t -> int64
+  val to_concrete_64 : t -> int64
 
-  method to_concrete_1  = Int64.to_int (Int64.logand v 0x1L)
-  method to_concrete_8  = Int64.to_int (Int64.logand v 0xffL)
-  method to_concrete_16 = Int64.to_int (Int64.logand v 0xffffL)
-  method to_concrete_32 = Int64.logand v 0xffffffffL
-  method to_concrete_64 = v
+  val to_symbolic_1  : t -> V.exp
+  val to_symbolic_8  : t -> V.exp
+  val to_symbolic_16 : t -> V.exp
+  val to_symbolic_32 : t -> V.exp
+  val to_symbolic_64 : t -> V.exp
 
-  method to_symbolic_1  : V.exp = failwith "to_symbolic in concrete"
-  method to_symbolic_8  : V.exp = failwith "to_symbolic in concrete"
-  method to_symbolic_16 : V.exp = failwith "to_symbolic in concrete"
-  method to_symbolic_32 : V.exp = failwith "to_symbolic in concrete"
-  method to_symbolic_64 : V.exp = failwith "to_symbolic in concrete"
+  val from_symbolic : V.exp -> t
 
-  method measure_size = 1
+  val measure_size : t -> int
 
-  method extract_8_from_64 which =
-    new concrete_domain (Int64.shift_right v (8 * which))
+  val  extract_8_from_64 : t -> int -> t
+  val  extract_8_from_32 : t -> int -> t
+  val  extract_8_from_16 : t -> int -> t
+  val extract_16_from_64 : t -> int -> t
+  val extract_16_from_32 : t -> int -> t
+  val extract_32_from_64 : t -> int -> t
+
+  val assemble16 : t -> t -> t
+  val assemble32 : t -> t -> t
+  val assemble64 : t -> t -> t
     
-  method extract_8_from_32 which =
-    new concrete_domain (Int64.shift_right v (8 * which))
-
-  method extract_8_from_16 which =
-    new concrete_domain (Int64.shift_right v (8 * which))
-
-  method extract_16_from_64 which =
-    new concrete_domain (Int64.shift_right v (8 * which))
+  val to_string_1  : t -> string
+  val to_string_8  : t -> string
+  val to_string_16 : t -> string
+  val to_string_32 : t -> string
+  val to_string_64 : t -> string
     
-  method extract_16_from_32 which =
-    new concrete_domain (Int64.shift_right v (8 * which))
+  val uninit : t
 
-  method extract_32_from_64 which =
-    new concrete_domain (Int64.shift_right v (8 * which))
+  val plus1  : t -> t -> t
+  val plus8  : t -> t -> t
+  val plus16 : t -> t -> t
+  val plus32 : t -> t -> t
+  val plus64 : t -> t -> t
 
-  method assemble16 (d2:concrete_domain) =
-    new concrete_domain (Int64.logor (Int64.logand 0xffL v)
-			   (Int64.shift_left d2#v 8))	
+  val minus1  : t -> t -> t
+  val minus8  : t -> t -> t
+  val minus16 : t -> t -> t
+  val minus32 : t -> t -> t
+  val minus64 : t -> t -> t
 
-  method assemble32 (d2:concrete_domain) =
-    new concrete_domain (Int64.logor (Int64.logand 0xffffL v)
-			   (Int64.shift_left d2#v 16))	
+  val times1  : t -> t -> t
+  val times8  : t -> t -> t
+  val times16 : t -> t -> t
+  val times32 : t -> t -> t
+  val times64 : t -> t -> t
 
-  method assemble64 (d2:concrete_domain) =
-    new concrete_domain (Int64.logor (Int64.logand 0xffffffffL v)
-			   (Int64.shift_left d2#v 32))	
+  val divide1  : t -> t -> t
+  val divide8  : t -> t -> t
+  val divide16 : t -> t -> t
+  val divide32 : t -> t -> t
+  val divide64 : t -> t -> t
 
-  method to_string_1  = Printf.sprintf "%d"       (self#to_concrete_1)
-  method to_string_8  = Printf.sprintf "0x%02x"   (self#to_concrete_8)
-  method to_string_16 = Printf.sprintf "0x%04x"   (self#to_concrete_16)
-  method to_string_32 = Printf.sprintf "0x%08Lx"  (self#to_concrete_32)
-  method to_string_64 = Printf.sprintf "0x%016Lx" (self#to_concrete_64)
+  val sdivide1  : t -> t -> t
+  val sdivide8  : t -> t -> t
+  val sdivide16 : t -> t -> t
+  val sdivide32 : t -> t -> t
+  val sdivide64 : t -> t -> t
 
-  method uninit = new concrete_domain 0L
+  val mod1  : t -> t -> t
+  val mod8  : t -> t -> t
+  val mod16 : t -> t -> t
+  val mod32 : t -> t -> t
+  val mod64 : t -> t -> t
 
-  method private simplify = v
+  val smod1  : t -> t -> t
+  val smod8  : t -> t -> t
+  val smod16 : t -> t -> t
+  val smod32 : t -> t -> t
+  val smod64 : t -> t -> t
 
-  method simplify1 = self#simplify
-  method simplify8 = self#simplify
-  method simplify16 = self#simplify
-  method simplify32 = self#simplify
-  method simplify64 = self#simplify
+  val lshift1  : t -> t -> t
+  val lshift8  : t -> t -> t
+  val lshift16 : t -> t -> t
+  val lshift32 : t -> t -> t
+  val lshift64 : t -> t -> t
 
-  method plus1  (d2:concrete_domain) = new concrete_domain (Int64.add v d2#v)
-  method plus8  (d2:concrete_domain) = new concrete_domain (Int64.add v d2#v)
-  method plus16 (d2:concrete_domain) = new concrete_domain (Int64.add v d2#v)
-  method plus32 (d2:concrete_domain) = new concrete_domain (Int64.add v d2#v)
-  method plus64 (d2:concrete_domain) = new concrete_domain (Int64.add v d2#v)
+  val rshift1  : t -> t -> t
+  val rshift8  : t -> t -> t
+  val rshift16 : t -> t -> t
+  val rshift32 : t -> t -> t
+  val rshift64 : t -> t -> t
 
-  method minus1  (d2:concrete_domain) = new concrete_domain (Int64.sub v d2#v)
-  method minus8  (d2:concrete_domain) = new concrete_domain (Int64.sub v d2#v)
-  method minus16 (d2:concrete_domain) = new concrete_domain (Int64.sub v d2#v)
-  method minus32 (d2:concrete_domain) = new concrete_domain (Int64.sub v d2#v)
-  method minus64 (d2:concrete_domain) = new concrete_domain (Int64.sub v d2#v)
+  val arshift1  : t -> t -> t
+  val arshift8  : t -> t -> t
+  val arshift16 : t -> t -> t
+  val arshift32 : t -> t -> t
+  val arshift64 : t -> t -> t
 
-  method times1  (d2:concrete_domain) = new concrete_domain (Int64.mul v d2#v)
-  method times8  (d2:concrete_domain) = new concrete_domain (Int64.mul v d2#v)
-  method times16 (d2:concrete_domain) = new concrete_domain (Int64.mul v d2#v)
-  method times32 (d2:concrete_domain) = new concrete_domain (Int64.mul v d2#v)
-  method times64 (d2:concrete_domain) = new concrete_domain (Int64.mul v d2#v)
+  val bitand1  : t -> t -> t
+  val bitand8  : t -> t -> t
+  val bitand16 : t -> t -> t
+  val bitand32 : t -> t -> t
+  val bitand64 : t -> t -> t
 
-  method divide1  (d2:concrete_domain) = new concrete_domain
-    (Vine_util.int64_udiv (fix_u1  v) (fix_u1  d2#v))
-  method divide8  (d2:concrete_domain) = new concrete_domain
-    (Vine_util.int64_udiv (fix_u8  v) (fix_u8  d2#v))
-  method divide16 (d2:concrete_domain) = new concrete_domain
-    (Vine_util.int64_udiv (fix_u16 v) (fix_u16 d2#v))
-  method divide32 (d2:concrete_domain) = new concrete_domain
-    (Vine_util.int64_udiv (fix_u32 v) (fix_u32 d2#v))
-  method divide64 (d2:concrete_domain) = new concrete_domain
-    (Vine_util.int64_udiv          v           d2#v)
+  val bitor1  : t -> t -> t
+  val bitor8  : t -> t -> t
+  val bitor16 : t -> t -> t
+  val bitor32 : t -> t -> t
+  val bitor64 : t -> t -> t
 
-  method sdivide1  (d2:concrete_domain) = new concrete_domain
-    (Int64.div (fix_s1  v) (fix_s1  d2#v))
-  method sdivide8  (d2:concrete_domain) = new concrete_domain
-    (Int64.div (fix_s8  v) (fix_s8  d2#v))
-  method sdivide16 (d2:concrete_domain) = new concrete_domain
-    (Int64.div (fix_s16 v) (fix_s16 d2#v))
-  method sdivide32 (d2:concrete_domain) = new concrete_domain
-    (Int64.div (fix_s32 v) (fix_s32 d2#v))
-  method sdivide64 (d2:concrete_domain) = new concrete_domain
-    (Int64.div          v           d2#v)
+  val xor1  : t -> t -> t
+  val xor8  : t -> t -> t
+  val xor16 : t -> t -> t
+  val xor32 : t -> t -> t
+  val xor64 : t -> t -> t
 
-  method mod1  (d2:concrete_domain) = new concrete_domain
-    (Vine_util.int64_urem (fix_u1  v) (fix_u1  d2#v))
-  method mod8  (d2:concrete_domain) = new concrete_domain
-    (Vine_util.int64_urem (fix_u8  v) (fix_u8  d2#v))
-  method mod16 (d2:concrete_domain) = new concrete_domain
-    (Vine_util.int64_urem (fix_u16 v) (fix_u16 d2#v))
-  method mod32 (d2:concrete_domain) = new concrete_domain
-    (Vine_util.int64_urem (fix_u32 v) (fix_u32 d2#v))
-  method mod64 (d2:concrete_domain) = new concrete_domain
-    (Vine_util.int64_urem          v           d2#v)
+  val eq1  : t -> t -> t
+  val eq8  : t -> t -> t
+  val eq16 : t -> t -> t
+  val eq32 : t -> t -> t
+  val eq64 : t -> t -> t
 
-  method smod1  (d2:concrete_domain) = new concrete_domain
-    (Int64.rem (fix_s1  v) (fix_s1  d2#v))
-  method smod8  (d2:concrete_domain) = new concrete_domain
-    (Int64.rem (fix_s8  v) (fix_s8  d2#v))
-  method smod16 (d2:concrete_domain) = new concrete_domain
-    (Int64.rem (fix_s16 v) (fix_s16 d2#v))
-  method smod32 (d2:concrete_domain) = new concrete_domain
-    (Int64.rem (fix_s32 v) (fix_s32 d2#v))
-  method smod64 (d2:concrete_domain) = new concrete_domain
-    (Int64.rem          v           d2#v)
+  val neq1  : t -> t -> t
+  val neq8  : t -> t -> t
+  val neq16 : t -> t -> t
+  val neq32 : t -> t -> t
+  val neq64 : t -> t -> t
 
-  method lshift1  (d2:concrete_domain) = new concrete_domain
-    (Int64.shift_left v (Int64.to_int (fix_u8 d2#v)))
-  method lshift8  (d2:concrete_domain) = new concrete_domain
-    (Int64.shift_left v (Int64.to_int (fix_u8 d2#v)))
-  method lshift16 (d2:concrete_domain) = new concrete_domain
-    (Int64.shift_left v (Int64.to_int (fix_u8 d2#v)))
-  method lshift32 (d2:concrete_domain) = new concrete_domain
-    (Int64.shift_left v (Int64.to_int (fix_u8 d2#v)))
-  method lshift64 (d2:concrete_domain) = new concrete_domain
-    (Int64.shift_left v (Int64.to_int (fix_u8 d2#v)))
+  val lt1  : t -> t -> t
+  val lt8  : t -> t -> t
+  val lt16 : t -> t -> t
+  val lt32 : t -> t -> t
+  val lt64 : t -> t -> t
 
-  method rshift1  (d2:concrete_domain) = new concrete_domain
-    (Int64.shift_right_logical (fix_u1 v)  (Int64.to_int (fix_u8 d2#v)))
-  method rshift8  (d2:concrete_domain) = new concrete_domain
-    (Int64.shift_right_logical (fix_u8 v)  (Int64.to_int (fix_u8 d2#v)))
-  method rshift16 (d2:concrete_domain) = new concrete_domain
-    (Int64.shift_right_logical (fix_u16 v) (Int64.to_int (fix_u8 d2#v)))
-  method rshift32 (d2:concrete_domain) = new concrete_domain
-    (Int64.shift_right_logical (fix_u32 v) (Int64.to_int (fix_u8 d2#v)))
-  method rshift64 (d2:concrete_domain) = new concrete_domain
-    (Int64.shift_right_logical          v  (Int64.to_int (fix_u8 d2#v)))
+  val le1  : t -> t -> t
+  val le8  : t -> t -> t
+  val le16 : t -> t -> t
+  val le32 : t -> t -> t
+  val le64 : t -> t -> t
 
-  method arshift1  (d2:concrete_domain) = new concrete_domain
-    (Int64.shift_right (fix_s1 v)  (Int64.to_int (fix_u8 d2#v)))
-  method arshift8  (d2:concrete_domain) = new concrete_domain
-    (Int64.shift_right (fix_s8 v)  (Int64.to_int (fix_u8 d2#v)))
-  method arshift16 (d2:concrete_domain) = new concrete_domain
-    (Int64.shift_right (fix_s16 v) (Int64.to_int (fix_u8 d2#v)))
-  method arshift32 (d2:concrete_domain) = new concrete_domain
-    (Int64.shift_right (fix_s32 v) (Int64.to_int (fix_u8 d2#v)))
-  method arshift64 (d2:concrete_domain) = new concrete_domain
-    (Int64.shift_right          v  (Int64.to_int (fix_u8 d2#v)))
+  val slt1  : t -> t -> t
+  val slt8  : t -> t -> t
+  val slt16 : t -> t -> t
+  val slt32 : t -> t -> t
+  val slt64 : t -> t -> t
 
-  method bitand1  (d2:concrete_domain) = new concrete_domain
-    (Int64.logand v d2#v)
-  method bitand8  (d2:concrete_domain) = new concrete_domain
-    (Int64.logand v d2#v)
-  method bitand16 (d2:concrete_domain) = new concrete_domain
-    (Int64.logand v d2#v)
-  method bitand32 (d2:concrete_domain) = new concrete_domain
-    (Int64.logand v d2#v)
-  method bitand64 (d2:concrete_domain) = new concrete_domain
-    (Int64.logand v d2#v)
+  val sle1  : t -> t -> t
+  val sle8  : t -> t -> t
+  val sle16 : t -> t -> t
+  val sle32 : t -> t -> t
+  val sle64 : t -> t -> t
 
-  method bitor1  (d2:concrete_domain) = new concrete_domain
-    (Int64.logor v d2#v)
-  method bitor8  (d2:concrete_domain) = new concrete_domain
-    (Int64.logor v d2#v)
-  method bitor16 (d2:concrete_domain) = new concrete_domain
-    (Int64.logor v d2#v)
-  method bitor32 (d2:concrete_domain) = new concrete_domain
-    (Int64.logor v d2#v)
-  method bitor64 (d2:concrete_domain) = new concrete_domain
-    (Int64.logor v d2#v)
+  val neg1  : t -> t
+  val neg8  : t -> t
+  val neg16 : t -> t
+  val neg32 : t -> t
+  val neg64 : t -> t
 
-  method xor1  (d2:concrete_domain) = new concrete_domain
-    (Int64.logxor v d2#v)
-  method xor8  (d2:concrete_domain) = new concrete_domain
-    (Int64.logxor v d2#v)
-  method xor16 (d2:concrete_domain) = new concrete_domain
-    (Int64.logxor v d2#v)
-  method xor32 (d2:concrete_domain) = new concrete_domain
-    (Int64.logxor v d2#v)
-  method xor64 (d2:concrete_domain) = new concrete_domain
-    (Int64.logxor v d2#v)
+  val not1  : t -> t
+  val not8  : t -> t
+  val not16 : t -> t
+  val not32 : t -> t
+  val not64 : t -> t
 
-  method private bool b = new concrete_domain (if b then 1L else 0L)
+  val cast1u8   : t -> t
+  val cast1u16  : t -> t
+  val cast1u32  : t -> t
+  val cast1u64  : t -> t
+  val cast8u16  : t -> t
+  val cast8u32  : t -> t
+  val cast8u64  : t -> t
+  val cast16u32 : t -> t
+  val cast16u64 : t -> t
+  val cast32u64 : t -> t
 
-  method eq1  (d2:concrete_domain) = self#bool ((fix_u1  v) = (fix_u1  d2#v))
-  method eq8  (d2:concrete_domain) = self#bool ((fix_u8  v) = (fix_u8  d2#v))
-  method eq16 (d2:concrete_domain) = self#bool ((fix_u16 v) = (fix_u16 d2#v))
-  method eq32 (d2:concrete_domain) = self#bool ((fix_u32 v) = (fix_u32 d2#v))
-  method eq64 (d2:concrete_domain) = self#bool ((        v) = (        d2#v))
+  val cast1s8   : t -> t
+  val cast1s16  : t -> t
+  val cast1s32  : t -> t
+  val cast1s64  : t -> t
+  val cast8s16  : t -> t
+  val cast8s32  : t -> t
+  val cast8s64  : t -> t
+  val cast16s32 : t -> t
+  val cast16s64 : t -> t
+  val cast32s64 : t -> t
 
-  method neq1  (d2:concrete_domain) = self#bool ((fix_u1  v) <> (fix_u1  d2#v))
-  method neq8  (d2:concrete_domain) = self#bool ((fix_u8  v) <> (fix_u8  d2#v))
-  method neq16 (d2:concrete_domain) = self#bool ((fix_u16 v) <> (fix_u16 d2#v))
-  method neq32 (d2:concrete_domain) = self#bool ((fix_u32 v) <> (fix_u32 d2#v))
-  method neq64 (d2:concrete_domain) = self#bool ((        v) <> (        d2#v))
+  val cast8l1   : t -> t
+  val cast16l1  : t -> t
+  val cast32l1  : t -> t
+  val cast64l1  : t -> t
+  val cast16l8  : t -> t
+  val cast32l8  : t -> t
+  val cast64l8  : t -> t
+  val cast32l16 : t -> t
+  val cast64l16 : t -> t
+  val cast64l32 : t -> t
 
-  method lt1  (d2:concrete_domain) =
-    self#bool ((Vine_util.int64_ucompare (fix_u1  v) (fix_u1  d2#v)) < 0)
-  method lt8  (d2:concrete_domain) =
-    self#bool ((Vine_util.int64_ucompare (fix_u8  v) (fix_u8  d2#v)) < 0)
-  method lt16 (d2:concrete_domain) =
-    self#bool ((Vine_util.int64_ucompare (fix_u16 v) (fix_u16 d2#v)) < 0)
-  method lt32 (d2:concrete_domain) =
-    self#bool ((Vine_util.int64_ucompare (fix_u32 v) (fix_u32 d2#v)) < 0)
-  method lt64 (d2:concrete_domain) =
-    self#bool ((Vine_util.int64_ucompare (        v) (        d2#v)) < 0)
+  val cast8h1   : t -> t
+  val cast16h1  : t -> t
+  val cast32h1  : t -> t
+  val cast64h1  : t -> t
+  val cast16h8  : t -> t
+  val cast32h8  : t -> t
+  val cast64h8  : t -> t
+  val cast32h16 : t -> t
+  val cast64h16 : t -> t
+  val cast64h32 : t -> t
+end
 
-  method le1  (d2:concrete_domain) =
-    self#bool ((Vine_util.int64_ucompare (fix_u1  v) (fix_u1  d2#v)) <= 0)
-  method le8  (d2:concrete_domain) =
-    self#bool ((Vine_util.int64_ucompare (fix_u8  v) (fix_u8  d2#v)) <= 0)
-  method le16 (d2:concrete_domain) =
-    self#bool ((Vine_util.int64_ucompare (fix_u16 v) (fix_u16 d2#v)) <= 0)
-  method le32 (d2:concrete_domain) =
-    self#bool ((Vine_util.int64_ucompare (fix_u32 v) (fix_u32 d2#v)) <= 0)
-  method le64 (d2:concrete_domain) =
-    self#bool ((Vine_util.int64_ucompare (        v) (        d2#v)) <= 0)
+module ConcreteDomain : DOMAIN = struct
+  type t = int64
 
-  method slt1  (d2:concrete_domain) = self#bool ((fix_u1  v) < (fix_u1  d2#v))
-  method slt8  (d2:concrete_domain) = self#bool ((fix_u8  v) < (fix_u8  d2#v))
-  method slt16 (d2:concrete_domain) = self#bool ((fix_u16 v) < (fix_u16 d2#v))
-  method slt32 (d2:concrete_domain) = self#bool ((fix_u32 v) < (fix_u32 d2#v))
-  method slt64 (d2:concrete_domain) = self#bool ((        v) < (        d2#v))
+  let from_concrete_1  = Int64.of_int
+  let from_concrete_8  = Int64.of_int
+  let from_concrete_16 = Int64.of_int
+  let from_concrete_32 v' = v' 
+  let from_concrete_64 v' = v'
 
-  method sle1  (d2:concrete_domain) = self#bool ((fix_u1  v) <= (fix_u1  d2#v))
-  method sle8  (d2:concrete_domain) = self#bool ((fix_u8  v) <= (fix_u8  d2#v))
-  method sle16 (d2:concrete_domain) = self#bool ((fix_u16 v) <= (fix_u16 d2#v))
-  method sle32 (d2:concrete_domain) = self#bool ((fix_u32 v) <= (fix_u32 d2#v))
-  method sle64 (d2:concrete_domain) = self#bool ((        v) <= (        d2#v))
+  let to_concrete_1  v = Int64.to_int (Int64.logand v 0x1L)
+  let to_concrete_8  v = Int64.to_int (Int64.logand v 0xffL)
+  let to_concrete_16 v = Int64.to_int (Int64.logand v 0xffffL)
+  let to_concrete_32 v = Int64.logand v 0xffffffffL
+  let to_concrete_64 v = v
 
-  method neg1  = new concrete_domain (Int64.neg v)
-  method neg8  = new concrete_domain (Int64.neg v)
-  method neg16 = new concrete_domain (Int64.neg v)
-  method neg32 = new concrete_domain (Int64.neg v)
-  method neg64 = new concrete_domain (Int64.neg v)
+  let to_symbolic_1  v : V.exp = failwith "to_symbolic in concrete"
+  let to_symbolic_8  v : V.exp = failwith "to_symbolic in concrete"
+  let to_symbolic_16 v : V.exp = failwith "to_symbolic in concrete"
+  let to_symbolic_32 v : V.exp = failwith "to_symbolic in concrete"
+  let to_symbolic_64 v : V.exp = failwith "to_symbolic in concrete"
 
-  method not1  = new concrete_domain (Int64.lognot v)
-  method not8  = new concrete_domain (Int64.lognot v)
-  method not16 = new concrete_domain (Int64.lognot v)
-  method not32 = new concrete_domain (Int64.lognot v)
-  method not64 = new concrete_domain (Int64.lognot v)
+  let from_symbolic e = failwith "from_symbolic in concrete"
 
-  method cast1u8   = new concrete_domain (fix_u1  v)
-  method cast1u16  = new concrete_domain (fix_u1  v)
-  method cast1u32  = new concrete_domain (fix_u1  v)
-  method cast1u64  = new concrete_domain (fix_u1  v)
-  method cast8u16  = new concrete_domain (fix_u8  v)
-  method cast8u32  = new concrete_domain (fix_u8  v)
-  method cast8u64  = new concrete_domain (fix_u8  v)
-  method cast16u32 = new concrete_domain (fix_u16 v)
-  method cast16u64 = new concrete_domain (fix_u16 v)
-  method cast32u64 = new concrete_domain (fix_u32 v)
+  let measure_size v = 1
 
-  method cast1s8   = new concrete_domain (fix_s1  v)
-  method cast1s16  = new concrete_domain (fix_s1  v)
-  method cast1s32  = new concrete_domain (fix_s1  v)
-  method cast1s64  = new concrete_domain (fix_s1  v)
-  method cast8s16  = new concrete_domain (fix_s8  v)
-  method cast8s32  = new concrete_domain (fix_s8  v)
-  method cast8s64  = new concrete_domain (fix_s8  v)
-  method cast16s32 = new concrete_domain (fix_s16 v)
-  method cast16s64 = new concrete_domain (fix_s16 v)
-  method cast32s64 = new concrete_domain (fix_s32 v)
+  let  extract_8_from_64 v which = Int64.shift_right v (8 * which)
+  let  extract_8_from_32 v which = Int64.shift_right v (8 * which)
+  let  extract_8_from_16 v which = Int64.shift_right v (8 * which)
+  let extract_16_from_64 v which = Int64.shift_right v (8 * which)
+  let extract_16_from_32 v which = Int64.shift_right v (8 * which)
+  let extract_32_from_64 v which = Int64.shift_right v (8 * which)
 
-  method cast8l1   = new concrete_domain v
-  method cast16l1  = new concrete_domain v
-  method cast32l1  = new concrete_domain v
-  method cast64l1  = new concrete_domain v
-  method cast16l8  = new concrete_domain v
-  method cast32l8  = new concrete_domain v
-  method cast64l8  = new concrete_domain v
-  method cast32l16 = new concrete_domain v
-  method cast64l16 = new concrete_domain v
-  method cast64l32 = new concrete_domain v
+  let assemble16 v v2 =
+    Int64.logor (Int64.logand 0xffL v) (Int64.shift_left v2 8)
 
-  method private cast_high amt = new concrete_domain (Int64.shift_right v amt)
+  let assemble32 v v2 =
+    Int64.logor (Int64.logand 0xffffL v) (Int64.shift_left v2 16)
 
-  method cast8h1   = self#cast_high 7
-  method cast16h1  = self#cast_high 15
-  method cast32h1  = self#cast_high 31
-  method cast64h1  = self#cast_high 63
-  method cast16h8  = self#cast_high 8
-  method cast32h8  = self#cast_high 24
-  method cast64h8  = self#cast_high 56
-  method cast32h16 = self#cast_high 16
-  method cast64h16 = self#cast_high 48
-  method cast64h32 = self#cast_high 32
+  let assemble64 v v2 =
+    Int64.logor (Int64.logand 0xffffffffL v) (Int64.shift_left v2 32)
+
+  let to_string_1  v = Printf.sprintf "%d"       (to_concrete_1  v)
+  let to_string_8  v = Printf.sprintf "0x%02x"   (to_concrete_8  v)
+  let to_string_16 v = Printf.sprintf "0x%04x"   (to_concrete_16 v)
+  let to_string_32 v = Printf.sprintf "0x%08Lx"  (to_concrete_32 v)
+  let to_string_64 v = Printf.sprintf "0x%016Lx" (to_concrete_64 v)
+
+  let uninit = 0L
+
+  let plus1  = Int64.add
+  let plus8  = Int64.add
+  let plus16 = Int64.add
+  let plus32 = Int64.add
+  let plus64 = Int64.add
+
+  let minus1  = Int64.sub
+  let minus8  = Int64.sub
+  let minus16 = Int64.sub
+  let minus32 = Int64.sub
+  let minus64 = Int64.sub
+
+  let times1  = Int64.mul
+  let times8  = Int64.mul
+  let times16 = Int64.mul
+  let times32 = Int64.mul
+  let times64 = Int64.mul
+
+  let divide1  v v2 = Vine_util.int64_udiv (fix_u1  v) (fix_u1  v2)
+  let divide8  v v2 = Vine_util.int64_udiv (fix_u8  v) (fix_u8  v2)
+  let divide16 v v2 = Vine_util.int64_udiv (fix_u16 v) (fix_u16 v2)
+  let divide32 v v2 = Vine_util.int64_udiv (fix_u32 v) (fix_u32 v2)
+  let divide64 v v2 = Vine_util.int64_udiv          v           v2
+
+  let sdivide1  v v2 = Int64.div (fix_s1  v) (fix_s1  v2)
+  let sdivide8  v v2 = Int64.div (fix_s8  v) (fix_s8  v2)
+  let sdivide16 v v2 = Int64.div (fix_s16 v) (fix_s16 v2)
+  let sdivide32 v v2 = Int64.div (fix_s32 v) (fix_s32 v2)
+  let sdivide64 v v2 = Int64.div          v           v2 
+
+  let mod1  v v2 = Vine_util.int64_urem (fix_u1  v) (fix_u1  v2)
+  let mod8  v v2 = Vine_util.int64_urem (fix_u8  v) (fix_u8  v2)
+  let mod16 v v2 = Vine_util.int64_urem (fix_u16 v) (fix_u16 v2)
+  let mod32 v v2 = Vine_util.int64_urem (fix_u32 v) (fix_u32 v2)
+  let mod64 v v2 = Vine_util.int64_urem          v           v2 
+
+  let smod1  v v2 = Int64.rem (fix_s1  v) (fix_s1  v2)
+  let smod8  v v2 = Int64.rem (fix_s8  v) (fix_s8  v2)
+  let smod16 v v2 = Int64.rem (fix_s16 v) (fix_s16 v2)
+  let smod32 v v2 = Int64.rem (fix_s32 v) (fix_s32 v2)
+  let smod64 v v2 = Int64.rem          v           v2 
+
+  let lshift1  v v2 = Int64.shift_left v (Int64.to_int (fix_u8 v2))
+  let lshift8  v v2 = Int64.shift_left v (Int64.to_int (fix_u8 v2))
+  let lshift16 v v2 = Int64.shift_left v (Int64.to_int (fix_u8 v2))
+  let lshift32 v v2 = Int64.shift_left v (Int64.to_int (fix_u8 v2))
+  let lshift64 v v2 = Int64.shift_left v (Int64.to_int (fix_u8 v2))
+
+  let rshift1  v v2 = Int64.shift_right_logical (fix_u1  v) 
+    (Int64.to_int (fix_u8 v2))
+  let rshift8  v v2 = Int64.shift_right_logical (fix_u8  v)
+    (Int64.to_int (fix_u8 v2))
+  let rshift16 v v2 = Int64.shift_right_logical (fix_u16 v)
+    (Int64.to_int (fix_u8 v2))
+  let rshift32 v v2 = Int64.shift_right_logical (fix_u32 v)
+    (Int64.to_int (fix_u8 v2))
+  let rshift64 v v2 = Int64.shift_right_logical          v 
+    (Int64.to_int (fix_u8 v2))
+
+  let arshift1  v v2 = Int64.shift_right (fix_s1 v)  (Int64.to_int (fix_u8 v2))
+  let arshift8  v v2 = Int64.shift_right (fix_s8 v)  (Int64.to_int (fix_u8 v2))
+  let arshift16 v v2 = Int64.shift_right (fix_s16 v) (Int64.to_int (fix_u8 v2))
+  let arshift32 v v2 = Int64.shift_right (fix_s32 v) (Int64.to_int (fix_u8 v2))
+  let arshift64 v v2 = Int64.shift_right          v  (Int64.to_int (fix_u8 v2))
+
+  let bitand1  = Int64.logand
+  let bitand8  = Int64.logand
+  let bitand16 = Int64.logand
+  let bitand32 = Int64.logand
+  let bitand64 = Int64.logand
+
+  let bitor1  = Int64.logor
+  let bitor8  = Int64.logor
+  let bitor16 = Int64.logor
+  let bitor32 = Int64.logor
+  let bitor64 = Int64.logor
+
+  let xor1  = Int64.logxor
+  let xor8  = Int64.logxor
+  let xor16 = Int64.logxor
+  let xor32 = Int64.logxor
+  let xor64 = Int64.logxor
+
+  let bool b = if b then 1L else 0L
+
+  let eq1  v v2 = bool ((fix_u1  v) = (fix_u1  v2))
+  let eq8  v v2 = bool ((fix_u8  v) = (fix_u8  v2))
+  let eq16 v v2 = bool ((fix_u16 v) = (fix_u16 v2))
+  let eq32 v v2 = bool ((fix_u32 v) = (fix_u32 v2))
+  let eq64 v v2 = bool ((        v) = (        v2))
+
+  let neq1  v v2 = bool ((fix_u1  v) <> (fix_u1  v2))
+  let neq8  v v2 = bool ((fix_u8  v) <> (fix_u8  v2))
+  let neq16 v v2 = bool ((fix_u16 v) <> (fix_u16 v2))
+  let neq32 v v2 = bool ((fix_u32 v) <> (fix_u32 v2))
+  let neq64 v v2 = bool ((        v) <> (        v2))
+
+  let lt1  v v2 = bool ((Vine_util.int64_ucompare (fix_u1  v) (fix_u1  v2))< 0)
+  let lt8  v v2 = bool ((Vine_util.int64_ucompare (fix_u8  v) (fix_u8  v2))< 0)
+  let lt16 v v2 = bool ((Vine_util.int64_ucompare (fix_u16 v) (fix_u16 v2))< 0)
+  let lt32 v v2 = bool ((Vine_util.int64_ucompare (fix_u32 v) (fix_u32 v2))< 0)
+  let lt64 v v2 = bool ((Vine_util.int64_ucompare (        v) (        v2))< 0)
+
+  let le1  v v2 = bool ((Vine_util.int64_ucompare (fix_u1  v) (fix_u1  v2))<=0)
+  let le8  v v2 = bool ((Vine_util.int64_ucompare (fix_u8  v) (fix_u8  v2))<=0)
+  let le16 v v2 = bool ((Vine_util.int64_ucompare (fix_u16 v) (fix_u16 v2))<=0)
+  let le32 v v2 = bool ((Vine_util.int64_ucompare (fix_u32 v) (fix_u32 v2))<=0)
+  let le64 v v2 = bool ((Vine_util.int64_ucompare (        v) (        v2))<=0)
+
+  let slt1  v v2 = bool ((fix_u1  v) < (fix_u1  v2))
+  let slt8  v v2 = bool ((fix_u8  v) < (fix_u8  v2))
+  let slt16 v v2 = bool ((fix_u16 v) < (fix_u16 v2))
+  let slt32 v v2 = bool ((fix_u32 v) < (fix_u32 v2))
+  let slt64 v v2 = bool ((        v) < (        v2))
+
+  let sle1  v v2 = bool ((fix_u1  v) <= (fix_u1  v2))
+  let sle8  v v2 = bool ((fix_u8  v) <= (fix_u8  v2))
+  let sle16 v v2 = bool ((fix_u16 v) <= (fix_u16 v2))
+  let sle32 v v2 = bool ((fix_u32 v) <= (fix_u32 v2))
+  let sle64 v v2 = bool ((        v) <= (        v2))
+
+  let neg1  = Int64.neg
+  let neg8  = Int64.neg
+  let neg16 = Int64.neg
+  let neg32 = Int64.neg
+  let neg64 = Int64.neg
+
+  let not1  = Int64.lognot
+  let not8  = Int64.lognot
+  let not16 = Int64.lognot
+  let not32 = Int64.lognot
+  let not64 = Int64.lognot
+
+  let cast1u8   = fix_u1
+  let cast1u16  = fix_u1
+  let cast1u32  = fix_u1
+  let cast1u64  = fix_u1
+  let cast8u16  = fix_u8
+  let cast8u32  = fix_u8
+  let cast8u64  = fix_u8
+  let cast16u32 = fix_u16
+  let cast16u64 = fix_u16
+  let cast32u64 = fix_u32
+
+  let cast1s8   = fix_s1
+  let cast1s16  = fix_s1
+  let cast1s32  = fix_s1
+  let cast1s64  = fix_s1
+  let cast8s16  = fix_s8
+  let cast8s32  = fix_s8
+  let cast8s64  = fix_s8
+  let cast16s32 = fix_s16
+  let cast16s64 = fix_s16
+  let cast32s64 = fix_s32
+
+  let cast8l1   v = v
+  let cast16l1  v = v
+  let cast32l1  v = v
+  let cast64l1  v = v
+  let cast16l8  v = v
+  let cast32l8  v = v
+  let cast64l8  v = v
+  let cast32l16 v = v
+  let cast64l16 v = v
+  let cast64l32 v = v
+
+  let cast_high amt v = Int64.shift_right v amt
+
+  let cast8h1   = cast_high  7
+  let cast16h1  = cast_high 15
+  let cast32h1  = cast_high 31
+  let cast64h1  = cast_high 63
+  let cast16h8  = cast_high  8
+  let cast32h8  = cast_high 24
+  let cast64h8  = cast_high 56
+  let cast32h16 = cast_high 16
+  let cast64h16 = cast_high 48
+  let cast64h32 = cast_high 32
 end
 
 exception NotConcrete of V.exp
@@ -386,356 +514,356 @@ let rec stmt_size = function
   | V.Assert(e) -> 1 + (expr_size e)
   | V.Halt(e) -> 1 + (expr_size e)
 
-let input_vars = Hashtbl.create 30
+module FormulaManagerFunctor =
+  functor (D : DOMAIN) ->
+struct
+  class formula_manager = object(self)
+    val input_vars = Hashtbl.create 30
 
-let exprs_hash = Hashtbl.create 1001
-let exprs_hash_back = V.VarHash.create 1001
-let expr_num = ref 0
+    method fresh_symbolic str ty =
+      let v = try Hashtbl.find input_vars str with
+	  Not_found ->
+	    Hashtbl.replace input_vars str (V.newvar str ty);
+	    Hashtbl.find input_vars str
+      in
+	D.from_symbolic (V.Lval(V.Temp(v)))
 
-class symbolic_domain (e:V.exp) = object(self)
-  method e = e
-  method v : int64 = failwith "there is no v"
+    method fresh_symbolic_1  s = self#fresh_symbolic s V.REG_1
+    method fresh_symbolic_8  s = self#fresh_symbolic s V.REG_8
+    method fresh_symbolic_16 s = self#fresh_symbolic s V.REG_16
+    method fresh_symbolic_32 s = self#fresh_symbolic s V.REG_32
+    method fresh_symbolic_64 s = self#fresh_symbolic s V.REG_64
 
-  method from_concrete_1 v  = new symbolic_domain
-    (V.Constant(V.Int(V.REG_1,  (Int64.of_int v))))
-  method from_concrete_8 v  = new symbolic_domain
-    (V.Constant(V.Int(V.REG_8,  (Int64.of_int v))))
-  method from_concrete_16 v = new symbolic_domain
-    (V.Constant(V.Int(V.REG_16, (Int64.of_int v))))
-  method from_concrete_32 v = new symbolic_domain
-    (V.Constant(V.Int(V.REG_32, v)))
-  method from_concrete_64 v = new symbolic_domain
-    (V.Constant(V.Int(V.REG_64, v)))
+    method get_input_vars = Hashtbl.fold (fun s v l -> v :: l) input_vars []
 
-  method private fresh_symbolic s ty =
-    let v = try Hashtbl.find input_vars s with
-	Not_found ->
-	  Hashtbl.replace input_vars s (V.newvar s ty);
-	  Hashtbl.find input_vars s
-    in
-      new symbolic_domain (V.Lval(V.Temp(v)))
+    (* subexpression cache *)
+    val subexpr_to_temp_var = Hashtbl.create 1001
+    val temp_var_to_subexpr = V.VarHash.create 1001
+    val mutable temp_var_num = 0
 
-  method fresh_symbolic_1  s = self#fresh_symbolic s V.REG_1
-  method fresh_symbolic_8  s = self#fresh_symbolic s V.REG_8
-  method fresh_symbolic_16 s = self#fresh_symbolic s V.REG_16
-  method fresh_symbolic_32 s = self#fresh_symbolic s V.REG_32
-  method fresh_symbolic_64 s = self#fresh_symbolic s V.REG_64
+    method simplify (e:D.t) ty =
+      let e' = constant_fold_rec (D.to_symbolic_32 e) in
+	if expr_size e' < 10 then
+	  D.from_symbolic e'
+	else
+	  let var =
+	    (try
+	       Hashtbl.find subexpr_to_temp_var e'
+	     with Not_found ->
+	       let s = "t" ^ (string_of_int temp_var_num) in
+		 temp_var_num <- temp_var_num + 1;
+		 let var = V.newvar s ty in
+ 		   Hashtbl.replace subexpr_to_temp_var e' var;
+ 		   V.VarHash.replace temp_var_to_subexpr var e';
+		   (* Printf.printf "%s = %s\n" s (V.exp_to_string e'); *)
+		   var) in
+	  D.from_symbolic (V.Lval(V.Temp(var)))
+	    
+    method simplify1  e = self#simplify e V.REG_1
+    method simplify8  e = self#simplify e V.REG_8
+    method simplify16 e = self#simplify e V.REG_16
+    method simplify32 e = self#simplify e V.REG_32
+    method simplify64 e = self#simplify e V.REG_64
 
-  method private cfold = (constant_fold_rec e)
+    method if_expr_temp var fn =
+      try
+	let e = V.VarHash.find temp_var_to_subexpr var in
+	  (fn e)
+      with Not_found -> ()
+  end
+end
 
-  method to_concrete_1 = match self#cfold with
+module SymbolicDomain : DOMAIN = struct
+  type t = V.exp
+
+  let from_concrete_1 v  = V.Constant(V.Int(V.REG_1,  (Int64.of_int v)))
+  let from_concrete_8 v  = V.Constant(V.Int(V.REG_8,  (Int64.of_int v)))
+  let from_concrete_16 v = V.Constant(V.Int(V.REG_16, (Int64.of_int v)))
+  let from_concrete_32 v = V.Constant(V.Int(V.REG_32,               v ))
+  let from_concrete_64 v = V.Constant(V.Int(V.REG_64,               v ))
+
+  let to_concrete_1 e = match constant_fold_rec e with
     | V.Constant(V.Int(V.REG_1,  v)) -> (Int64.to_int v)
     | V.Constant(V.Int(_,  v)) -> failwith "bad type in to_concrete_1"
     | _ -> raise (NotConcrete e)
 
-  method to_concrete_8 = match self#cfold with
+  let to_concrete_8 e = match constant_fold_rec e with
     | V.Constant(V.Int(V.REG_8,  v)) -> (Int64.to_int v)
     | V.Constant(V.Int(_,  v)) -> failwith "bad type in to_concrete_8"
     | _ -> raise (NotConcrete e)
 
-  method to_concrete_16 = match self#cfold with
+  let to_concrete_16 e = match constant_fold_rec e with
     | V.Constant(V.Int(V.REG_16, v)) -> (Int64.to_int v)
     | V.Constant(V.Int(_,  v)) -> failwith "bad type in to_concrete_16"
     | _ -> raise (NotConcrete e)
 
-  method to_concrete_32 = match self#cfold with
+  let to_concrete_32 e = match constant_fold_rec e with
     | V.Constant(V.Int(V.REG_32, v)) -> v
     | V.Constant(V.Int(_,  v)) -> failwith "bad type in to_concrete_32"
     | _ -> raise (NotConcrete e)
 
-  method to_concrete_64 = match self#cfold with
+  let to_concrete_64 e = match constant_fold_rec e with
     | V.Constant(V.Int(V.REG_64, v)) -> v
     | V.Constant(V.Int(_,  v)) -> failwith "bad type in to_concrete_64"
     | _ -> raise (NotConcrete e)
 
-  method to_symbolic_1  = e
-  method to_symbolic_8  = e
-  method to_symbolic_16 = e
-  method to_symbolic_32 = e
-  method to_symbolic_64 = e
+  let to_symbolic_1  e = e
+  let to_symbolic_8  e = e
+  let to_symbolic_16 e = e
+  let to_symbolic_32 e = e
+  let to_symbolic_64 e = e
 
-  method measure_size = expr_size e
+  let from_symbolic e = e
 
-  method private make_extract t which =
+  let measure_size e = expr_size e
+
+  let make_extract t which e =
     V.Cast(V.CAST_LOW, t, 
 	   V.BinOp(V.RSHIFT, e,
 		   V.Constant(V.Int(V.REG_8,
 				    (Int64.mul 8L (Int64.of_int which))))))
 	
-  method extract_8_from_64 which =
-    let e' = match which with
+  let extract_8_from_64 e which =
+    match which with
       | 0 -> V.Cast(V.CAST_LOW, V.REG_8, e)
       | 7 -> V.Cast(V.CAST_HIGH, V.REG_8, e)
-      | _ -> self#make_extract V.REG_8 which
-    in new symbolic_domain e'
+      | _ -> make_extract V.REG_8 which e
 
-  method extract_8_from_32 which =
-    let e' = match which with
+  let extract_8_from_32 e which =
+    match which with
       | 0 -> V.Cast(V.CAST_LOW, V.REG_8, e)
       | 3 -> V.Cast(V.CAST_HIGH, V.REG_8, e)
-      | _ -> self#make_extract V.REG_8 which
-    in new symbolic_domain e'
+      | _ -> make_extract V.REG_8 which e
 
-  method extract_8_from_16 which =
-    let e' = match which with
+  let extract_8_from_16 e which =
+    match which with
       | 0 -> V.Cast(V.CAST_LOW, V.REG_8, e)
       | 1 -> V.Cast(V.CAST_HIGH, V.REG_8, e)
       | _ -> failwith "bad which in extract_8_from_16"
-    in new symbolic_domain e'
 
-  method extract_16_from_64 which =
-    let e' = match which with
+  let extract_16_from_64 e which =
+    match which with
       | 0 -> V.Cast(V.CAST_LOW, V.REG_16, e)
       | 6 -> V.Cast(V.CAST_HIGH, V.REG_16, e)
-      | _ -> self#make_extract V.REG_16 which
-    in new symbolic_domain e'
+      | _ -> make_extract V.REG_16 which e
 
-  method extract_16_from_32 which =
-    let e' = match which with
+  let extract_16_from_32 e which =
+    match which with
       | 0 -> V.Cast(V.CAST_LOW, V.REG_16, e)
       | 2 -> V.Cast(V.CAST_HIGH, V.REG_16, e)
       | _ -> failwith "bad which in extract_16_from_32"
-    in new symbolic_domain e'
 
-  method extract_32_from_64 which =
-    let e' = match which with
+  let extract_32_from_64 e which =
+    match which with
       | 0 -> V.Cast(V.CAST_LOW, V.REG_32, e)
       | 4 -> V.Cast(V.CAST_HIGH, V.REG_32, e)
       | _ -> failwith "bad which in extract_32_from_64"
-    in new symbolic_domain e'
 
-  method assemble16 (d2:symbolic_domain) =
-    new symbolic_domain
-      (V.BinOp(V.BITOR,
-	       V.Cast(V.CAST_UNSIGNED, V.REG_16, e),
-	       V.BinOp(V.LSHIFT,
-		       V.Cast(V.CAST_UNSIGNED, V.REG_16, d2#e),
-		       (self#from_concrete_8 8)#e)))
+  let assemble16 e e2 =
+    V.BinOp(V.BITOR,
+	    V.Cast(V.CAST_UNSIGNED, V.REG_16, e),
+	    V.BinOp(V.LSHIFT,
+			V.Cast(V.CAST_UNSIGNED, V.REG_16, e2),
+			(from_concrete_8 8)))
 	    
-  method assemble32 (d2:symbolic_domain) =
-    new symbolic_domain
-      (V.BinOp(V.BITOR,
-	       V.Cast(V.CAST_UNSIGNED, V.REG_32, e),
-	       V.BinOp(V.LSHIFT,
-		       V.Cast(V.CAST_UNSIGNED, V.REG_32, d2#e),
-		       (self#from_concrete_8 16)#e)))
+  let assemble32 e e2 =
+    V.BinOp(V.BITOR,
+	    V.Cast(V.CAST_UNSIGNED, V.REG_32, e),
+	    V.BinOp(V.LSHIFT,
+		    V.Cast(V.CAST_UNSIGNED, V.REG_32, e2),
+		    (from_concrete_8 16)))
 
-  method assemble64 (d2:symbolic_domain) =
-    new symbolic_domain
-      (V.BinOp(V.BITOR,
-	       V.Cast(V.CAST_UNSIGNED, V.REG_64, e),
-	       V.BinOp(V.LSHIFT,
-		       V.Cast(V.CAST_UNSIGNED, V.REG_64, d2#e),
-		       (self#from_concrete_8 32)#e)))
+  let assemble64 e e2 =
+    V.BinOp(V.BITOR,
+	    V.Cast(V.CAST_UNSIGNED, V.REG_64, e),
+	    V.BinOp(V.LSHIFT,
+		    V.Cast(V.CAST_UNSIGNED, V.REG_64, e2),
+		    (from_concrete_8 32)))
 
-  method private to_string = V.exp_to_string e
-  method to_string_1  = self#to_string
-  method to_string_8  = self#to_string
-  method to_string_16 = self#to_string
-  method to_string_32 = self#to_string
-  method to_string_64 = self#to_string
+  let to_string e = V.exp_to_string e
+  let to_string_1  = to_string
+  let to_string_8  = to_string
+  let to_string_16 = to_string
+  let to_string_32 = to_string
+  let to_string_64 = to_string
 
-  method uninit = new symbolic_domain (V.Unknown("uninit"))
+  let uninit = V.Unknown("uninit")
 
-  method simplify ty =
-    let e' = self#cfold in
-      if expr_size e' < 10 then
-	new symbolic_domain e'
-      else
-	let var =
-	  (try Hashtbl.find exprs_hash e' with
-	       Not_found ->
-		 let s = "t" ^ (string_of_int !expr_num) in
-		   expr_num := !expr_num + 1;
-		   let var = V.newvar s ty in
- 		     Hashtbl.replace exprs_hash e' var;
- 		     V.VarHash.replace exprs_hash_back var e';
-		     (* Printf.printf "%s = %s\n" s (V.exp_to_string e'); *)
-		     var) in
-	  new symbolic_domain (V.Lval(V.Temp(var)))
-	    
-  method simplify1  = self#simplify V.REG_1
-  method simplify8  = self#simplify V.REG_8
-  method simplify16 = self#simplify V.REG_16
-  method simplify32 = self#simplify V.REG_32
-  method simplify64 = self#simplify V.REG_64
+  let binop op e e2 = V.BinOp(op, e, e2)
 
-  method private binop op (d2:symbolic_domain) =
-    new symbolic_domain (V.BinOp(op, e, d2#e))
+  let plus1  = binop V.PLUS
+  let plus8  = binop V.PLUS
+  let plus16 = binop V.PLUS
+  let plus32 = binop V.PLUS
+  let plus64 = binop V.PLUS
 
-  method plus1  d2 = self#binop V.PLUS d2
-  method plus8  d2 = self#binop V.PLUS d2
-  method plus16 d2 = self#binop V.PLUS d2
-  method plus32 d2 = self#binop V.PLUS d2
-  method plus64 d2 = self#binop V.PLUS d2
+  let minus1  = binop V.MINUS
+  let minus8  = binop V.MINUS
+  let minus16 = binop V.MINUS
+  let minus32 = binop V.MINUS
+  let minus64 = binop V.MINUS
 
-  method minus1  d2 = self#binop V.MINUS d2
-  method minus8  d2 = self#binop V.MINUS d2
-  method minus16 d2 = self#binop V.MINUS d2
-  method minus32 d2 = self#binop V.MINUS d2
-  method minus64 d2 = self#binop V.MINUS d2
+  let times1  = binop V.TIMES
+  let times8  = binop V.TIMES
+  let times16 = binop V.TIMES
+  let times32 = binop V.TIMES
+  let times64 = binop V.TIMES
 
-  method times1  d2 = self#binop V.TIMES d2
-  method times8  d2 = self#binop V.TIMES d2
-  method times16 d2 = self#binop V.TIMES d2
-  method times32 d2 = self#binop V.TIMES d2
-  method times64 d2 = self#binop V.TIMES d2
+  let divide1  = binop V.DIVIDE
+  let divide8  = binop V.DIVIDE
+  let divide16 = binop V.DIVIDE
+  let divide32 = binop V.DIVIDE
+  let divide64 = binop V.DIVIDE
 
-  method divide1  d2 = self#binop V.DIVIDE d2
-  method divide8  d2 = self#binop V.DIVIDE d2
-  method divide16 d2 = self#binop V.DIVIDE d2
-  method divide32 d2 = self#binop V.DIVIDE d2
-  method divide64 d2 = self#binop V.DIVIDE d2
+  let sdivide1  = binop V.SDIVIDE
+  let sdivide8  = binop V.SDIVIDE
+  let sdivide16 = binop V.SDIVIDE
+  let sdivide32 = binop V.SDIVIDE
+  let sdivide64 = binop V.SDIVIDE
 
-  method sdivide1  d2 = self#binop V.SDIVIDE d2
-  method sdivide8  d2 = self#binop V.SDIVIDE d2
-  method sdivide16 d2 = self#binop V.SDIVIDE d2
-  method sdivide32 d2 = self#binop V.SDIVIDE d2
-  method sdivide64 d2 = self#binop V.SDIVIDE d2
+  let mod1  = binop V.MOD
+  let mod8  = binop V.MOD
+  let mod16 = binop V.MOD
+  let mod32 = binop V.MOD
+  let mod64 = binop V.MOD
 
-  method mod1  d2 = self#binop V.MOD d2
-  method mod8  d2 = self#binop V.MOD d2
-  method mod16 d2 = self#binop V.MOD d2
-  method mod32 d2 = self#binop V.MOD d2
-  method mod64 d2 = self#binop V.MOD d2
+  let smod1  = binop V.SMOD
+  let smod8  = binop V.SMOD
+  let smod16 = binop V.SMOD
+  let smod32 = binop V.SMOD
+  let smod64 = binop V.SMOD
 
-  method smod1  d2 = self#binop V.SMOD d2
-  method smod8  d2 = self#binop V.SMOD d2
-  method smod16 d2 = self#binop V.SMOD d2
-  method smod32 d2 = self#binop V.SMOD d2
-  method smod64 d2 = self#binop V.SMOD d2
+  let lshift1  = binop V.LSHIFT
+  let lshift8  = binop V.LSHIFT
+  let lshift16 = binop V.LSHIFT
+  let lshift32 = binop V.LSHIFT
+  let lshift64 = binop V.LSHIFT
 
-  method lshift1  d2 = self#binop V.LSHIFT d2
-  method lshift8  d2 = self#binop V.LSHIFT d2
-  method lshift16 d2 = self#binop V.LSHIFT d2
-  method lshift32 d2 = self#binop V.LSHIFT d2
-  method lshift64 d2 = self#binop V.LSHIFT d2
+  let rshift1  = binop V.RSHIFT
+  let rshift8  = binop V.RSHIFT
+  let rshift16 = binop V.RSHIFT
+  let rshift32 = binop V.RSHIFT
+  let rshift64 = binop V.RSHIFT
 
-  method rshift1  d2 = self#binop V.RSHIFT d2
-  method rshift8  d2 = self#binop V.RSHIFT d2
-  method rshift16 d2 = self#binop V.RSHIFT d2
-  method rshift32 d2 = self#binop V.RSHIFT d2
-  method rshift64 d2 = self#binop V.RSHIFT d2
+  let arshift1  = binop V.ARSHIFT
+  let arshift8  = binop V.ARSHIFT
+  let arshift16 = binop V.ARSHIFT
+  let arshift32 = binop V.ARSHIFT
+  let arshift64 = binop V.ARSHIFT
 
-  method arshift1  d2 = self#binop V.ARSHIFT d2
-  method arshift8  d2 = self#binop V.ARSHIFT d2
-  method arshift16 d2 = self#binop V.ARSHIFT d2
-  method arshift32 d2 = self#binop V.ARSHIFT d2
-  method arshift64 d2 = self#binop V.ARSHIFT d2
+  let bitand1  = binop V.BITAND
+  let bitand8  = binop V.BITAND
+  let bitand16 = binop V.BITAND
+  let bitand32 = binop V.BITAND
+  let bitand64 = binop V.BITAND
 
-  method bitand1  d2 = self#binop V.BITAND d2
-  method bitand8  d2 = self#binop V.BITAND d2
-  method bitand16 d2 = self#binop V.BITAND d2
-  method bitand32 d2 = self#binop V.BITAND d2
-  method bitand64 d2 = self#binop V.BITAND d2
+  let bitor1  = binop V.BITOR
+  let bitor8  = binop V.BITOR
+  let bitor16 = binop V.BITOR
+  let bitor32 = binop V.BITOR
+  let bitor64 = binop V.BITOR
 
-  method bitor1  d2 = self#binop V.BITOR d2
-  method bitor8  d2 = self#binop V.BITOR d2
-  method bitor16 d2 = self#binop V.BITOR d2
-  method bitor32 d2 = self#binop V.BITOR d2
-  method bitor64 d2 = self#binop V.BITOR d2
+  let xor1  = binop V.XOR
+  let xor8  = binop V.XOR
+  let xor16 = binop V.XOR
+  let xor32 = binop V.XOR
+  let xor64 = binop V.XOR
 
-  method xor1  d2 = self#binop V.XOR d2
-  method xor8  d2 = self#binop V.XOR d2
-  method xor16 d2 = self#binop V.XOR d2
-  method xor32 d2 = self#binop V.XOR d2
-  method xor64 d2 = self#binop V.XOR d2
+  let eq1  = binop V.EQ
+  let eq8  = binop V.EQ
+  let eq16 = binop V.EQ
+  let eq32 = binop V.EQ
+  let eq64 = binop V.EQ
 
-  method eq1  d2 = self#binop V.EQ d2
-  method eq8  d2 = self#binop V.EQ d2
-  method eq16 d2 = self#binop V.EQ d2
-  method eq32 d2 = self#binop V.EQ d2
-  method eq64 d2 = self#binop V.EQ d2
+  let neq1  = binop V.NEQ
+  let neq8  = binop V.NEQ
+  let neq16 = binop V.NEQ
+  let neq32 = binop V.NEQ
+  let neq64 = binop V.NEQ
 
-  method neq1  d2 = self#binop V.NEQ d2
-  method neq8  d2 = self#binop V.NEQ d2
-  method neq16 d2 = self#binop V.NEQ d2
-  method neq32 d2 = self#binop V.NEQ d2
-  method neq64 d2 = self#binop V.NEQ d2
+  let lt1  = binop V.LT
+  let lt8  = binop V.LT
+  let lt16 = binop V.LT
+  let lt32 = binop V.LT
+  let lt64 = binop V.LT
 
-  method lt1  d2 = self#binop V.LT d2
-  method lt8  d2 = self#binop V.LT d2
-  method lt16 d2 = self#binop V.LT d2
-  method lt32 d2 = self#binop V.LT d2
-  method lt64 d2 = self#binop V.LT d2
+  let le1  = binop V.LE
+  let le8  = binop V.LE
+  let le16 = binop V.LE
+  let le32 = binop V.LE
+  let le64 = binop V.LE
 
-  method le1  d2 = self#binop V.LE d2
-  method le8  d2 = self#binop V.LE d2
-  method le16 d2 = self#binop V.LE d2
-  method le32 d2 = self#binop V.LE d2
-  method le64 d2 = self#binop V.LE d2
+  let slt1  = binop V.SLT
+  let slt8  = binop V.SLT
+  let slt16 = binop V.SLT
+  let slt32 = binop V.SLT
+  let slt64 = binop V.SLT
 
-  method slt1  d2 = self#binop V.SLT d2
-  method slt8  d2 = self#binop V.SLT d2
-  method slt16 d2 = self#binop V.SLT d2
-  method slt32 d2 = self#binop V.SLT d2
-  method slt64 d2 = self#binop V.SLT d2
+  let sle1  = binop V.SLE
+  let sle8  = binop V.SLE
+  let sle16 = binop V.SLE
+  let sle32 = binop V.SLE
+  let sle64 = binop V.SLE
 
-  method sle1  d2 = self#binop V.SLE d2
-  method sle8  d2 = self#binop V.SLE d2
-  method sle16 d2 = self#binop V.SLE d2
-  method sle32 d2 = self#binop V.SLE d2
-  method sle64 d2 = self#binop V.SLE d2
+  let unop op e = V.UnOp(op, e)
 
-  method private unop op = new symbolic_domain (V.UnOp(op, e))
+  let neg1  = unop V.NEG
+  let neg8  = unop V.NEG
+  let neg16 = unop V.NEG
+  let neg32 = unop V.NEG
+  let neg64 = unop V.NEG
 
-  method neg1  = self#unop V.NEG
-  method neg8  = self#unop V.NEG
-  method neg16 = self#unop V.NEG
-  method neg32 = self#unop V.NEG
-  method neg64 = self#unop V.NEG
+  let not1  = unop V.NOT
+  let not8  = unop V.NOT
+  let not16 = unop V.NOT
+  let not32 = unop V.NOT
+  let not64 = unop V.NOT
 
-  method not1  = self#unop V.NOT
-  method not8  = self#unop V.NOT
-  method not16 = self#unop V.NOT
-  method not32 = self#unop V.NOT
-  method not64 = self#unop V.NOT
+  let cast kind ty e = V.Cast(kind, ty, e)
 
-  method private cast kind ty = new symbolic_domain (V.Cast(kind, ty, e))
+  let cast1u8   = cast V.CAST_UNSIGNED V.REG_8 
+  let cast1u16  = cast V.CAST_UNSIGNED V.REG_16
+  let cast1u32  = cast V.CAST_UNSIGNED V.REG_32
+  let cast1u64  = cast V.CAST_UNSIGNED V.REG_64
+  let cast8u16  = cast V.CAST_UNSIGNED V.REG_16
+  let cast8u32  = cast V.CAST_UNSIGNED V.REG_32
+  let cast8u64  = cast V.CAST_UNSIGNED V.REG_64
+  let cast16u32 = cast V.CAST_UNSIGNED V.REG_32
+  let cast16u64 = cast V.CAST_UNSIGNED V.REG_64
+  let cast32u64 = cast V.CAST_UNSIGNED V.REG_64
 
-  method cast1u8   = self#cast V.CAST_UNSIGNED V.REG_8 
-  method cast1u16  = self#cast V.CAST_UNSIGNED V.REG_16
-  method cast1u32  = self#cast V.CAST_UNSIGNED V.REG_32
-  method cast1u64  = self#cast V.CAST_UNSIGNED V.REG_64
-  method cast8u16  = self#cast V.CAST_UNSIGNED V.REG_16
-  method cast8u32  = self#cast V.CAST_UNSIGNED V.REG_32
-  method cast8u64  = self#cast V.CAST_UNSIGNED V.REG_64
-  method cast16u32 = self#cast V.CAST_UNSIGNED V.REG_32
-  method cast16u64 = self#cast V.CAST_UNSIGNED V.REG_64
-  method cast32u64 = self#cast V.CAST_UNSIGNED V.REG_64
+  let cast1s8   = cast V.CAST_SIGNED V.REG_8
+  let cast1s16  = cast V.CAST_SIGNED V.REG_16
+  let cast1s32  = cast V.CAST_SIGNED V.REG_32
+  let cast1s64  = cast V.CAST_SIGNED V.REG_64
+  let cast8s16  = cast V.CAST_SIGNED V.REG_16
+  let cast8s32  = cast V.CAST_SIGNED V.REG_32
+  let cast8s64  = cast V.CAST_SIGNED V.REG_64
+  let cast16s32 = cast V.CAST_SIGNED V.REG_32
+  let cast16s64 = cast V.CAST_SIGNED V.REG_64
+  let cast32s64 = cast V.CAST_SIGNED V.REG_64
 
-  method cast1s8   = self#cast V.CAST_SIGNED V.REG_8
-  method cast1s16  = self#cast V.CAST_SIGNED V.REG_16
-  method cast1s32  = self#cast V.CAST_SIGNED V.REG_32
-  method cast1s64  = self#cast V.CAST_SIGNED V.REG_64
-  method cast8s16  = self#cast V.CAST_SIGNED V.REG_16
-  method cast8s32  = self#cast V.CAST_SIGNED V.REG_32
-  method cast8s64  = self#cast V.CAST_SIGNED V.REG_64
-  method cast16s32 = self#cast V.CAST_SIGNED V.REG_32
-  method cast16s64 = self#cast V.CAST_SIGNED V.REG_64
-  method cast32s64 = self#cast V.CAST_SIGNED V.REG_64
+  let cast8l1   = cast V.CAST_LOW V.REG_1 
+  let cast16l1  = cast V.CAST_LOW V.REG_1 
+  let cast32l1  = cast V.CAST_LOW V.REG_1 
+  let cast64l1  = cast V.CAST_LOW V.REG_1 
+  let cast16l8  = cast V.CAST_LOW V.REG_8 
+  let cast32l8  = cast V.CAST_LOW V.REG_8 
+  let cast64l8  = cast V.CAST_LOW V.REG_8 
+  let cast32l16 = cast V.CAST_LOW V.REG_16
+  let cast64l16 = cast V.CAST_LOW V.REG_16
+  let cast64l32 = cast V.CAST_LOW V.REG_32
 
-  method cast8l1   = self#cast V.CAST_LOW V.REG_1 
-  method cast16l1  = self#cast V.CAST_LOW V.REG_1 
-  method cast32l1  = self#cast V.CAST_LOW V.REG_1 
-  method cast64l1  = self#cast V.CAST_LOW V.REG_1 
-  method cast16l8  = self#cast V.CAST_LOW V.REG_8 
-  method cast32l8  = self#cast V.CAST_LOW V.REG_8 
-  method cast64l8  = self#cast V.CAST_LOW V.REG_8 
-  method cast32l16 = self#cast V.CAST_LOW V.REG_16
-  method cast64l16 = self#cast V.CAST_LOW V.REG_16
-  method cast64l32 = self#cast V.CAST_LOW V.REG_32
-
-  method cast8h1   = self#cast V.CAST_HIGH V.REG_1 
-  method cast16h1  = self#cast V.CAST_HIGH V.REG_1 
-  method cast32h1  = self#cast V.CAST_HIGH V.REG_1 
-  method cast64h1  = self#cast V.CAST_HIGH V.REG_1 
-  method cast16h8  = self#cast V.CAST_HIGH V.REG_8 
-  method cast32h8  = self#cast V.CAST_HIGH V.REG_8 
-  method cast64h8  = self#cast V.CAST_HIGH V.REG_8 
-  method cast32h16 = self#cast V.CAST_HIGH V.REG_16
-  method cast64h16 = self#cast V.CAST_HIGH V.REG_16
-  method cast64h32 = self#cast V.CAST_HIGH V.REG_32
+  let cast8h1   = cast V.CAST_HIGH V.REG_1 
+  let cast16h1  = cast V.CAST_HIGH V.REG_1 
+  let cast32h1  = cast V.CAST_HIGH V.REG_1 
+  let cast64h1  = cast V.CAST_HIGH V.REG_1 
+  let cast16h8  = cast V.CAST_HIGH V.REG_8 
+  let cast32h8  = cast V.CAST_HIGH V.REG_8 
+  let cast64h8  = cast V.CAST_HIGH V.REG_8 
+  let cast32h16 = cast V.CAST_HIGH V.REG_16
+  let cast64h16 = cast V.CAST_HIGH V.REG_16
+  let cast64h32 = cast V.CAST_HIGH V.REG_32
 end
 
 class virtual query_engine = object(self)
@@ -1122,289 +1250,289 @@ class parallel_check_memory mem1 mem2 = object(self)
     Printf.printf "-------- reset --------\n"
 end
 
-let split64 l =
-  ((l#extract_32_from_64 0), (l#extract_32_from_64 4))
+module GranularMemoryFunctor =
+  functor (D : DOMAIN) ->
+struct
+  let split64 l = ((D.extract_32_from_64 l 0), (D.extract_32_from_64 l 4))
+  let split32 l = ((D.extract_16_from_32 l 0), (D.extract_16_from_32 l 2))
+  let split16 l = ((D. extract_8_from_16 l 0), (D. extract_8_from_16 l 1))
+    
+  (* At the moment, there are still some calls to endian_i, but there
+     are places where endianness checking is missing, so assume
+     little-endian for the time being.
+     
+     let endianness = V.Little
+     
+     let endian_i n k = 
+     match endianness with
+     | V.Little -> k
+     | V.Big -> n - k  
+  *)
 
-let split32 l =
-  ((l#extract_16_from_32 0), (l#extract_16_from_32 2))
+  let endian_i n k = k
 
-let split16 l =
-  ((l#extract_8_from_16 0), (l#extract_8_from_16 1))
 
-(* At the moment, there are still some calls to endian_i, but there
-   are places where endianness checking is missing, so assume
-   little-endian for the time being.
+  type gran8 = Byte of D.t
+	       | Absent8
 
-  let endianness = V.Little
+  type gran16 = Short of D.t
+		| Gran8s of gran8 * gran8
+		| Absent16
+      
+  type gran32 = Word of D.t
+		| Gran16s of gran16 * gran16
+		| Absent32
 
-  let endian_i n k = 
-    match endianness with
-      | V.Little -> k
-      | V.Big -> n - k  
-*)
+  type gran64 = Long of D.t
+		| Gran32s of gran32 * gran32
+		| Absent64
 
-let endian_i n k = k
+  let  gran8_get_byte  g8  missing addr =
+    match g8 with
+      | Byte l -> (l, g8)
+      | Absent8 ->
+	  let l = missing 8 addr in
+	    (l, Byte l)
 
-type 'a gran8 = Byte of 'a
-		| Absent8
-  
-type 'a gran16 = Short of 'a
-	      | Gran8s of 'a gran8 * 'a gran8
-	      | Absent16
-		  
-type 'a gran32 = Word of 'a
-	      | Gran16s of 'a gran16 * 'a gran16
-	      | Absent32
-		    
-type 'a gran64 = Long of 'a
-	      | Gran32s of 'a gran32 * 'a gran32
-	      | Absent64
+  let gran16_get_byte  g16 missing addr which =
+    assert(which >= 0); assert(which < 2);
+    match g16, Absent8, Absent8 with
+      | Short(l),_,_ -> (D.extract_8_from_16 l (endian_i 2 which), g16)
+      | Gran8s(g1, g2),_,_
+      | Absent16, g1, g2 ->
+	  if which < 1 then
+	    let (l, g1') = gran8_get_byte g1 missing addr in
+	      (l, Gran8s(g1', g2))
+	  else
+	    let (l, g2') = gran8_get_byte g2 missing (Int64.add addr 1L) in
+	      (l, Gran8s(g1, g2'))
+		
+  let gran32_get_byte  g32 missing addr which =
+    assert(which >= 0); assert(which < 4);
+    match g32, Absent16, Absent16 with
+      | Word(l),_,_ -> (D.extract_8_from_32 l (endian_i 4 which), g32)
+      | Gran16s(g1, g2),_,_
+      | Absent32, g1, g2 ->
+	  if which < 2 then
+	    let (l, g1') = gran16_get_byte g1 missing addr which in
+	      (l, Gran16s(g1', g2))
+	  else
+	    let (l, g2') = gran16_get_byte g2 missing (Int64.add addr 2L) 
+	      (which - 2) in
+	      (l, Gran16s(g1, g2'))
 
-let  gran8_get_byte  g8  missing addr =
-  match g8 with
-    | Byte l -> (l, g8)
-    | Absent8 ->
-	let l = missing 8 addr in
-	  (l, Byte l)
+  let gran64_get_byte  g64 missing addr which =
+    assert(which >= 0); assert(which < 8);
+    match g64, Absent32, Absent32 with
+      | Long(l),_,_ -> (D.extract_8_from_64 l (endian_i 8 which), g64)
+      | Gran32s(g1, g2),_,_
+      | Absent64, g1, g2 ->
+	  if which < 4 then
+	    let (l, g1') = gran32_get_byte g1 missing addr which in
+	      (l, Gran32s(g1', g2))
+	  else
+	    let (l, g2') = gran32_get_byte g2 missing (Int64.add addr 4L)
+	      (which - 4) in
+	      (l, Gran32s(g1, g2'))
 
-let gran16_get_byte  g16 missing addr which =
-  assert(which >= 0); assert(which < 2);
-  match g16, Absent8, Absent8 with
-    | Short(l),_,_ -> (l#extract_8_from_16 (endian_i 2 which), g16)
-    | Gran8s(g1, g2),_,_
-    | Absent16, g1, g2 ->
-	if which < 1 then
-	  let (l, g1') = gran8_get_byte g1 missing addr in
-	    (l, Gran8s(g1', g2))
-	else
-	  let (l, g2') = gran8_get_byte g2 missing (Int64.add addr 1L) in
-	    (l, Gran8s(g1, g2'))
+  let gran16_get_short g16 missing addr =
+    match g16 with
+      | Short(l) -> (l, g16)
+      | Gran8s(g1, g2) ->
+	  let (b1, g1') = gran8_get_byte g1 missing addr and
+	      (b2, g2') = gran8_get_byte g2 missing (Int64.add addr 1L) in
+	    (D.assemble16 b1 b2, Gran8s(g1', g2'))
+      | Absent16 ->
+	  let l = missing 16 addr in
+	    (l, Short l)
 
-let gran32_get_byte  g32 missing addr which =
-  assert(which >= 0); assert(which < 4);
-  match g32, Absent16, Absent16 with
-    | Word(l),_,_ -> (l#extract_8_from_32 (endian_i 4 which), g32)
-    | Gran16s(g1, g2),_,_
-    | Absent32, g1, g2 ->
-	if which < 2 then
-	  let (l, g1') = gran16_get_byte g1 missing addr which in
-	    (l, Gran16s(g1', g2))
-	else
-	  let (l, g2') = gran16_get_byte g2 missing (Int64.add addr 2L) 
-	    (which - 2) in
-	    (l, Gran16s(g1, g2'))
+  let gran32_get_short g32 missing addr which =
+    assert(which = 0 or which = 2);
+    match g32, Absent16, Absent16 with
+      | Word(l),_,_ -> (D.extract_16_from_32 l (endian_i 4 which), g32)
+      | Gran16s(g1, g2),_,_
+      | Absent32, g1, g2 ->
+	  if which < 2 then
+	    let (l, g1') = gran16_get_short g1 missing addr in
+	      (l, Gran16s(g1', g2))
+	  else
+	    let (l, g2') = gran16_get_short g2 missing (Int64.add addr 2L) in
+	      (l, Gran16s(g1, g2'))
 
-let gran64_get_byte  g64 missing addr which =
-  assert(which >= 0); assert(which < 8);
-  match g64, Absent32, Absent32 with
-    | Long(l),_,_ -> (l#extract_8_from_64 (endian_i 8 which), g64)
-    | Gran32s(g1, g2),_,_
-    | Absent64, g1, g2 ->
-	if which < 4 then
-	  let (l, g1') = gran32_get_byte g1 missing addr which in
-	    (l, Gran32s(g1', g2))
-	else
-	  let (l, g2') = gran32_get_byte g2 missing (Int64.add addr 4L)
-	    (which - 4) in
-	    (l, Gran32s(g1, g2'))
+  let gran64_get_short g64 missing addr which =
+    assert(which = 0 or which = 2 or which = 4 or which = 6);
+    match g64, Absent32, Absent32 with
+      | Long(l),_,_ -> (D.extract_16_from_64 l (endian_i 8 which), g64)
+      | Gran32s(g1, g2),_,_
+      | Absent64, g1, g2 ->
+	  if which < 4 then
+	    let (l, g1') = gran32_get_short g1 missing addr which in
+	      (l, Gran32s(g1', g2))
+	  else
+	    let (l, g2') = gran32_get_short g2 missing (Int64.add addr 4L) 
+	      (which - 4) in
+	      (l, Gran32s(g1, g2'))
+		
+  let gran32_get_word  g32 missing addr =
+    match g32 with
+      | Word(l) -> (l, g32)
+      | Gran16s(g1, g2) ->
+	  let (s1, g1') = gran16_get_short g1 missing addr and
+	      (s2, g2') = gran16_get_short g2 missing (Int64.add addr 2L) in
+	    (D.assemble32 s1 s2, Gran16s(g1', g2'))
+      | Absent32 ->
+	  let l = missing 32 addr in
+	    (l, Word l)
+	      
+  let gran64_get_word  g64 missing addr which =
+    assert(which = 0 or which = 4);
+    match g64, Absent32, Absent32 with
+      | Long(l),_,_ -> (D.extract_32_from_64 l (endian_i 8 which), g64)
+      | Gran32s(g1, g2),_,_
+      | Absent64, g1, g2 ->
+	  if which < 4 then
+	    let (l, g1') = gran32_get_word g1 missing addr in
+	      (l, Gran32s(g1', g2))
+	  else
+	    let (l, g2') = gran32_get_word g2 missing (Int64.add addr 4L) in
+	      (l, Gran32s(g1, g2'))
 
-let gran16_get_short g16 missing addr =
-  match g16 with
-    | Short(l) -> (l, g16)
-    | Gran8s(g1, g2) ->
-	let (b1, g1') = gran8_get_byte g1 missing addr and
-	    (b2, g2') = gran8_get_byte g2 missing (Int64.add addr 1L) in
-	  (b1#assemble16 b2, Gran8s(g1', g2'))
-    | Absent16 ->
-	let l = missing 16 addr in
-	  (l, Short l)
+  let gran64_get_long  g64 missing addr  =
+    match g64 with
+      | Long(l) -> (l, g64)
+      | Gran32s(g1, g2) ->
+	  let (w1, g1') = gran32_get_word g1 missing addr and
+	      (w2, g2') = gran32_get_word g2 missing (Int64.add addr 4L) in
+	    (D.assemble64 w1 w2, Gran32s(g1', g2'))
+      | Absent64 -> 
+	  let l = missing 64 addr in
+	    (l, Long l)
+	      
+  let gran64_split g64 = 
+    match g64 with
+      | Gran32s(g1, g2) -> (g1, g2)
+      | Long(l) -> let (w1, w2) = split64 l in (Word(w1), Word(w2))
+      | Absent64 -> (Absent32, Absent32)
 
-let gran32_get_short g32 missing addr which =
-  assert(which = 0 or which = 2);
-  match g32, Absent16, Absent16 with
-    | Word(l),_,_ -> (l#extract_16_from_32 (endian_i 4 which), g32)
-    | Gran16s(g1, g2),_,_
-    | Absent32, g1, g2 ->
-	if which < 2 then
-	  let (l, g1') = gran16_get_short g1 missing addr in
-	    (l, Gran16s(g1', g2))
-	else
-	  let (l, g2') = gran16_get_short g2 missing (Int64.add addr 2L) in
-	    (l, Gran16s(g1, g2'))
+  let gran32_split g32 = 
+    match g32 with
+      | Gran16s(g1, g2) -> (g1, g2)
+      | Word(l) ->
+	  let (s1, s2) = split32 l in (Short(s1), Short(s2))
+      | Absent32 -> (Absent16, Absent16)
+	  
+  let gran16_split g16 = 
+    match g16 with
+      | Gran8s(g1, g2) -> (g1, g2)
+      | Short(l) ->
+	  let (b1, b2) = split16 l in (Byte(b1), Byte(b2))
+      | Absent16 -> (Absent8, Absent8)
 
-let gran64_get_short g64 missing addr which =
-  assert(which = 0 or which = 2 or which = 4 or which = 6);
-  match g64, Absent32, Absent32 with
-    | Long(l),_,_ -> (l#extract_16_from_64 (endian_i 8 which), g64)
-    | Gran32s(g1, g2),_,_
-    | Absent64, g1, g2 ->
-	if which < 4 then
-	  let (l, g1') = gran32_get_short g1 missing addr which in
-	    (l, Gran32s(g1', g2))
-	else
-	  let (l, g2') = gran32_get_short g2 missing (Int64.add addr 4L) 
-	    (which - 4) in
-	    (l, Gran32s(g1, g2'))
+  let gran16_put_byte g16 which b =
+    assert(which = 0 or which = 1);
+    let (g1, g2) = gran16_split g16 in
+      if which < 1 then
+	Gran8s(Byte(b), g2)
+      else
+	Gran8s(g1, Byte(b))
 
-let gran32_get_word  g32 missing addr =
-  match g32 with
-    | Word(l) -> (l, g32)
-    | Gran16s(g1, g2) ->
-	let (s1, g1') = gran16_get_short g1 missing addr and
-	    (s2, g2') = gran16_get_short g2 missing (Int64.add addr 2L) in
-	  (s1#assemble32 s2, Gran16s(g1', g2'))
-    | Absent32 ->
-	let l = missing 32 addr in
-	  (l, Word l)
+  let gran32_put_byte g32 which b =
+    assert(which >= 0); assert(which < 4);
+    let (g1, g2) = gran32_split g32 in
+      if which < 2 then
+	Gran16s((gran16_put_byte g1 which b), g2)
+      else
+	Gran16s(g1, (gran16_put_byte g2 (which - 2) b))
+	  
+  let gran64_put_byte g64 which b =
+    assert(which >= 0); assert(which < 8);
+    let (g1, g2) = gran64_split g64 in
+      if which < 4 then
+	Gran32s((gran32_put_byte g1 which b), g2)
+      else
+	Gran32s(g1, (gran32_put_byte g2 (which - 4) b))
 
-let gran64_get_word  g64 missing addr which =
-  assert(which = 0 or which = 4);
-  match g64, Absent32, Absent32 with
-    | Long(l),_,_ -> (l#extract_32_from_64 (endian_i 8 which), g64)
-    | Gran32s(g1, g2),_,_
-    | Absent64, g1, g2 ->
-	if which < 4 then
-	  let (l, g1') = gran32_get_word g1 missing addr in
-	    (l, Gran32s(g1', g2))
-	else
-	  let (l, g2') = gran32_get_word g2 missing (Int64.add addr 4L) in
-	    (l, Gran32s(g1, g2'))
+  let gran32_put_short g32 which s =
+    assert(which = 0 or which = 2);
+    let (g1, g2) = gran32_split g32 in
+      if which < 2 then
+	Gran16s(Short(s), g2)
+      else
+	Gran16s(g1, Short(s))
+	  
+  let gran64_put_short g64 which s =
+    assert(which = 0 or which = 2 or which = 4 or which = 6);
+    let (g1, g2) = gran64_split g64 in
+      if which < 4 then
+	Gran32s((gran32_put_short g1 which s), g2)
+      else
+	Gran32s(g1, (gran32_put_short g2 (which - 4) s))
 
-let gran64_get_long  g64 missing addr  =
-  match g64 with
-    | Long(l) -> (l, g64)
-    | Gran32s(g1, g2) ->
-	let (w1, g1') = gran32_get_word g1 missing addr and
-	    (w2, g2') = gran32_get_word g2 missing (Int64.add addr 4L) in
-	  (w1#assemble64 w2, Gran32s(g1', g2'))
-    | Absent64 -> 
-	let l = missing 64 addr in
-	  (l, Long l)
+  let gran64_put_word g64 which w =
+    assert(which = 0 or which = 4);
+    let (g1, g2) = gran64_split g64 in
+      if which < 4 then
+	Gran32s(Word(w), g2)
+      else
+	Gran32s(g1, Word(w))
 
-let gran64_split g64 = 
-  match g64 with
-    | Gran32s(g1, g2) -> (g1, g2)
-    | Long(l) -> let (w1, w2) = split64 l in (Word(w1), Word(w2))
-    | Absent64 -> (Absent32, Absent32)
+  let gran8_to_string g8 =
+    match g8 with
+      | Byte(b) -> D.to_string_8 b
+      | Absent8 -> "__"
 
-let gran32_split g32 = 
-  match g32 with
-    | Gran16s(g1, g2) -> (g1, g2)
-    | Word(l) ->
-	let (s1, s2) = split32 l in (Short(s1), Short(s2))
-    | Absent32 -> (Absent16, Absent16)
-	    
-let gran16_split g16 = 
-  match g16 with
-    | Gran8s(g1, g2) -> (g1, g2)
-    | Short(l) ->
-	let (b1, b2) = split16 l in (Byte(b1), Byte(b2))
-    | Absent16 -> (Absent8, Absent8)
+  let gran16_to_string g16 =
+    match g16 with
+      | Short(s) -> D.to_string_16 s
+      | Gran8s(g1, g2) -> (gran8_to_string g1) ^ "|" ^ (gran8_to_string g2)
+      | Absent16 -> "____"
 
-let gran16_put_byte g16 which b =
-  assert(which = 0 or which = 1);
-  let (g1, g2) = gran16_split g16 in
-    if which < 1 then
-      Gran8s(Byte(b), g2)
-    else
-      Gran8s(g1, Byte(b))
+  let gran32_to_string g32 =
+    match g32 with
+      | Word(w) -> D.to_string_32 w 
+      | Gran16s(g1, g2) -> (gran16_to_string g1) ^ "|" ^ (gran16_to_string g2)
+      | Absent32 -> "________"
+	  
+  let gran64_to_string g64 =
+    match g64 with
+      | Long(l) -> D.to_string_64 l
+      | Gran32s(g1, g2) -> (gran32_to_string g1) ^ "|" ^ (gran32_to_string g2)
+      | Absent64 -> "________________"
 
-let gran32_put_byte g32 which b =
-  assert(which >= 0); assert(which < 4);
-  let (g1, g2) = gran32_split g32 in
-    if which < 2 then
-      Gran16s((gran16_put_byte g1 which b), g2)
-    else
-      Gran16s(g1, (gran16_put_byte g2 (which - 2) b))
+  let gran8_size g8 =
+    match g8 with
+      | Byte(b) -> D.measure_size b
+      | Absent8 -> 1
+	  
+  let gran16_size g16 =
+    match g16 with
+      | Short(s) -> D.measure_size s
+      | Gran8s(g1, g2) -> (gran8_size g1) + (gran8_size g2)
+      | Absent16 -> 1
 
-let gran64_put_byte g64 which b =
-  assert(which >= 0); assert(which < 8);
-  let (g1, g2) = gran64_split g64 in
-    if which < 4 then
-      Gran32s((gran32_put_byte g1 which b), g2)
-    else
-      Gran32s(g1, (gran32_put_byte g2 (which - 4) b))
+  let gran32_size g32 =
+    match g32 with
+      | Word(w) -> D.measure_size w
+      | Gran16s(g1, g2) -> (gran16_size g1) + (gran16_size g2)
+      | Absent32 -> 1
 
-let gran32_put_short g32 which s =
-  assert(which = 0 or which = 2);
-  let (g1, g2) = gran32_split g32 in
-    if which < 2 then
-      Gran16s(Short(s), g2)
-    else
-      Gran16s(g1, Short(s))
+  let gran64_size g64 =
+    match g64 with
+      | Long(l) -> D.measure_size l
+      | Gran32s(g1, g2) -> (gran32_size g1) + (gran32_size g2)
+      | Absent64 -> 1
 
-let gran64_put_short g64 which s =
-  assert(which = 0 or which = 2 or which = 4 or which = 6);
-  let (g1, g2) = gran64_split g64 in
-    if which < 4 then
-      Gran32s((gran32_put_short g1 which s), g2)
-    else
-      Gran32s(g1, (gran32_put_short g2 (which - 4) s))
 
-let gran64_put_word g64 which w =
-  assert(which = 0 or which = 4);
-  let (g1, g2) = gran64_split g64 in
-    if which < 4 then
-      Gran32s(Word(w), g2)
-    else
-      Gran32s(g1, Word(w))
+  class virtual granular_memory = object(self)
+    val mutable missing : (int -> int64 -> D.t) =
+      (fun _ -> failwith "Must call on_missing")
+	
+    method on_missing m = missing <- m
+      
+    method private virtual with_chunk : int64 ->
+      (gran64 -> int64 -> int -> (D.t * gran64)) -> D.t option
 
-let gran8_to_string g8 =
-  match g8 with
-    | Byte(b) -> b#to_string_8
-    | Absent8 -> "__"
-
-let gran16_to_string g16 =
-  match g16 with
-    | Short(s) -> s#to_string_16
-    | Gran8s(g1, g2) -> (gran8_to_string g1) ^ "|" ^ (gran8_to_string g2)
-    | Absent16 -> "____"
-
-let gran32_to_string g32 =
-  match g32 with
-    | Word(w) -> w#to_string_32
-    | Gran16s(g1, g2) -> (gran16_to_string g1) ^ "|" ^ (gran16_to_string g2)
-    | Absent32 -> "________"
-
-let gran64_to_string g64 =
-  match g64 with
-    | Long(l) -> l#to_string_64
-    | Gran32s(g1, g2) -> (gran32_to_string g1) ^ "|" ^ (gran32_to_string g2)
-    | Absent64 -> "________________"
-
-let gran8_size g8 =
-  match g8 with
-    | Byte(b) -> b#measure_size
-    | Absent8 -> 1
-
-let gran16_size g16 =
-  match g16 with
-    | Short(s) -> s#measure_size
-    | Gran8s(g1, g2) -> (gran8_size g1) + (gran8_size g2)
-    | Absent16 -> 1
-
-let gran32_size g32 =
-  match g32 with
-    | Word(w) -> w#measure_size
-    | Gran16s(g1, g2) -> (gran16_size g1) + (gran16_size g2)
-    | Absent32 -> 1
-
-let gran64_size g64 =
-  match g64 with
-    | Long(l) -> l#measure_size
-    | Gran32s(g1, g2) -> (gran32_size g1) + (gran32_size g2)
-    | Absent64 -> 1
-
-class virtual ['d] granular_memory (factory:'d) = object(self)
-  val mutable missing : (int -> int64 -> 'd) =
-    (fun _ -> failwith "Must call on_missing")
-
-  method on_missing m = missing <- m
-
-  method private virtual with_chunk : int64 ->
-    ('d gran64 -> int64 -> int -> ('d * 'd gran64)) -> 'd option
-
-  method private maybe_load_divided addr bits bytes load assemble =
+    method private maybe_load_divided addr bits bytes load assemble =
       let mb0 = load addr and
 	  mb1 = load (Int64.add addr bytes) in
 	match (mb0, mb1) with
@@ -1418,352 +1546,446 @@ class virtual ['d] granular_memory (factory:'d) = object(self)
 			  | None -> (missing bits (Int64.add addr bytes))) in
 		Some (assemble b0 b1)
 
-  method maybe_load_byte addr =
-    self#with_chunk addr
-      (fun chunk caddr which -> gran64_get_byte chunk missing caddr which)
-
-  method maybe_load_short addr =
-    if (Int64.logand addr 1L) = 0L then
+    method maybe_load_byte addr =
       self#with_chunk addr
-	(fun chunk caddr which -> gran64_get_short chunk missing caddr which)
-    else
-      self#maybe_load_divided addr 8 1L self#maybe_load_byte
-	(fun b0 b1 -> b0#assemble16 b1)
+	(fun chunk caddr which -> gran64_get_byte chunk missing caddr which)
 
-  method maybe_load_word addr =
-    if (Int64.logand addr 3L) = 0L then
-      self#with_chunk addr
-	(fun chunk caddr which -> gran64_get_word chunk missing caddr which)
-    else
-      self#maybe_load_divided addr 16 2L self#maybe_load_short
-	(fun b0 b1 -> b0#assemble32 b1)
+    method maybe_load_short addr =
+      if (Int64.logand addr 1L) = 0L then
+	self#with_chunk addr
+	  (fun chunk caddr which -> gran64_get_short chunk missing caddr which)
+      else
+	self#maybe_load_divided addr 8 1L self#maybe_load_byte D.assemble16
 
-  method maybe_load_long addr =
-    if (Int64.logand addr 7L) = 0L then
-      self#with_chunk addr
-	(fun chunk caddr _ -> gran64_get_long chunk missing caddr)
-    else
-      self#maybe_load_divided addr 32 4L self#maybe_load_word
-	(fun b0 b1 -> b0#assemble64 b1)
+    method maybe_load_word addr =
+      if (Int64.logand addr 3L) = 0L then
+	self#with_chunk addr
+	  (fun chunk caddr which -> gran64_get_word chunk missing caddr which)
+      else
+	self#maybe_load_divided addr 16 2L self#maybe_load_short D.assemble32
 
-  method load_byte addr =
-    match self#maybe_load_byte addr with
-      | Some b -> b
-      | None ->
-	  let b = missing 8 addr in 
-	    self#store_byte addr b;
-	    b
+    method maybe_load_long addr =
+      if (Int64.logand addr 7L) = 0L then
+	self#with_chunk addr
+	  (fun chunk caddr _ -> gran64_get_long chunk missing caddr)
+      else
+	self#maybe_load_divided addr 32 4L self#maybe_load_word D.assemble64
 
-  method load_short addr =
-    match self#maybe_load_short addr with
-      | Some s -> s
-      | None ->
-	  let s = missing 16 addr in
-	    self#store_short addr s;
-	    s
+    method load_byte addr =
+      match self#maybe_load_byte addr with
+	| Some b -> b
+	| None ->
+	    let b = missing 8 addr in 
+	      self#store_byte addr b;
+	      b
 
-  method load_word addr =
-    match self#maybe_load_word addr with
-      | Some w -> w
-      | None ->
-	  let w = missing 32 addr in
-	    self#store_word addr w;
-	    w
+    method load_short addr =
+      match self#maybe_load_short addr with
+	| Some s -> s
+	| None ->
+	    let s = missing 16 addr in
+	      self#store_short addr s;
+	      s
 
-  method load_long addr =
-    match self#maybe_load_long addr with
-      | Some l -> l
-      | None ->
-	  let l = missing 64 addr in
-	    self#store_word addr l;
-	    l
+    method load_word addr =
+      match self#maybe_load_word addr with
+	| Some w -> w
+	| None ->
+	    let w = missing 32 addr in
+	      self#store_word addr w;
+	      w
 
-  method private virtual store_common_fast : int64 ->
-    ('d gran64 -> int -> 'd gran64) -> unit
+    method load_long addr =
+      match self#maybe_load_long addr with
+	| Some l -> l
+	| None ->
+	    let l = missing 64 addr in
+	      self#store_word addr l;
+	      l
 
-  method store_byte addr b =
-    self#store_common_fast addr
-      (fun chunk which -> gran64_put_byte chunk which b)
+    method private virtual store_common_fast : int64 ->
+      (gran64 -> int -> gran64) -> unit
 
-  method store_short addr s =
-    if (Int64.logand addr 1L) = 0L then
+    method store_byte addr b =
       self#store_common_fast addr
-	(fun chunk which -> gran64_put_short chunk which s)
-    else
-      (* unaligned slow path *)
-      let (b0, b1) = split16 s in
-	self#store_byte addr b0;
-	self#store_byte (Int64.add addr 1L) b1
+	(fun chunk which -> gran64_put_byte chunk which b)
+	
+    method store_short addr s =
+      if (Int64.logand addr 1L) = 0L then
+	self#store_common_fast addr
+	  (fun chunk which -> gran64_put_short chunk which s)
+      else
+	(* unaligned slow path *)
+	let (b0, b1) = split16 s in
+	  self#store_byte addr b0;
+	  self#store_byte (Int64.add addr 1L) b1
 
-  method store_word addr w =
-    if (Int64.logand addr 3L) = 0L then
-      self#store_common_fast addr
-	(fun chunk which -> gran64_put_word chunk which w)
-    else
-      (* unaligned slow path *)
-      let (s0, s1) = split32 w in
-	self#store_short addr s0;
-	self#store_short (Int64.add addr 2L) s1
+    method store_word addr w =
+      if (Int64.logand addr 3L) = 0L then
+	self#store_common_fast addr
+	  (fun chunk which -> gran64_put_word chunk which w)
+      else
+	(* unaligned slow path *)
+	let (s0, s1) = split32 w in
+	  self#store_short addr s0;
+	  self#store_short (Int64.add addr 2L) s1
 
-  method store_long addr l =
-    if (Int64.logand addr 7L) = 0L then
-      self#store_common_fast addr
-	(fun _ _ -> Long(l))
-    else
-      (* unaligned slow path *)
-      let (w0, w1) = split64 l in
-	self#store_word addr w0;
-	self#store_word (Int64.add addr 4L) w1
+    method store_long addr l =
+      if (Int64.logand addr 7L) = 0L then
+	self#store_common_fast addr
+	  (fun _ _ -> Long(l))
+      else
+	(* unaligned slow path *)
+	let (w0, w1) = split64 l in
+	  self#store_word addr w0;
+	  self#store_word (Int64.add addr 4L) w1
+    method virtual clear : unit -> unit
 
-  method virtual clear : unit -> unit
+    method virtual measure_size : int
 
-  method virtual measure_size : int
+  (* method make_snap () = failwith "make_snap unsupported"; ()
+     method reset () = failwith "reset unsupported"; () *)
+  end
+    
+  class granular_page_memory = object(self)
+    inherit granular_memory
 
-(* method make_snap () = failwith "make_snap unsupported"; ()
-   method reset () = failwith "reset unsupported"; () *)
-end
+    (* The extra page is a hacky way to not crash on address wrap-around *)
+    val mem = Array.init 0x100001 (fun _ -> None)
 
-class ['d] granular_page_memory (factory:'d) = object(self)
-  inherit ['d] granular_memory factory
+    method private with_chunk addr fn =
+      let page = Int64.to_int (Int64.shift_right addr 12) and
+	  idx = Int64.to_int (Int64.logand addr 0xfffL) in
+	match mem.(page) with
+	  | None -> None
+	  | Some page ->
+	      let chunk_n = idx asr 3 and
+		  which = idx land 0x7 in
+	      let caddr = (Int64.sub addr (Int64.of_int which)) and
+		  chunk = page.(chunk_n) in 
+		match chunk with
+		  | Absent64 -> None
+		  | g64 ->
+		      let (l, chunk') = fn page.(chunk_n) caddr which in
+			page.(chunk_n) <- chunk';
+			Some l
 
-  (* The extra page is a hacky way to not crash on address wrap-around *)
-  val mem = Array.init 0x100001 (fun _ -> None)
+    method private get_page addr =
+      let page_n = Int64.to_int (Int64.shift_right addr 12) in
+	match mem.(page_n) with
+	  | Some page -> page
+	  | None ->
+	      let new_page = Array.init 512 (fun _ -> Absent64) in
+		mem.(page_n) <- Some new_page;
+		new_page
 
-  method private with_chunk addr fn =
-    let page = Int64.to_int (Int64.shift_right addr 12) and
-	idx = Int64.to_int (Int64.logand addr 0xfffL) in
-    match mem.(page) with
-      | None -> None
-      | Some page ->
-	  let chunk_n = idx asr 3 and
-	      which = idx land 0x7 in
-	  let caddr = (Int64.sub addr (Int64.of_int which)) and
-	      chunk = page.(chunk_n) in 
+    method private store_common_fast addr fn =
+      let page = self#get_page addr and
+	  idx = Int64.to_int (Int64.logand addr 0xfffL) in
+      let chunk = idx asr 3 and
+	  which = idx land 0x7 in
+	page.(chunk) <- fn page.(chunk) which
+
+    method private chunk_to_string addr =
+      let page = self#get_page addr and
+	  idx = Int64.to_int (Int64.logand addr 0xfffL) in
+      let chunk = idx asr 3 in
+	"[" ^ (gran64_to_string page.(chunk)) ^ "]"
+
+    method clear () =
+      Array.fill mem 0 0x100001 None
+
+    method measure_size =
+      let sum_some f ary =
+	Array.fold_left
+	  (fun n x -> n + match x with None -> 0 | Some(x') -> f x') 0 ary
+      in
+	sum_some
+	  (fun page -> Array.fold_left 
+	     (fun n g64 -> n+ gran64_size g64) 0 page) mem
+  end
+
+  class granular_hash_memory = object(self)
+    inherit granular_memory
+
+    val mem = Hashtbl.create 101
+
+    method private with_chunk addr fn =
+      let which = Int64.to_int (Int64.logand addr 0x7L) in
+      let caddr = Int64.sub addr (Int64.of_int which) in
+	try
+	  let chunk = Hashtbl.find mem caddr in
 	    match chunk with
 	      | Absent64 -> None
-	      | g64 ->
-		  let (l, chunk') = fn page.(chunk_n) caddr which in
-		    page.(chunk_n) <- chunk';
+	      | g64 -> 
+		  let (l, chunk') = fn chunk caddr which in
+		    Hashtbl.replace mem caddr chunk';
 		    Some l
+	with
+	    Not_found -> None
 
-  method private get_page addr =
-    let page_n = Int64.to_int (Int64.shift_right addr 12) in
-      match mem.(page_n) with
-	| Some page -> page
-	| None ->
-	    let new_page = Array.init 512 (fun _ -> Absent64) in
-	      mem.(page_n) <- Some new_page;
-	      new_page
+    method private store_common_fast addr fn =
+      let which = Int64.to_int (Int64.logand addr 0x7L) in
+      let caddr = Int64.sub addr (Int64.of_int which) in
+      let chunk = try
+	Hashtbl.find mem caddr
+      with Not_found ->
+	Absent64
+      in
+	Hashtbl.replace mem caddr (fn chunk which)
 
-  method private store_common_fast addr fn =
-    let page = self#get_page addr and
-	idx = Int64.to_int (Int64.logand addr 0xfffL) in
-    let chunk = idx asr 3 and
-	which = idx land 0x7 in
-      page.(chunk) <- fn page.(chunk) which
+    method private chunk_to_string addr =
+      let caddr = Int64.logand addr (Int64.lognot 0x7L) in
+      let chunk = Hashtbl.find mem caddr in
+	"[" ^ (gran64_to_string chunk) ^ "]"
 
-  method private chunk_to_string addr =
-    let page = self#get_page addr and
-	idx = Int64.to_int (Int64.logand addr 0xfffL) in
-    let chunk = idx asr 3 in
-      "[" ^ (gran64_to_string page.(chunk)) ^ "]"
+    method clear () =
+      Hashtbl.clear mem
 
-  method clear () =
-    Array.fill mem 0 0x100001 None
+    method measure_size =
+      Hashtbl.fold (fun k v sum -> sum + gran64_size v) mem 0
+  end
 
-  method measure_size =
-    let sum_some f ary =
-      Array.fold_left
-	(fun n x -> n + match x with None -> 0 | Some(x') -> f x') 0 ary
-    in
-      sum_some
-	(fun page -> Array.fold_left 
-	   (fun n g64 -> n+ gran64_size g64) 0 page) mem
-end
+  class granular_snapshot_memory
+    (main:granular_memory) (diff:granular_memory) =
+  object(self)
+    val mutable have_snap = false
 
-class ['d] granular_hash_memory (factory:'d) = object(self)
-  inherit ['d] granular_memory factory
+    method on_missing main_missing =
+      main#on_missing main_missing;
+      diff#on_missing
+	(fun size addr ->
+	   match size with
+	     | 8 -> main#load_byte addr
+	     | 16 -> main#load_short addr
+	     | 32 -> main#load_word addr
+	     | 64 -> main#load_long addr
+	     | _ -> failwith "Bad size in missing")
 
-  val mem = Hashtbl.create 101
+    method store_byte addr b =
+      if have_snap then
+	diff#store_byte addr b
+      else
+	main#store_byte addr b
 
-  method private with_chunk addr fn =
-    let which = Int64.to_int (Int64.logand addr 0x7L) in
-    let caddr = Int64.sub addr (Int64.of_int which) in
-      try
-	let chunk = Hashtbl.find mem caddr in
-	  match chunk with
-	    | Absent64 -> None
-	    | g64 -> 
-		let (l, chunk') = fn chunk caddr which in
-		  Hashtbl.replace mem caddr chunk';
-		  Some l
-      with
-	  Not_found -> None
+    method store_short addr s =
+      if have_snap then
+	diff#store_short addr s
+      else
+	main#store_short addr s
 
-  method private store_common_fast addr fn =
-    let which = Int64.to_int (Int64.logand addr 0x7L) in
-    let caddr = Int64.sub addr (Int64.of_int which) in
-    let chunk = try
-      Hashtbl.find mem caddr
-    with Not_found ->
-      Absent64
-    in
-      Hashtbl.replace mem caddr (fn chunk which)
+    method store_word addr w =
+      if have_snap then
+	diff#store_word addr w
+      else
+	main#store_word addr w
 
-  method private chunk_to_string addr =
-    let caddr = Int64.logand addr (Int64.lognot 0x7L) in
-    let chunk = Hashtbl.find mem caddr in
-      "[" ^ (gran64_to_string chunk) ^ "]"
+    method store_long addr l =
+      if have_snap then
+	diff#store_long addr l
+      else
+	main#store_long addr l
 
-  method clear () =
-    Hashtbl.clear mem
+    method maybe_load_byte addr =
+      if have_snap then
+	match diff#maybe_load_byte addr with
+	  | Some b -> Some b
+	  | None -> main#maybe_load_byte addr
+      else
+	main#maybe_load_byte addr
 
-  method measure_size =
-    Hashtbl.fold (fun k v sum -> sum + gran64_size v) mem 0
-end
+    method load_byte addr =
+      if have_snap then
+	match diff#maybe_load_byte addr with
+	  | Some b -> b
+	  | None -> main#load_byte addr
+      else
+	main#load_byte addr
 
-class ['d] granular_snapshot_memory
-  (main:'d granular_memory) (diff:'d granular_memory) =
-object(self)
-  val mutable have_snap = false
+    method maybe_load_short addr =
+      if have_snap then
+	match diff#maybe_load_short addr with
+	  | Some s -> Some s
+	  | None -> main#maybe_load_short addr
+      else
+	main#maybe_load_short addr
 
-  method on_missing main_missing =
-    main#on_missing main_missing;
-    diff#on_missing
-      (fun size addr ->
-	 match size with
-	   | 8 -> main#load_byte addr
-	   | 16 -> main#load_short addr
-	   | 32 -> main#load_word addr
-	   | 64 -> main#load_long addr
-	   | _ -> failwith "Bad size in missing")
+    method load_short addr =
+      if have_snap then
+	match diff#maybe_load_short addr with
+	  | Some s -> s
+	  | None -> main#load_short addr
+      else
+	main#load_short addr
 
-  method store_byte addr b =
-    if have_snap then
-      diff#store_byte addr b
-    else
-      main#store_byte addr b
+    method maybe_load_word addr =
+      if have_snap then
+	match diff#maybe_load_word addr with
+	  | Some w -> Some w
+	  | None -> main#maybe_load_word addr
+      else
+	main#maybe_load_word addr
 
-  method store_short addr s =
-    if have_snap then
-      diff#store_short addr s
-    else
-      main#store_short addr s
+    method load_word addr =
+      if have_snap then
+	match diff#maybe_load_word addr with
+	  | Some w -> w
+	  | None -> main#load_word addr
+      else
+	main#load_word addr
 
-  method store_word addr w =
-    if have_snap then
-      diff#store_word addr w
-    else
-      main#store_word addr w
+    method maybe_load_long addr =
+      if have_snap then
+	match diff#maybe_load_long addr with
+	  | Some l -> Some l
+	  | None -> main#maybe_load_long addr
+      else
+	main#maybe_load_long addr
 
-  method store_long addr l =
-    if have_snap then
-      diff#store_long addr l
-    else
-      main#store_long addr l
+    method load_long addr =
+      if have_snap then
+	match diff#maybe_load_long addr with
+	  | Some l -> l
+	  | None -> main#load_long addr
+      else
+	main#load_long addr
 
-  method maybe_load_byte addr =
-    if have_snap then
-      match diff#maybe_load_byte addr with
-	| Some b -> Some b
-	| None -> main#maybe_load_byte addr
-    else
-      main#maybe_load_byte addr
+    method measure_size = diff#measure_size + main#measure_size + 1
 
-  method load_byte addr =
-    if have_snap then
-      match diff#maybe_load_byte addr with
-	| Some b -> b
-	| None -> main#load_byte addr
-    else
-      main#load_byte addr
+    method clear () = 
+      diff#clear ();
+      main#clear ()
+	
+    method make_snap () =
+      have_snap <- true
+	
+    method reset () = 
+      diff#clear (); ()
+  end
 
-  method maybe_load_short addr =
-    if have_snap then
-      match diff#maybe_load_short addr with
-	| Some s -> Some s
-	| None -> main#maybe_load_short addr
-    else
-      main#maybe_load_short addr
+  class concrete_adaptor_memory (mem:concrete_memory) = object(self)
+    method on_missing (m:int -> int64 -> D.t) = ()
 
-  method load_short addr =
-    if have_snap then
-      match diff#maybe_load_short addr with
-	| Some s -> s
-	| None -> main#load_short addr
-    else
-      main#load_short addr
+    method store_byte  addr b = mem#store_byte  addr (D.to_concrete_8 b)
+    method store_short addr s = mem#store_short addr (D.to_concrete_16 s)
+    method store_word  addr w = mem#store_word  addr (D.to_concrete_32 w)
+    method store_long  addr l = mem#store_word  addr (D.to_concrete_64 l)
 
-  method maybe_load_word addr =
-    if have_snap then
-      match diff#maybe_load_word addr with
-	| Some w -> Some w
-	| None -> main#maybe_load_word addr
-    else
-      main#maybe_load_word addr
+    method load_byte  addr = D.from_concrete_8 (mem#load_byte  addr)
+    method load_short addr = D.from_concrete_16(mem#load_short addr)
+    method load_word  addr = D.from_concrete_32(mem#load_word  addr)
+    method load_long  addr = D.from_concrete_64(mem#load_long  addr)
 
-  method load_word addr =
-    if have_snap then
-      match diff#maybe_load_word addr with
-	| Some w -> w
-	| None -> main#load_word addr
-    else
-      main#load_word addr
+    method maybe_load_byte  addr = match mem#maybe_load_byte addr with
+      | None -> None | Some b -> Some(D.from_concrete_8 b)
+    method maybe_load_short  addr = match mem#maybe_load_short addr with
+      | None -> None | Some s -> Some(D.from_concrete_16 s)
+    method maybe_load_word  addr = match mem#maybe_load_word addr with
+      | None -> None | Some w -> Some(D.from_concrete_32 w)
+    method maybe_load_long  addr = match mem#maybe_load_long addr with
+      | None -> None | Some l -> Some(D.from_concrete_64 l)
+  
+    method measure_size = mem#measure_size
 
-  method maybe_load_long addr =
-    if have_snap then
-      match diff#maybe_load_long addr with
-	| Some l -> Some l
-	| None -> main#maybe_load_long addr
-    else
-      main#maybe_load_long addr
+    method clear () = mem#clear ()
+  end
 
-  method load_long addr =
-    if have_snap then
-      match diff#maybe_load_long addr with
-	| Some l -> l
-	| None -> main#load_long addr
-    else
-      main#load_long addr
+  class concrete_maybe_adaptor_memory
+    (mem:concrete_memory) = object(self)
+      val mutable missing : (int -> int64 -> D.t) =
+	(fun _ -> failwith "Must call on_missing")
 
-  method measure_size = diff#measure_size + main#measure_size + 1
+      method on_missing m = missing <- m
 
-  method clear () = 
-    diff#clear ();
-    main#clear ()
+      method store_byte  addr b = mem#store_byte  addr (D.to_concrete_8 b)
+      method store_short addr s = mem#store_short addr (D.to_concrete_16 s)
+      method store_word  addr w = mem#store_word  addr (D.to_concrete_32 w)
+      method store_long  addr l = mem#store_word  addr (D.to_concrete_64 l)
 
-  method make_snap () =
-    have_snap <- true
+      method maybe_load_byte  addr =
+	match mem#maybe_load_byte addr with
+	  | Some b -> Some(D.from_concrete_8 b)
+	  | None -> None
 
-  method reset () = 
-    diff#clear (); ()
-end
+      method private unmaybe mb addr = match mb with
+	| None -> missing 8 addr
+	| Some b -> D.from_concrete_8 b
 
-class ['d] concrete_adaptor_memory (mem:concrete_memory) factory = object(self)
-  method on_missing (m:int -> int64 -> 'd) = ()
+      method maybe_load_short  addr =
+	let mb0 = mem#maybe_load_byte addr and
+	    mb1 = mem#maybe_load_byte (Int64.add addr 1L) in
+	  match (mb0, mb1) with
+	    | (None, None) -> None
+	    | _ ->
+		let b0 = self#unmaybe mb0 addr and
+		    b1 = self#unmaybe mb1 (Int64.add addr 1L) in
+		  Some(D.assemble16 b0 b1)
 
-  method store_byte  addr (b:'d) = mem#store_byte  addr b#to_concrete_8
-  method store_short addr (s:'d) = mem#store_short addr s#to_concrete_16
-  method store_word  addr (w:'d) = mem#store_word  addr w#to_concrete_32
-  method store_long  addr (l:'d) = mem#store_word  addr l#to_concrete_64
+      method maybe_load_word  addr =
+	let mb0 = mem#maybe_load_byte addr and
+	    mb1 = mem#maybe_load_byte (Int64.add addr 1L) and
+	    mb2 = mem#maybe_load_byte (Int64.add addr 2L) and
+	    mb3 = mem#maybe_load_byte (Int64.add addr 3L) in
+	  match (mb0, mb1, mb2, mb3) with
+	    | (None, None, None, None) -> None
+	    | _ ->
+		let b0 = self#unmaybe mb0 addr and
+		    b1 = self#unmaybe mb1 (Int64.add addr 1L) and
+		    b2 = self#unmaybe mb2 (Int64.add addr 2L) and
+		    b3 = self#unmaybe mb3 (Int64.add addr 3L) in
+		  Some(D.assemble32 (D.assemble16 b0 b1) (D.assemble16 b2 b3))
 
-  method load_byte  addr :'d = factory#from_concrete_8 (mem#load_byte  addr)
-  method load_short addr :'d = factory#from_concrete_16(mem#load_short addr)
-  method load_word  addr :'d = factory#from_concrete_32(mem#load_word  addr)
-  method load_long  addr :'d = factory#from_concrete_64(mem#load_long  addr)
+      method maybe_load_long  addr =
+	let mb0 = mem#maybe_load_byte addr and
+	    mb1 = mem#maybe_load_byte (Int64.add addr 1L) and
+	    mb2 = mem#maybe_load_byte (Int64.add addr 2L) and
+	    mb3 = mem#maybe_load_byte (Int64.add addr 3L) and
+	    mb4 = mem#maybe_load_byte (Int64.add addr 4L) and
+	    mb5 = mem#maybe_load_byte (Int64.add addr 5L) and
+	    mb6 = mem#maybe_load_byte (Int64.add addr 6L) and
+	    mb7 = mem#maybe_load_byte (Int64.add addr 7L) in
+	  match (mb0, mb1, mb2, mb3, mb4, mb5, mb6, mb7) with
+	    | (None, None, None, None, None, None, None, None) -> None
+	    | _ ->
+		let b0 = self#unmaybe mb0 addr and
+		    b1 = self#unmaybe mb1 (Int64.add addr 1L) and
+		    b2 = self#unmaybe mb2 (Int64.add addr 2L) and
+		    b3 = self#unmaybe mb3 (Int64.add addr 3L) and
+		    b4 = self#unmaybe mb4 (Int64.add addr 4L) and
+		    b5 = self#unmaybe mb5 (Int64.add addr 5L) and
+		    b6 = self#unmaybe mb6 (Int64.add addr 6L) and
+		    b7 = self#unmaybe mb7 (Int64.add addr 7L) in
+		  Some
+		    (D.assemble64
+		       (D.assemble32 (D.assemble16 b0 b1)
+			  (D.assemble16 b2 b3))
+		       (D.assemble32 (D.assemble16 b4 b5)
+			  (D.assemble16 b6 b7)))
 
-  method maybe_load_byte  addr = match mem#maybe_load_byte addr with
-    | None -> None | Some b -> Some(factory#from_concrete_8 b)
-  method maybe_load_short  addr = match mem#maybe_load_short addr with
-    | None -> None | Some s -> Some(factory#from_concrete_16 s)
-  method maybe_load_word  addr = match mem#maybe_load_word addr with
-    | None -> None | Some w -> Some(factory#from_concrete_32 w)
-  method maybe_load_long  addr = match mem#maybe_load_long addr with
-    | None -> None | Some l -> Some(factory#from_concrete_64 l)
+      method load_byte  addr  = 
+	match self#maybe_load_byte addr with
+	  | Some b -> b
+	  | None -> missing 8 addr
 
-  method measure_size = mem#measure_size
+      method load_short addr  = 
+	match self#maybe_load_short addr with
+	  | Some s -> s
+	  | None -> missing 16 addr
 
-  method clear () = mem#clear ()
+      method load_word  addr  = 
+	match self#maybe_load_word addr with
+	  | Some w -> w
+	  | None -> missing 32 addr
+
+      method load_long  addr  = 
+	match self#maybe_load_long addr with
+	  | Some l -> l
+	  | None -> missing 64 addr
+
+      method measure_size = mem#measure_size
+
+      method clear () = mem#clear ()
+    end
 end
 
 class string_maybe_memory = object(self)
@@ -1829,100 +2051,6 @@ class string_maybe_memory = object(self)
        bitmaps 0)
 end
 
-class ['d] concrete_maybe_adaptor_memory
-  (mem:concrete_memory) factory = object(self)
-  val mutable missing : (int -> int64 -> 'd) =
-    (fun _ -> failwith "Must call on_missing")
-
-  method on_missing m = missing <- m
-
-  method store_byte  addr (b:'d) = mem#store_byte  addr b#to_concrete_8
-  method store_short addr (s:'d) = mem#store_short addr s#to_concrete_16
-  method store_word  addr (w:'d) = mem#store_word  addr w#to_concrete_32
-  method store_long  addr (l:'d) = mem#store_word  addr l#to_concrete_64
-
-  method maybe_load_byte  addr =
-    match mem#maybe_load_byte addr with
-      | Some b -> Some(factory#from_concrete_8 b)
-      | None -> None
-
-  method private unmaybe mb addr = match mb with
-    | None -> missing 8 addr
-    | Some b -> factory#from_concrete_8 b
-
-  method maybe_load_short  addr =
-    let mb0 = mem#maybe_load_byte addr and
-	mb1 = mem#maybe_load_byte (Int64.add addr 1L) in
-      match (mb0, mb1) with
-	| (None, None) -> None
-	| _ ->
-	    let b0 = self#unmaybe mb0 addr and
-		b1 = self#unmaybe mb1 (Int64.add addr 1L) in
-	      Some(b0#assemble16 b1)
-
-  method maybe_load_word  addr =
-    let mb0 = mem#maybe_load_byte addr and
-	mb1 = mem#maybe_load_byte (Int64.add addr 1L) and
-	mb2 = mem#maybe_load_byte (Int64.add addr 2L) and
-	mb3 = mem#maybe_load_byte (Int64.add addr 3L) in
-      match (mb0, mb1, mb2, mb3) with
-	| (None, None, None, None) -> None
-	| _ ->
-	    let b0 = self#unmaybe mb0 addr and
-		b1 = self#unmaybe mb1 (Int64.add addr 1L) and
-		b2 = self#unmaybe mb2 (Int64.add addr 2L) and
-		b3 = self#unmaybe mb3 (Int64.add addr 3L) in
-	      Some((b0#assemble16 b1)#assemble32 (b2#assemble16 b3))
-
-  method maybe_load_long  addr =
-    let mb0 = mem#maybe_load_byte addr and
-	mb1 = mem#maybe_load_byte (Int64.add addr 1L) and
-	mb2 = mem#maybe_load_byte (Int64.add addr 2L) and
-	mb3 = mem#maybe_load_byte (Int64.add addr 3L) and
-	mb4 = mem#maybe_load_byte (Int64.add addr 4L) and
-	mb5 = mem#maybe_load_byte (Int64.add addr 5L) and
-	mb6 = mem#maybe_load_byte (Int64.add addr 6L) and
-	mb7 = mem#maybe_load_byte (Int64.add addr 7L) in
-      match (mb0, mb1, mb2, mb3, mb4, mb5, mb6, mb7) with
-	| (None, None, None, None, None, None, None, None) -> None
-	| _ ->
-	    let b0 = self#unmaybe mb0 addr and
-		b1 = self#unmaybe mb1 (Int64.add addr 1L) and
-		b2 = self#unmaybe mb2 (Int64.add addr 2L) and
-		b3 = self#unmaybe mb3 (Int64.add addr 3L) and
-		b4 = self#unmaybe mb4 (Int64.add addr 4L) and
-		b5 = self#unmaybe mb5 (Int64.add addr 5L) and
-		b6 = self#unmaybe mb6 (Int64.add addr 6L) and
-		b7 = self#unmaybe mb7 (Int64.add addr 7L) in
-	      Some(((b0#assemble16 b1)#assemble32 (b2#assemble16 b3))
-		     #assemble64
-		     ((b4#assemble16 b5)#assemble32 (b6#assemble16 b7)))
-
-  method load_byte  addr  = 
-    match self#maybe_load_byte addr with
-      | Some b -> b
-      | None -> missing 8 addr
-
-  method load_short addr  = 
-    match self#maybe_load_short addr with
-      | Some s -> s
-      | None -> missing 16 addr
-
-  method load_word  addr  = 
-    match self#maybe_load_word addr with
-      | Some w -> w
-      | None -> missing 32 addr
-
-  method load_long  addr  = 
-    match self#maybe_load_long addr with
-      | Some l -> l
-      | None -> missing 64 addr
-
-  method measure_size = mem#measure_size
-
-  method clear () = mem#clear ()
-end
-
 let bool64 f = fun a b -> if (f a b) then 1L else 0L
 
 let move_hash src dest =
@@ -1974,573 +2102,568 @@ let regstr_to_reg s = match s with
 
 exception TooManyIterations
 
-class ['d] frag_machine factory = object(self)
-  (* val mem = new snapshot_memory (new string_memory) (new hash_memory) *)
+module FragmentMachineFunctor =
+  functor (D : DOMAIN) ->
+struct
+  module GM = GranularMemoryFunctor(D)
+  module FormMan = FormulaManagerFunctor(D)
 
-  val mem = (new granular_snapshot_memory
-	       (* (new granular_memory (new concrete_domain 0L)) *)
-	       (new concrete_maybe_adaptor_memory (new string_maybe_memory)
-		  (new symbolic_domain (V.Unknown("factory"))))
-	       (new granular_hash_memory
-		  (new symbolic_domain (V.Unknown("factory"))))
-	    )
+  class frag_machine = object(self)
+    val mem = (new GM.granular_snapshot_memory
+		 (new GM.concrete_maybe_adaptor_memory
+		    (new string_maybe_memory))
+		 (new GM.granular_hash_memory))
 
-  (* val mem = new granular_memory (new concrete_domain 0L) *)
+    val form_man = new FormMan.formula_manager
 
-  (* val mem = new parallel_check_memory
-    (new snapshot_memory (new string_memory) (new hash_memory))
-    (new granular_snapshot_memory (new granular_memory)
-       (new granular_memory)) *)
+    val reg_store = V.VarHash.create 100
+    val reg_to_var = Hashtbl.create 100
+    val temps = V.VarHash.create 100
+    val mutable frag = ([], [])
+    val mutable insns = []
+    val mutable loop_cnt = 0
 
-  val reg_store = V.VarHash.create 100
-  val reg_to_var = Hashtbl.create 100
-  val temps = V.VarHash.create 100
-  val mutable frag = ([], [])
-  val mutable insns = []
-  val mutable loop_cnt = 0
+    val mutable snap = (V.VarHash.create 1, V.VarHash.create 1)
 
-  val mutable snap = (V.VarHash.create 1, V.VarHash.create 1)
+    method init_prog (dl, sl) =
+      List.iter
+	(fun ((n,s,t) as v) ->
+	   if s <> "mem" then
+	     (V.VarHash.add reg_store v (D.uninit);
+	      Hashtbl.add reg_to_var (regstr_to_reg s) v)) dl;
+      self#set_frag (dl, sl);
+      let result = self#run () in
+	match result with
+	  | "fallthrough" -> ()
+	  | _ -> failwith "Initial program should fall through"
 
-  method init_prog (dl, sl) =
-    List.iter
-      (fun ((n,s,t) as v) ->
-	 if s <> "mem" then
-	   (V.VarHash.add reg_store v (factory#uninit);
-	    Hashtbl.add reg_to_var (regstr_to_reg s) v)) dl;
-    self#set_frag (dl, sl);
-    let result = self#run () in
-      match result with
-	| "fallthrough" -> ()
-	| _ -> failwith "Initial program should fall through"
+    method set_frag (dl, sl) =
+      frag <- (dl, sl);
+      V.VarHash.clear temps;
+      loop_cnt <- 0;
+      insns <- sl
 
-  method set_frag (dl, sl) =
-    frag <- (dl, sl);
-    V.VarHash.clear temps;
-    loop_cnt <- 0;
-    insns <- sl
+    method private on_missing_zero_m (m:GM.granular_memory) =
+      m#on_missing
+	(fun size _ -> match size with
+	   | 8  -> D.from_concrete_8  0
+	   | 16 -> D.from_concrete_16 0
+	   | 32 -> D.from_concrete_32 0L
+	   | 64 -> D.from_concrete_64 0L
+	   | _ -> failwith "Bad size in on_missing_zero")
 
-  method private on_missing_zero_m (m:'d granular_memory) =
-    m#on_missing
-      (fun size _ -> match size with
-	 | 8  -> factory#from_concrete_8  0
-	 | 16 -> factory#from_concrete_16 0
-	 | 32 -> factory#from_concrete_32 0L
-	 | 64 -> factory#from_concrete_64 0L
-	 | _ -> failwith "Bad size in on_missing_zero")
+    method on_missing_zero =
+      self#on_missing_zero_m (mem :> GM.granular_memory)
 
-  method on_missing_zero =
-    self#on_missing_zero_m (mem :> 'd granular_memory)
+    method private on_missing_symbol_m (m:GM.granular_memory) name =
+      m#on_missing
+	(fun size addr -> 
+	   let addr_str = (Printf.sprintf "0x%08Lx" addr) in
+	     match size with
+	       | 8  -> form_man#fresh_symbolic_8  (name ^ "_byte_"  ^ addr_str)
+	       | 16 -> form_man#fresh_symbolic_16 (name ^ "_short_" ^ addr_str)
+	       | 32 -> form_man#fresh_symbolic_32 (name ^ "_word_"  ^ addr_str)
+	       | 64 -> form_man#fresh_symbolic_64 (name ^ "_long_"  ^ addr_str)
+	       | _ -> failwith "Bad size in on_missing_symbol")
 
-  method private on_missing_symbol_m (m:'d granular_memory) name =
-    m#on_missing
-      (fun size addr -> 
-	 let addr_str = (Printf.sprintf "0x%08Lx" addr) in
-	   match size with
-	     | 8  -> factory#fresh_symbolic_8  (name ^ "_byte_"  ^ addr_str)
-	     | 16 -> factory#fresh_symbolic_16 (name ^ "_short_" ^ addr_str)
-	     | 32 -> factory#fresh_symbolic_32 (name ^ "_word_"  ^ addr_str)
-	     | 64 -> factory#fresh_symbolic_64 (name ^ "_long_"  ^ addr_str)
-	     | _ -> failwith "Bad size in on_missing_symbol")
+    method on_missing_symbol =
+      self#on_missing_symbol_m (mem :> GM.granular_memory) "mem"
 
-  method on_missing_symbol =
-    self#on_missing_symbol_m (mem :> 'd granular_memory) "mem"
+    method make_x86_regs_symbolic =
+      let reg r v =
+	self#set_int_var (Hashtbl.find reg_to_var r) v
+      in
+	reg R_EBP (form_man#fresh_symbolic_32 "initial_ebp");
+	reg R_ESP (D.from_concrete_32 0xbfff0000L);
+	reg R_ESI (form_man#fresh_symbolic_32 "initial_esi");
+	reg R_EDI (form_man#fresh_symbolic_32 "initial_edi");
+	reg R_EAX (form_man#fresh_symbolic_32 "initial_eax");
+	reg R_EBX (form_man#fresh_symbolic_32 "initial_ebx");
+	reg R_ECX (form_man#fresh_symbolic_32 "initial_ecx");
+	reg R_EDX (form_man#fresh_symbolic_32 "initial_edx");
+	reg R_CS (D.from_concrete_16 0x23);
+	reg R_DS (D.from_concrete_16 0x2b);
+	reg R_ES (D.from_concrete_16 0x2b);
+	reg R_FS (D.from_concrete_16 0x0);
+	reg R_GS (D.from_concrete_16 0x63);
+	reg R_GDT (D.from_concrete_32 0x60000000L);
+	reg R_LDT (D.from_concrete_32 0x61000000L);
+	reg R_DFLAG (D.from_concrete_32 1L);
+	(* CS segment: *)
+	self#store_byte_conc 0x60000020L 0xff;
+	self#store_byte_conc 0x60000021L 0xff;
+	self#store_byte_conc 0x60000022L 0x00;
+	self#store_byte_conc 0x60000023L 0x00;
+	self#store_byte_conc 0x60000024L 0x00;
+	self#store_byte_conc 0x60000025L 0xf3;
+	self#store_byte_conc 0x60000026L 0xcf;
+	self#store_byte_conc 0x60000027L 0x00;
+	(* DS/ES segment: *)
+	self#store_byte_conc 0x60000028L 0xff;
+	self#store_byte_conc 0x60000029L 0xff;
+	self#store_byte_conc 0x6000002aL 0x00;
+	self#store_byte_conc 0x6000002bL 0x00;
+	self#store_byte_conc 0x6000002cL 0x00;
+	self#store_byte_conc 0x6000002dL 0xf3;
+	self#store_byte_conc 0x6000002eL 0xcf;
+	self#store_byte_conc 0x6000002fL 0x00;
+	(* GS segment: *)
+	self#store_byte_conc 0x60000060L 0xff;
+	self#store_byte_conc 0x60000061L 0xff;
+	self#store_byte_conc 0x60000062L 0x00;
+	self#store_byte_conc 0x60000063L 0x00;
+	self#store_byte_conc 0x60000064L 0x00;
+	self#store_byte_conc 0x60000065L 0xf3;
+	self#store_byte_conc 0x60000066L 0xcf;
+	self#store_byte_conc 0x60000067L 0x62;
 
-  method make_x86_regs_symbolic =
-    let reg r v =
-      self#set_int_var (Hashtbl.find reg_to_var r) v
-    in
-      reg R_EBP (factory#fresh_symbolic_32 "initial_ebp");
-      reg R_ESP (factory#from_concrete_32 0xbfff0000L);
-      reg R_ESI (factory#fresh_symbolic_32 "initial_esi");
-      reg R_EDI (factory#fresh_symbolic_32 "initial_edi");
-      reg R_EAX (factory#fresh_symbolic_32 "initial_eax");
-      reg R_EBX (factory#fresh_symbolic_32 "initial_ebx");
-      reg R_ECX (factory#fresh_symbolic_32 "initial_ecx");
-      reg R_EDX (factory#fresh_symbolic_32 "initial_edx");
-      reg R_CS (factory#from_concrete_16 0x23);
-      reg R_DS (factory#from_concrete_16 0x2b);
-      reg R_ES (factory#from_concrete_16 0x2b);
-      reg R_FS (factory#from_concrete_16 0x0);
-      reg R_GS (factory#from_concrete_16 0x63);
-      reg R_GDT (factory#from_concrete_32 0x60000000L);
-      reg R_LDT (factory#from_concrete_32 0x61000000L);
-      reg R_DFLAG (factory#from_concrete_32 1L);
-      (* CS segment: *)
-      self#store_byte_conc 0x60000020L 0xff;
-      self#store_byte_conc 0x60000021L 0xff;
-      self#store_byte_conc 0x60000022L 0x00;
-      self#store_byte_conc 0x60000023L 0x00;
-      self#store_byte_conc 0x60000024L 0x00;
-      self#store_byte_conc 0x60000025L 0xf3;
-      self#store_byte_conc 0x60000026L 0xcf;
-      self#store_byte_conc 0x60000027L 0x00;
-      (* DS/ES segment: *)
-      self#store_byte_conc 0x60000028L 0xff;
-      self#store_byte_conc 0x60000029L 0xff;
-      self#store_byte_conc 0x6000002aL 0x00;
-      self#store_byte_conc 0x6000002bL 0x00;
-      self#store_byte_conc 0x6000002cL 0x00;
-      self#store_byte_conc 0x6000002dL 0xf3;
-      self#store_byte_conc 0x6000002eL 0xcf;
-      self#store_byte_conc 0x6000002fL 0x00;
-      (* GS segment: *)
-      self#store_byte_conc 0x60000060L 0xff;
-      self#store_byte_conc 0x60000061L 0xff;
-      self#store_byte_conc 0x60000062L 0x00;
-      self#store_byte_conc 0x60000063L 0x00;
-      self#store_byte_conc 0x60000064L 0x00;
-      self#store_byte_conc 0x60000065L 0xf3;
-      self#store_byte_conc 0x60000066L 0xcf;
-      self#store_byte_conc 0x60000067L 0x62;
+    method print_x86_regs =
+      let reg str r =
+	Printf.printf "%s: " str;
+	Printf.printf "%s\n"
+	  (D.to_string_32 (self#get_int_var (Hashtbl.find reg_to_var r)))
+      in
+	reg "%eax" R_EAX;
+	reg "%ebx" R_EBX;
+	reg "%ecx" R_ECX;
+	reg "%edx" R_EDX;
+	reg "%esi" R_ESI;
+	reg "%edi" R_EDI;
+	reg "%esp" R_ESP;
+	reg "%ebp" R_EBP
 
-  method print_x86_regs =
-    let reg str r =
-      Printf.printf "%s: " str;
-      Printf.printf "%s\n"
-	(self#get_int_var (Hashtbl.find reg_to_var r))#to_string_32
-    in
-      reg "%eax" R_EAX;
-      reg "%ebx" R_EBX;
-      reg "%ecx" R_ECX;
-      reg "%edx" R_EDX;
-      reg "%esi" R_ESI;
-      reg "%edi" R_EDI;
-      reg "%esp" R_ESP;
-      reg "%ebp" R_EBP
+    method store_byte  addr b = mem#store_byte  addr b
+    method store_short addr s = mem#store_short addr s
+    method store_word  addr w = mem#store_word  addr w
+    method store_long  addr l = mem#store_long  addr l
 
-  method store_byte  addr b = mem#store_byte  addr b
-  method store_short addr s = mem#store_short addr s
-  method store_word  addr w = mem#store_word  addr w
-  method store_long  addr l = mem#store_long  addr l
+    method store_byte_conc  addr b = mem#store_byte addr (D.from_concrete_8 b)
+    method store_short_conc addr s = mem#store_short addr(D.from_concrete_16 s)
+    method store_word_conc  addr w = mem#store_word addr (D.from_concrete_32 w)
+    method store_long_copc  addr l = mem#store_long addr (D.from_concrete_64 l)
 
-  method store_byte_conc  addr b = mem#store_byte addr
-    (factory#from_concrete_8 b)
-  method store_short_conc addr s = mem#store_short addr
-    (factory#from_concrete_16 s)
-  method store_word_conc  addr w = mem#store_word addr
-    (factory#from_concrete_32 w)
-  method store_long_copc  addr l = mem#store_long addr
-    (factory#from_concrete_64 l)
+    method load_byte  addr = mem#load_byte  addr
+    method load_short addr = mem#load_short addr
+    method load_word  addr = mem#load_word  addr
+    method load_long  addr = mem#load_long  addr
 
-  method load_byte  addr = mem#load_byte  addr
-  method load_short addr = mem#load_short addr
-  method load_word  addr = mem#load_word  addr
-  method load_long  addr = mem#load_long  addr
+    method load_byte_conc  addr = D.to_concrete_8  (mem#load_byte  addr)
+    method load_short_conc addr = D.to_concrete_16 (mem#load_short addr)
+    method load_word_conc  addr = D.to_concrete_32 (mem#load_word  addr)
+    method load_long_conc  addr = D.to_concrete_64 (mem#load_long  addr)
 
-  method load_byte_conc  addr = (mem#load_byte  addr)#to_concrete_8
-  method load_short_conc addr = (mem#load_short addr)#to_concrete_16
-  method load_word_conc  addr = (mem#load_word  addr)#to_concrete_32
-  method load_long_conc  addr = (mem#load_long  addr)#to_concrete_64
+    method make_mem_snap () = mem#make_snap ()
+    method mem_reset () = mem#reset ()
 
-  method make_mem_snap () = mem#make_snap ()
-  method mem_reset () = mem#reset ()
+    method make_snap () =
+      self#make_mem_snap ();
+      snap <- (V.VarHash.copy reg_store, V.VarHash.copy temps)
 
-  method make_snap () =
-    self#make_mem_snap ();
-    snap <- (V.VarHash.copy reg_store, V.VarHash.copy temps)
+    method reset () =
+      self#mem_reset ();
+      match snap with (r, t) ->
+	move_hash r reg_store;
+	move_hash t temps;
 
-  method reset () =
-    self#mem_reset ();
-    match snap with (r, t) ->
-      move_hash r reg_store;
-      move_hash t temps;
+    val mutable special_handler_list = ([] : #special_handler list)
 
-  val mutable special_handler_list = ([] : #special_handler list)
+    method add_special_handler (h:special_handler) =
+      special_handler_list <- h :: special_handler_list
 
-  method add_special_handler (h:special_handler) =
-    special_handler_list <- h :: special_handler_list
+    method handle_special str =
+      try
+	ignore(List.find (fun h -> (h#handle_special str))
+		 special_handler_list);
+	true
+      with
+	  Not_found -> false
 
-  method handle_special str =
-    try
-      ignore(List.find (fun h -> (h#handle_special str)) special_handler_list);
-      true
-    with
-	Not_found -> false
+    method get_int_var ((_,_,ty) as var) =
+      try
+	V.VarHash.find reg_store var
+      with
+	| Not_found ->
+	    (try 
+	       V.VarHash.find temps var
+	     with
+	       | Not_found -> V.pp_var print_string var; 
+		   failwith "Unknown variable")
 
-  method get_int_var ((_,_,ty) as var) =
-    try
-      V.VarHash.find reg_store var
-    with
-      | Not_found ->
-	  (try 
-	     V.VarHash.find temps var
-	   with
-	     | Not_found -> V.pp_var print_string var; 
-		 failwith "Unknown variable")
+    method get_word_var reg =
+      D.to_concrete_32 (self#get_int_var (Hashtbl.find reg_to_var reg))
 
-  method get_word_var reg =
-    (self#get_int_var (Hashtbl.find reg_to_var reg))#to_concrete_32
+    method set_int_var ((_,_,ty) as var) value =
+      try
+	ignore(V.VarHash.find reg_store var);
+	V.VarHash.replace reg_store var value
+      with
+	  Not_found ->
+	    V.VarHash.replace temps var value
 
-  method set_int_var ((_,_,ty) as var) value =
-    try
-      ignore(V.VarHash.find reg_store var);
-      V.VarHash.replace reg_store var value
-    with
-	Not_found ->
-	  V.VarHash.replace temps var value
+    method set_word_var reg v =
+      self#set_int_var (Hashtbl.find reg_to_var reg) (D.from_concrete_32 v)
 
-  method set_word_var reg v =
-    self#set_int_var (Hashtbl.find reg_to_var reg) (factory#from_concrete_32 v)
-
-  val mutable symbol_uniq = 0
+    val mutable symbol_uniq = 0
       
-  method set_word_reg_symbolic reg s =
-    self#set_int_var (Hashtbl.find reg_to_var reg)
-      (factory#fresh_symbolic_32 (s ^ "_" ^ (string_of_int symbol_uniq)));
-    symbol_uniq <- symbol_uniq + 1
+    method set_word_reg_symbolic reg s =
+      self#set_int_var (Hashtbl.find reg_to_var reg)
+	(form_man#fresh_symbolic_32 (s ^ "_" ^ (string_of_int symbol_uniq)));
+      symbol_uniq <- symbol_uniq + 1
 
-  method handle_load addr_e ty =
-    let addr = self#eval_addr_exp addr_e in
-    let v =
-      (match ty with
-	 | V.REG_8 -> self#load_byte addr
-	 | V.REG_16 -> self#load_short addr
-	 | V.REG_32 -> self#load_word addr
-	 | V.REG_64 -> self#load_long addr
-	 | _ -> failwith "Unsupported memory type") in
-      (v, ty)
+    method handle_load addr_e ty =
+      let addr = self#eval_addr_exp addr_e in
+      let v =
+	(match ty with
+	   | V.REG_8 -> self#load_byte addr
+	   | V.REG_16 -> self#load_short addr
+	   | V.REG_32 -> self#load_word addr
+	   | V.REG_64 -> self#load_long addr
+	   | _ -> failwith "Unsupported memory type") in
+	(v, ty)
 
-  method handle_store addr_e ty rhs_e =
-    let addr = self#eval_addr_exp addr_e and
-	value = self#eval_int_exp_simplify rhs_e in
-      match ty with
-	| V.REG_8 -> self#store_byte addr value
-	| V.REG_16 -> self#store_short addr value
-	| V.REG_32 -> self#store_word addr value
-	| V.REG_64 -> self#store_long addr value
-	| _ -> failwith "Unsupported type in memory move"
+    method handle_store addr_e ty rhs_e =
+      let addr = self#eval_addr_exp addr_e and
+	  value = self#eval_int_exp_simplify rhs_e in
+	match ty with
+	  | V.REG_8 -> self#store_byte addr value
+	  | V.REG_16 -> self#store_short addr value
+	  | V.REG_32 -> self#store_word addr value
+	  | V.REG_64 -> self#store_long addr value
+	  | _ -> failwith "Unsupported type in memory move"
 
-  method eval_int_exp_ty exp =
-    match exp with
-      | V.BinOp(op, e1, e2) ->
-	  let (v1, ty1) = self#eval_int_exp_ty e1 and
-	      (v2, ty2) = self#eval_int_exp_ty e2 in
-	  let ty = 
-	    (match op with
-	       | V.PLUS | V.MINUS | V.TIMES
-	       | V.DIVIDE | V.SDIVIDE | V.MOD | V.SMOD
-	       | V.BITAND | V.BITOR | V.XOR
-		   -> assert(ty1 = ty2); ty1
-	       | V.LSHIFT | V.RSHIFT | V.ARSHIFT
-		   -> ty1
-	       | V.EQ | V.NEQ | V.LT | V.LE | V.SLT | V.SLE
-		   -> assert(ty1 = ty2); V.REG_1) in
-	  let func =
-	    (match (op, ty1) with
-	       | (V.PLUS, V.REG_1)  -> v1#plus1 
-	       | (V.PLUS, V.REG_8)  -> v1#plus8 
-	       | (V.PLUS, V.REG_16) -> v1#plus16
-	       | (V.PLUS, V.REG_32) -> v1#plus32
-	       | (V.PLUS, V.REG_64) -> v1#plus64
-	       | (V.MINUS, V.REG_1)  -> v1#minus1 
-	       | (V.MINUS, V.REG_8)  -> v1#minus8 
-	       | (V.MINUS, V.REG_16) -> v1#minus16
-	       | (V.MINUS, V.REG_32) -> v1#minus32
-	       | (V.MINUS, V.REG_64) -> v1#minus64
-	       | (V.TIMES, V.REG_1)  -> v1#times1 
-	       | (V.TIMES, V.REG_8)  -> v1#times8 
-	       | (V.TIMES, V.REG_16) -> v1#times16
-	       | (V.TIMES, V.REG_32) -> v1#times32
-	       | (V.TIMES, V.REG_64) -> v1#times64
-	       | (V.DIVIDE, V.REG_1)  -> v1#divide1 
-	       | (V.DIVIDE, V.REG_8)  -> v1#divide8 
-	       | (V.DIVIDE, V.REG_16) -> v1#divide16
-	       | (V.DIVIDE, V.REG_32) -> v1#divide32
-	       | (V.DIVIDE, V.REG_64) -> v1#divide64
-	       | (V.SDIVIDE, V.REG_1)  -> v1#sdivide1 
-	       | (V.SDIVIDE, V.REG_8)  -> v1#sdivide8 
-	       | (V.SDIVIDE, V.REG_16) -> v1#sdivide16
-	       | (V.SDIVIDE, V.REG_32) -> v1#sdivide32
-	       | (V.SDIVIDE, V.REG_64) -> v1#sdivide64
-	       | (V.MOD, V.REG_1)  -> v1#mod1 
-	       | (V.MOD, V.REG_8)  -> v1#mod8 
-	       | (V.MOD, V.REG_16) -> v1#mod16
-	       | (V.MOD, V.REG_32) -> v1#mod32
-	       | (V.MOD, V.REG_64) -> v1#mod64
-	       | (V.SMOD, V.REG_1)  -> v1#smod1 
-	       | (V.SMOD, V.REG_8)  -> v1#smod8 
-	       | (V.SMOD, V.REG_16) -> v1#smod16
-	       | (V.SMOD, V.REG_32) -> v1#smod32
-	       | (V.SMOD, V.REG_64) -> v1#smod64
-	       | (V.LSHIFT, V.REG_1)  -> v1#lshift1 
-	       | (V.LSHIFT, V.REG_8)  -> v1#lshift8 
-	       | (V.LSHIFT, V.REG_16) -> v1#lshift16
-	       | (V.LSHIFT, V.REG_32) -> v1#lshift32
-	       | (V.LSHIFT, V.REG_64) -> v1#lshift64
-	       | (V.RSHIFT, V.REG_1)  -> v1#rshift1 
-	       | (V.RSHIFT, V.REG_8)  -> v1#rshift8 
-	       | (V.RSHIFT, V.REG_16) -> v1#rshift16
-	       | (V.RSHIFT, V.REG_32) -> v1#rshift32
-	       | (V.RSHIFT, V.REG_64) -> v1#rshift64
-	       | (V.ARSHIFT, V.REG_1)  -> v1#arshift1 
-	       | (V.ARSHIFT, V.REG_8)  -> v1#arshift8 
-	       | (V.ARSHIFT, V.REG_16) -> v1#arshift16
-	       | (V.ARSHIFT, V.REG_32) -> v1#arshift32
-	       | (V.ARSHIFT, V.REG_64) -> v1#arshift64
-	       | (V.BITAND, V.REG_1)  -> v1#bitand1 
-	       | (V.BITAND, V.REG_8)  -> v1#bitand8 
-	       | (V.BITAND, V.REG_16) -> v1#bitand16
-	       | (V.BITAND, V.REG_32) -> v1#bitand32
-	       | (V.BITAND, V.REG_64) -> v1#bitand64
-	       | (V.BITOR, V.REG_1)  -> v1#bitor1 
-	       | (V.BITOR, V.REG_8)  -> v1#bitor8 
-	       | (V.BITOR, V.REG_16) -> v1#bitor16
-	       | (V.BITOR, V.REG_32) -> v1#bitor32
-	       | (V.BITOR, V.REG_64) -> v1#bitor64
-	       | (V.XOR, V.REG_1)  -> v1#xor1 
-	       | (V.XOR, V.REG_8)  -> v1#xor8 
-	       | (V.XOR, V.REG_16) -> v1#xor16
-	       | (V.XOR, V.REG_32) -> v1#xor32
-	       | (V.XOR, V.REG_64) -> v1#xor64
-	       | (V.EQ, V.REG_1)  -> v1#eq1 
-	       | (V.EQ, V.REG_8)  -> v1#eq8 
-	       | (V.EQ, V.REG_16) -> v1#eq16
-	       | (V.EQ, V.REG_32) -> v1#eq32
-	       | (V.EQ, V.REG_64) -> v1#eq64
-	       | (V.NEQ, V.REG_1)  -> v1#neq1 
-	       | (V.NEQ, V.REG_8)  -> v1#neq8 
-	       | (V.NEQ, V.REG_16) -> v1#neq16
-	       | (V.NEQ, V.REG_32) -> v1#neq32
-	       | (V.NEQ, V.REG_64) -> v1#neq64
-	       | (V.LT, V.REG_1)  -> v1#lt1 
-	       | (V.LT, V.REG_8)  -> v1#lt8 
-	       | (V.LT, V.REG_16) -> v1#lt16
-	       | (V.LT, V.REG_32) -> v1#lt32
-	       | (V.LT, V.REG_64) -> v1#lt64
-	       | (V.LE, V.REG_1)  -> v1#le1 
-	       | (V.LE, V.REG_8)  -> v1#le8 
-	       | (V.LE, V.REG_16) -> v1#le16
-	       | (V.LE, V.REG_32) -> v1#le32
-	       | (V.LE, V.REG_64) -> v1#le64
-	       | (V.SLT, V.REG_1)  -> v1#slt1 
-	       | (V.SLT, V.REG_8)  -> v1#slt8 
-	       | (V.SLT, V.REG_16) -> v1#slt16
-	       | (V.SLT, V.REG_32) -> v1#slt32
-	       | (V.SLT, V.REG_64) -> v1#slt64
-	       | (V.SLE, V.REG_1)  -> v1#sle1 
-	       | (V.SLE, V.REG_8)  -> v1#sle8 
-	       | (V.SLE, V.REG_16) -> v1#sle16
-	       | (V.SLE, V.REG_32) -> v1#sle32
-	       | (V.SLE, V.REG_64) -> v1#sle64
-	       | _ -> failwith "unexpected binop/type in eval_int_exp_ty")
-	  in
-	    (func v2), ty
-      | V.UnOp(op, e1) ->
-	  let (v1, ty1) = self#eval_int_exp_ty e1 in
-	  let result = 
-	    (match (op, ty1) with
-	       | (V.NEG, V.REG_1)  -> v1#neg1 
-	       | (V.NEG, V.REG_8)  -> v1#neg8 
-	       | (V.NEG, V.REG_16) -> v1#neg16
-	       | (V.NEG, V.REG_32) -> v1#neg32
-	       | (V.NEG, V.REG_64) -> v1#neg64
-	       | (V.NOT, V.REG_1)  -> v1#not1 
-	       | (V.NOT, V.REG_8)  -> v1#not8 
-	       | (V.NOT, V.REG_16) -> v1#not16
-	       | (V.NOT, V.REG_32) -> v1#not32
-	       | (V.NOT, V.REG_64) -> v1#not64
-	       | _ -> failwith "unexpected unop/type in eval_int_exp_ty")
+    method eval_int_exp_ty exp =
+      match exp with
+	| V.BinOp(op, e1, e2) ->
+	    let (v1, ty1) = self#eval_int_exp_ty e1 and
+		(v2, ty2) = self#eval_int_exp_ty e2 in
+	    let ty = 
+	      (match op with
+		 | V.PLUS | V.MINUS | V.TIMES
+		 | V.DIVIDE | V.SDIVIDE | V.MOD | V.SMOD
+		 | V.BITAND | V.BITOR | V.XOR
+		     -> assert(ty1 = ty2); ty1
+		 | V.LSHIFT | V.RSHIFT | V.ARSHIFT
+		     -> ty1
+		 | V.EQ | V.NEQ | V.LT | V.LE | V.SLT | V.SLE
+		     -> assert(ty1 = ty2); V.REG_1) in
+	    let func =
+	      (match (op, ty1) with
+		 | (V.PLUS, V.REG_1)  -> D.plus1 
+		 | (V.PLUS, V.REG_8)  -> D.plus8 
+		 | (V.PLUS, V.REG_16) -> D.plus16
+		 | (V.PLUS, V.REG_32) -> D.plus32
+		 | (V.PLUS, V.REG_64) -> D.plus64
+		 | (V.MINUS, V.REG_1)  -> D.minus1 
+		 | (V.MINUS, V.REG_8)  -> D.minus8 
+		 | (V.MINUS, V.REG_16) -> D.minus16
+		 | (V.MINUS, V.REG_32) -> D.minus32
+		 | (V.MINUS, V.REG_64) -> D.minus64
+		 | (V.TIMES, V.REG_1)  -> D.times1 
+		 | (V.TIMES, V.REG_8)  -> D.times8 
+		 | (V.TIMES, V.REG_16) -> D.times16
+		 | (V.TIMES, V.REG_32) -> D.times32
+		 | (V.TIMES, V.REG_64) -> D.times64
+		 | (V.DIVIDE, V.REG_1)  -> D.divide1 
+		 | (V.DIVIDE, V.REG_8)  -> D.divide8 
+		 | (V.DIVIDE, V.REG_16) -> D.divide16
+		 | (V.DIVIDE, V.REG_32) -> D.divide32
+		 | (V.DIVIDE, V.REG_64) -> D.divide64
+		 | (V.SDIVIDE, V.REG_1)  -> D.sdivide1 
+		 | (V.SDIVIDE, V.REG_8)  -> D.sdivide8 
+		 | (V.SDIVIDE, V.REG_16) -> D.sdivide16
+		 | (V.SDIVIDE, V.REG_32) -> D.sdivide32
+		 | (V.SDIVIDE, V.REG_64) -> D.sdivide64
+		 | (V.MOD, V.REG_1)  -> D.mod1 
+		 | (V.MOD, V.REG_8)  -> D.mod8 
+		 | (V.MOD, V.REG_16) -> D.mod16
+		 | (V.MOD, V.REG_32) -> D.mod32
+		 | (V.MOD, V.REG_64) -> D.mod64
+		 | (V.SMOD, V.REG_1)  -> D.smod1 
+		 | (V.SMOD, V.REG_8)  -> D.smod8 
+		 | (V.SMOD, V.REG_16) -> D.smod16
+		 | (V.SMOD, V.REG_32) -> D.smod32
+		 | (V.SMOD, V.REG_64) -> D.smod64
+		 | (V.LSHIFT, V.REG_1)  -> D.lshift1 
+		 | (V.LSHIFT, V.REG_8)  -> D.lshift8 
+		 | (V.LSHIFT, V.REG_16) -> D.lshift16
+		 | (V.LSHIFT, V.REG_32) -> D.lshift32
+		 | (V.LSHIFT, V.REG_64) -> D.lshift64
+		 | (V.RSHIFT, V.REG_1)  -> D.rshift1 
+		 | (V.RSHIFT, V.REG_8)  -> D.rshift8 
+		 | (V.RSHIFT, V.REG_16) -> D.rshift16
+		 | (V.RSHIFT, V.REG_32) -> D.rshift32
+		 | (V.RSHIFT, V.REG_64) -> D.rshift64
+		 | (V.ARSHIFT, V.REG_1)  -> D.arshift1 
+		 | (V.ARSHIFT, V.REG_8)  -> D.arshift8 
+		 | (V.ARSHIFT, V.REG_16) -> D.arshift16
+		 | (V.ARSHIFT, V.REG_32) -> D.arshift32
+		 | (V.ARSHIFT, V.REG_64) -> D.arshift64
+		 | (V.BITAND, V.REG_1)  -> D.bitand1 
+		 | (V.BITAND, V.REG_8)  -> D.bitand8 
+		 | (V.BITAND, V.REG_16) -> D.bitand16
+		 | (V.BITAND, V.REG_32) -> D.bitand32
+		 | (V.BITAND, V.REG_64) -> D.bitand64
+		 | (V.BITOR, V.REG_1)  -> D.bitor1 
+		 | (V.BITOR, V.REG_8)  -> D.bitor8 
+		 | (V.BITOR, V.REG_16) -> D.bitor16
+		 | (V.BITOR, V.REG_32) -> D.bitor32
+		 | (V.BITOR, V.REG_64) -> D.bitor64
+		 | (V.XOR, V.REG_1)  -> D.xor1 
+		 | (V.XOR, V.REG_8)  -> D.xor8 
+		 | (V.XOR, V.REG_16) -> D.xor16
+		 | (V.XOR, V.REG_32) -> D.xor32
+		 | (V.XOR, V.REG_64) -> D.xor64
+		 | (V.EQ, V.REG_1)  -> D.eq1 
+		 | (V.EQ, V.REG_8)  -> D.eq8 
+		 | (V.EQ, V.REG_16) -> D.eq16
+		 | (V.EQ, V.REG_32) -> D.eq32
+		 | (V.EQ, V.REG_64) -> D.eq64
+		 | (V.NEQ, V.REG_1)  -> D.neq1 
+		 | (V.NEQ, V.REG_8)  -> D.neq8 
+		 | (V.NEQ, V.REG_16) -> D.neq16
+		 | (V.NEQ, V.REG_32) -> D.neq32
+		 | (V.NEQ, V.REG_64) -> D.neq64
+		 | (V.LT, V.REG_1)  -> D.lt1 
+		 | (V.LT, V.REG_8)  -> D.lt8 
+		 | (V.LT, V.REG_16) -> D.lt16
+		 | (V.LT, V.REG_32) -> D.lt32
+		 | (V.LT, V.REG_64) -> D.lt64
+		 | (V.LE, V.REG_1)  -> D.le1 
+		 | (V.LE, V.REG_8)  -> D.le8 
+		 | (V.LE, V.REG_16) -> D.le16
+		 | (V.LE, V.REG_32) -> D.le32
+		 | (V.LE, V.REG_64) -> D.le64
+		 | (V.SLT, V.REG_1)  -> D.slt1 
+		 | (V.SLT, V.REG_8)  -> D.slt8 
+		 | (V.SLT, V.REG_16) -> D.slt16
+		 | (V.SLT, V.REG_32) -> D.slt32
+		 | (V.SLT, V.REG_64) -> D.slt64
+		 | (V.SLE, V.REG_1)  -> D.sle1 
+		 | (V.SLE, V.REG_8)  -> D.sle8 
+		 | (V.SLE, V.REG_16) -> D.sle16
+		 | (V.SLE, V.REG_32) -> D.sle32
+		 | (V.SLE, V.REG_64) -> D.sle64
+		 | _ -> failwith "unexpected binop/type in eval_int_exp_ty")
+	    in
+	      (func v1 v2), ty
+	| V.UnOp(op, e1) ->
+	    let (v1, ty1) = self#eval_int_exp_ty e1 in
+	    let result = 
+	      (match (op, ty1) with
+		 | (V.NEG, V.REG_1)  -> D.neg1 v1
+		 | (V.NEG, V.REG_8)  -> D.neg8 v1
+		 | (V.NEG, V.REG_16) -> D.neg16 v1
+		 | (V.NEG, V.REG_32) -> D.neg32 v1
+		 | (V.NEG, V.REG_64) -> D.neg64 v1
+		 | (V.NOT, V.REG_1)  -> D.not1 v1
+		 | (V.NOT, V.REG_8)  -> D.not8 v1
+		 | (V.NOT, V.REG_16) -> D.not16 v1
+		 | (V.NOT, V.REG_32) -> D.not32 v1
+		 | (V.NOT, V.REG_64) -> D.not64 v1
+		 | _ -> failwith "unexpected unop/type in eval_int_exp_ty")
 	  in
 	    result, ty1
-      | V.Constant(V.Int(V.REG_1, i)) ->
-	  (factory#from_concrete_1 (Int64.to_int i)), V.REG_1
-      | V.Constant(V.Int(V.REG_8, i)) ->
-	  (factory#from_concrete_8 (Int64.to_int i)), V.REG_8
-      | V.Constant(V.Int(V.REG_16,i)) -> 
-	  (factory#from_concrete_16 (Int64.to_int i)),V.REG_16
-      | V.Constant(V.Int(V.REG_32,i)) -> (factory#from_concrete_32 i),V.REG_32
-      | V.Constant(V.Int(V.REG_64,i)) -> (factory#from_concrete_64 i),V.REG_64
-      | V.Constant(V.Int(_, _)) -> failwith "unexpected integer constant type"
-      | V.Lval(V.Temp((_,_,ty) as var)) -> (self#get_int_var var), ty
-      | V.Lval(V.Mem(memv, idx, ty)) ->
-	  self#handle_load idx ty
-      | V.Cast(kind, ty, e) ->
-	  let (v1, ty1) = self#eval_int_exp_ty e in
-	  let result =
-	    match (kind, ty1, ty) with
-	      | (V.CAST_UNSIGNED, V.REG_1,  V.REG_8)  -> v1#cast1u8
-	      | (V.CAST_UNSIGNED, V.REG_1,  V.REG_16) -> v1#cast1u16
-	      | (V.CAST_UNSIGNED, V.REG_1,  V.REG_32) -> v1#cast1u32
-	      | (V.CAST_UNSIGNED, V.REG_1,  V.REG_64) -> v1#cast1u64
-	      | (V.CAST_UNSIGNED, V.REG_8,  V.REG_16) -> v1#cast8u16
-	      | (V.CAST_UNSIGNED, V.REG_8,  V.REG_32) -> v1#cast8u32
-	      | (V.CAST_UNSIGNED, V.REG_8,  V.REG_64) -> v1#cast8u64
-	      | (V.CAST_UNSIGNED, V.REG_16, V.REG_32) -> v1#cast16u32
-	      | (V.CAST_UNSIGNED, V.REG_16, V.REG_64) -> v1#cast16u64
-	      | (V.CAST_UNSIGNED, V.REG_32, V.REG_64) -> v1#cast32u64
-	      | (V.CAST_SIGNED, V.REG_1,  V.REG_8)  -> v1#cast1s8
-	      | (V.CAST_SIGNED, V.REG_1,  V.REG_16) -> v1#cast1s16
-	      | (V.CAST_SIGNED, V.REG_1,  V.REG_32) -> v1#cast1s32
-	      | (V.CAST_SIGNED, V.REG_1,  V.REG_64) -> v1#cast1s64
-	      | (V.CAST_SIGNED, V.REG_8,  V.REG_16) -> v1#cast8s16
-	      | (V.CAST_SIGNED, V.REG_8,  V.REG_32) -> v1#cast8s32
-	      | (V.CAST_SIGNED, V.REG_8,  V.REG_64) -> v1#cast8s64
-	      | (V.CAST_SIGNED, V.REG_16, V.REG_32) -> v1#cast16s32
-	      | (V.CAST_SIGNED, V.REG_16, V.REG_64) -> v1#cast16s64
-	      | (V.CAST_SIGNED, V.REG_32, V.REG_64) -> v1#cast32s64
-	      | (V.CAST_LOW, V.REG_64, V.REG_1)  -> v1#cast64l1
-	      | (V.CAST_LOW, V.REG_64, V.REG_8)  -> v1#cast64l8
-	      | (V.CAST_LOW, V.REG_64, V.REG_16) -> v1#cast64l16
-	      | (V.CAST_LOW, V.REG_64, V.REG_32) -> v1#cast64l32
-	      | (V.CAST_LOW, V.REG_32, V.REG_1)  -> v1#cast32l1
-	      | (V.CAST_LOW, V.REG_32, V.REG_8)  -> v1#cast32l8
-	      | (V.CAST_LOW, V.REG_32, V.REG_16) -> v1#cast32l16
-	      | (V.CAST_LOW, V.REG_16, V.REG_8)  -> v1#cast16l8
-	      | (V.CAST_LOW, V.REG_16, V.REG_1)  -> v1#cast16l1
-	      | (V.CAST_LOW, V.REG_8,  V.REG_1)  -> v1#cast8l1
-	      | (V.CAST_HIGH, V.REG_64, V.REG_1)  -> v1#cast64h1
-	      | (V.CAST_HIGH, V.REG_64, V.REG_8)  -> v1#cast64h8
-	      | (V.CAST_HIGH, V.REG_64, V.REG_16) -> v1#cast64h16
-	      | (V.CAST_HIGH, V.REG_64, V.REG_32) -> v1#cast64h32
-	      | (V.CAST_HIGH, V.REG_32, V.REG_1)  -> v1#cast32h1
-	      | (V.CAST_HIGH, V.REG_32, V.REG_8)  -> v1#cast32h8
-	      | (V.CAST_HIGH, V.REG_32, V.REG_16) -> v1#cast32h16
-	      | (V.CAST_HIGH, V.REG_16, V.REG_8)  -> v1#cast16h8
-	      | (V.CAST_HIGH, V.REG_16, V.REG_1)  -> v1#cast16h1
-	      | (V.CAST_HIGH, V.REG_8,  V.REG_1)  -> v1#cast8h1
-	      | _ -> failwith "bad cast kind in eval_int_exp_ty"
-	  in
-	    (result, ty)
-      | _ -> failwith "Unsupported (or non-int) expr type in eval_int_exp_ty"
+	| V.Constant(V.Int(V.REG_1, i)) ->
+	    (D.from_concrete_1 (Int64.to_int i)), V.REG_1
+	| V.Constant(V.Int(V.REG_8, i)) ->
+	    (D.from_concrete_8 (Int64.to_int i)), V.REG_8
+	| V.Constant(V.Int(V.REG_16,i)) -> 
+	    (D.from_concrete_16 (Int64.to_int i)),V.REG_16
+	| V.Constant(V.Int(V.REG_32,i)) -> (D.from_concrete_32 i),V.REG_32
+	| V.Constant(V.Int(V.REG_64,i)) -> (D.from_concrete_64 i),V.REG_64
+	| V.Constant(V.Int(_,_)) -> failwith "unexpected integer constant type"
+	| V.Lval(V.Temp((_,_,ty) as var)) -> (self#get_int_var var), ty
+	| V.Lval(V.Mem(memv, idx, ty)) ->
+	    self#handle_load idx ty
+	| V.Cast(kind, ty, e) ->
+	    let (v1, ty1) = self#eval_int_exp_ty e in
+	    let func =
+	      match (kind, ty1, ty) with
+		| (V.CAST_UNSIGNED, V.REG_1,  V.REG_8)  -> D.cast1u8
+		| (V.CAST_UNSIGNED, V.REG_1,  V.REG_16) -> D.cast1u16
+		| (V.CAST_UNSIGNED, V.REG_1,  V.REG_32) -> D.cast1u32
+		| (V.CAST_UNSIGNED, V.REG_1,  V.REG_64) -> D.cast1u64
+		| (V.CAST_UNSIGNED, V.REG_8,  V.REG_16) -> D.cast8u16
+		| (V.CAST_UNSIGNED, V.REG_8,  V.REG_32) -> D.cast8u32
+		| (V.CAST_UNSIGNED, V.REG_8,  V.REG_64) -> D.cast8u64
+		| (V.CAST_UNSIGNED, V.REG_16, V.REG_32) -> D.cast16u32
+		| (V.CAST_UNSIGNED, V.REG_16, V.REG_64) -> D.cast16u64
+		| (V.CAST_UNSIGNED, V.REG_32, V.REG_64) -> D.cast32u64
+		| (V.CAST_SIGNED, V.REG_1,  V.REG_8)  -> D.cast1s8
+		| (V.CAST_SIGNED, V.REG_1,  V.REG_16) -> D.cast1s16
+		| (V.CAST_SIGNED, V.REG_1,  V.REG_32) -> D.cast1s32
+		| (V.CAST_SIGNED, V.REG_1,  V.REG_64) -> D.cast1s64
+		| (V.CAST_SIGNED, V.REG_8,  V.REG_16) -> D.cast8s16
+		| (V.CAST_SIGNED, V.REG_8,  V.REG_32) -> D.cast8s32
+		| (V.CAST_SIGNED, V.REG_8,  V.REG_64) -> D.cast8s64
+		| (V.CAST_SIGNED, V.REG_16, V.REG_32) -> D.cast16s32
+		| (V.CAST_SIGNED, V.REG_16, V.REG_64) -> D.cast16s64
+		| (V.CAST_SIGNED, V.REG_32, V.REG_64) -> D.cast32s64
+		| (V.CAST_LOW, V.REG_64, V.REG_1)  -> D.cast64l1
+		| (V.CAST_LOW, V.REG_64, V.REG_8)  -> D.cast64l8
+		| (V.CAST_LOW, V.REG_64, V.REG_16) -> D.cast64l16
+		| (V.CAST_LOW, V.REG_64, V.REG_32) -> D.cast64l32
+		| (V.CAST_LOW, V.REG_32, V.REG_1)  -> D.cast32l1
+		| (V.CAST_LOW, V.REG_32, V.REG_8)  -> D.cast32l8
+		| (V.CAST_LOW, V.REG_32, V.REG_16) -> D.cast32l16
+		| (V.CAST_LOW, V.REG_16, V.REG_8)  -> D.cast16l8
+		| (V.CAST_LOW, V.REG_16, V.REG_1)  -> D.cast16l1
+		| (V.CAST_LOW, V.REG_8,  V.REG_1)  -> D.cast8l1
+		| (V.CAST_HIGH, V.REG_64, V.REG_1)  -> D.cast64h1
+		| (V.CAST_HIGH, V.REG_64, V.REG_8)  -> D.cast64h8
+		| (V.CAST_HIGH, V.REG_64, V.REG_16) -> D.cast64h16
+		| (V.CAST_HIGH, V.REG_64, V.REG_32) -> D.cast64h32
+		| (V.CAST_HIGH, V.REG_32, V.REG_1)  -> D.cast32h1
+		| (V.CAST_HIGH, V.REG_32, V.REG_8)  -> D.cast32h8
+		| (V.CAST_HIGH, V.REG_32, V.REG_16) -> D.cast32h16
+		| (V.CAST_HIGH, V.REG_16, V.REG_8)  -> D.cast16h8
+		| (V.CAST_HIGH, V.REG_16, V.REG_1)  -> D.cast16h1
+		| (V.CAST_HIGH, V.REG_8,  V.REG_1)  -> D.cast8h1
+		| _ -> failwith "bad cast kind in eval_int_exp_ty"
+	    in
+	      ((func v1), ty)
+	| _ -> failwith "Unsupported (or non-int) expr type in eval_int_exp_ty"
 	  
-  method eval_int_exp exp =
-    let (v, _) = self#eval_int_exp_ty exp in
-      v
+    method eval_int_exp exp =
+      let (v, _) = self#eval_int_exp_ty exp in
+	v
 
-  method eval_int_exp_simplify exp =
-    match self#eval_int_exp_ty exp with
-      | (v, V.REG_1) -> v#simplify1
-      | (v, V.REG_8) -> v#simplify8
-      | (v, V.REG_16) -> v#simplify16
-      | (v, V.REG_32) -> v#simplify32
-      | (v, V.REG_64) -> v#simplify64
-      | _ -> failwith "Unexpected type in eval_int_exp_simplify"
+    method eval_int_exp_simplify exp =
+      match self#eval_int_exp_ty exp with
+	| (v, V.REG_1) -> form_man#simplify1 v
+	| (v, V.REG_8) -> form_man#simplify8 v
+	| (v, V.REG_16) -> form_man#simplify16 v
+	| (v, V.REG_32) -> form_man#simplify32 v
+	| (v, V.REG_64) -> form_man#simplify64 v
+	| _ -> failwith "Unexpected type in eval_int_exp_simplify"
 
-  method eval_bool_exp exp =
-    let v = self#eval_int_exp exp in
-	if v#to_concrete_1 = 1 then true else false
+    method eval_bool_exp exp =
+      let v = self#eval_int_exp exp in
+	if (D.to_concrete_1 v) = 1 then true else false
 
-  method eval_addr_exp exp =
-    let v = self#eval_int_exp exp in
-      v#to_concrete_32
+    method eval_addr_exp exp =
+      let v = self#eval_int_exp exp in
+	(D.to_concrete_32 v)
 
-  method eval_label_exp e =
-    match e with
-      | V.Name(lab) -> lab
-      | _ ->
-	  let addr = self#eval_addr_exp e in
-	    Printf.sprintf "pc_0x%Lx" addr
+    method eval_label_exp e =
+      match e with
+	| V.Name(lab) -> lab
+	| _ ->
+	    let addr = self#eval_addr_exp e in
+	      Printf.sprintf "pc_0x%Lx" addr
 
-  method jump lab =
-    let rec find_label lab sl =
-      match sl with
-	| [] -> None
-	| V.Label(l) :: rest when l = lab -> Some sl
-	| st :: rest -> find_label lab rest
-    in
-      loop_cnt <- loop_cnt + 1;
-      if loop_cnt > 25 then raise TooManyIterations;
-      let (_, sl) = frag in
-	match find_label lab sl with
-	  | None -> lab
-	  | Some sl ->
-	      self#run_sl sl
-	      
-  method run_sl sl =
-    match sl with
-      | [] -> "fallthrough"
-      | st :: rest ->
-	  (match st with
-	     | V.Jmp(l) -> self#jump (self#eval_label_exp l)
-	     | V.CJmp(cond, l1, l2) ->
-		 let cond_v = self#eval_bool_exp cond in
-		   if cond_v then
-		     self#jump (self#eval_label_exp l1)
-		   else
-		     self#jump (self#eval_label_exp l2)
-	     | V.Move(V.Temp(v), e) ->
-		 self#set_int_var v (self#eval_int_exp_simplify e);
-		 self#run_sl rest
-	     | V.Move(V.Mem(memv, idx_e, ty), rhs_e) ->
-		 self#handle_store idx_e ty rhs_e;
-		 self#run_sl rest
-	     | V.Special(str) ->
-		 if self#handle_special str then
-		   self#run_sl rest
-		 else
-		   (Printf.printf "Unhandled special %s\n" str;
-		    failwith "Unhandled special")
-	     | V.Label(_) -> self#run_sl rest
-	     | V.ExpStmt(e) ->
-		 let v = self#eval_int_exp e in
-		   ignore(v);
-		   self#run_sl rest
-	     | V.Comment(_) -> self#run_sl rest
-	     | V.Block(_,_) -> failwith "Block unsupported"
-	     | V.Function(_,_,_,_,_) -> failwith "Function unsupported"
-	     | V.Return(_) -> failwith "Return unsupported"
-	     | V.Call(_,_,_) -> failwith "Call unsupported"
-	     | V.Attr(st, _) -> self#run_sl (st :: rest)
-	     | V.Assert(e) ->
-		 let v = self#eval_bool_exp e in
-		   assert(v);
-		   self#run_sl rest
-	     | V.Halt(e) ->
-		 let v = (self#eval_int_exp e)#to_concrete_32 in
-		   Printf.sprintf "halt_%Ld" v)
-
-  method run () = self#run_sl insns
-
-  method measure_size =
-    let measure_add k v n = n + v#measure_size in
-      mem#measure_size
-      + (V.VarHash.fold measure_add reg_store 0)
-      + (V.VarHash.fold measure_add temps 0)
-
-  method store_byte_idx base idx b =
-    self#store_byte (Int64.add base (Int64.of_int idx)) 
-      (factory#from_concrete_8 b)
-
-  method store_str base idx str =
-    for i = 0 to (String.length str - 1) do
-      self#store_byte_idx (Int64.add base idx) i (Char.code str.[i])
-    done
-
-  method store_symbolic_cstr base len =
-    for i = 0 to len - 1 do
-      self#store_byte (Int64.add base (Int64.of_int i))
-	(factory#fresh_symbolic_8 ("input" ^ (string_of_int i)))
-    done;
-    self#store_byte_idx base len 0
-
-  method store_cstr base idx str =
-    self#store_str base idx str;
-    self#store_byte_idx (Int64.add base idx) (String.length str) 0
-
-  method read_buf addr len =
-    Array.init len
-      (fun i -> Char.chr (mem#load_byte (Int64.add addr (Int64.of_int i)))
-	 #to_concrete_8)
-
-  method read_cstr addr =
-    let rec bytes_loop i =
-      let b = (mem#load_byte (Int64.add addr (Int64.of_int i)))#to_concrete_8
+    method jump lab =
+      let rec find_label lab sl =
+	match sl with
+	  | [] -> None
+	  | V.Label(l) :: rest when l = lab -> Some sl
+	  | st :: rest -> find_label lab rest
       in
-	if b = 0 then [] else b :: bytes_loop (i + 1)
-    in
-      String.concat ""
-	(List.map (fun b -> String.make 1 (Char.chr b))
-	   (bytes_loop 0))
+	loop_cnt <- loop_cnt + 1;
+	if loop_cnt > 25 then raise TooManyIterations;
+	let (_, sl) = frag in
+	  match find_label lab sl with
+	    | None -> lab
+	    | Some sl ->
+		self#run_sl sl
+	      
+    method run_sl sl =
+      match sl with
+	| [] -> "fallthrough"
+	| st :: rest ->
+	    (match st with
+	       | V.Jmp(l) -> self#jump (self#eval_label_exp l)
+	       | V.CJmp(cond, l1, l2) ->
+		   let cond_v = self#eval_bool_exp cond in
+		     if cond_v then
+		       self#jump (self#eval_label_exp l1)
+		     else
+		       self#jump (self#eval_label_exp l2)
+	       | V.Move(V.Temp(v), e) ->
+		   self#set_int_var v (self#eval_int_exp_simplify e);
+		   self#run_sl rest
+	       | V.Move(V.Mem(memv, idx_e, ty), rhs_e) ->
+		   self#handle_store idx_e ty rhs_e;
+		   self#run_sl rest
+	       | V.Special(str) ->
+		   if self#handle_special str then
+		     self#run_sl rest
+		   else
+		     (Printf.printf "Unhandled special %s\n" str;
+		      failwith "Unhandled special")
+	       | V.Label(_) -> self#run_sl rest
+	       | V.ExpStmt(e) ->
+		   let v = self#eval_int_exp e in
+		     ignore(v);
+		     self#run_sl rest
+	       | V.Comment(_) -> self#run_sl rest
+	       | V.Block(_,_) -> failwith "Block unsupported"
+	       | V.Function(_,_,_,_,_) -> failwith "Function unsupported"
+	       | V.Return(_) -> failwith "Return unsupported"
+	       | V.Call(_,_,_) -> failwith "Call unsupported"
+	       | V.Attr(st, _) -> self#run_sl (st :: rest)
+	       | V.Assert(e) ->
+		   let v = self#eval_bool_exp e in
+		     assert(v);
+		     self#run_sl rest
+	       | V.Halt(e) ->
+		   let v = D.to_concrete_32 (self#eval_int_exp e) in
+		     Printf.sprintf "halt_%Ld" v)
 
-  method print_backtrace =
-    let rec loop ebp =
-      let prev_ebp = self#load_word_conc ebp and
-	  ret_addr = self#load_word_conc (Int64.add ebp 4L) in
-	Printf.printf "0x%08Lx 0x%08Lx 0x%08Lx\n" ebp prev_ebp ret_addr;
-	if (prev_ebp <> 0L) then
-	  loop prev_ebp
-    in
-      loop (self#get_word_var R_EBP)
+    method run () = self#run_sl insns
+
+    method measure_size =
+      let measure_add k v n = n + (D.measure_size v) in
+	mem#measure_size
+	+ (V.VarHash.fold measure_add reg_store 0)
+	+ (V.VarHash.fold measure_add temps 0)
+
+    method store_byte_idx base idx b =
+      self#store_byte (Int64.add base (Int64.of_int idx)) 
+	(D.from_concrete_8 b)
+
+    method store_str base idx str =
+      for i = 0 to (String.length str - 1) do
+	self#store_byte_idx (Int64.add base idx) i (Char.code str.[i])
+      done
+
+    method store_symbolic_cstr base len =
+      for i = 0 to len - 1 do
+	self#store_byte (Int64.add base (Int64.of_int i))
+	  (form_man#fresh_symbolic_8 ("input" ^ (string_of_int i)))
+      done;
+      self#store_byte_idx base len 0
+
+    method store_cstr base idx str =
+      self#store_str base idx str;
+      self#store_byte_idx (Int64.add base idx) (String.length str) 0
+
+    method read_buf addr len =
+      Array.init len
+	(fun i -> Char.chr
+	   (D.to_concrete_8 (mem#load_byte (Int64.add addr (Int64.of_int i)))))
+
+    method read_cstr addr =
+      let rec bytes_loop i =
+	let b = D.to_concrete_8 (mem#load_byte
+				   (Int64.add addr (Int64.of_int i)))
+	in
+	  if b = 0 then [] else b :: bytes_loop (i + 1)
+      in
+	String.concat ""
+	  (List.map (fun b -> String.make 1 (Char.chr b))
+	     (bytes_loop 0))
+
+    method print_backtrace =
+      let rec loop ebp =
+	let prev_ebp = self#load_word_conc ebp and
+	    ret_addr = self#load_word_conc (Int64.add ebp 4L) in
+	  Printf.printf "0x%08Lx 0x%08Lx 0x%08Lx\n" ebp prev_ebp ret_addr;
+	  if (prev_ebp <> 0L) then
+	    loop prev_ebp
+      in
+	loop (self#get_word_var R_EBP)
+  end
 end
 
 type decision_tree_node = {
@@ -2776,388 +2899,398 @@ class decision_tree = object(self)
 
 end
 
-class ['d] sym_path_frag_machine factory = object(self)
-  inherit ['d] frag_machine factory as fm
+module SymPathFragMachineFunctor =
+  functor (D : DOMAIN) ->
+struct
+  module FM = FragmentMachineFunctor(D)
 
-  val mutable path_cond = []
-  val dt = (new decision_tree)#init
+  class sym_path_frag_machine = object(self)
+    inherit FM.frag_machine as fm
 
-  method add_to_path_cond cond =
-    path_cond <- cond :: path_cond
+    val mutable path_cond = []
+    val dt = (new decision_tree)#init
+
+    method add_to_path_cond cond =
+      path_cond <- cond :: path_cond
       
-  method restore_path_cond f =
-    let saved_pc = path_cond in
-    let ret = f () in
-      path_cond <- saved_pc;
-      ret
+    method restore_path_cond f =
+      let saved_pc = path_cond in
+      let ret = f () in
+	path_cond <- saved_pc;
+	ret
 
-  val query_engine = new stpvc_engine
-    (* val query_engine = new stp_external_engine "fuzz.stp" *)
+    val query_engine = new stpvc_engine
+      (* val query_engine = new stp_external_engine "fuzz.stp" *)
 
-  method match_input_var s =
-    try
-      if (String.sub s 0 5) = "input" then
-	let wo_input = String.sub s 5 ((String.length s) - 5) in
-	try
-	  let uscore_loc = String.index wo_input '_' in
-	  let n_str = String.sub wo_input 0 uscore_loc in
-	    Some (int_of_string n_str)
-	with
-	  | Not_found ->
-	      Some (int_of_string wo_input)
-      else
-	None
-    with
-      | Not_found -> None
-      | Failure "int_of_string" -> None
+    method match_input_var s =
+      try
+	if (String.sub s 0 5) = "input" then
+	  let wo_input = String.sub s 5 ((String.length s) - 5) in
+	    try
+	      let uscore_loc = String.index wo_input '_' in
+	      let n_str = String.sub wo_input 0 uscore_loc in
+		Some (int_of_string n_str)
+	    with
+	      | Not_found ->
+		  Some (int_of_string wo_input)
+	else
+	  None
+      with
+	| Not_found -> None
+	| Failure "int_of_string" -> None
 
-  method walk_temps f exp =
-    let h = V.VarHash.create 21 in
-    let temps = ref [] in
-    let rec walk = function
-      | V.BinOp(_, e1, e2) -> walk e1; walk e2
-      | V.UnOp(_, e1) -> walk e1
-      | V.Constant(_) -> ()
-      | V.Lval(V.Temp(var)) ->
-	  if (try V.VarHash.find h var; true with Not_found -> false) then
-	    ()
-	  else
-	    (try 
-	       let e = V.VarHash.find exprs_hash_back var in
-		 V.VarHash.replace h var ();
-		 walk e;
-		 temps := (f var e) :: !temps;
-	     with Not_found -> ())
-      | V.Lval(V.Mem(_, e1, _)) -> walk e1
-      | V.Name(_) -> ()
-      | V.Cast(_, _, e1) -> walk e1
-      | V.Unknown(_) -> ()
-      | V.Let(_, _, _) -> failwith "Unhandled let in walk_temps"
-    in
-      walk exp;
-      List.rev !temps
+    method walk_temps f exp =
+      let h = V.VarHash.create 21 in
+      let temps = ref [] in
+      let rec walk = function
+	| V.BinOp(_, e1, e2) -> walk e1; walk e2
+	| V.UnOp(_, e1) -> walk e1
+	| V.Constant(_) -> ()
+	| V.Lval(V.Temp(var)) ->
+	    if (try V.VarHash.find h var; true with Not_found -> false) then
+	      ()
+	    else
+	      form_man#if_expr_temp var
+		(fun e ->
+		   V.VarHash.replace h var ();
+		   walk e;
+		   temps := (f var e) :: !temps)
+	| V.Lval(V.Mem(_, e1, _)) -> walk e1
+	| V.Name(_) -> ()
+	| V.Cast(_, _, e1) -> walk e1
+	| V.Unknown(_) -> ()
+	| V.Let(_, _, _) -> failwith "Unhandled let in walk_temps"
+      in
+	walk exp;
+	List.rev !temps
 
-  method private ce_to_input_str ce =
-    let str = String.make 30 ' ' in
+    method private ce_to_input_str ce =
+      let str = String.make 30 ' ' in
+	List.iter
+	  (fun (var_s, value) ->
+	     match self#match_input_var var_s with
+	       | Some n -> str.[n] <- 
+		   char_of_int (Int64.to_int value)
+	       | None -> ())
+	  ce;
+	let str' = ref str in
+	  (try 
+	     while String.rindex !str' ' ' = (String.length !str') - 1 do
+	       str' := String.sub !str' 0 ((String.length !str') - 1)
+	     done;
+	   with Not_found -> ());
+	  (try
+	     while String.rindex !str' '\000' = (String.length !str') - 1
+	     do
+	       str' := String.sub !str' 0 ((String.length !str') - 1)
+	     done;
+	   with Not_found -> ());
+	  !str'
+
+    method print_ce ce =
       List.iter
 	(fun (var_s, value) ->
-	   match self#match_input_var var_s with
-	     | Some n -> str.[n] <- 
-		 char_of_int (Int64.to_int value)
-	     | None -> ())
+	   let nice_name = (try String.sub var_s 0 (String.rindex var_s '_') 
+			    with Not_found -> var_s) in
+	     if value <> 0L then
+	       Printf.printf "%s=0x%Lx " nice_name value)
 	ce;
-      let str' = ref str in
-	(try 
-	   while String.rindex !str' ' ' = (String.length !str') - 1 do
-	     str' := String.sub !str' 0 ((String.length !str') - 1)
-	   done;
-	 with Not_found -> ());
-	(try
-	   while String.rindex !str' '\000' = (String.length !str') - 1
-	   do
-	     str' := String.sub !str' 0 ((String.length !str') - 1)
-	   done;
-	 with Not_found -> ());
-	!str'
+      Printf.printf "\n";
 
-  method print_ce ce =
-    List.iter
-      (fun (var_s, value) ->
-	 let nice_name = (try String.sub var_s 0 (String.rindex var_s '_') 
-			  with Not_found -> var_s) in
-	   if value <> 0L then
-	     Printf.printf "%s=0x%Lx " nice_name value)
-      ce;
-    Printf.printf "\n";
+    method query_with_path_cond cond verbose =
+      let i_vars = form_man#get_input_vars in
+      let pc = (constant_fold_rec
+		  (List.fold_left (fun a b -> V.BinOp(V.BITAND, a, b))
+		     V.exp_true (List.rev (cond :: path_cond)))) in
+      let temps = self#walk_temps (fun var e -> (var, e)) pc in
+      let t_vars = List.map (fun (v, _) -> v) temps in
+	query_engine#prepare i_vars t_vars;
+	List.iter (fun (v, exp) -> (query_engine#assert_eq v exp)) temps;
+	(* Printf.printf "PC is %s\n" (V.exp_to_string pc); *)
+	(* Printf.printf "Condition is %s\n" (V.exp_to_string cond); *)
+	let time_before = Sys.time () in
+	let (result, ce) = query_engine#query pc in
+	let is_sat = not result in
+	  if verbose then
+	    (if is_sat then
+	       (Printf.printf "Satisfiable ";
+		Printf.printf "by \"%s\"\n"
+		  (String.escaped (self#ce_to_input_str ce));
+		self#print_ce ce)
+	     else
+	       Printf.printf "Unsatisfiable.\n");
+	  if ((Sys.time ()) -. time_before) > 1.0 then
+	    Printf.printf "Slow query (%f sec)\n"
+	      ((Sys.time ()) -. time_before);
+	  flush stdout;
+	  query_engine#unprepare;
+	  is_sat
 
-  method query_with_path_cond cond verbose =
-    let i_vars = Hashtbl.fold (fun s v l -> v :: l) input_vars [] in
-    let pc = (constant_fold_rec
-		(List.fold_left (fun a b -> V.BinOp(V.BITAND, a, b))
-		   V.exp_true (List.rev (cond :: path_cond)))) in
-    let temps = self#walk_temps (fun var e -> (var, e)) pc in
-    let t_vars = List.map (fun (v, _) -> v) temps in
-      query_engine#prepare i_vars t_vars;
-      List.iter (fun (v, exp) -> (query_engine#assert_eq v exp)) temps;
-      (* Printf.printf "PC is %s\n" (V.exp_to_string pc); *)
-      (* Printf.printf "Condition is %s\n" (V.exp_to_string cond); *)
-      let time_before = Sys.time () in
-      let (result, ce) = query_engine#query pc in
-      let is_sat = not result in
-	if verbose then
-	  (if is_sat then
-	     (Printf.printf "Satisfiable ";
-	      Printf.printf "by \"%s\"\n"
-		(String.escaped (self#ce_to_input_str ce));
-	      self#print_ce ce)
-	   else
-	     Printf.printf "Unsatisfiable.\n");
-	if ((Sys.time ()) -. time_before) > 1.0 then
-	  Printf.printf "Slow query (%f sec)\n"
-	    ((Sys.time ()) -. time_before);
-	flush stdout;
-	query_engine#unprepare;
-	is_sat
+    method query_with_pc_random cond verbose =
+      let trans_func b =
+	if b then cond else V.UnOp(V.NOT, cond)
+      in
+      let try_func b cond' =
+	if verbose then Printf.printf "Trying %B: " b;
+	self#query_with_path_cond cond' verbose
+      in
+      let non_try_func b =
+	if verbose then Printf.printf "Known %B\n" b
+      in
+	dt#try_extend trans_func try_func non_try_func
 
-  method query_with_pc_random cond verbose =
-    let trans_func b =
-      if b then cond else V.UnOp(V.NOT, cond)
-    in
-    let try_func b cond' =
-      if verbose then Printf.printf "Trying %B: " b;
-      self#query_with_path_cond cond' verbose
-    in
-    let non_try_func b =
-      if verbose then Printf.printf "Known %B\n" b
-    in
-      dt#try_extend trans_func try_func non_try_func
+    method extend_pc_random cond verbose =
+      let (result, cond') = self#query_with_pc_random cond verbose in
+	self#add_to_path_cond cond';
+	result
 
-  method extend_pc_random cond verbose =
-    let (result, cond') = self#query_with_pc_random cond verbose in
-      self#add_to_path_cond cond';
-      result
+    method random_case_split verbose =
+      let trans_func b = V.Unknown("unused") in
+      let try_func b _ =
+	if verbose then Printf.printf "Trying %B: " b;
+	true
+      in
+      let non_try_func b =
+	if verbose then Printf.printf "Known %B\n" b
+      in
+      let (result, _) = dt#try_extend trans_func try_func non_try_func in
+	result
 
-  method random_case_split verbose =
-    let trans_func b = V.Unknown("unused") in
-    let try_func b _ =
-      if verbose then Printf.printf "Trying %B: " b;
-      true
-    in
-    let non_try_func b =
-      if verbose then Printf.printf "Known %B\n" b
-    in
-    let (result, _) = dt#try_extend trans_func try_func non_try_func in
-      result
+    method eval_bool_exp exp =
+      let v = self#eval_int_exp exp in
+	try
+	  if (D.to_concrete_1 v) = 1 then true else false
+	with
+	    NotConcrete _ ->
+	      (* Printf.printf "Symbolic branch condition %s\n"
+		 (V.exp_to_string v#to_symbolic_1); *)
+	      self#extend_pc_random (D.to_symbolic_1 v) true
 
-  method eval_bool_exp exp =
-    let v = self#eval_int_exp exp in
-      try
-	if v#to_concrete_1 = 1 then true else false
-      with
-	  NotConcrete _ ->
-	    (* Printf.printf "Symbolic branch condition %s\n"
-	      (V.exp_to_string v#to_symbolic_1); *)
-	    self#extend_pc_random v#to_symbolic_1 true
+    method eval_addr_exp exp =
+      let c32 x = V.Constant(V.Int(V.REG_32, x)) in
+      let v = self#eval_int_exp_simplify exp in
+	try (D.to_concrete_32 v)
+	with
+	    NotConcrete _ ->
+	      let e = (D.to_symbolic_32 v) in
+		Printf.printf "Symbolic address %s\n" (V.exp_to_string e);
+		let bits = ref 0L in
+		  self#restore_path_cond
+		    (fun () ->
+		       for b = 31 downto 0 do
+			 let bit = self#extend_pc_random
+			   (V.Cast(V.CAST_LOW, V.REG_1,
+				   (V.BinOp(V.ARSHIFT, e,
+					    (c32 (Int64.of_int b)))))) false
+			 in
+			   bits := (Int64.logor (Int64.shift_left !bits 1)
+				      (if bit then 1L else 0L));
+		       done);
+		  Printf.printf "Picked concrete value 0x%Lx\n" !bits;
+		  self#add_to_path_cond (V.BinOp(V.EQ, e, (c32 !bits)));
+		  !bits
 
-  method eval_addr_exp exp =
-    let c32 x = V.Constant(V.Int(V.REG_32, x)) in
-    let v = self#eval_int_exp_simplify exp in
-      try v#to_concrete_32
-      with
-	  NotConcrete _ ->
-	    let e = v#to_symbolic_32 in
-	      Printf.printf "Symbolic address %s\n" (V.exp_to_string e);
-	      let bits = ref 0L in
-		self#restore_path_cond
-		  (fun () ->
-		     for b = 31 downto 0 do
-		       let bit = self#extend_pc_random
-			 (V.Cast(V.CAST_LOW, V.REG_1,
-				 (V.BinOp(V.ARSHIFT, e,
-					  (c32 (Int64.of_int b)))))) false
-		       in
-			 bits := (Int64.logor (Int64.shift_left !bits 1)
-				    (if bit then 1L else 0L));
-		     done);
-		Printf.printf "Picked concrete value 0x%Lx\n" !bits;
-		self#add_to_path_cond (V.BinOp(V.EQ, e, (c32 !bits)));
-		!bits
+    method finish_path =
+      dt#mark_all_seen;
+      (let path_str = String.concat ""
+	 (List.map (fun b -> if b then "1" else "0") (List.rev dt#get_hist));
+       in
+	 Printf.printf "Path: %s\n" path_str);
+      dt#try_again_p
 
-  method finish_path =
-    dt#mark_all_seen;
-    (let path_str = String.concat ""
-       (List.map (fun b -> if b then "1" else "0") (List.rev dt#get_hist));
-     in
-       Printf.printf "Path: %s\n" path_str);
-    dt#try_again_p
+    method print_tree chan = dt#print_tree chan
 
-  method print_tree chan = dt#print_tree chan
-
-  method set_iter_seed i = dt#set_iter_seed i
-
-  method reset () =
-    fm#reset ();
-    path_cond <- [];
-    dt#reset
+    method set_iter_seed i = dt#set_iter_seed i
+      
+    method reset () =
+      fm#reset ();
+      path_cond <- [];
+      dt#reset
+  end
 end
 
 exception SymbolicJump
 exception NullDereference
 
-class ['d] sym_region_frag_machine factory = object(self)
-  inherit ['d] sym_path_frag_machine factory as spfm
+module SymRegionFragMachineFunctor =
+  functor (D : DOMAIN) ->
+struct
+  module GM = GranularMemoryFunctor(D)
+  module SPFM = SymPathFragMachineFunctor(D)
 
-  val mutable regions = []
-  val region_vals = V.VarHash.create 101
+  class sym_region_frag_machine = object(self)
+    inherit SPFM.sym_path_frag_machine as spfm
 
-  method private region r =
-    match r with
-      | None -> (mem :> ('d granular_memory))
-      | Some r_num -> List.nth regions r_num
+    val mutable regions = []
+    val region_vals = V.VarHash.create 101
 
-  method private fresh_region =
-    let new_idx = List.length regions in
-    let region = (new granular_hash_memory
-		    (new symbolic_domain (V.Unknown("factory")))) and
-	name = "region_" ^ (string_of_int new_idx) in
-      regions <- regions @ [region];
-      spfm#on_missing_symbol_m region name;
-      new_idx
-
-  method private region_for ((n,s,t) as var) =
-    try
-      V.VarHash.find region_vals var
-    with Not_found ->
-      let new_region = self#fresh_region in
-	V.VarHash.replace region_vals var new_region;
-	Printf.printf "Address %s is region %d\n" s new_region;
-	new_region
-
-  method private choose_conc_offset e =
-    let c32 x = V.Constant(V.Int(V.REG_32, x)) in
-    let bits = ref 0L in
-      self#restore_path_cond
-	(fun () ->
-	   for b = 31 downto 0 do
-	     let bit = self#extend_pc_random
-	       (V.Cast(V.CAST_LOW, V.REG_1,
-		       (V.BinOp(V.ARSHIFT, e,
-				(c32 (Int64.of_int b)))))) false
-	     in
-	       bits := (Int64.logor (Int64.shift_left !bits 1)
-			  (if bit then 1L else 0L));
-	   done);
-      Printf.printf "Picked concrete offset value 0x%Lx\n" !bits;
-      self#add_to_path_cond (V.BinOp(V.EQ, e, (c32 !bits)));
-      !bits
-
-  method eval_addr_exp_region exp =
-    let v = self#eval_int_exp_simplify exp in
-      try
-	(None, v#to_concrete_32)
-      with NotConcrete _ ->
-	let e = v#to_symbolic_32 in
-	  Printf.printf "Symbolic address %s\n" (V.exp_to_string e);
-	  match e with
-	    | V.Lval(V.Temp(var)) ->
-		(Some(self#region_for var), 0L)
-	    | V.BinOp(V.PLUS, V.Lval(V.Temp(var)),
-		      V.Constant(V.Int(V.REG_32, off)))
-		when (Int64.abs (fix_s32 off)) < 0x4000L ->
-		(Some(self#region_for var), off)
-	    | V.BinOp(V.PLUS, V.Lval(V.Temp(var)),
-		      (V.BinOp(V.LSHIFT, _,
-			       V.Constant(V.Int(V.REG_8, (1L|2L|3L|4L))))
-			 as idx)) ->
-		(Some(self#region_for var), (self#choose_conc_offset idx))
-	    | V.BinOp(V.PLUS, V.Lval(V.Temp(var)),
-		      (V.BinOp(V.PLUS,
-			       V.BinOp(V.LSHIFT, _,
-				       V.Constant(V.Int(V.REG_8,
-							(1L|2L|3L|4L)))),
-			       V.Constant(V.Int(V.REG_32, off)))
-			 as idx))
-		when (Int64.abs (fix_s32 off)) < 0x4000L ->
-		(Some(self#region_for var), (self#choose_conc_offset idx))
-	    | V.BinOp(V.PLUS, (V.Lval(V.Temp(var1)) as var1_e),
-		      (V.Lval(V.Temp(var2)) as var2_e)) ->
-		if self#random_case_split true then
-		  (Some(self#region_for var1),
-		   (self#choose_conc_offset var2_e))
-		else
-		  (Some(self#region_for var2),
-		   (self#choose_conc_offset var1_e))
-	    | V.BinOp(V.PLUS, V.Lval(V.Temp(var1)),
-		      (V.UnOp(V.NEG, V.Lval(V.Temp(var2))) as idx)) ->
-		(Some(self#region_for var1),
-		 (self#choose_conc_offset idx))
-	    | V.BinOp(V.PLUS, V.Lval(V.Temp(var1)),
-		      (V.BinOp(V.PLUS, V.UnOp(V.NEG, _),
-			       V.Constant(V.Int(V.REG_32, off))) as idx))
-		when (Int64.abs (fix_s32 off)) < 0x4000L ->
-		(Some(self#region_for var1),
-		 (self#choose_conc_offset idx))
-	    | V.BinOp(V.PLUS, (V.Lval(V.Temp(var1)) as var1_e), 
-		      V.BinOp(V.PLUS, (V.Lval(V.Temp(var2)) as var2_e),
-			      V.Constant(V.Int(V.REG_32, off))))
-		when (Int64.abs (fix_s32 off)) < 0x4000L ->
-		if self#random_case_split true then
-		  (Some(self#region_for var1),
-		   (Int64.add off (self#choose_conc_offset var2_e)))
-		else
-		  (Some(self#region_for var2),
-		   (Int64.add off (self#choose_conc_offset var1_e)))
-	    | V.BinOp(V.PLUS, idx,
-		      V.Constant(V.Int(V.REG_32, off)))
-		when (fix_s32 off) > 0x8000000L ->
-		(None, (self#choose_conc_offset e))
-		  (* These patterns seem to usually represent null-pointer
-		     paths *)
-	    | V.BinOp(V.LSHIFT, _,
-		      V.Constant(V.Int(V.REG_8, (1L|2L|3L|4L)))) ->
-		raise NullDereference
-	    | V.BinOp(V.PLUS, V.UnOp(V.NEG, _),
-		      V.Constant(V.Int(V.REG_32, off)))
-		when (Int64.abs (fix_s32 off)) < 0x4000L ->
-		raise NullDereference
-		  (* | _ -> (None, (self#choose_conc_offset e)) *)
-	    | _ -> failwith "Unsupported symbolic address form"
-
-  method eval_addr_exp exp =
-    let (r, addr) = self#eval_addr_exp_region exp in
+    method private region r =
       match r with
-	| None -> addr
-	| Some r_num -> raise SymbolicJump
+	| None -> (mem :> (GM.granular_memory))
+	| Some r_num -> List.nth regions r_num
 
-  method store_byte_region  r addr b = (self#region r)#store_byte  addr b
-  method store_short_region r addr s = (self#region r)#store_short addr s
-  method store_word_region  r addr w = (self#region r)#store_word  addr w
-  method store_long_region  r addr l = (self#region r)#store_long  addr l
+    method private fresh_region =
+      let new_idx = List.length regions in
+      let region = (new GM.granular_hash_memory)  and
+	  name = "region_" ^ (string_of_int new_idx) in
+	regions <- regions @ [region];
+	spfm#on_missing_symbol_m region name;
+	new_idx
 
-  method load_byte_region  r addr = (self#region r)#load_byte  addr
-  method load_short_region r addr = (self#region r)#load_short addr
-  method load_word_region  r addr = (self#region r)#load_word  addr
-  method load_long_region  r addr = (self#region r)#load_long  addr
+    method private region_for ((n,s,t) as var) =
+      try
+	V.VarHash.find region_vals var
+      with Not_found ->
+	let new_region = self#fresh_region in
+	  V.VarHash.replace region_vals var new_region;
+	  Printf.printf "Address %s is region %d\n" s new_region;
+	  new_region
 
-  method handle_load addr_e ty =
-    let (r, addr) = self#eval_addr_exp_region addr_e in
-    let v =
-      (match ty with
-	 | V.REG_8 -> self#load_byte_region r addr
-	 | V.REG_16 -> self#load_short_region r addr
-	 | V.REG_32 -> self#load_word_region r addr
-	 | V.REG_64 -> self#load_long_region r addr
-	 | _ -> failwith "Unsupported memory type") in
-      if r = None && (Int64.abs (fix_s32 addr)) < 4096L then
-	raise NullDereference;
-      (* Printf.printf "Load from %s "
-	 (match r with | None -> "conc. mem"
-	 | Some r_num -> "region " ^ (string_of_int r_num));
-	 Printf.printf "%08Lx = %s\n" addr v#to_string_32; *)
-      (v, ty)
+    method private choose_conc_offset e =
+      let c32 x = V.Constant(V.Int(V.REG_32, x)) in
+      let bits = ref 0L in
+	self#restore_path_cond
+	  (fun () ->
+	     for b = 31 downto 0 do
+	       let bit = self#extend_pc_random
+		 (V.Cast(V.CAST_LOW, V.REG_1,
+			 (V.BinOp(V.ARSHIFT, e,
+				  (c32 (Int64.of_int b)))))) false
+	       in
+		 bits := (Int64.logor (Int64.shift_left !bits 1)
+			    (if bit then 1L else 0L));
+	     done);
+	Printf.printf "Picked concrete offset value 0x%Lx\n" !bits;
+	self#add_to_path_cond (V.BinOp(V.EQ, e, (c32 !bits)));
+	!bits
 
-  method handle_store addr_e ty rhs_e =
-    let (r, addr) = self#eval_addr_exp_region addr_e and
-	value = self#eval_int_exp_simplify rhs_e in
-      if r = None && (Int64.abs (fix_s32 addr)) < 4096L then
-	raise NullDereference;
-      (match ty with
-	 | V.REG_8 -> self#store_byte_region r addr value
-	 | V.REG_16 -> self#store_short_region r addr value
-	 | V.REG_32 -> self#store_word_region r addr value
-	 | V.REG_64 -> self#store_long_region r addr value
-	 | _ -> failwith "Unsupported type in memory move");
-      (* if not (ty = V.REG_8 && r = None) then
-	(Printf.printf "Store to %s "
+    method eval_addr_exp_region exp =
+      let v = self#eval_int_exp_simplify exp in
+	try
+	  (None, D.to_concrete_32 v)
+	with NotConcrete _ ->
+	  let e = D.to_symbolic_32 v in
+	    Printf.printf "Symbolic address %s\n" (V.exp_to_string e);
+	    match e with
+	      | V.Lval(V.Temp(var)) ->
+		  (Some(self#region_for var), 0L)
+	      | V.BinOp(V.PLUS, V.Lval(V.Temp(var)),
+			V.Constant(V.Int(V.REG_32, off)))
+		  when (Int64.abs (fix_s32 off)) < 0x4000L ->
+		  (Some(self#region_for var), off)
+	      | V.BinOp(V.PLUS, V.Lval(V.Temp(var)),
+			(V.BinOp(V.LSHIFT, _,
+				 V.Constant(V.Int(V.REG_8, (1L|2L|3L|4L))))
+			   as idx)) ->
+		  (Some(self#region_for var), (self#choose_conc_offset idx))
+	      | V.BinOp(V.PLUS, V.Lval(V.Temp(var)),
+			(V.BinOp(V.PLUS,
+				 V.BinOp(V.LSHIFT, _,
+					 V.Constant(V.Int(V.REG_8,
+							  (1L|2L|3L|4L)))),
+				 V.Constant(V.Int(V.REG_32, off)))
+			   as idx))
+		  when (Int64.abs (fix_s32 off)) < 0x4000L ->
+		  (Some(self#region_for var), (self#choose_conc_offset idx))
+	      | V.BinOp(V.PLUS, (V.Lval(V.Temp(var1)) as var1_e),
+			(V.Lval(V.Temp(var2)) as var2_e)) ->
+		  if self#random_case_split true then
+		    (Some(self#region_for var1),
+		     (self#choose_conc_offset var2_e))
+		  else
+		    (Some(self#region_for var2),
+		     (self#choose_conc_offset var1_e))
+	      | V.BinOp(V.PLUS, V.Lval(V.Temp(var1)),
+			(V.UnOp(V.NEG, _) as idx)) ->
+		  (Some(self#region_for var1),
+		   (self#choose_conc_offset idx))
+	      | V.BinOp(V.PLUS, V.Lval(V.Temp(var1)),
+			(V.BinOp(V.PLUS, V.UnOp(V.NEG, _),
+				 V.Constant(V.Int(V.REG_32, off))) as idx))
+		  when (Int64.abs (fix_s32 off)) < 0x4000L ->
+		  (Some(self#region_for var1),
+		   (self#choose_conc_offset idx))
+	      | V.BinOp(V.PLUS, (V.Lval(V.Temp(var1)) as var1_e), 
+			V.BinOp(V.PLUS, (V.Lval(V.Temp(var2)) as var2_e),
+				V.Constant(V.Int(V.REG_32, off))))
+		  when (Int64.abs (fix_s32 off)) < 0x4000L ->
+		  if self#random_case_split true then
+		    (Some(self#region_for var1),
+		     (Int64.add off (self#choose_conc_offset var2_e)))
+		  else
+		    (Some(self#region_for var2),
+		     (Int64.add off (self#choose_conc_offset var1_e)))
+	      | V.BinOp(V.PLUS, idx,
+			V.Constant(V.Int(V.REG_32, off)))
+		  when (fix_s32 off) > 0x8000000L ->
+		  (None, (self#choose_conc_offset e))
+	      (* These patterns seem to usually represent null-pointer
+		 paths *)
+	      | V.BinOp(V.LSHIFT, _,
+			V.Constant(V.Int(V.REG_8, (1L|2L|3L|4L)))) ->
+		  raise NullDereference
+	      | V.BinOp(V.PLUS, V.UnOp(V.NEG, _),
+			V.Constant(V.Int(V.REG_32, off)))
+		  when (Int64.abs (fix_s32 off)) < 0x4000L ->
+		  raise NullDereference
+		    (* | _ -> (None, (self#choose_conc_offset e)) *)
+	      | _ -> failwith "Unsupported symbolic address form"
+		  
+    method eval_addr_exp exp =
+      let (r, addr) = self#eval_addr_exp_region exp in
+	match r with
+	  | None -> addr
+	  | Some r_num -> raise SymbolicJump
+
+    method store_byte_region  r addr b = (self#region r)#store_byte  addr b
+    method store_short_region r addr s = (self#region r)#store_short addr s
+    method store_word_region  r addr w = (self#region r)#store_word  addr w
+    method store_long_region  r addr l = (self#region r)#store_long  addr l
+
+    method load_byte_region  r addr = (self#region r)#load_byte  addr
+    method load_short_region r addr = (self#region r)#load_short addr
+    method load_word_region  r addr = (self#region r)#load_word  addr
+    method load_long_region  r addr = (self#region r)#load_long  addr
+
+    method handle_load addr_e ty =
+      let (r, addr) = self#eval_addr_exp_region addr_e in
+      let v =
+	(match ty with
+	   | V.REG_8 -> self#load_byte_region r addr
+	   | V.REG_16 -> self#load_short_region r addr
+	   | V.REG_32 -> self#load_word_region r addr
+	   | V.REG_64 -> self#load_long_region r addr
+	   | _ -> failwith "Unsupported memory type") in
+	if r = None && (Int64.abs (fix_s32 addr)) < 4096L then
+	  raise NullDereference;
+	(* Printf.printf "Load from %s "
 	   (match r with | None -> "conc. mem"
-	      | Some r_num -> "region " ^ (string_of_int r_num));
-	 Printf.printf "%08Lx = %s\n" addr value#to_string_32) *)
+	   | Some r_num -> "region " ^ (string_of_int r_num));
+	   Printf.printf "%08Lx = %s\n" addr v#to_string_32; *)
+	(v, ty)
 
-  method reset () =
-    spfm#reset ();
-    regions <- [];
-    V.VarHash.clear region_vals
-      
+    method handle_store addr_e ty rhs_e =
+      let (r, addr) = self#eval_addr_exp_region addr_e and
+	  value = self#eval_int_exp_simplify rhs_e in
+	if r = None && (Int64.abs (fix_s32 addr)) < 4096L then
+	  raise NullDereference;
+	(match ty with
+	   | V.REG_8 -> self#store_byte_region r addr value
+	   | V.REG_16 -> self#store_short_region r addr value
+	   | V.REG_32 -> self#store_word_region r addr value
+	   | V.REG_64 -> self#store_long_region r addr value
+	 | _ -> failwith "Unsupported type in memory move");
+	(* if not (ty = V.REG_8 && r = None) then
+	   (Printf.printf "Store to %s "
+	   (match r with | None -> "conc. mem"
+	   | Some r_num -> "region " ^ (string_of_int r_num));
+	   Printf.printf "%08Lx = %s\n" addr value#to_string_32) *)
+
+    method reset () =
+      spfm#reset ();
+      regions <- [];
+      V.VarHash.clear region_vals 
+  end
 end
 
 exception Simplify_failure of string
@@ -5016,7 +5149,10 @@ let fuzz_sym_str start_eip end_eip buf_addr buf_len fm asmir_gamma
       );
     Gc.print_stat stdout
 
-let fuzz_pcre (fm : symbolic_domain sym_region_frag_machine) =
+module SRFM = SymRegionFragMachineFunctor(SymbolicDomain)
+type machine = SRFM.sym_region_frag_machine
+
+let fuzz_pcre (fm : machine) =
   fuzz_sym_str 0x08048656L 0x080486d2L 0x08063c20L 20 fm
 
 let print_tree fm =
@@ -5058,13 +5194,13 @@ let fuzz_static start_eip end_eip fm asmir_gamma =
   print_tree fm;
   Gc.print_stat stdout
 
-let fuzz_vxalloc (fm : symbolic_domain sym_region_frag_machine) =
+let fuzz_vxalloc (fm : machine) =
   fuzz_static 0x08048434L 0x080485f7L fm
 
-let fuzz_hv_fetch (fm : symbolic_domain sym_region_frag_machine) =
+let fuzz_hv_fetch (fm : machine) =
   fuzz_static 0x08293573L 0x0829361dL fm
 
-let fuzz_list_find (fm : symbolic_domain sym_region_frag_machine) =
+let fuzz_list_find (fm : machine) =
   fuzz_static 0x08048394L 0x080483d1L fm
 
 let usage = "trans_eval [options]* file.ir\n"
@@ -5090,8 +5226,7 @@ let main argc argv =
     let (dl, sl) = prog in
     let asmir_gamma = Asmir.gamma_create
       (List.find (fun (i, s, t) -> s = "mem") dl) dl in
-    let fm = new sym_region_frag_machine
-      (new symbolic_domain (V.Unknown("factory"))) in
+    let fm = new SRFM.sym_region_frag_machine in
     (* let fm = new fake_frag_machine prog in *)
       fm#on_missing_symbol;
       fm#init_prog prog;
