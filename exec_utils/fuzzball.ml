@@ -520,7 +520,7 @@ struct
   class formula_manager = object(self)
     val input_vars = Hashtbl.create 30
 
-    method fresh_symbolic str ty =
+    method private fresh_symbolic str ty =
       let v = try Hashtbl.find input_vars str with
 	  Not_found ->
 	    Hashtbl.replace input_vars str (V.newvar str ty);
@@ -565,12 +565,20 @@ struct
     method simplify32 e = self#simplify e V.REG_32
     method simplify64 e = self#simplify e V.REG_64
 
-    method if_expr_temp var fn =
+    method if_expr_temp_unit var fn_t =
       try
 	let e = V.VarHash.find temp_var_to_subexpr var in
-	  (fn e)
+	  (fn_t e)
       with Not_found -> ()
   end
+
+  (* This has to be outside the class because I want it to have
+     polymorphic type. *)
+  let if_expr_temp form_man var fn_t else_val =
+    let box = ref else_val in
+      form_man#if_expr_temp_unit var
+	(fun e -> box := fn_t e);
+      !box
 end
 
 module SymbolicDomain : DOMAIN = struct
@@ -622,7 +630,7 @@ module SymbolicDomain : DOMAIN = struct
 	   V.BinOp(V.RSHIFT, e,
 		   V.Constant(V.Int(V.REG_8,
 				    (Int64.mul 8L (Int64.of_int which))))))
-	
+      
   let extract_8_from_64 e which =
     match which with
       | 0 -> V.Cast(V.CAST_LOW, V.REG_8, e)
@@ -663,9 +671,9 @@ module SymbolicDomain : DOMAIN = struct
     V.BinOp(V.BITOR,
 	    V.Cast(V.CAST_UNSIGNED, V.REG_16, e),
 	    V.BinOp(V.LSHIFT,
-			V.Cast(V.CAST_UNSIGNED, V.REG_16, e2),
-			(from_concrete_8 8)))
-	    
+		    V.Cast(V.CAST_UNSIGNED, V.REG_16, e2),
+		    (from_concrete_8 8)))
+      
   let assemble32 e e2 =
     V.BinOp(V.BITOR,
 	    V.Cast(V.CAST_UNSIGNED, V.REG_32, e),
@@ -2843,6 +2851,32 @@ class decision_tree = object(self)
 	| (None, None) ->
 	    try_both ()
 
+  method try_extend_memoryless (trans_func : bool -> V.exp)
+    try_func (non_try_func : bool -> unit) =
+    let known b = 
+      non_try_func b;
+      self#extend b;
+      (b, (trans_func b))
+    in
+    let try_branch b c field fn = 
+      match field with
+	| (Some(Some f_kid)) -> known b
+	| Some None -> raise BoringPath
+	| None ->
+	    if try_func b c then
+	      (self#extend b; (b, c))
+	    else
+	      (self#record_unsat b; (fn b))
+    in
+    if self#random_bit then
+      try_branch false (trans_func false) cur.f_child
+	(fun _ -> try_branch true (trans_func true) cur.t_child
+	   (fun _ -> failwith "Both branches unsat in try_extend"))
+    else
+      try_branch true (trans_func true) cur.t_child
+	(fun _ -> try_branch false (trans_func false) cur.f_child
+	   (fun _ -> failwith "Both branches unsat in try_extend"))
+
   method private mark_all_seen_node node =
     let rec loop n = 
       n.all_seen <- true;
@@ -2902,6 +2936,7 @@ end
 module SymPathFragMachineFunctor =
   functor (D : DOMAIN) ->
 struct
+  module FormMan = FormulaManagerFunctor(D)
   module FM = FragmentMachineFunctor(D)
 
   class sym_path_frag_machine = object(self)
@@ -2950,11 +2985,11 @@ struct
 	    if (try V.VarHash.find h var; true with Not_found -> false) then
 	      ()
 	    else
-	      form_man#if_expr_temp var
+	      FormMan.if_expr_temp form_man var
 		(fun e ->
 		   V.VarHash.replace h var ();
 		   walk e;
-		   temps := (f var e) :: !temps)
+		   temps := (f var e) :: !temps) ()
 	| V.Lval(V.Mem(_, e1, _)) -> walk e1
 	| V.Name(_) -> ()
 	| V.Cast(_, _, e1) -> walk e1
@@ -3026,6 +3061,9 @@ struct
 	  query_engine#unprepare;
 	  is_sat
 
+    method private try_extend trans_func try_func non_try_func =
+      dt#try_extend trans_func try_func non_try_func
+
     method query_with_pc_random cond verbose =
       let trans_func b =
 	if b then cond else V.UnOp(V.NOT, cond)
@@ -3037,7 +3075,7 @@ struct
       let non_try_func b =
 	if verbose then Printf.printf "Known %B\n" b
       in
-	dt#try_extend trans_func try_func non_try_func
+	self#try_extend trans_func try_func non_try_func
 
     method extend_pc_random cond verbose =
       let (result, cond') = self#query_with_pc_random cond verbose in
@@ -3053,7 +3091,7 @@ struct
       let non_try_func b =
 	if verbose then Printf.printf "Known %B\n" b
       in
-      let (result, _) = dt#try_extend trans_func try_func non_try_func in
+      let (result, _) = self#try_extend trans_func try_func non_try_func in
 	result
 
     method eval_bool_exp exp =
@@ -3115,8 +3153,83 @@ exception NullDereference
 module SymRegionFragMachineFunctor =
   functor (D : DOMAIN) ->
 struct
+  module FormMan = FormulaManagerFunctor(D)
   module GM = GranularMemoryFunctor(D)
   module SPFM = SymPathFragMachineFunctor(D)
+
+  let split_terms e form_man =
+    let rec loop e =
+      match e with
+	| V.BinOp(V.PLUS, e1, e2) -> (loop e1) @ (loop e2)
+	| V.Lval(V.Temp(var)) ->
+	    FormMan.if_expr_temp form_man var
+	      (fun e' -> loop e') [e]
+      | e -> [e]
+    in
+      loop e
+
+  type term_kind = | ConstantBase of int64
+		   | ConstantOffset of int64
+		   | ExprOffset of V.exp
+		   | Symbol of V.var
+
+  let classify_term e =
+    match e with
+      | V.Constant(V.Int(V.REG_32, off))
+	  when (Int64.abs (fix_s32 off)) < 0x4000L
+	    -> ConstantOffset(off)
+      | V.Constant(V.Int(V.REG_32, off)) when (fix_s32 off) > 0x8000000L
+	  -> ConstantBase(off)
+      | V.UnOp(V.NEG, _) -> ExprOffset(e)
+      | V.BinOp(V.LSHIFT, _, V.Constant(V.Int(V.REG_8, (1L|2L|3L|4L))))
+	  -> ExprOffset(e)
+      | V.BinOp(V.BITAND, _, V.Constant(V.Int(_, mask)))
+	  when mask < 0xffffL
+	    -> ExprOffset(e)
+      | V.Lval(V.Temp(var)) -> Symbol(var)
+      | _ -> failwith "Strange term in address"
+
+  let classify_terms e form_man =
+    let l = List.map classify_term (split_terms e form_man) in
+    let (cbases, coffs, eoffs, syms) = (ref [], ref [], ref [], ref []) in
+      List.iter
+	(function
+	   | ConstantBase(o) ->  cbases := o :: !cbases
+	   | ConstantOffset(o) -> coffs := o :: !coffs
+	   | ExprOffset(e) ->     eoffs := e :: !eoffs
+	   | Symbol(v) ->          syms := v :: !syms)
+	l;
+      (!cbases, !coffs, !eoffs, !syms)
+
+  let select_one l rand_func =
+    let split_list l =
+      let a = Array.of_list l in
+      let len = Array.length a in 
+      let k = len / 2 in
+	((Array.to_list (Array.sub a 0 k)),
+	 (Array.to_list (Array.sub a k (len - k))))
+    in
+    let rec loop l =
+      match l with
+	| [] -> failwith "Empty list in select_one"
+	| [a] -> (a, [])
+	| [a; b] -> if rand_func () then (a, [b]) else (b, [a])
+	| l -> let (h1, h2) = split_list l in
+	    if rand_func () then
+	      let (e, h1r) = loop h1 in
+		(e, h1r @ h2)
+	    else
+	      let (e, h2r) = loop h2 in
+		(e, h1 @ h2r)
+    in
+      loop l
+
+  let sum_list l = 
+    match l with 
+      | [] -> V.Constant(V.Int(V.REG_32, 0L))
+      | [a] -> a
+      | e :: r -> List.fold_left (fun a b -> V.BinOp(V.PLUS, a, b))
+	  e r
 
   class sym_region_frag_machine = object(self)
     inherit SPFM.sym_path_frag_machine as spfm
@@ -3171,70 +3284,28 @@ struct
 	with NotConcrete _ ->
 	  let e = D.to_symbolic_32 v in
 	    Printf.printf "Symbolic address %s\n" (V.exp_to_string e);
-	    match e with
-	      | V.Lval(V.Temp(var)) ->
-		  (Some(self#region_for var), 0L)
-	      | V.BinOp(V.PLUS, V.Lval(V.Temp(var)),
-			V.Constant(V.Int(V.REG_32, off)))
-		  when (Int64.abs (fix_s32 off)) < 0x4000L ->
-		  (Some(self#region_for var), off)
-	      | V.BinOp(V.PLUS, V.Lval(V.Temp(var)),
-			(V.BinOp(V.LSHIFT, _,
-				 V.Constant(V.Int(V.REG_8, (1L|2L|3L|4L))))
-			   as idx)) ->
-		  (Some(self#region_for var), (self#choose_conc_offset idx))
-	      | V.BinOp(V.PLUS, V.Lval(V.Temp(var)),
-			(V.BinOp(V.PLUS,
-				 V.BinOp(V.LSHIFT, _,
-					 V.Constant(V.Int(V.REG_8,
-							  (1L|2L|3L|4L)))),
-				 V.Constant(V.Int(V.REG_32, off)))
-			   as idx))
-		  when (Int64.abs (fix_s32 off)) < 0x4000L ->
-		  (Some(self#region_for var), (self#choose_conc_offset idx))
-	      | V.BinOp(V.PLUS, (V.Lval(V.Temp(var1)) as var1_e),
-			(V.Lval(V.Temp(var2)) as var2_e)) ->
-		  if self#random_case_split true then
-		    (Some(self#region_for var1),
-		     (self#choose_conc_offset var2_e))
-		  else
-		    (Some(self#region_for var2),
-		     (self#choose_conc_offset var1_e))
-	      | V.BinOp(V.PLUS, V.Lval(V.Temp(var1)),
-			(V.UnOp(V.NEG, _) as idx)) ->
-		  (Some(self#region_for var1),
-		   (self#choose_conc_offset idx))
-	      | V.BinOp(V.PLUS, V.Lval(V.Temp(var1)),
-			(V.BinOp(V.PLUS, V.UnOp(V.NEG, _),
-				 V.Constant(V.Int(V.REG_32, off))) as idx))
-		  when (Int64.abs (fix_s32 off)) < 0x4000L ->
-		  (Some(self#region_for var1),
-		   (self#choose_conc_offset idx))
-	      | V.BinOp(V.PLUS, (V.Lval(V.Temp(var1)) as var1_e), 
-			V.BinOp(V.PLUS, (V.Lval(V.Temp(var2)) as var2_e),
-				V.Constant(V.Int(V.REG_32, off))))
-		  when (Int64.abs (fix_s32 off)) < 0x4000L ->
-		  if self#random_case_split true then
-		    (Some(self#region_for var1),
-		     (Int64.add off (self#choose_conc_offset var2_e)))
-		  else
-		    (Some(self#region_for var2),
-		     (Int64.add off (self#choose_conc_offset var1_e)))
-	      | V.BinOp(V.PLUS, idx,
-			V.Constant(V.Int(V.REG_32, off)))
-		  when (fix_s32 off) > 0x8000000L ->
-		  (None, (self#choose_conc_offset e))
-	      (* These patterns seem to usually represent null-pointer
-		 paths *)
-	      | V.BinOp(V.LSHIFT, _,
-			V.Constant(V.Int(V.REG_8, (1L|2L|3L|4L)))) ->
-		  raise NullDereference
-	      | V.BinOp(V.PLUS, V.UnOp(V.NEG, _),
-			V.Constant(V.Int(V.REG_32, off)))
-		  when (Int64.abs (fix_s32 off)) < 0x4000L ->
-		  raise NullDereference
-		    (* | _ -> (None, (self#choose_conc_offset e)) *)
-	      | _ -> failwith "Unsupported symbolic address form"
+	    let (cbases, coffs, eoffs, syms) = classify_terms e form_man in
+	    let cbase = List.fold_left Int64.add 0L cbases in
+	    let (base, off_syms) = match (cbase, syms) with
+	      | (0L, []) -> raise NullDereference
+	      | (0L, [v]) -> (Some(self#region_for v), [])
+	      | (0L, vl) ->
+		  let (bvar, rest_vars) =
+		    select_one vl (fun () -> self#random_case_split true)
+		  in
+		    (Some(self#region_for bvar), rest_vars)
+	      | (off, vl) ->
+		  (None, vl)
+	    in
+	    let coff = List.fold_left Int64.add 0L coffs in
+	    let off_syms_es = List.map (fun v -> V.Lval(V.Temp(v))) off_syms in
+	    let offset = Int64.add (Int64.add cbase coff)
+	      (match (eoffs, off_syms_es) with
+		 | ([], []) -> 0L
+		 | (el, vel) -> 
+		     (self#choose_conc_offset (sum_list (el @ vel))))
+	    in
+	      (base, offset)
 		  
     method eval_addr_exp exp =
       let (r, addr) = self#eval_addr_exp_region exp in
@@ -3279,7 +3350,7 @@ struct
 	   | V.REG_16 -> self#store_short_region r addr value
 	   | V.REG_32 -> self#store_word_region r addr value
 	   | V.REG_64 -> self#store_long_region r addr value
-	 | _ -> failwith "Unsupported type in memory move");
+	   | _ -> failwith "Unsupported type in memory move");
 	(* if not (ty = V.REG_8 && r = None) then
 	   (Printf.printf "Store to %s "
 	   (match r with | None -> "conc. mem"
@@ -4900,7 +4971,7 @@ let call_replacements fm eip =
 (*     | 0x08063410L (* write *) -> *)
 (* 	Some (fun () -> raise (SimulatedExit(-1L))) *)
 
-      (* hv_fetch v2: *)
+    (* hv_fetch v2: *)
     | 0x08302d70L (* __libc_malloc *) -> 
  	Some (fun () -> fm#set_word_reg_symbolic R_EAX "malloc")
     | 0x082ee3e0L (* __assert_fail *) ->
@@ -4911,6 +4982,11 @@ let call_replacements fm eip =
  	Some (fun () -> fm#set_word_reg_symbolic R_EAX "realloc")	
     | 0x08300610L (* __cfree *) ->
  	Some (fun () -> fm#set_word_var R_EAX 1L)	
+
+    (* bst_find *)
+(*     | 0x08048304L (* __assert_fail *) -> *)
+(*  	Some (fun () -> raise (SimulatedExit(-1L))) *)
+
     | _ -> None
 
 let trans_cache = Hashtbl.create 100000 
@@ -5202,6 +5278,9 @@ let fuzz_hv_fetch (fm : machine) =
 
 let fuzz_list_find (fm : machine) =
   fuzz_static 0x08048394L 0x080483d1L fm
+
+let fuzz_bst_find (fm : machine) =
+  fuzz_static 0x080483d4L 0x080485a8L fm
 
 let usage = "trans_eval [options]* file.ir\n"
 let infile = ref ""
