@@ -3,7 +3,8 @@
 #my $root = "/home/testing-ia32";
 my $root = "/";
 
-my $load_base = 0x08048000;
+my $load_base = 0x08048000; # Linux user space
+#my $load_base = 0xc0100000;  # Linux kernel
 
 my $is_static = 1;
 
