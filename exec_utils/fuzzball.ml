@@ -6,16 +6,6 @@
 
 module V = Vine;;
 
-let fix_u1  x = Int64.logand x 0x1L
-let fix_u8  x = Int64.logand x 0xffL
-let fix_u16 x = Int64.logand x 0xffffL
-let fix_u32 x = Int64.logand x 0xffffffffL
-
-let fix_s1  x = Int64.shift_right (Int64.shift_left x 63) 63
-let fix_s8  x = Int64.shift_right (Int64.shift_left x 56) 56
-let fix_s16 x = Int64.shift_right (Int64.shift_left x 48) 48
-let fix_s32 x = Int64.shift_right (Int64.shift_left x 32) 32
-
 module type DOMAIN = sig
   type t
 
@@ -52,6 +42,10 @@ module type DOMAIN = sig
   val assemble32 : t -> t -> t
   val assemble64 : t -> t -> t
     
+  val reassemble16 : t -> t -> t
+  val reassemble32 : t -> t -> t
+  val reassemble64 : t -> t -> t
+
   val to_string_1  : t -> string
   val to_string_8  : t -> string
   val to_string_16 : t -> string
@@ -231,6 +225,16 @@ module type DOMAIN = sig
   val cast64h32 : t -> t
 end
 
+let fix_u1  x = Int64.logand x 0x1L
+let fix_u8  x = Int64.logand x 0xffL
+let fix_u16 x = Int64.logand x 0xffffL
+let fix_u32 x = Int64.logand x 0xffffffffL
+
+let fix_s1  x = Int64.shift_right (Int64.shift_left x 63) 63
+let fix_s8  x = Int64.shift_right (Int64.shift_left x 56) 56
+let fix_s16 x = Int64.shift_right (Int64.shift_left x 48) 48
+let fix_s32 x = Int64.shift_right (Int64.shift_left x 32) 32
+
 module ConcreteDomain : DOMAIN = struct
   type t = int64
 
@@ -271,6 +275,10 @@ module ConcreteDomain : DOMAIN = struct
 
   let assemble64 v v2 =
     Int64.logor (Int64.logand 0xffffffffL v) (Int64.shift_left v2 32)
+
+  let reassemble16 = assemble16
+  let reassemble32 = assemble32
+  let reassemble64 = assemble64
 
   let to_string_1  v = Printf.sprintf "%d"       (to_concrete_1  v)
   let to_string_8  v = Printf.sprintf "0x%02x"   (to_concrete_8  v)
@@ -520,13 +528,14 @@ struct
   class formula_manager = object(self)
     val input_vars = Hashtbl.create 30
 
-    method private fresh_symbolic_vexp str ty =
-      let v = try Hashtbl.find input_vars str with
+    method private fresh_symbolic_var str ty =
+      try Hashtbl.find input_vars str with
 	  Not_found ->
 	    Hashtbl.replace input_vars str (V.newvar str ty);
 	    Hashtbl.find input_vars str
-      in
-	V.Lval(V.Temp(v))
+
+    method private fresh_symbolic_vexp str ty =
+      V.Lval(V.Temp(self#fresh_symbolic_var str ty))
 
     method private fresh_symbolic str ty =
 	D.from_symbolic (self#fresh_symbolic_vexp str ty)
@@ -536,6 +545,8 @@ struct
     method fresh_symbolic_16 s = self#fresh_symbolic s V.REG_16
     method fresh_symbolic_32 s = self#fresh_symbolic s V.REG_32
     method fresh_symbolic_64 s = self#fresh_symbolic s V.REG_64
+
+    method get_input_vars = Hashtbl.fold (fun s v l -> v :: l) input_vars []
 
     val region_vars = Hashtbl.create 30
 
@@ -555,21 +566,65 @@ struct
     method fresh_symbolic_mem_32 = self#fresh_symbolic_mem V.REG_32
     method fresh_symbolic_mem_64 = self#fresh_symbolic_mem V.REG_64
 
+    method private mem_var region_str ty addr =
+      let ty_str = (match ty with
+		      | V.REG_8 -> "byte"
+		      | V.REG_16 -> "short"
+		      | V.REG_32 -> "word"
+		      | V.REG_64 -> "long"
+		      | _ -> failwith "Bad size in mem_var")
+      in
+      let name = Printf.sprintf "%s_%s_0x%08Lx" region_str ty_str addr
+      in
+	self#fresh_symbolic_var name ty
+
+    method private mem_axioms_short region_str addr svar =
+      let bvar0 = self#mem_var region_str V.REG_8 addr and
+	  bvar1 = self#mem_var region_str V.REG_8 (Int64.add addr 1L) in
+	[svar, D.to_symbolic_16
+	   (D.assemble16 (D.from_symbolic (V.Lval(V.Temp(bvar0))))
+	      (D.from_symbolic (V.Lval(V.Temp(bvar1)))))]
+
+    method private mem_axioms_word region_str addr wvar =
+      let svar0 = self#mem_var region_str V.REG_16 addr and
+	  svar1 = self#mem_var region_str V.REG_16 (Int64.add addr 2L) in
+	[wvar, D.to_symbolic_32
+	   (D.assemble32 (D.from_symbolic (V.Lval(V.Temp(svar0))))
+	      (D.from_symbolic (V.Lval(V.Temp(svar1)))))]
+	@ (self#mem_axioms_short region_str addr svar0)
+	@ (self#mem_axioms_short region_str (Int64.add addr 2L) svar1)
+
+    method private mem_axioms_long region_str addr lvar =
+      let wvar0 = self#mem_var region_str V.REG_32 addr and
+	  wvar1 = self#mem_var region_str V.REG_32 (Int64.add addr 4L) in
+	[lvar, D.to_symbolic_64
+	   (D.assemble32 (D.from_symbolic (V.Lval(V.Temp(wvar0))))
+	      (D.from_symbolic (V.Lval(V.Temp(wvar1)))))]
+	@ (self#mem_axioms_word region_str addr wvar0)
+	@ (self#mem_axioms_word region_str (Int64.add addr 4L) wvar1)
+
+    val mem_axioms = Hashtbl.create 30
+
+    method private add_mem_axioms region_str ty addr =
+      try
+	ignore(Hashtbl.find mem_axioms (region_str, ty, addr));
+	()
+      with Not_found ->
+	let var = self#mem_var region_str ty addr in
+	let al = (match ty with
+		    | V.REG_8  -> []
+		    | V.REG_16 -> self#mem_axioms_short region_str addr var
+		    | V.REG_32 -> self#mem_axioms_word region_str addr var
+		    | V.REG_64 -> self#mem_axioms_long region_str addr var
+		    | _ -> failwith "Unexpected type in add_mem_axioms") in
+	  Hashtbl.replace mem_axioms (region_str, ty, addr) al
+
     method rewrite_mem_expr e =
       match e with
 	| V.Lval(V.Mem((_,region_str,ty1),
 		       V.Constant(V.Int(V.REG_32, addr)), ty2))
-	  ->
-	    let ty_str = (match ty2 with
-			    | V.REG_8 -> "byte"
-			    | V.REG_16 -> "short"
-			    | V.REG_32 -> "word"
-			    | V.REG_64 -> "long"
-			    | _ -> failwith "Bad size in rewrite_mem_expr")
-	    in
-	    let name = Printf.sprintf "%s_%s_0x%08Lx" region_str ty_str addr
-	    in
-	      self#fresh_symbolic_vexp name ty2
+	  -> (self#add_mem_axioms region_str ty2 addr;
+	      V.Lval(V.Temp(self#mem_var region_str ty2 addr)))
 	| _ -> failwith "Bad expression in rewrite_mem_expr"
 
     method rewrite_for_stp e =
@@ -587,7 +642,15 @@ struct
       in
 	loop e
 
-    method get_input_vars = Hashtbl.fold (fun s v l -> v :: l) input_vars []
+    method get_mem_axioms =
+      let of_type ty ((n,s,ty'),e) = (ty = ty') in
+      let l = List.concat (Hashtbl.fold (fun s v l -> v :: l) mem_axioms []) in
+      let shorts = List.filter (of_type V.REG_16) l and
+	  words  = List.filter (of_type V.REG_32) l and
+	  longs  = List.filter (of_type V.REG_64) l in
+	shorts @ words @ longs
+
+    method reset_mem_axioms = Hashtbl.clear mem_axioms
 
     (* subexpression cache *)
     val subexpr_to_temp_var = Hashtbl.create 1001
@@ -608,7 +671,7 @@ struct
 		 let var = V.newvar s ty in
  		   Hashtbl.replace subexpr_to_temp_var e' var;
  		   V.VarHash.replace temp_var_to_subexpr var e';
-		   Printf.printf "%s = %s\n" s (V.exp_to_string e');
+		   (* Printf.printf "%s = %s\n" s (V.exp_to_string e'); *)
 		   var) in
 	    D.from_symbolic (V.Lval(V.Temp(var)))
 	      
@@ -721,46 +784,57 @@ module SymbolicDomain : DOMAIN = struct
       | _ -> failwith "bad which in extract_32_from_64"
 
   let assemble16 e e2 =
+    V.BinOp(V.BITOR,
+	    V.Cast(V.CAST_UNSIGNED, V.REG_16, e),
+	    V.BinOp(V.LSHIFT,
+		    V.Cast(V.CAST_UNSIGNED, V.REG_16, e2),
+		    (from_concrete_8 8)))
+  let assemble32 e e2 =
+    V.BinOp(V.BITOR,
+	    V.Cast(V.CAST_UNSIGNED, V.REG_32, e),
+	    V.BinOp(V.LSHIFT,
+		    V.Cast(V.CAST_UNSIGNED, V.REG_32, e2),
+		    (from_concrete_8 16)))
+
+  let assemble64 e e2 =
+    V.BinOp(V.BITOR,
+	    V.Cast(V.CAST_UNSIGNED, V.REG_64, e),
+	    V.BinOp(V.LSHIFT,
+		    V.Cast(V.CAST_UNSIGNED, V.REG_64, e2),
+		    (from_concrete_8 32)))
+
+  let reassemble16 e e2 =
     match (e, e2) with
+      | (V.Constant(V.Int(V.REG_8, v1)), V.Constant(V.Int(V.REG_8, v2)))
+	-> constant_fold_rec (assemble16 e e2)
       | (V.Lval(V.Mem(v1, V.Constant(V.Int(V.REG_32, addr1)), V.REG_8)),
 	 V.Lval(V.Mem(v2, V.Constant(V.Int(V.REG_32, addr2)), V.REG_8)))
 	  when v1 = v2 && (Int64.sub addr2 addr1) = 1L
 	    ->
 	  V.Lval(V.Mem(v1, V.Constant(V.Int(V.REG_32, addr1)), V.REG_16))
-      | _ ->
-	  V.BinOp(V.BITOR,
-		  V.Cast(V.CAST_UNSIGNED, V.REG_16, e),
-		  V.BinOp(V.LSHIFT,
-			  V.Cast(V.CAST_UNSIGNED, V.REG_16, e2),
-			  (from_concrete_8 8)))
-      
-  let assemble32 e e2 =
+      | _ -> assemble16 e e2
+
+  let reassemble32 e e2 =
     match (e, e2) with
+      | (V.Constant(V.Int(V.REG_16, v1)), V.Constant(V.Int(V.REG_16, v2)))
+	-> constant_fold_rec (assemble32 e e2)
       | (V.Lval(V.Mem(v1, V.Constant(V.Int(V.REG_32, addr1)), V.REG_16)),
 	 V.Lval(V.Mem(v2, V.Constant(V.Int(V.REG_32, addr2)), V.REG_16)))
 	  when v1 = v2 && (Int64.sub addr2 addr1) = 2L
 	    ->
 	  V.Lval(V.Mem(v1, V.Constant(V.Int(V.REG_32, addr1)), V.REG_32))
-      | _ ->
-	  V.BinOp(V.BITOR,
-		  V.Cast(V.CAST_UNSIGNED, V.REG_32, e),
-		  V.BinOp(V.LSHIFT,
-			  V.Cast(V.CAST_UNSIGNED, V.REG_32, e2),
-			  (from_concrete_8 16)))
+      | _ -> assemble32 e e2
 
-  let assemble64 e e2 =
+  let reassemble64 e e2 =
     match (e, e2) with
+      | (V.Constant(V.Int(V.REG_32, v1)), V.Constant(V.Int(V.REG_32, v2)))
+	-> constant_fold_rec (assemble64 e e2)
       | (V.Lval(V.Mem(v1, V.Constant(V.Int(V.REG_32, addr1)), V.REG_32)),
 	 V.Lval(V.Mem(v2, V.Constant(V.Int(V.REG_32, addr2)), V.REG_32)))
 	  when v1 = v2 && (Int64.sub addr2 addr1) = 4L
 	    ->
 	  V.Lval(V.Mem(v1, V.Constant(V.Int(V.REG_32, addr1)), V.REG_64))
-      | _ ->
-	  V.BinOp(V.BITOR,
-		  V.Cast(V.CAST_UNSIGNED, V.REG_64, e),
-		  V.BinOp(V.LSHIFT,
-			  V.Cast(V.CAST_UNSIGNED, V.REG_64, e2),
-			  (from_concrete_8 32)))
+      | _ -> assemble64 e e2
 
   let to_string e = V.exp_to_string e
   let to_string_1  = to_string
@@ -1423,7 +1497,7 @@ struct
       | Gran8s(g1, g2) ->
 	  let (b1, g1') = gran8_get_byte g1 missing addr and
 	      (b2, g2') = gran8_get_byte g2 missing (Int64.add addr 1L) in
-	    (D.assemble16 b1 b2, Gran8s(g1', g2'))
+	    (D.reassemble16 b1 b2, Gran8s(g1', g2'))
       | Absent16 ->
 	  let l = missing 16 addr in
 	    (l, Short l)
@@ -1637,21 +1711,21 @@ struct
 	self#with_chunk addr
 	  (fun chunk caddr which -> gran64_get_short chunk missing caddr which)
       else
-	self#maybe_load_divided addr 8 1L self#maybe_load_byte D.assemble16
+	self#maybe_load_divided addr 8 1L self#maybe_load_byte D.reassemble16
 
     method maybe_load_word addr =
       if (Int64.logand addr 3L) = 0L then
 	self#with_chunk addr
 	  (fun chunk caddr which -> gran64_get_word chunk missing caddr which)
       else
-	self#maybe_load_divided addr 16 2L self#maybe_load_short D.assemble32
+	self#maybe_load_divided addr 16 2L self#maybe_load_short D.reassemble32
 
     method maybe_load_long addr =
       if (Int64.logand addr 7L) = 0L then
 	self#with_chunk addr
 	  (fun chunk caddr _ -> gran64_get_long chunk missing caddr)
       else
-	self#maybe_load_divided addr 32 4L self#maybe_load_word D.assemble64
+	self#maybe_load_divided addr 32 4L self#maybe_load_word D.reassemble64
 
     method load_byte addr =
       match self#maybe_load_byte addr with
@@ -2001,7 +2075,7 @@ struct
 	    | _ ->
 		let b0 = self#unmaybe mb0 addr and
 		    b1 = self#unmaybe mb1 (Int64.add addr 1L) in
-		  Some(D.assemble16 b0 b1)
+		  Some(D.reassemble16 b0 b1)
 
       method maybe_load_word  addr =
 	let mb0 = mem#maybe_load_byte addr and
@@ -2015,7 +2089,8 @@ struct
 		    b1 = self#unmaybe mb1 (Int64.add addr 1L) and
 		    b2 = self#unmaybe mb2 (Int64.add addr 2L) and
 		    b3 = self#unmaybe mb3 (Int64.add addr 3L) in
-		  Some(D.assemble32 (D.assemble16 b0 b1) (D.assemble16 b2 b3))
+		  Some(D.reassemble32 (D.reassemble16 b0 b1)
+			 (D.reassemble16 b2 b3))
 
       method maybe_load_long  addr =
 	let mb0 = mem#maybe_load_byte addr and
@@ -2038,11 +2113,11 @@ struct
 		    b6 = self#unmaybe mb6 (Int64.add addr 6L) and
 		    b7 = self#unmaybe mb7 (Int64.add addr 7L) in
 		  Some
-		    (D.assemble64
-		       (D.assemble32 (D.assemble16 b0 b1)
-			  (D.assemble16 b2 b3))
-		       (D.assemble32 (D.assemble16 b4 b5)
-			  (D.assemble16 b6 b7)))
+		    (D.reassemble64
+		       (D.reassemble32 (D.reassemble16 b0 b1)
+			  (D.reassemble16 b2 b3))
+		       (D.reassemble32 (D.reassemble16 b4 b5)
+			  (D.reassemble16 b6 b7)))
 
       method load_byte  addr  = 
 	match self#maybe_load_byte addr with
@@ -2257,7 +2332,7 @@ struct
 	reg R_EBP (form_man#fresh_symbolic_32 "initial_ebp");
 	(* reg R_ESP (form_man#fresh_symbolic_32 "initial_esp"); *)
 	(* reg R_ESP (D.from_concrete_32 0xbfff0000L); *)
-	reg R_ESP (D.from_concrete_32 0xdeff0000L);
+	reg R_ESP (D.from_concrete_32 0xdeffccccL);
 	reg R_ESI (form_man#fresh_symbolic_32 "initial_esi");
 	reg R_EDI (form_man#fresh_symbolic_32 "initial_edi");
 	reg R_EAX (form_man#fresh_symbolic_32 "initial_eax");
@@ -3137,8 +3212,12 @@ struct
 	List.map (fun (var, e) -> (var, form_man#rewrite_for_stp e))
 	  (self#walk_temps (fun var e -> (var, e)) pc) in
       let i_vars = form_man#get_input_vars in
+      let m_axioms = form_man#get_mem_axioms in
       let t_vars = List.map (fun (v, _) -> v) temps in
-	query_engine#prepare i_vars t_vars;
+      let m_vars = List.map (fun (v, _) -> v) m_axioms in
+	query_engine#prepare (Vine_util.list_difference i_vars m_vars)
+	  (m_vars @ t_vars);
+	List.iter (fun (v, exp) -> (query_engine#assert_eq v exp)) m_axioms;
 	List.iter (fun (v, exp) -> (query_engine#assert_eq v exp)) temps;
 	(* Printf.printf "PC is %s\n" (V.exp_to_string pc); *)
 	(* Printf.printf "Condition is %s\n" (V.exp_to_string cond); *)
@@ -3241,6 +3320,7 @@ struct
       
     method reset () =
       fm#reset ();
+      form_man#reset_mem_axioms;
       path_cond <- [];
       dt#reset
   end
@@ -3442,12 +3522,12 @@ struct
 	   | V.REG_32 -> self#load_word_region r addr
 	   | V.REG_64 -> self#load_long_region r addr
 	   | _ -> failwith "Unsupported memory type") in
-	if r = None && (Int64.abs (fix_s32 addr)) < 4096L then
-	  raise NullDereference;
 	(* Printf.printf "Load from %s "
 	   (match r with | None -> "conc. mem"
 	   | Some r_num -> "region " ^ (string_of_int r_num));
-	   Printf.printf "%08Lx = %s\n" addr v#to_string_32; *)
+	   Printf.printf "%08Lx = %s\n" addr (D.to_string_32 v); *)
+	if r = None && (Int64.abs (fix_s32 addr)) < 4096L then
+	  raise NullDereference;
 	(v, ty)
 
     method handle_store addr_e ty rhs_e =
@@ -3462,10 +3542,10 @@ struct
 	   | V.REG_64 -> self#store_long_region r addr value
 	   | _ -> failwith "Unsupported type in memory move");
 	(* if not (ty = V.REG_8 && r = None) then
-	   (Printf.printf "Store to %s "
-	   (match r with | None -> "conc. mem"
-	   | Some r_num -> "region " ^ (string_of_int r_num));
-	   Printf.printf "%08Lx = %s\n" addr value#to_string_32) *)
+	  (Printf.printf "Store to %s "
+	     (match r with | None -> "conc. mem"
+		| Some r_num -> "region " ^ (string_of_int r_num));
+	   Printf.printf "%08Lx = %s\n" addr (D.to_string_32 value)) *)
 
     method reset () =
       spfm#reset ();
@@ -5363,6 +5443,7 @@ let print_tree fm =
 
 let fuzz_static start_eip end_eips fm asmir_gamma =
   fm#make_x86_regs_symbolic;
+  (* fm#set_word_var R_EAX 16L; *)
   fm#make_snap (); Printf.printf "Took snapshot\n";
   loop_w_stats None
     (fun iter ->
