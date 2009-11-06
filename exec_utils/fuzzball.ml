@@ -520,19 +520,72 @@ struct
   class formula_manager = object(self)
     val input_vars = Hashtbl.create 30
 
-    method private fresh_symbolic str ty =
+    method private fresh_symbolic_vexp str ty =
       let v = try Hashtbl.find input_vars str with
 	  Not_found ->
 	    Hashtbl.replace input_vars str (V.newvar str ty);
 	    Hashtbl.find input_vars str
       in
-	D.from_symbolic (V.Lval(V.Temp(v)))
+	V.Lval(V.Temp(v))
+
+    method private fresh_symbolic str ty =
+	D.from_symbolic (self#fresh_symbolic_vexp str ty)
 
     method fresh_symbolic_1  s = self#fresh_symbolic s V.REG_1
     method fresh_symbolic_8  s = self#fresh_symbolic s V.REG_8
     method fresh_symbolic_16 s = self#fresh_symbolic s V.REG_16
     method fresh_symbolic_32 s = self#fresh_symbolic s V.REG_32
     method fresh_symbolic_64 s = self#fresh_symbolic s V.REG_64
+
+    val region_vars = Hashtbl.create 30
+
+    method private fresh_symbolic_mem ty str addr =
+      let v = try Hashtbl.find region_vars str with
+	  Not_found ->
+	    Hashtbl.replace region_vars str
+	      (V.newvar str (V.TMem(V.REG_32, V.Little)));
+	    Hashtbl.find region_vars str
+      in
+	D.from_symbolic
+	  (V.Lval(V.Mem(v, V.Constant(V.Int(V.REG_32, addr)), ty)))
+
+    method fresh_symbolic_mem_1  = self#fresh_symbolic_mem V.REG_1
+    method fresh_symbolic_mem_8  = self#fresh_symbolic_mem V.REG_8
+    method fresh_symbolic_mem_16 = self#fresh_symbolic_mem V.REG_16
+    method fresh_symbolic_mem_32 = self#fresh_symbolic_mem V.REG_32
+    method fresh_symbolic_mem_64 = self#fresh_symbolic_mem V.REG_64
+
+    method rewrite_mem_expr e =
+      match e with
+	| V.Lval(V.Mem((_,region_str,ty1),
+		       V.Constant(V.Int(V.REG_32, addr)), ty2))
+	  ->
+	    let ty_str = (match ty2 with
+			    | V.REG_8 -> "byte"
+			    | V.REG_16 -> "short"
+			    | V.REG_32 -> "word"
+			    | V.REG_64 -> "long"
+			    | _ -> failwith "Bad size in rewrite_mem_expr")
+	    in
+	    let name = Printf.sprintf "%s_%s_0x%08Lx" region_str ty_str addr
+	    in
+	      self#fresh_symbolic_vexp name ty2
+	| _ -> failwith "Bad expression in rewrite_mem_expr"
+
+    method rewrite_for_stp e =
+      let rec loop e =
+	match e with
+	  | V.BinOp(op, e1, e2) -> V.BinOp(op, (loop e1), (loop e2))
+	  | V.UnOp(op, e1) -> V.UnOp(op, (loop e1))
+	  | V.Constant(_) -> e
+	  | V.Lval(V.Temp(_)) -> e
+	  | V.Lval(V.Mem(_, _, _)) -> self#rewrite_mem_expr e
+	  | V.Name(_) -> e
+	  | V.Cast(kind, ty, e1) -> V.Cast(kind, ty, (loop e1))
+	  | V.Unknown(_) -> e
+	  | V.Let(_, _, _) -> failwith "Unexpected let in rewrite_for_stp"
+      in
+	loop e
 
     method get_input_vars = Hashtbl.fold (fun s v l -> v :: l) input_vars []
 
@@ -555,10 +608,10 @@ struct
 		 let var = V.newvar s ty in
  		   Hashtbl.replace subexpr_to_temp_var e' var;
  		   V.VarHash.replace temp_var_to_subexpr var e';
-		   (* Printf.printf "%s = %s\n" s (V.exp_to_string e'); *)
+		   Printf.printf "%s = %s\n" s (V.exp_to_string e');
 		   var) in
-	  D.from_symbolic (V.Lval(V.Temp(var)))
-	    
+	    D.from_symbolic (V.Lval(V.Temp(var)))
+	      
     method simplify1  e = self#simplify e V.REG_1
     method simplify8  e = self#simplify e V.REG_8
     method simplify16 e = self#simplify e V.REG_16
@@ -668,25 +721,46 @@ module SymbolicDomain : DOMAIN = struct
       | _ -> failwith "bad which in extract_32_from_64"
 
   let assemble16 e e2 =
-    V.BinOp(V.BITOR,
-	    V.Cast(V.CAST_UNSIGNED, V.REG_16, e),
-	    V.BinOp(V.LSHIFT,
-		    V.Cast(V.CAST_UNSIGNED, V.REG_16, e2),
-		    (from_concrete_8 8)))
+    match (e, e2) with
+      | (V.Lval(V.Mem(v1, V.Constant(V.Int(V.REG_32, addr1)), V.REG_8)),
+	 V.Lval(V.Mem(v2, V.Constant(V.Int(V.REG_32, addr2)), V.REG_8)))
+	  when v1 = v2 && (Int64.sub addr2 addr1) = 1L
+	    ->
+	  V.Lval(V.Mem(v1, V.Constant(V.Int(V.REG_32, addr1)), V.REG_16))
+      | _ ->
+	  V.BinOp(V.BITOR,
+		  V.Cast(V.CAST_UNSIGNED, V.REG_16, e),
+		  V.BinOp(V.LSHIFT,
+			  V.Cast(V.CAST_UNSIGNED, V.REG_16, e2),
+			  (from_concrete_8 8)))
       
   let assemble32 e e2 =
-    V.BinOp(V.BITOR,
-	    V.Cast(V.CAST_UNSIGNED, V.REG_32, e),
-	    V.BinOp(V.LSHIFT,
-		    V.Cast(V.CAST_UNSIGNED, V.REG_32, e2),
-		    (from_concrete_8 16)))
+    match (e, e2) with
+      | (V.Lval(V.Mem(v1, V.Constant(V.Int(V.REG_32, addr1)), V.REG_16)),
+	 V.Lval(V.Mem(v2, V.Constant(V.Int(V.REG_32, addr2)), V.REG_16)))
+	  when v1 = v2 && (Int64.sub addr2 addr1) = 2L
+	    ->
+	  V.Lval(V.Mem(v1, V.Constant(V.Int(V.REG_32, addr1)), V.REG_32))
+      | _ ->
+	  V.BinOp(V.BITOR,
+		  V.Cast(V.CAST_UNSIGNED, V.REG_32, e),
+		  V.BinOp(V.LSHIFT,
+			  V.Cast(V.CAST_UNSIGNED, V.REG_32, e2),
+			  (from_concrete_8 16)))
 
   let assemble64 e e2 =
-    V.BinOp(V.BITOR,
-	    V.Cast(V.CAST_UNSIGNED, V.REG_64, e),
-	    V.BinOp(V.LSHIFT,
-		    V.Cast(V.CAST_UNSIGNED, V.REG_64, e2),
-		    (from_concrete_8 32)))
+    match (e, e2) with
+      | (V.Lval(V.Mem(v1, V.Constant(V.Int(V.REG_32, addr1)), V.REG_32)),
+	 V.Lval(V.Mem(v2, V.Constant(V.Int(V.REG_32, addr2)), V.REG_32)))
+	  when v1 = v2 && (Int64.sub addr2 addr1) = 4L
+	    ->
+	  V.Lval(V.Mem(v1, V.Constant(V.Int(V.REG_32, addr1)), V.REG_64))
+      | _ ->
+	  V.BinOp(V.BITOR,
+		  V.Cast(V.CAST_UNSIGNED, V.REG_64, e),
+		  V.BinOp(V.LSHIFT,
+			  V.Cast(V.CAST_UNSIGNED, V.REG_64, e2),
+			  (from_concrete_8 32)))
 
   let to_string e = V.exp_to_string e
   let to_string_1  = to_string
@@ -1266,7 +1340,7 @@ struct
   let split16 l = ((D. extract_8_from_16 l 0), (D. extract_8_from_16 l 1))
     
   (* At the moment, there are still some calls to endian_i, but there
-     are places where endianness checking is missing, so assume
+     are other places where endianness checking is missing, so assume
      little-endian for the time being.
      
      let endianness = V.Little
@@ -2166,13 +2240,12 @@ struct
     method private on_missing_symbol_m (m:GM.granular_memory) name =
       m#on_missing
 	(fun size addr -> 
-	   let addr_str = (Printf.sprintf "0x%08Lx" addr) in
-	     match size with
-	       | 8  -> form_man#fresh_symbolic_8  (name ^ "_byte_"  ^ addr_str)
-	       | 16 -> form_man#fresh_symbolic_16 (name ^ "_short_" ^ addr_str)
-	       | 32 -> form_man#fresh_symbolic_32 (name ^ "_word_"  ^ addr_str)
-	       | 64 -> form_man#fresh_symbolic_64 (name ^ "_long_"  ^ addr_str)
-	       | _ -> failwith "Bad size in on_missing_symbol")
+	   match size with
+	     | 8  -> form_man#fresh_symbolic_mem_8  name addr
+	     | 16 -> form_man#fresh_symbolic_mem_16 name addr
+	     | 32 -> form_man#fresh_symbolic_mem_32 name addr
+	     | 64 -> form_man#fresh_symbolic_mem_64 name addr
+	     | _ -> failwith "Bad size in on_missing_symbol")
 
     method on_missing_symbol =
       self#on_missing_symbol_m (mem :> GM.granular_memory) "mem"
@@ -2182,7 +2255,9 @@ struct
 	self#set_int_var (Hashtbl.find reg_to_var r) v
       in
 	reg R_EBP (form_man#fresh_symbolic_32 "initial_ebp");
-	reg R_ESP (D.from_concrete_32 0xbfff0000L);
+	(* reg R_ESP (form_man#fresh_symbolic_32 "initial_esp"); *)
+	(* reg R_ESP (D.from_concrete_32 0xbfff0000L); *)
+	reg R_ESP (D.from_concrete_32 0xdeff0000L);
 	reg R_ESI (form_man#fresh_symbolic_32 "initial_esi");
 	reg R_EDI (form_man#fresh_symbolic_32 "initial_edi");
 	reg R_EAX (form_man#fresh_symbolic_32 "initial_eax");
@@ -2197,16 +2272,19 @@ struct
 	reg R_GDT (D.from_concrete_32 0x60000000L);
 	reg R_LDT (D.from_concrete_32 0x61000000L);
 	reg R_DFLAG (D.from_concrete_32 1L);
-	(* CS segment: *)
+	reg R_ACFLAG (D.from_concrete_32 0L);
+	reg R_IDFLAG (D.from_concrete_32 0L);
+	reg EFLAGSREST (form_man#fresh_symbolic_32 "initial_eflagsrest");
+	(* user space CS segment: *)
 	self#store_byte_conc 0x60000020L 0xff;
 	self#store_byte_conc 0x60000021L 0xff;
 	self#store_byte_conc 0x60000022L 0x00;
 	self#store_byte_conc 0x60000023L 0x00;
 	self#store_byte_conc 0x60000024L 0x00;
-	self#store_byte_conc 0x60000025L 0xf3;
+	self#store_byte_conc 0x60000025L 0xfb;
 	self#store_byte_conc 0x60000026L 0xcf;
 	self#store_byte_conc 0x60000027L 0x00;
-	(* DS/ES segment: *)
+	(* user space DS/ES segment: *)
 	self#store_byte_conc 0x60000028L 0xff;
 	self#store_byte_conc 0x60000029L 0xff;
 	self#store_byte_conc 0x6000002aL 0x00;
@@ -2215,7 +2293,7 @@ struct
 	self#store_byte_conc 0x6000002dL 0xf3;
 	self#store_byte_conc 0x6000002eL 0xcf;
 	self#store_byte_conc 0x6000002fL 0x00;
-	(* GS segment: *)
+	(* user space GS segment: *)
 	self#store_byte_conc 0x60000060L 0xff;
 	self#store_byte_conc 0x60000061L 0xff;
 	self#store_byte_conc 0x60000062L 0x00;
@@ -2224,6 +2302,24 @@ struct
 	self#store_byte_conc 0x60000065L 0xf3;
 	self#store_byte_conc 0x60000066L 0xcf;
 	self#store_byte_conc 0x60000067L 0x62;
+	(* kernel space CS segment: *)
+	self#store_byte_conc 0x60000070L 0xff;
+	self#store_byte_conc 0x60000071L 0xff;
+	self#store_byte_conc 0x60000072L 0x00;
+	self#store_byte_conc 0x60000073L 0x00;
+	self#store_byte_conc 0x60000074L 0x00;
+	self#store_byte_conc 0x60000075L 0xfb;
+	self#store_byte_conc 0x60000076L 0xcf;
+	self#store_byte_conc 0x60000077L 0x00;
+	(* kernel space DS/ES segment: *)
+	self#store_byte_conc 0x60000078L 0xff;
+	self#store_byte_conc 0x60000079L 0xff;
+	self#store_byte_conc 0x6000007aL 0x00;
+	self#store_byte_conc 0x6000007bL 0x00;
+	self#store_byte_conc 0x6000007cL 0x00;
+	self#store_byte_conc 0x6000007dL 0xf3;
+	self#store_byte_conc 0x6000007eL 0xcf;
+	self#store_byte_conc 0x6000007fL 0x00;
 
     method print_x86_regs =
       let reg str r =
@@ -2954,8 +3050,8 @@ struct
 	path_cond <- saved_pc;
 	ret
 
-    val query_engine = new stpvc_engine
-      (* val query_engine = new stp_external_engine "fuzz.stp" *)
+    (* val query_engine = new stpvc_engine *)
+    val query_engine = new stp_external_engine "fuzz.stp"
 
     method match_input_var s =
       try
@@ -3033,11 +3129,14 @@ struct
       Printf.printf "\n";
 
     method query_with_path_cond cond verbose =
+      let pc = form_man#rewrite_for_stp
+	(constant_fold_rec
+	   (List.fold_left (fun a b -> V.BinOp(V.BITAND, a, b))
+	      V.exp_true (List.rev (cond :: path_cond)))) in
+      let temps = 
+	List.map (fun (var, e) -> (var, form_man#rewrite_for_stp e))
+	  (self#walk_temps (fun var e -> (var, e)) pc) in
       let i_vars = form_man#get_input_vars in
-      let pc = (constant_fold_rec
-		  (List.fold_left (fun a b -> V.BinOp(V.BITAND, a, b))
-		     V.exp_true (List.rev (cond :: path_cond)))) in
-      let temps = self#walk_temps (fun var e -> (var, e)) pc in
       let t_vars = List.map (fun (v, _) -> v) temps in
 	query_engine#prepare i_vars t_vars;
 	List.iter (fun (v, exp) -> (query_engine#assert_eq v exp)) temps;
@@ -3171,7 +3270,7 @@ struct
   type term_kind = | ConstantBase of int64
 		   | ConstantOffset of int64
 		   | ExprOffset of V.exp
-		   | Symbol of V.var
+		   | Symbol of V.exp
 
   let classify_term e =
     match e with
@@ -3180,13 +3279,24 @@ struct
 	    -> ConstantOffset(off)
       | V.Constant(V.Int(V.REG_32, off)) when (fix_s32 off) > 0x8000000L
 	  -> ConstantBase(off)
+      | V.Constant(V.Int(V.REG_32, off))
+	  when off > 0xc0000000L && off < 0xdf000000L (* Linux kernel *)
+	  -> ConstantBase(off)
       | V.UnOp(V.NEG, _) -> ExprOffset(e)
       | V.BinOp(V.LSHIFT, _, V.Constant(V.Int(V.REG_8, (1L|2L|3L|4L))))
+	  -> ExprOffset(e)
+      | V.BinOp(V.TIMES, _, V.Constant(V.Int(V.REG_32, off)))
+	  when off > 1L && off < 0x100L
 	  -> ExprOffset(e)
       | V.BinOp(V.BITAND, _, V.Constant(V.Int(_, mask)))
 	  when mask < 0xffffL
 	    -> ExprOffset(e)
-      | V.Lval(V.Temp(var)) -> Symbol(var)
+      | V.BinOp(V.BITOR, _, V.BinOp(V.BITAND, _,
+				    V.Constant(V.Int(V.REG_32, 1L))))
+	  -> ExprOffset(e)
+      | V.BinOp(V.ARSHIFT, _, _)
+	  -> ExprOffset(e)
+      | V.Lval(_) -> Symbol(e)
       | _ -> failwith "Strange term in address"
 
   let classify_terms e form_man =
@@ -3235,7 +3345,7 @@ struct
     inherit SPFM.sym_path_frag_machine as spfm
 
     val mutable regions = []
-    val region_vals = V.VarHash.create 101
+    val region_vals = Hashtbl.create 101
 
     method private region r =
       match r with
@@ -3250,13 +3360,14 @@ struct
 	spfm#on_missing_symbol_m region name;
 	new_idx
 
-    method private region_for ((n,s,t) as var) =
+    method private region_for e =
       try
-	V.VarHash.find region_vals var
+	Hashtbl.find region_vals e
       with Not_found ->
 	let new_region = self#fresh_region in
-	  V.VarHash.replace region_vals var new_region;
-	  Printf.printf "Address %s is region %d\n" s new_region;
+	  Hashtbl.replace region_vals e new_region;
+	  Printf.printf "Address %s is region %d\n"
+	    (V.exp_to_string e) new_region;
 	  new_region
 
     method private choose_conc_offset e =
@@ -3298,14 +3409,13 @@ struct
 		  (None, vl)
 	    in
 	    let coff = List.fold_left Int64.add 0L coffs in
-	    let off_syms_es = List.map (fun v -> V.Lval(V.Temp(v))) off_syms in
 	    let offset = Int64.add (Int64.add cbase coff)
-	      (match (eoffs, off_syms_es) with
+	      (match (eoffs, off_syms) with
 		 | ([], []) -> 0L
 		 | (el, vel) -> 
 		     (self#choose_conc_offset (sum_list (el @ vel))))
 	    in
-	      (base, offset)
+	      (base, (fix_u32 offset))
 		  
     method eval_addr_exp exp =
       let (r, addr) = self#eval_addr_exp_region exp in
@@ -3360,7 +3470,7 @@ struct
     method reset () =
       spfm#reset ();
       regions <- [];
-      V.VarHash.clear region_vals 
+      Hashtbl.clear region_vals 
   end
 end
 
@@ -4945,6 +5055,17 @@ object(self)
 
 end
 
+exception UnhandledTrap
+
+class trap_special_nonhandler fm =
+object(self)
+  method handle_special str =
+    match str with
+      | "trap" -> raise UnhandledTrap
+      | _ -> false
+end
+
+
 let call_replacements fm eip =
   match eip with
     (* vx_alloc: *)
@@ -4972,20 +5093,24 @@ let call_replacements fm eip =
 (* 	Some (fun () -> raise (SimulatedExit(-1L))) *)
 
     (* hv_fetch v2: *)
-    | 0x08302d70L (* __libc_malloc *) -> 
- 	Some (fun () -> fm#set_word_reg_symbolic R_EAX "malloc")
-    | 0x082ee3e0L (* __assert_fail *) ->
- 	Some (fun () -> raise (SimulatedExit(-1L)))
-    | 0x08302a50L (* __calloc *) ->
-	Some (fun () -> fm#set_word_reg_symbolic R_EAX "calloc")
-    | 0x08303180L (* __libc_realloc *) ->
- 	Some (fun () -> fm#set_word_reg_symbolic R_EAX "realloc")	
-    | 0x08300610L (* __cfree *) ->
- 	Some (fun () -> fm#set_word_var R_EAX 1L)	
+(*     | 0x08302d70L (* __libc_malloc *) ->  *)
+(*  	Some (fun () -> fm#set_word_reg_symbolic R_EAX "malloc") *)
+(*     | 0x082ee3e0L (* __assert_fail *) -> *)
+(*  	Some (fun () -> raise (SimulatedExit(-1L))) *)
+(*     | 0x08302a50L (* __calloc *) -> *)
+(* 	Some (fun () -> fm#set_word_reg_symbolic R_EAX "calloc") *)
+(*     | 0x08303180L (* __libc_realloc *) -> *)
+(*  	Some (fun () -> fm#set_word_reg_symbolic R_EAX "realloc")	 *)
+(*     | 0x08300610L (* __cfree *) -> *)
+(*  	Some (fun () -> fm#set_word_var R_EAX 1L)	 *)
 
     (* bst_find *)
 (*     | 0x08048304L (* __assert_fail *) -> *)
 (*  	Some (fun () -> raise (SimulatedExit(-1L))) *)
+
+    (* vmlinux *)
+    | 0xc0103700L (* native_iret *) ->
+  	Some (fun () -> raise (SimulatedExit(0L)))
 
     | _ -> None
 
@@ -5100,14 +5225,14 @@ let rec runloop fm eip asmir_gamma until =
 	  | None -> prog
 	  | Some thunk ->
 	      thunk ();
-	      decode_insns_cached 0x0829361dL (* 0x080485f7L *)
+	      decode_insns_cached 0xc01037dcL (* 0x080485f7L *)
       in
       (* V.pp_program print_string prog'; *)
       fm#set_frag prog';
-      flush stdout;
+      (* flush stdout; *)
       let new_eip = label_to_eip (fm#run ()) in
 	match (new_eip, until) with
-	  | (e1, Some e2) when e1 = e2 -> ()
+	  | (e1, e2) when e2 e1 -> ()
 	  | (0L, _) -> failwith "Jump to 0"
 	  | _ -> loop new_eip
   in
@@ -5200,7 +5325,7 @@ let fuzz_sym_str start_eip end_eip buf_addr buf_len fm asmir_gamma
     =
   let eip = fm#get_word_var R_EIP
   in
-    runloop fm eip asmir_gamma (Some start_eip);
+    runloop fm eip asmir_gamma (fun a -> a = start_eip);
     fm#make_snap (); Printf.printf "Took snapshot\n";
     loop_w_stats None
       (fun iter ->
@@ -5208,7 +5333,7 @@ let fuzz_sym_str start_eip end_eip buf_addr buf_len fm asmir_gamma
 	   fm#set_iter_seed (Int64.to_int iter);
 	   fm#store_symbolic_cstr buf_addr buf_len;
 	   (try
-	      runloop fm start_eip asmir_gamma (Some end_eip);
+	      runloop fm start_eip asmir_gamma (fun a -> a = end_eip);
 	    with
 	      | Failure("Jump to 0") -> () (* equivalent of segfault *)
 	      | SimulatedExit(_) -> ()
@@ -5236,7 +5361,7 @@ let print_tree fm =
     fm#print_tree chan;
     close_out chan
 
-let fuzz_static start_eip end_eip fm asmir_gamma =
+let fuzz_static start_eip end_eips fm asmir_gamma =
   fm#make_x86_regs_symbolic;
   fm#make_snap (); Printf.printf "Took snapshot\n";
   loop_w_stats None
@@ -5244,7 +5369,7 @@ let fuzz_static start_eip end_eip fm asmir_gamma =
        let old_tcs = Hashtbl.length trans_cache in
 	 fm#set_iter_seed (Int64.to_int iter);
 	 (try
-	    runloop fm start_eip asmir_gamma (Some end_eip);
+	    runloop fm start_eip asmir_gamma (fun a -> List.mem a end_eips);
 	  with
 	    | Failure("Jump to 0") -> () (* equivalent of segfault *)
 	    | SimulatedExit(_) -> ()
@@ -5254,6 +5379,7 @@ let fuzz_static start_eip end_eip fm asmir_gamma =
 	    | NullDereference -> Printf.printf "Stopping path at null deref\n"
 	    | TooManyIterations ->
 		Printf.printf "Stopping path after too many loop iterations\n"
+	    | UnhandledTrap -> Printf.printf "Stopping path at trap\n"
 	    (* | NotConcrete(_) -> () (* shouldn't happen *)
 	    | Simplify_failure(_) -> () (* shouldn't happen *)*)
 	 ); 
@@ -5271,16 +5397,19 @@ let fuzz_static start_eip end_eip fm asmir_gamma =
   Gc.print_stat stdout
 
 let fuzz_vxalloc (fm : machine) =
-  fuzz_static 0x08048434L 0x080485f7L fm
+  fuzz_static 0x08048434L [0x080485f7L] fm
 
 let fuzz_hv_fetch (fm : machine) =
-  fuzz_static 0x08293573L 0x0829361dL fm
+  fuzz_static 0x08293573L [0x0829361dL] fm
 
 let fuzz_list_find (fm : machine) =
-  fuzz_static 0x08048394L 0x080483d1L fm
+  fuzz_static 0x08048394L [0x080483d1L] fm
 
 let fuzz_bst_find (fm : machine) =
-  fuzz_static 0x080483d4L 0x080485a8L fm
+  fuzz_static 0x080483d4L [0x080485a8L] fm
+
+let fuzz_vmlinux (fm : machine) =
+  fuzz_static 0xc0102fb0L [0xc0102ff9L; 0xc010303cL] fm
 
 let usage = "trans_eval [options]* file.ir\n"
 let infile = ref ""
@@ -5311,9 +5440,11 @@ let main argc argv =
       fm#init_prog prog;
       fm#add_special_handler
 	((new linux_special_nonhandler fm) :> special_handler);
+      fm#add_special_handler
+	((new trap_special_nonhandler fm) :> special_handler);
      
       try
-	(* fuzz_pcre *) fuzz_hv_fetch fm asmir_gamma
+	(* fuzz_pcre *) fuzz_vmlinux fm asmir_gamma
       with
 	(* | NotConcrete e ->
 	    Printf.printf "Unexpected symbolic value: %s\n" (V.exp_to_string e)
@@ -5323,7 +5454,7 @@ let main argc argv =
 	    fm#print_backtrace;
 
       (* let eip = fm#get_word_var R_EIP in
-	runloop fm eip asmir_gamma None (* run until exit *) *)
+	runloop fm eip asmir_gamma (fun _ -> true) (* run until exit *) *)
 ;;
 
 main (Array.length Sys.argv) Sys.argv;;
