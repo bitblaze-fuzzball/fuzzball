@@ -81,6 +81,9 @@ sub write_segment {
     } elsif ($phr->{"type"} == 1 and $phr->{"flags"} == 6) {
 	return if $is_static;
 	$type_str = "data";
+    } elsif ($phr->{"type"} == 1 and $phr->{"flags"} == 7) {
+	return if $is_static;
+	$type_str = "data";
     } elsif ($phr->{"type"} == 2) {
 	$type_str = "DYNAMIC";
     } elsif ($phr->{"type"} == 3) {
