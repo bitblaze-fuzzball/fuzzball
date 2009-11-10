@@ -1091,6 +1091,8 @@ class stpvc_engine = object(self)
     Libstp.vc_pop vc;
 end
 
+let opt_stp_path = ref "stp"
+
 let map_lines f chan =
   let results = ref [] in
     (try while true do
@@ -1148,7 +1150,8 @@ class stp_external_engine fname = object(self)
     output_string self#chan "COUNTEREXAMPLE;\n";
     close_out self#chan;
     chan <- None;
-    let rcode = Sys.command ("stp " ^ fname ^ " >" ^ fname ^ ".out") in
+    let rcode = Sys.command (!opt_stp_path ^ " " ^ fname 
+			     ^ " >" ^ fname ^ ".out") in
     let results = open_in (fname ^ ".out") in
       if rcode <> 0 then
 	(ignore(Sys.command ("cat " ^ fname ^ ".out"));
@@ -3104,6 +3107,10 @@ class decision_tree = object(self)
 
 end
 
+let opt_trace_assigns = ref false
+let opt_trace_decisions = ref false
+let opt_trace_binary_paths = ref false
+
 module SymPathFragMachineFunctor =
   functor (D : DOMAIN) ->
 struct
@@ -3226,12 +3233,16 @@ struct
 	let is_sat = not result in
 	  if verbose then
 	    (if is_sat then
-	       (Printf.printf "Satisfiable ";
-		Printf.printf "by \"%s\"\n"
-		  (String.escaped (self#ce_to_input_str ce));
-		self#print_ce ce)
+	       (if !opt_trace_decisions then
+		  (Printf.printf "Satisfiable";
+		   if !opt_trace_assigns then
+		     (Printf.printf " by \"%s\"\n"
+			(String.escaped (self#ce_to_input_str ce));
+		      self#print_ce ce)
+		   else
+		     Printf.printf ".\n"))
 	     else
-	       Printf.printf "Unsatisfiable.\n");
+	       if !opt_trace_decisions then Printf.printf "Unsatisfiable.\n");
 	  if ((Sys.time ()) -. time_before) > 1.0 then
 	    Printf.printf "Slow query (%f sec)\n"
 	      ((Sys.time ()) -. time_before);
@@ -3247,11 +3258,13 @@ struct
 	if b then cond else V.UnOp(V.NOT, cond)
       in
       let try_func b cond' =
-	if verbose then Printf.printf "Trying %B: " b;
+	if verbose && !opt_trace_decisions then
+	  Printf.printf "Trying %B: " b;
 	self#query_with_path_cond cond' verbose
       in
       let non_try_func b =
-	if verbose then Printf.printf "Known %B\n" b
+	if verbose && !opt_trace_decisions then
+	  Printf.printf "Known %B\n" b
       in
 	self#try_extend trans_func try_func non_try_func
 
@@ -3308,10 +3321,11 @@ struct
 
     method finish_path =
       dt#mark_all_seen;
-      (let path_str = String.concat ""
-	 (List.map (fun b -> if b then "1" else "0") (List.rev dt#get_hist));
-       in
-	 Printf.printf "Path: %s\n" path_str);
+      if !opt_trace_binary_paths then
+	(let path_str = String.concat ""
+	   (List.map (fun b -> if b then "1" else "0") (List.rev dt#get_hist));
+	 in
+	   Printf.printf "Path: %s\n" path_str);
       dt#try_again_p
 
     method print_tree chan = dt#print_tree chan
@@ -3328,6 +3342,11 @@ end
 
 exception SymbolicJump
 exception NullDereference
+
+let opt_trace_loads = ref false
+let opt_trace_stores = ref false
+let opt_trace_regions = ref false
+let opt_trace_sym_addrs = ref false
 
 module SymRegionFragMachineFunctor =
   functor (D : DOMAIN) ->
@@ -3446,8 +3465,9 @@ struct
       with Not_found ->
 	let new_region = self#fresh_region in
 	  Hashtbl.replace region_vals e new_region;
-	  Printf.printf "Address %s is region %d\n"
-	    (V.exp_to_string e) new_region;
+	  if !opt_trace_regions then
+	    Printf.printf "Address %s is region %d\n"
+	      (V.exp_to_string e) new_region;
 	  new_region
 
     method private choose_conc_offset e =
@@ -3464,7 +3484,8 @@ struct
 		 bits := (Int64.logor (Int64.shift_left !bits 1)
 			    (if bit then 1L else 0L));
 	     done);
-	Printf.printf "Picked concrete offset value 0x%Lx\n" !bits;
+	if !opt_trace_sym_addrs then
+	  Printf.printf "Picked concrete offset value 0x%Lx\n" !bits;
 	self#add_to_path_cond (V.BinOp(V.EQ, e, (c32 !bits)));
 	!bits
 
@@ -3474,7 +3495,8 @@ struct
 	  (None, D.to_concrete_32 v)
 	with NotConcrete _ ->
 	  let e = D.to_symbolic_32 v in
-	    Printf.printf "Symbolic address %s\n" (V.exp_to_string e);
+	    if !opt_trace_sym_addrs then
+	      Printf.printf "Symbolic address %s\n" (V.exp_to_string e);
 	    let (cbases, coffs, eoffs, syms) = classify_terms e form_man in
 	    let cbase = List.fold_left Int64.add 0L cbases in
 	    let (base, off_syms) = match (cbase, syms) with
@@ -3522,10 +3544,11 @@ struct
 	   | V.REG_32 -> self#load_word_region r addr
 	   | V.REG_64 -> self#load_long_region r addr
 	   | _ -> failwith "Unsupported memory type") in
-	(* Printf.printf "Load from %s "
-	   (match r with | None -> "conc. mem"
-	   | Some r_num -> "region " ^ (string_of_int r_num));
-	   Printf.printf "%08Lx = %s\n" addr (D.to_string_32 v); *)
+	if !opt_trace_loads then
+	  (Printf.printf "Load from %s "
+	     (match r with | None -> "conc. mem"
+		| Some r_num -> "region " ^ (string_of_int r_num));
+	   Printf.printf "%08Lx = %s\n" addr (D.to_string_32 v));
 	if r = None && (Int64.abs (fix_s32 addr)) < 4096L then
 	  raise NullDereference;
 	(v, ty)
@@ -3541,11 +3564,12 @@ struct
 	   | V.REG_32 -> self#store_word_region r addr value
 	   | V.REG_64 -> self#store_long_region r addr value
 	   | _ -> failwith "Unsupported type in memory move");
-	(* if not (ty = V.REG_8 && r = None) then
-	  (Printf.printf "Store to %s "
-	     (match r with | None -> "conc. mem"
-		| Some r_num -> "region " ^ (string_of_int r_num));
-	   Printf.printf "%08Lx = %s\n" addr (D.to_string_32 value)) *)
+	if !opt_trace_stores then
+	  if not (ty = V.REG_8 && r = None) then
+	    (Printf.printf "Store to %s "
+	       (match r with | None -> "conc. mem"
+		  | Some r_num -> "region " ^ (string_of_int r_num));
+	     Printf.printf "%08Lx = %s\n" addr (D.to_string_32 value))
 
     method reset () =
       spfm#reset ();
@@ -5198,12 +5222,17 @@ let trans_cache = Hashtbl.create 100000
 
 let loop_detect = Hashtbl.create 1000
 
+let opt_trace_eip = ref false
+let opt_trace_ir = ref false
+let opt_trace_iterations = ref false
+let opt_trace_setup = ref false
+let opt_coverage_stats = ref false
+let opt_gc_stats = ref false
+let opt_time_stats = ref false
+
 let rec runloop fm eip asmir_gamma until =
   let load_byte addr = fm#load_byte_conc addr in
-  let decode_insn eip =
-    let insn_bytes = Array.init 16
-      (fun i -> Char.chr (load_byte (Int64.add eip (Int64.of_int i))))
-    in
+  let decode_insn eip insn_bytes =
     let asmp = Libasmir.byte_insn_to_asmp
       Libasmir.Bfd_arch_i386 eip insn_bytes in
     let sl = Asmir.asm_addr_to_vine asmir_gamma asmp eip in
@@ -5211,6 +5240,12 @@ let rec runloop fm eip asmir_gamma until =
       match sl with 
 	| [V.Block(dl', sl')] -> (dl', sl')
 	| _ -> failwith "expected asm_addr_to_vine to give single block"
+  in
+  let decode_insn_at eip =
+    let bytes = Array.init 16
+      (fun i -> Char.chr (load_byte (Int64.add eip (Int64.of_int i))))
+    in
+      decode_insn eip bytes
   in
   let label_to_eip s =
     let len = String.length s in
@@ -5225,7 +5260,7 @@ let rec runloop fm eip asmir_gamma until =
   in
   let rec decode_insns eip k first =
     if k = 0 then ([], []) else
-      let (dl, sl) = decode_insn eip in
+      let (dl, sl) = decode_insn_at eip in
 	if
 	  List.exists (function V.Special("int 0x80") -> true | _ -> false) sl
 	then
@@ -5283,7 +5318,8 @@ let rec runloop fm eip asmir_gamma until =
       (* Libasmir.print_disasm_rawbytes Libasmir.Bfd_arch_i386 eip insn_bytes;
 	 print_string "\n"; *)
       (* fm#print_x86_regs; *)
-      Printf.printf "EIP is %08Lx\n" eip;
+      if !opt_trace_eip then
+	Printf.printf "EIP is %08Lx\n" eip;
       (* Printf.printf "Watchpoint val is %02x\n" (load_byte 0x501650e8L); *)
       (* Printf.printf ("Insn bytes are %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x\n") (load_byte eip)
 	 (load_byte (Int64.add eip (Int64.of_int 1)))
@@ -5302,19 +5338,20 @@ let rec runloop fm eip asmir_gamma until =
 	 (load_byte (Int64.add eip (Int64.of_int 14)))
 	 (load_byte (Int64.add eip (Int64.of_int 15))); *)
       let prog' = match call_replacements fm eip with
-	  | None -> prog
-	  | Some thunk ->
-	      thunk ();
-	      decode_insns_cached 0xc01037dcL (* 0x080485f7L *)
+	| None -> prog
+	| Some thunk ->
+	    thunk ();
+	    decode_insn eip [|'\xc3'|] (* fake "ret" *)
       in
-      (* V.pp_program print_string prog'; *)
-      fm#set_frag prog';
-      (* flush stdout; *)
-      let new_eip = label_to_eip (fm#run ()) in
-	match (new_eip, until) with
-	  | (e1, e2) when e2 e1 -> ()
-	  | (0L, _) -> failwith "Jump to 0"
-	  | _ -> loop new_eip
+	if !opt_trace_ir then
+	  V.pp_program print_string prog';
+	fm#set_frag prog';
+	(* flush stdout; *)
+	let new_eip = label_to_eip (fm#run ()) in
+	  match (new_eip, until) with
+	    | (e1, e2) when e2 e1 -> ()
+	    | (0L, _) -> failwith "Jump to 0"
+	    | _ -> loop new_eip
   in
     Hashtbl.clear loop_detect;
     loop eip
@@ -5387,26 +5424,30 @@ let loop_w_stats count fn =
 	 iter := Int64.add !iter 1L;
 	 let old_wtime = Unix.gettimeofday () and
              old_ctime = Sys.time () in
-	   Printf.printf "Iteration %Ld:\n" !iter;
+	   if !opt_trace_iterations then 
+	     Printf.printf "Iteration %Ld:\n" !iter;
 	   fn !iter;
-	   (let ctime = Sys.time() in
-             Printf.printf "CPU time %f sec, %f total\n"
-               (ctime -. old_ctime) (ctime -. start_ctime));
-	   (let wtime = Unix.gettimeofday() in
-              Printf.printf "Wall time %f sec, %f total\n"
-		(wtime -. old_wtime) (wtime -. start_wtime));
+	   if !opt_time_stats then
+	     ((let ctime = Sys.time() in
+		 Printf.printf "CPU time %f sec, %f total\n"
+		   (ctime -. old_ctime) (ctime -. start_ctime));
+	      (let wtime = Unix.gettimeofday() in
+		 Printf.printf "Wall time %f sec, %f total\n"
+		   (wtime -. old_wtime) (wtime -. start_wtime)));
 	   flush stdout
        done
      with
 	 LastIteration -> ());
-    Gc.full_major () (* for the benefit of leak checking *)
+    if !opt_gc_stats then
+      Gc.full_major () (* for the benefit of leak checking *)
 
 let fuzz_sym_str start_eip end_eip buf_addr buf_len fm asmir_gamma
     =
   let eip = fm#get_word_var R_EIP
   in
     runloop fm eip asmir_gamma (fun a -> a = start_eip);
-    fm#make_snap (); Printf.printf "Took snapshot\n";
+    fm#make_snap ();
+    if !opt_trace_setup then Printf.printf "Took snapshot\n";
     loop_w_stats None
       (fun iter ->
 	 let old_tcs = Hashtbl.length trans_cache in
@@ -5420,12 +5461,14 @@ let fuzz_sym_str start_eip end_eip buf_addr buf_len fm asmir_gamma
 	      | BoringPath -> Printf.printf "\n"
 	   );
 	   if not fm#finish_path then raise LastIteration;
-	   if (Hashtbl.length trans_cache - old_tcs > 0) then
-	     (* Printf.printf "Coverage increased to %d with %s on %Ld\n"
-		(Hashtbl.length trans_cache) regex iter *)
-	     Printf.printf "Coverage increased to %d on %Ld\n"
-	       (Hashtbl.length trans_cache) iter;
-	   check_memory_usage fm;
+	   if !opt_coverage_stats && 
+	     (Hashtbl.length trans_cache - old_tcs > 0) then
+	       (* Printf.printf "Coverage increased to %d with %s on %Ld\n"
+		  (Hashtbl.length trans_cache) regex iter *)
+	       Printf.printf "Coverage increased to %d on %Ld\n"
+		 (Hashtbl.length trans_cache) iter;
+	   if !opt_gc_stats then
+	     check_memory_usage fm;
 	   fm#reset ()
       );
     Gc.print_stat stdout
@@ -5443,8 +5486,9 @@ let print_tree fm =
 
 let fuzz_static start_eip end_eips fm asmir_gamma =
   fm#make_x86_regs_symbolic;
-  (* fm#set_word_var R_EAX 16L; *)
-  fm#make_snap (); Printf.printf "Took snapshot\n";
+  fm#set_word_var R_EAX 24L;
+  fm#make_snap ();
+  if !opt_trace_setup then Printf.printf "Took snapshot\n";
   loop_w_stats None
     (fun iter ->
        let old_tcs = Hashtbl.length trans_cache in
@@ -5465,17 +5509,21 @@ let fuzz_static start_eip end_eips fm asmir_gamma =
 	    | Simplify_failure(_) -> () (* shouldn't happen *)*)
 	 ); 
 	 if not fm#finish_path then raise LastIteration;
-	 if (Hashtbl.length trans_cache - old_tcs > 0) then
-	   (* Printf.printf "Coverage increased to %d with %s on %Ld\n"
-	      (Hashtbl.length trans_cache) regex iter *)
-	   Printf.printf "Coverage increased to %d on %Ld\n"
-	     (Hashtbl.length trans_cache) iter;
+	 if !opt_coverage_stats && 
+	   (Hashtbl.length trans_cache - old_tcs > 0) then
+	     (* Printf.printf "Coverage increased to %d with %s on %Ld\n"
+		(Hashtbl.length trans_cache) regex iter *)
+	     Printf.printf "Coverage increased to %d on %Ld\n"
+	       (Hashtbl.length trans_cache) iter;
 	 if Int64.rem iter 50L = 0L then
 	   print_tree fm;
+	   if !opt_gc_stats then
+	     check_memory_usage fm;
 	 fm#reset ()
     );
   print_tree fm;
-  Gc.print_stat stdout
+  if !opt_gc_stats then
+    Gc.print_stat stdout
 
 let fuzz_vxalloc (fm : machine) =
   fuzz_static 0x08048434L [0x080485f7L] fm
@@ -5490,35 +5538,62 @@ let fuzz_bst_find (fm : machine) =
   fuzz_static 0x080483d4L [0x080485a8L] fm
 
 let fuzz_vmlinux (fm : machine) =
-  fuzz_static 0xc0102fb0L [0xc0102ff9L; 0xc010303cL] fm
+  fuzz_static (* 0xc0102fb0L *) 0xc0102feeL [0xc0102ff9L; 0xc010303cL] fm
 
-let usage = "trans_eval [options]* file.ir\n"
-let infile = ref ""
-let infile_set = ref false
-let arg_name s = infile := s; infile_set := true
-
-let main argc argv = 
-  let speclist = Vine_parser.defspecs in 
-  let speclist = [] @ speclist in 
-    Arg.parse speclist arg_name usage;
-    if(!infile_set = false) then  (
-      Arg.usage speclist usage; exit(-1)
-    );
-    let prog = (
-      let p = Vine_parser.parse_file !infile in 
-      (* let () = if !Vine_parser.flag_typecheck then
-	Vine_typecheck.typecheck p else () in  *)
-	p
-    ) in 
-    let () = if !Vine_parser.flag_pp then 
-      Vine.pp_program (print_string) prog in
-    let (dl, sl) = prog in
+let main argv = 
+  let prog = ref ([], []) in
+    Arg.parse
+      (Arg.align [
+	 ("-stp-path", Arg.Set_string(opt_stp_path),
+	  "path Location of external STP binary");
+ 	 ("-trace-assigns", Arg.Set(opt_trace_assigns),
+	  " Print satisfying assignments");
+	 ("-trace-basic",
+	  (Arg.Unit
+	     (fun () ->
+		opt_trace_binary_paths := true;
+		opt_trace_decisions := true;
+		opt_trace_iterations := true;
+		opt_trace_setup := true;
+		opt_trace_sym_addrs := true;
+		opt_coverage_stats := true;
+		opt_time_stats := true)),
+	   " Enable several common trace and stats options");
+ 	 ("-trace-binary-paths", Arg.Set(opt_trace_binary_paths),
+	  " Print decision paths as bit strings");
+ 	 ("-trace-decisions", Arg.Set(opt_trace_decisions),
+	  " Print symbolic branch choices");
+	 ("-trace-eip", Arg.Set(opt_trace_eip),
+	  " Print PC of each insn executed");
+	 ("-trace-ir", Arg.Set(opt_trace_ir),
+	  " Print Vine IR before executing it");
+	 ("-trace-iterations", Arg.Set(opt_trace_iterations),
+	  " Print iteration count");
+	 ("-trace-loads", Arg.Set(opt_trace_loads),
+	  " Print each memory load");
+	 ("-trace-stores", Arg.Set(opt_trace_stores),
+	  " Print each memory store");
+	 ("-trace-regions", Arg.Set(opt_trace_regions),
+	  " Print symbolic memory regions");
+	 ("-trace-setup", Arg.Set(opt_trace_setup),
+	  " Print progress of program loading");
+	 ("-trace-sym-addrs", Arg.Set(opt_trace_sym_addrs),
+	  " Print symbolic address values");
+ 	 ("-coverage-stats", Arg.Set(opt_coverage_stats),
+	  " Print pseudo-BB coverage statistics");
+	 ("-gc-stats", Arg.Set(opt_gc_stats),
+	  " Print memory usage statistics");
+	 ("-time-stats", Arg.Set(opt_gc_stats),
+	  " Print running time statistics");
+       ])
+      (fun arg -> prog := Vine_parser.parse_file arg)
+      "trans_eval [options]* file.ir\n";
+    let (dl, sl) = !prog in
     let asmir_gamma = Asmir.gamma_create
       (List.find (fun (i, s, t) -> s = "mem") dl) dl in
     let fm = new SRFM.sym_region_frag_machine in
-    (* let fm = new fake_frag_machine prog in *)
       fm#on_missing_symbol;
-      fm#init_prog prog;
+      fm#init_prog !prog;
       fm#add_special_handler
 	((new linux_special_nonhandler fm) :> special_handler);
       fm#add_special_handler
@@ -5538,4 +5613,4 @@ let main argc argv =
 	runloop fm eip asmir_gamma (fun _ -> true) (* run until exit *) *)
 ;;
 
-main (Array.length Sys.argv) Sys.argv;;
+main Sys.argv;;
