@@ -1209,6 +1209,14 @@ class virtual concrete_memory = object(self)
     self#store_byte (Int64.add addr 7L)
       (Int64.to_int (Int64.logand 0xFFL (Int64.shift_right l 56)))
 
+  method store_page addr pagestr =
+    assert(Int64.logand addr 0xfffL = 0L);
+    assert(String.length pagestr = 4096);
+    for i = 0 to 4096 do
+      self#store_byte (Int64.add addr (Int64.of_int i))
+	(Char.code pagestr.[i])
+    done
+
   method load_short addr =
     let b1 = self#load_byte addr
     and b2 = self#load_byte (Int64.add addr 1L)
@@ -1265,6 +1273,12 @@ class concrete_string_memory = object(self)
 	    new_page
     in
       page_str.[idx] <- Char.chr b
+
+  method store_page addr newstr =
+    assert(Int64.logand addr 0xfffL = 0L);
+    assert(String.length newstr = 4096);
+    let page = Int64.to_int (Int64.shift_right addr 12) in
+      mem.(page) <- Some newstr
 
   method load_byte addr =
     let page = Int64.to_int (Int64.shift_right addr 12) and
@@ -1798,6 +1812,10 @@ struct
 	let (w0, w1) = split64 l in
 	  self#store_word addr w0;
 	  self#store_word (Int64.add addr 4L) w1
+	    
+    method store_page (addr:int64) (p:string) : unit
+      = failwith "store_page not supported"
+	    
     method virtual clear : unit -> unit
 
     method virtual measure_size : int
@@ -1945,6 +1963,10 @@ struct
       else
 	main#store_long addr l
 
+    method store_page addr p =
+      assert(not have_snap);
+      main#store_page addr p
+
     method maybe_load_byte addr =
       if have_snap then
 	match diff#maybe_load_byte addr with
@@ -2059,7 +2081,8 @@ struct
       method store_byte  addr b = mem#store_byte  addr (D.to_concrete_8 b)
       method store_short addr s = mem#store_short addr (D.to_concrete_16 s)
       method store_word  addr w = mem#store_word  addr (D.to_concrete_32 w)
-      method store_long  addr l = mem#store_word  addr (D.to_concrete_64 l)
+      method store_long  addr l = mem#store_long  addr (D.to_concrete_64 l)
+      method store_page  addr p = mem#store_page  addr p
 
       method maybe_load_byte  addr =
 	match mem#maybe_load_byte addr with
@@ -2148,6 +2171,8 @@ struct
     end
 end
 
+let all_present = String.make 512 '\xff'
+
 class string_maybe_memory = object(self)
   inherit concrete_memory
 
@@ -2183,6 +2208,13 @@ class string_maybe_memory = object(self)
 	  bidx = idx lsr 3 in
 	bitmap.[bidx] <- (Char.chr ((Char.code bitmap.[bidx]) lor bit))
 	
+  method store_page addr newstr =
+    assert(Int64.logand addr 0xfffL = 0L);
+    assert(String.length newstr = 4096);
+    let page = Int64.to_int (Int64.shift_right addr 12) in
+      mem.(page) <- Some newstr;
+      bitmaps.(page) <- Some all_present
+
   method maybe_load_byte addr =
     match (self#maybe_get_pages addr) with
       | None -> None
@@ -2422,7 +2454,9 @@ struct
     method store_byte_conc  addr b = mem#store_byte addr (D.from_concrete_8 b)
     method store_short_conc addr s = mem#store_short addr(D.from_concrete_16 s)
     method store_word_conc  addr w = mem#store_word addr (D.from_concrete_32 w)
-    method store_long_copc  addr l = mem#store_long addr (D.from_concrete_64 l)
+    method store_long_conc  addr l = mem#store_long addr (D.from_concrete_64 l)
+
+    method store_page_conc  addr p = mem#store_page addr p
 
     method load_byte  addr = mem#load_byte  addr
     method load_short addr = mem#load_short addr
@@ -5169,10 +5203,202 @@ object(self)
       | _ -> false
 end
 
+module LinuxLoader = struct
+  type elf_header = {
+    eh_type : int;
+    machine : int;
+    version : int64;
+    entry : int64;
+    phoff : int64;
+    shoff : int64;
+    eh_flags : int64;
+    ehsize : int;
+    phentsize : int;
+    phnum : int;
+    shentsize : int;
+    shnum : int;
+    shstrndx : int
+  }
+
+  (* "Program header" is the standard ELF terminology, but it would be
+     more natural to call this a "segment header". (However the
+     abbreviation "SH" in ELF always stands for "section header", which
+     is something else.) *)
+  type program_header = {
+    ph_type : int64;
+    offset : int64;
+    vaddr : int64;
+    paddr : int64;
+    filesz : int64;
+    memsz : int64;
+    ph_flags : int64;
+    align : int64
+  }
+
+  let read_ui32 i =
+    Int64.logand 0xffffffffL (Int64.of_int32 (IO.read_real_i32 i))
+
+  let read_elf_header ic =
+    let i = IO.input_channel ic in
+    let ident = IO.really_nread i 16 in
+      assert(ident = 
+	  "\x7fELF\001\001\001\000\000\000\000\000\000\000\000\000");
+      (* OCaml structure initialization isn't guaranteed to happen
+	 left to right, so we need to use a bunch of lets here: *)
+      let eh_type = IO.read_ui16 i in
+      let machine = IO.read_ui16 i in
+      let version = read_ui32 i in
+      let entry = read_ui32 i in
+      let phoff = read_ui32 i in
+      let shoff = read_ui32 i in
+      let eh_flags = read_ui32 i in
+      let ehsize = IO.read_ui16 i in
+      let phentsize = IO.read_ui16 i in
+      let phnum = IO.read_ui16 i in
+      let shentsize = IO.read_ui16 i in
+      let shnum = IO.read_ui16 i in
+      let shstrndx = IO.read_ui16 i in
+      let eh = {
+	eh_type = eh_type; machine = machine; version = version;
+	entry = entry; phoff = phoff; shoff = shoff; eh_flags = eh_flags;
+	ehsize = ehsize; phentsize = phentsize; phnum = phnum;
+	shentsize = shentsize; shnum = shnum; shstrndx = shstrndx }
+      in
+	assert(eh.ehsize = 16 + 36);
+	eh
+
+  let read_program_headers ic eh =
+    assert(eh.phentsize = 32);
+    seek_in ic (Int64.to_int eh.phoff);
+    let i = IO.input_channel ic in
+      ExtList.List.init eh.phnum
+	(fun _ -> 
+	   let ph_type = read_ui32 i in
+	   let offset = read_ui32 i in
+	   let vaddr = read_ui32 i in
+	   let paddr = read_ui32 i in
+	   let filesz = read_ui32 i in
+	   let memsz = read_ui32 i in
+	   let ph_flags = read_ui32 i in
+	   let align = read_ui32 i in
+	     { ph_type = ph_type; offset = offset; vaddr = vaddr;
+	       paddr = paddr; filesz = filesz; memsz = memsz;
+	       ph_flags = ph_flags;
+	       align = align
+	     })
+
+  let store_page fm vaddr str =
+    if Int64.rem vaddr 0x1000L = 0L then
+      fm#store_page_conc vaddr
+	(str ^ (String.make (4096 - String.length str) '\000'))
+    else
+      fm#store_str vaddr 0L str
+
+  let zero_fill fm vaddr n =
+    for i = 0 to n - 1 do
+      fm#store_byte_conc (Int64.add vaddr (Int64.of_int i)) 0
+    done
+
+  let load_segment fm ic phr virt_off =
+    let i = IO.input_channel ic in
+    let type_str = match (phr.ph_type, phr.ph_flags) with
+      | (1L, 5L) -> "text"
+      | (1L, 6L)
+      | (1L, 7L) -> "data"
+      | (2L, _) -> "DYNAMIC"
+      | (3L, _) -> "INTERP"
+      | (4L, _) -> "NOTE"
+      | (6L, _) -> "PHDR"
+      | (0x6474e550L, _) -> "EH_FRAME"
+      | (0x6474e552L, _) -> "RELRO"
+      | _ -> "???"
+    in
+    let partial = Int64.rem phr.filesz 0x1000L in
+    let vbase = Int64.add phr.vaddr virt_off in
+      Printf.printf "Loading %8s segment from %08Lx to %08Lx\n"
+	type_str vbase
+	(Int64.add vbase phr.filesz);
+      seek_in ic (Int64.to_int phr.offset);
+      for page_num = 0 to Int64.to_int (Int64.div phr.filesz 4096L) do
+	let page = IO.really_nread i 4096 and
+	    va = (Int64.add vbase
+		    (Int64.mul (Int64.of_int page_num) 4096L)) in
+	store_page fm va page
+      done;
+      (if partial <> 0L then
+	 let page = IO.really_nread i (Int64.to_int partial) and
+	     va = (Int64.add vbase
+		     (Int64.sub phr.filesz partial)) in
+	   store_page fm va page);
+      if phr.memsz > phr.filesz then
+	(* E.g., a BSS region. Zero fill to avoid uninit-value errors. *)
+	(Printf.printf "            Zero filling from %08Lx to %08Lx\n"
+	   (Int64.add vbase phr.filesz) (Int64.add vbase phr.memsz);
+	 let va = ref (Int64.add vbase phr.filesz) in
+	 let first_full = (Int64.logand (Int64.add !va 4095L)
+			     (Int64.lognot 4095L)) in
+	 let remaining = ref (Int64.sub phr.memsz phr.filesz) in
+	 let partial1 = min (Int64.sub first_full !va) !remaining in
+	   zero_fill fm !va (Int64.to_int partial1);
+	   va := Int64.add !va partial1;
+	   remaining := Int64.sub !remaining partial1;
+	   while !remaining >= 4096L do
+	     store_page fm !va (String.make 4096 '\000');
+	     va := Int64.add !va 4096L;
+	     remaining := Int64.sub !remaining 4096L
+	   done;
+	   zero_fill fm !va (Int64.to_int !remaining);
+	   va := Int64.add !va !remaining;
+	   (* ld.so knows that it can use beyond its BSS to the end of
+	      the page that it's stored on as the first part of its heap
+	      without asking from an allocation from the OS. So 0-fill
+	      the rest of the page too to be compatible with this. *)
+	   let last_aligned = (Int64.logand (Int64.add !va 4095L)
+				 (Int64.lognot 4095L)) in
+	     Printf.printf "      Extra zero filling from %08Lx to %08Lx\n"
+	       !va last_aligned;
+	     let last_space = Int64.to_int (Int64.sub last_aligned !va) in
+	       zero_fill fm !va last_space)
+
+  let load_ldso fm dso vaddr =
+    let ic = open_in dso in
+    let dso_eh = read_elf_header ic in
+      assert(dso_eh.eh_type = 3);
+      List.iter
+	(fun phr ->
+	   if phr.ph_type = 1L || phr.memsz <> 0L then
+	     load_segment fm ic phr vaddr)
+	(read_program_headers ic dso_eh);
+      close_in ic
+
+  let load_dynamic_program fm fname load_base =
+    let ic = open_in fname in
+    let i = IO.input_channel ic in
+    let ldso = ref None in
+    let eh = read_elf_header ic in
+      assert(eh.eh_type = 2);
+      List.iter
+	(fun phr ->
+	   if phr.ph_type = 1L then (* PT_LOAD *)
+	     (if phr.ph_flags = 5L then assert(phr.vaddr = load_base);
+	      load_segment fm ic phr 0L)
+	   else if phr.ph_type = 3L then (* PT_INTERP *)
+	     (seek_in ic (Int64.to_int phr.offset);
+	      let interp = IO.really_nread i (Int64.to_int phr.filesz) in
+	      let ldso_base = 0xb7f00000L in
+		ldso := Some (ldso_base, (load_ldso fm interp ldso_base));
+		load_segment fm ic phr 0L)
+	   else if phr.memsz != 0L then
+	     load_segment fm ic phr 0L)
+	(read_program_headers ic eh);
+      close_in ic;
+      !ldso
+
+end
 
 let call_replacements fm eip =
   match eip with
-    (* vx_alloc: *)
+      (* vx_alloc: *)
 (*     | 0x0804836cL (* malloc *) -> *)
 (* 	Some (fun () -> fm#set_word_reg_symbolic R_EAX "malloc") *)
 (*     | 0x0804834cL (* __assert_fail *) -> *)
@@ -5486,7 +5712,7 @@ let print_tree fm =
 
 let fuzz_static start_eip end_eips fm asmir_gamma =
   fm#make_x86_regs_symbolic;
-  fm#set_word_var R_EAX 24L;
+  (* fm#set_word_var R_EAX 24L; *)
   fm#make_snap ();
   if !opt_trace_setup then Printf.printf "Took snapshot\n";
   loop_w_stats None
@@ -5541,7 +5767,7 @@ let fuzz_vmlinux (fm : machine) =
   fuzz_static (* 0xc0102fb0L *) 0xc0102feeL [0xc0102ff9L; 0xc010303cL] fm
 
 let main argv = 
-  let prog = ref ([], []) in
+  let fm = new SRFM.sym_region_frag_machine in
     Arg.parse
       (Arg.align [
 	 ("-stp-path", Arg.Set_string(opt_stp_path),
@@ -5586,14 +5812,14 @@ let main argv =
 	 ("-time-stats", Arg.Set(opt_gc_stats),
 	  " Print running time statistics");
        ])
-      (fun arg -> prog := Vine_parser.parse_file arg)
+      (* (fun arg -> prog := Vine_parser.parse_file arg) *)
+      (fun arg -> ignore(LinuxLoader.load_dynamic_program fm arg 0xc0100000L))
       "trans_eval [options]* file.ir\n";
-    let (dl, sl) = !prog in
+    let dl = Asmir.decls_for_arch Asmir.arch_i386 in
     let asmir_gamma = Asmir.gamma_create
       (List.find (fun (i, s, t) -> s = "mem") dl) dl in
-    let fm = new SRFM.sym_region_frag_machine in
       fm#on_missing_symbol;
-      fm#init_prog !prog;
+      fm#init_prog (dl, []);
       fm#add_special_handler
 	((new linux_special_nonhandler fm) :> special_handler);
       fm#add_special_handler
