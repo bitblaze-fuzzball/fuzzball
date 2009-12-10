@@ -522,6 +522,8 @@ let rec stmt_size = function
   | V.Assert(e) -> 1 + (expr_size e)
   | V.Halt(e) -> 1 + (expr_size e)
 
+let opt_trace_temps = ref false
+
 module FormulaManagerFunctor =
   functor (D : DOMAIN) ->
 struct
@@ -603,13 +605,12 @@ struct
 	@ (self#mem_axioms_word region_str addr wvar0)
 	@ (self#mem_axioms_word region_str (Int64.add addr 4L) wvar1)
 
-    val mem_axioms = Hashtbl.create 30
+    val mem_axioms = V.VarHash.create 30
 
     method private add_mem_axioms region_str ty addr =
-      try
-	ignore(Hashtbl.find mem_axioms (region_str, ty, addr));
-	()
-      with Not_found ->
+      if ty <> V.REG_8 && 
+	not (V.VarHash.mem mem_axioms (self#mem_var region_str ty addr))
+      then
 	let var = self#mem_var region_str ty addr in
 	let al = (match ty with
 		    | V.REG_8  -> []
@@ -617,7 +618,10 @@ struct
 		    | V.REG_32 -> self#mem_axioms_word region_str addr var
 		    | V.REG_64 -> self#mem_axioms_long region_str addr var
 		    | _ -> failwith "Unexpected type in add_mem_axioms") in
-	  Hashtbl.replace mem_axioms (region_str, ty, addr) al
+	  List.iter
+	    (fun (lhs, rhs) -> V.VarHash.replace mem_axioms lhs rhs)
+	    al;
+	  assert(ty = V.REG_8 || V.VarHash.mem mem_axioms var);
 
     method rewrite_mem_expr e =
       match e with
@@ -644,13 +648,14 @@ struct
 
     method get_mem_axioms =
       let of_type ty ((n,s,ty'),e) = (ty = ty') in
-      let l = List.concat (Hashtbl.fold (fun s v l -> v :: l) mem_axioms []) in
+      let l = V.VarHash.fold
+	(fun lhs rhs l -> (lhs, rhs) :: l) mem_axioms [] in
       let shorts = List.filter (of_type V.REG_16) l and
 	  words  = List.filter (of_type V.REG_32) l and
 	  longs  = List.filter (of_type V.REG_64) l in
 	shorts @ words @ longs
 
-    method reset_mem_axioms = Hashtbl.clear mem_axioms
+    method reset_mem_axioms = V.VarHash.clear mem_axioms
 
     (* subexpression cache *)
     val subexpr_to_temp_var = Hashtbl.create 1001
@@ -671,7 +676,8 @@ struct
 		 let var = V.newvar s ty in
  		   Hashtbl.replace subexpr_to_temp_var e' var;
  		   V.VarHash.replace temp_var_to_subexpr var e';
-		   (* Printf.printf "%s = %s\n" s (V.exp_to_string e'); *)
+		   if !opt_trace_temps then
+		     Printf.printf "%s = %s\n" s (V.exp_to_string e');
 		   var) in
 	    D.from_symbolic (V.Lval(V.Temp(var)))
 	      
@@ -2365,9 +2371,7 @@ struct
 	self#set_int_var (Hashtbl.find reg_to_var r) v
       in
 	reg R_EBP (form_man#fresh_symbolic_32 "initial_ebp");
-	(* reg R_ESP (form_man#fresh_symbolic_32 "initial_esp"); *)
-	(* reg R_ESP (D.from_concrete_32 0xbfff0000L); *)
-	reg R_ESP (D.from_concrete_32 0xdeffccccL);
+	reg R_ESP (form_man#fresh_symbolic_32 "initial_esp");
 	reg R_ESI (form_man#fresh_symbolic_32 "initial_esi");
 	reg R_EDI (form_man#fresh_symbolic_32 "initial_edi");
 	reg R_EAX (form_man#fresh_symbolic_32 "initial_eax");
@@ -2384,7 +2388,8 @@ struct
 	reg R_DFLAG (D.from_concrete_32 1L);
 	reg R_ACFLAG (D.from_concrete_32 0L);
 	reg R_IDFLAG (D.from_concrete_32 0L);
-	reg EFLAGSREST (form_man#fresh_symbolic_32 "initial_eflagsrest");
+	reg EFLAGSREST (D.from_concrete_32 0L);
+	(* reg EFLAGSREST (form_man#fresh_symbolic_32 "initial_eflagsrest");*)
 	(* user space CS segment: *)
 	self#store_byte_conc 0x60000020L 0xff;
 	self#store_byte_conc 0x60000021L 0xff;
@@ -3389,14 +3394,81 @@ struct
   module GM = GranularMemoryFunctor(D)
   module SPFM = SymPathFragMachineFunctor(D)
 
+  let is_high_mask ty v =
+    let is_power_of_2_or_zero x =
+      Int64.logand x (Int64.pred x) = 0L
+    in
+    let mask64 =
+      match ty with
+	| V.REG_1 -> fix_s1 v
+	| V.REG_8 -> fix_s8 v
+	| V.REG_16 -> fix_s16 v
+	| V.REG_32 -> fix_s32 v
+	| V.REG_64 -> v
+	| _ -> failwith "Bad type in is_high_mask"
+    in
+      is_power_of_2_or_zero (Int64.succ (Int64.lognot mask64))
+
+  let rec ulog2 i =
+    match i with
+      | 0L -> -1
+      | 1L -> 0
+      | 2L|3L -> 1
+      | 4L|5L|6L|7L -> 2
+      | i when i < 16L -> 2 + ulog2(Int64.shift_right i 2)
+      | i when i < 256L -> 4 + ulog2(Int64.shift_right i 4)
+      | i when i < 65536L -> 8 + ulog2(Int64.shift_right i 8)
+      | i when i < 0x100000000L -> 16 + ulog2(Int64.shift_right i 16)
+      | _ -> 32 + ulog2(Int64.shift_right i 32)
+
+  let rec narrow_bitwidth e =
+    match e with
+      | V.Constant(V.Int(ty, v)) -> ulog2 v
+      | V.BinOp(V.BITAND, e1, e2) ->
+	  min (narrow_bitwidth e1) (narrow_bitwidth e2)
+      | V.BinOp(V.BITOR, e1, e2) ->
+	  max (narrow_bitwidth e1) (narrow_bitwidth e2)
+      | _ -> 64
+
   let split_terms e form_man =
     let rec loop e =
       match e with
 	| V.BinOp(V.PLUS, e1, e2) -> (loop e1) @ (loop e2)
+	| V.BinOp(V.BITAND, e, V.Constant(V.Int(ty, v)))
+	    when is_high_mask ty v ->
+	    (* x & 0xfffffff0 = x - (x & 0xf), etc. *)
+	    (loop e) @
+	      (loop
+		 (V.UnOp(V.NEG,
+			 V.BinOp(V.BITAND, e,
+				 V.UnOp(V.NOT, V.Constant(V.Int(ty, v)))))))
+	| V.BinOp(V.BITOR, e1, e2) ->
+	    let (w1, w2) = (narrow_bitwidth e1), (narrow_bitwidth e2) in
+(* 	      Printf.printf "In %s (OR) %s, widths are %d and %d\n" *)
+(* 		(V.exp_to_string e1) (V.exp_to_string e2) w1 w2; *)
+	      if min w1 w2 <= 8 then
+		(* x | y = x - (x & m) + ((x & m) | y)
+		   where m is a bitmask >= y. *)
+		let (e_x, e_y, w) = 
+		  if w1 < w2 then
+		    (e2, e1, w1)
+		  else
+		    (e1, e2, w2)
+		in
+		  assert(w >= 0); (* x & 0 should have been optimized away *)
+		  let mask = Int64.pred (Int64.shift_left 1L w) in
+		  let ty_y = Vine_typecheck.infer_type None e_y in
+		  let masked = V.BinOp(V.BITAND, e_y,
+				       V.Constant(V.Int(ty_y, mask))) in
+		    (loop e_x) @ 
+		      [V.UnOp(V.NEG, masked);
+		       V.BinOp(V.BITOR, masked, e_y)]
+	      else
+		[e]
 	| V.Lval(V.Temp(var)) ->
 	    FormMan.if_expr_temp form_man var
 	      (fun e' -> loop e') [e]
-      | e -> [e]
+	| e -> [e]
     in
       loop e
 
@@ -3416,21 +3488,17 @@ struct
 	  when off > 0xc0000000L && off < 0xdf000000L (* Linux kernel *)
 	  -> ConstantBase(off)
       | V.UnOp(V.NEG, _) -> ExprOffset(e)
-      | V.BinOp(V.LSHIFT, _, V.Constant(V.Int(V.REG_8, (1L|2L|3L|4L))))
+      | V.BinOp(V.LSHIFT, _, V.Constant(V.Int(V.REG_8, (1L|2L|3L|4L|5L))))
 	  -> ExprOffset(e)
       | V.BinOp(V.TIMES, _, V.Constant(V.Int(V.REG_32, off)))
-	  when off > 1L && off < 0x100L
+	  when off > 1L && off < 0x1000L
 	  -> ExprOffset(e)
-      | V.BinOp(V.BITAND, _, V.Constant(V.Int(_, mask)))
-	  when mask < 0xffffL
-	    -> ExprOffset(e)
-      | V.BinOp(V.BITOR, _, V.BinOp(V.BITAND, _,
-				    V.Constant(V.Int(V.REG_32, 1L))))
+      | e when (narrow_bitwidth e) < 16
 	  -> ExprOffset(e)
       | V.BinOp(V.ARSHIFT, _, _)
 	  -> ExprOffset(e)
       | V.Lval(_) -> Symbol(e)
-      | _ -> failwith "Strange term in address"
+      | _ -> failwith ("Strange term "^(V.exp_to_string e)^" in address")
 
   let classify_terms e form_man =
     let l = List.map classify_term (split_terms e form_man) in
@@ -3518,10 +3586,24 @@ struct
 		 bits := (Int64.logor (Int64.shift_left !bits 1)
 			    (if bit then 1L else 0L));
 	     done);
-	if !opt_trace_sym_addrs then
-	  Printf.printf "Picked concrete offset value 0x%Lx\n" !bits;
-	self#add_to_path_cond (V.BinOp(V.EQ, e, (c32 !bits)));
 	!bits
+
+    val mutable concrete_cache = Hashtbl.create 101
+
+    method private choose_conc_offset_cached e =
+      let c32 x = V.Constant(V.Int(V.REG_32, x)) in
+      let (bits, verb) = 
+	if Hashtbl.mem concrete_cache e then
+	  (Hashtbl.find concrete_cache e, "Reused")
+	else
+	  let bits = self#choose_conc_offset e in
+	    Hashtbl.replace concrete_cache e bits;
+	    (bits, "Picked") in
+	if !opt_trace_sym_addrs then
+	  Printf.printf "%s concrete offset value 0x%Lx for %s\n"
+	    verb bits (V.exp_to_string e);
+	self#add_to_path_cond (V.BinOp(V.EQ, e, (c32 bits)));
+	bits
 
     method eval_addr_exp_region exp =
       let v = self#eval_int_exp_simplify exp in
@@ -3549,7 +3631,7 @@ struct
 	      (match (eoffs, off_syms) with
 		 | ([], []) -> 0L
 		 | (el, vel) -> 
-		     (self#choose_conc_offset (sum_list (el @ vel))))
+		     (self#choose_conc_offset_cached (sum_list (el @ vel))))
 	    in
 	      (base, (fix_u32 offset))
 		  
@@ -3608,7 +3690,8 @@ struct
     method reset () =
       spfm#reset ();
       regions <- [];
-      Hashtbl.clear region_vals 
+      Hashtbl.clear region_vals;
+      Hashtbl.clear concrete_cache
   end
 end
 
@@ -5203,6 +5286,8 @@ object(self)
       | _ -> false
 end
 
+let opt_trace_setup = ref false
+
 module LinuxLoader = struct
   type elf_header = {
     eh_type : int;
@@ -5299,7 +5384,7 @@ module LinuxLoader = struct
       fm#store_byte_conc (Int64.add vaddr (Int64.of_int i)) 0
     done
 
-  let load_segment fm ic phr virt_off =
+   let load_segment fm ic phr virt_off =
     let i = IO.input_channel ic in
     let type_str = match (phr.ph_type, phr.ph_flags) with
       | (1L, 5L) -> "text"
@@ -5315,9 +5400,10 @@ module LinuxLoader = struct
     in
     let partial = Int64.rem phr.filesz 0x1000L in
     let vbase = Int64.add phr.vaddr virt_off in
-      Printf.printf "Loading %8s segment from %08Lx to %08Lx\n"
-	type_str vbase
-	(Int64.add vbase phr.filesz);
+      if !opt_trace_setup then
+	Printf.printf "Loading %8s segment from %08Lx to %08Lx\n"
+	  type_str vbase
+	  (Int64.add vbase phr.filesz);
       seek_in ic (Int64.to_int phr.offset);
       for page_num = 0 to Int64.to_int (Int64.div phr.filesz 4096L) do
 	let page = IO.really_nread i 4096 and
@@ -5332,8 +5418,9 @@ module LinuxLoader = struct
 	   store_page fm va page);
       if phr.memsz > phr.filesz then
 	(* E.g., a BSS region. Zero fill to avoid uninit-value errors. *)
-	(Printf.printf "            Zero filling from %08Lx to %08Lx\n"
-	   (Int64.add vbase phr.filesz) (Int64.add vbase phr.memsz);
+	(if !opt_trace_setup then
+	   Printf.printf "            Zero filling from %08Lx to %08Lx\n"
+	     (Int64.add vbase phr.filesz) (Int64.add vbase phr.memsz);
 	 let va = ref (Int64.add vbase phr.filesz) in
 	 let first_full = (Int64.logand (Int64.add !va 4095L)
 			     (Int64.lognot 4095L)) in
@@ -5355,12 +5442,24 @@ module LinuxLoader = struct
 	      the rest of the page too to be compatible with this. *)
 	   let last_aligned = (Int64.logand (Int64.add !va 4095L)
 				 (Int64.lognot 4095L)) in
-	     Printf.printf "      Extra zero filling from %08Lx to %08Lx\n"
-	       !va last_aligned;
+	     if !opt_trace_setup then
+	       Printf.printf "      Extra zero filling from %08Lx to %08Lx\n"
+		 !va last_aligned;
 	     let last_space = Int64.to_int (Int64.sub last_aligned !va) in
 	       zero_fill fm !va last_space)
-
-  let load_ldso fm dso vaddr =
+	  
+   let load_partial_segment fm ic phr vbase size =
+     let i = IO.input_channel ic in
+     let file_base = Int64.sub vbase phr.vaddr in
+       if !opt_trace_setup then
+	 Printf.printf "Loading     extra region from %08Lx to %08Lx\n"
+	   vbase (Int64.add vbase size);
+       assert(size <= 4096L);
+       seek_in ic (Int64.to_int (Int64.add phr.offset file_base));
+       let data = IO.really_nread i (Int64.to_int size) in
+	 store_page fm vbase data
+	  
+   let load_ldso fm dso vaddr =
     let ic = open_in dso in
     let dso_eh = read_elf_header ic in
       assert(dso_eh.eh_type = 3);
@@ -5371,7 +5470,7 @@ module LinuxLoader = struct
 	(read_program_headers ic dso_eh);
       close_in ic
 
-  let load_dynamic_program fm fname load_base =
+  let load_dynamic_program fm fname load_base data_too extras =
     let ic = open_in fname in
     let i = IO.input_channel ic in
     let ldso = ref None in
@@ -5381,7 +5480,8 @@ module LinuxLoader = struct
 	(fun phr ->
 	   if phr.ph_type = 1L then (* PT_LOAD *)
 	     (if phr.ph_flags = 5L then assert(phr.vaddr = load_base);
-	      load_segment fm ic phr 0L)
+	      if data_too || (phr.ph_flags <> 6L && phr.ph_flags <> 7L) then
+		load_segment fm ic phr 0L)
 	   else if phr.ph_type = 3L then (* PT_INTERP *)
 	     (seek_in ic (Int64.to_int phr.offset);
 	      let interp = IO.really_nread i (Int64.to_int phr.filesz) in
@@ -5389,7 +5489,15 @@ module LinuxLoader = struct
 		ldso := Some (ldso_base, (load_ldso fm interp ldso_base));
 		load_segment fm ic phr 0L)
 	   else if phr.memsz != 0L then
-	     load_segment fm ic phr 0L)
+	     load_segment fm ic phr 0L;
+	   List.iter
+	     (fun (base, size) ->
+		if base >= phr.vaddr && 
+		  base < (Int64.add phr.vaddr phr.memsz)
+		then
+		  (assert(Int64.add base size < Int64.add phr.vaddr phr.memsz);
+		   load_partial_segment fm ic phr base size))
+	     extras)
 	(read_program_headers ic eh);
       close_in ic;
       !ldso
@@ -5451,7 +5559,7 @@ let loop_detect = Hashtbl.create 1000
 let opt_trace_eip = ref false
 let opt_trace_ir = ref false
 let opt_trace_iterations = ref false
-let opt_trace_setup = ref false
+let opt_trace_stopping = ref false
 let opt_coverage_stats = ref false
 let opt_gc_stats = ref false
 let opt_time_stats = ref false
@@ -5711,26 +5819,26 @@ let print_tree fm =
     close_out chan
 
 let fuzz_static start_eip end_eips fm asmir_gamma =
-  fm#make_x86_regs_symbolic;
-  (* fm#set_word_var R_EAX 24L; *)
   fm#make_snap ();
   if !opt_trace_setup then Printf.printf "Took snapshot\n";
   loop_w_stats None
     (fun iter ->
        let old_tcs = Hashtbl.length trans_cache in
+       let stop str = if !opt_trace_stopping then
+	 Printf.printf "Stopping %s\n" str
+       in
 	 fm#set_iter_seed (Int64.to_int iter);
 	 (try
 	    runloop fm start_eip asmir_gamma (fun a -> List.mem a end_eips);
 	  with
 	    | Failure("Jump to 0") -> () (* equivalent of segfault *)
 	    | SimulatedExit(_) -> ()
-	    | BoringPath -> Printf.printf "Stopping on boring path\n"
-	    | SymbolicJump -> Printf.printf "Stopping path at symbolic jump\n"
-	    | NoSyscalls -> Printf.printf "Stopping path at system call\n"
-	    | NullDereference -> Printf.printf "Stopping path at null deref\n"
-	    | TooManyIterations ->
-		Printf.printf "Stopping path after too many loop iterations\n"
-	    | UnhandledTrap -> Printf.printf "Stopping path at trap\n"
+	    | BoringPath -> stop "on boring path"
+	    | SymbolicJump -> stop "at symbolic jump"
+	    | NoSyscalls -> stop "at system call"
+	    | NullDereference -> stop "at null deref"
+	    | TooManyIterations -> stop "after too many loop iterations"
+	    | UnhandledTrap -> stop "at trap"
 	    (* | NotConcrete(_) -> () (* shouldn't happen *)
 	    | Simplify_failure(_) -> () (* shouldn't happen *)*)
 	 ); 
@@ -5751,25 +5859,84 @@ let fuzz_static start_eip end_eips fm asmir_gamma =
   if !opt_gc_stats then
     Gc.print_stat stdout
 
-let fuzz_vxalloc (fm : machine) =
-  fuzz_static 0x08048434L [0x080485f7L] fm
+(* let fuzz_vxalloc (fm : machine) = *)
+(*   fuzz_static 0x08048434L [0x080485f7L] fm *)
 
-let fuzz_hv_fetch (fm : machine) =
-  fuzz_static 0x08293573L [0x0829361dL] fm
+(* let fuzz_hv_fetch (fm : machine) = *)
+(*   fuzz_static 0x08293573L [0x0829361dL] fm *)
 
-let fuzz_list_find (fm : machine) =
-  fuzz_static 0x08048394L [0x080483d1L] fm
+(* let fuzz_list_find (fm : machine) = *)
+(*   fuzz_static 0x08048394L [0x080483d1L] fm *)
 
-let fuzz_bst_find (fm : machine) =
-  fuzz_static 0x080483d4L [0x080485a8L] fm
+(* let fuzz_bst_find (fm : machine) = *)
+(*   fuzz_static 0x080483d4L [0x080485a8L] fm *)
 
-let fuzz_vmlinux (fm : machine) =
-  fuzz_static (* 0xc0102fb0L *) 0xc0102feeL [0xc0102ff9L; 0xc010303cL] fm
+let opt_load_base = ref 0x08048000L (* Linux user space default *)
+
+let opt_fuzz_start_addr = ref None
+let opt_fuzz_end_addrs = ref []
+let opt_initial_eax = ref None
+let opt_initial_ebx = ref None
+let opt_initial_ecx = ref None
+let opt_initial_edx = ref None
+let opt_initial_esi = ref None
+let opt_initial_edi = ref None
+let opt_initial_esp = ref None
+let opt_initial_ebp = ref None
+let opt_load_extra_regions = ref []
+let opt_store_words = ref []
+
+let add_delimited_pair opt char s =
+  let delim_loc = String.index s char in
+  let v1 = Int64.of_string (String.sub s 0 delim_loc) in
+  let v2 = Int64.of_string (String.sub s (delim_loc + 1)
+			      ((String.length s) - delim_loc - 1)) in
+    opt := (v1, v2) :: !opt
 
 let main argv = 
   let fm = new SRFM.sym_region_frag_machine in
     Arg.parse
       (Arg.align [
+	 ("-fuzz-start-addr", Arg.String
+	    (fun s -> opt_fuzz_start_addr := Some(Int64.of_string s)),
+	  "addr Code address to start fuzzing");
+	 ("-fuzz-end-addr", Arg.String
+	    (fun s -> opt_fuzz_end_addrs :=
+	       (Int64.of_string s) :: !opt_fuzz_end_addrs),
+	  "addr Code address to finish fuzzing, may be repeated");
+	 ("-initial-eax", Arg.String
+	    (fun s -> opt_initial_eax := Some(Int64.of_string s)),
+	  "word Concrete initial value for %eax register");
+	 ("-initial-ebx", Arg.String
+	    (fun s -> opt_initial_ebx := Some(Int64.of_string s)),
+	  "word Concrete initial value for %ebx register");
+	 ("-initial-ecx", Arg.String
+	    (fun s -> opt_initial_ecx := Some(Int64.of_string s)),
+	  "word Concrete initial value for %ecx register");
+	 ("-initial-edx", Arg.String
+	    (fun s -> opt_initial_edx := Some(Int64.of_string s)),
+	  "word Concrete initial value for %edx register");
+	 ("-initial-esi", Arg.String
+	    (fun s -> opt_initial_esi := Some(Int64.of_string s)),
+	  "word Concrete initial value for %esi register");
+	 ("-initial-edi", Arg.String
+	    (fun s -> opt_initial_edi := Some(Int64.of_string s)),
+	  "word Concrete initial value for %edi register");
+	 ("-initial-esp", Arg.String
+	    (fun s -> opt_initial_esp := Some(Int64.of_string s)),
+	  "word Concrete initial value for %esp (stack pointer)");
+	 ("-initial-ebp", Arg.String
+	    (fun s -> opt_initial_ebp := Some(Int64.of_string s)),
+	  "word Concrete initial value for %ebp (frame pointer)");
+	 ("-load-base", Arg.String
+	    (fun s -> opt_load_base := Int64.of_string s),
+	  "addr Base address for program image");
+	 ("-load-extra-region", Arg.String
+	    (add_delimited_pair opt_load_extra_regions '+'),
+	  "base+size Load an additional region from program image");
+	 ("-store-word", Arg.String
+	    (add_delimited_pair opt_store_words '='),
+	  "addr=val Fix an address to a concrete value");
 	 ("-stp-path", Arg.Set_string(opt_stp_path),
 	  "path Location of external STP binary");
  	 ("-trace-assigns", Arg.Set(opt_trace_assigns),
@@ -5781,6 +5948,7 @@ let main argv =
 		opt_trace_decisions := true;
 		opt_trace_iterations := true;
 		opt_trace_setup := true;
+		opt_trace_stopping := true;
 		opt_trace_sym_addrs := true;
 		opt_coverage_stats := true;
 		opt_time_stats := true)),
@@ -5803,8 +5971,12 @@ let main argv =
 	  " Print symbolic memory regions");
 	 ("-trace-setup", Arg.Set(opt_trace_setup),
 	  " Print progress of program loading");
+	 ("-trace-stopping", Arg.Set(opt_trace_stopping),
+	  " Print why paths terminate");
 	 ("-trace-sym-addrs", Arg.Set(opt_trace_sym_addrs),
 	  " Print symbolic address values");
+	 ("-trace-temps", Arg.Set(opt_trace_temps),
+	  " Print intermediate formulas");
  	 ("-coverage-stats", Arg.Set(opt_coverage_stats),
 	  " Print pseudo-BB coverage statistics");
 	 ("-gc-stats", Arg.Set(opt_gc_stats),
@@ -5813,8 +5985,10 @@ let main argv =
 	  " Print running time statistics");
        ])
       (* (fun arg -> prog := Vine_parser.parse_file arg) *)
-      (fun arg -> ignore(LinuxLoader.load_dynamic_program fm arg 0xc0100000L))
-      "trans_eval [options]* file.ir\n";
+      (fun arg ->
+	 ignore(LinuxLoader.load_dynamic_program fm arg !opt_load_base
+		  false !opt_load_extra_regions))
+      "trans_eval [options]* program\n";
     let dl = Asmir.decls_for_arch Asmir.arch_i386 in
     let asmir_gamma = Asmir.gamma_create
       (List.find (fun (i, s, t) -> s = "mem") dl) dl in
@@ -5824,17 +5998,45 @@ let main argv =
 	((new linux_special_nonhandler fm) :> special_handler);
       fm#add_special_handler
 	((new trap_special_nonhandler fm) :> special_handler);
-     
-      try
-	(* fuzz_pcre *) fuzz_vmlinux fm asmir_gamma
-      with
-	(* | NotConcrete e ->
-	    Printf.printf "Unexpected symbolic value: %s\n" (V.exp_to_string e)
-	*)
-	| Simplify_failure s ->
-	    Printf.printf "Simplify failure <%s> at:\n" s;
-	    fm#print_backtrace;
-
+      fm#make_x86_regs_symbolic;
+      (match !opt_initial_eax with
+	 | Some v -> fm#set_word_var R_EAX v
+	 | None -> ());
+      (match !opt_initial_ebx with
+	 | Some v -> fm#set_word_var R_EBX v
+	 | None -> ());
+      (match !opt_initial_ecx with
+	 | Some v -> fm#set_word_var R_ECX v
+	 | None -> ());
+      (match !opt_initial_edx with
+	 | Some v -> fm#set_word_var R_EDX v
+	 | None -> ());
+      (match !opt_initial_esi with
+	 | Some v -> fm#set_word_var R_ESI v
+	 | None -> ());
+      (match !opt_initial_edi with
+	 | Some v -> fm#set_word_var R_EDI v
+	 | None -> ());
+      (match !opt_initial_esp with
+	 | Some v -> fm#set_word_var R_ESP v
+	 | None -> ());
+      (match !opt_initial_ebp with
+	 | Some v -> fm#set_word_var R_EBP v
+	 | None -> ());
+      List.iter (fun (addr,v) -> fm#store_word_conc addr v) !opt_store_words;
+      
+      let start_addr = match !opt_fuzz_start_addr with
+	| None -> failwith "Missing starting address"
+	| Some l -> l
+      in
+	
+	try
+	  fuzz_static start_addr !opt_fuzz_end_addrs fm asmir_gamma
+	with
+	  | Simplify_failure s ->
+	      Printf.printf "Simplify failure <%s> at:\n" s;
+	      fm#print_backtrace;
+	      
       (* let eip = fm#get_word_var R_EIP in
 	runloop fm eip asmir_gamma (fun _ -> true) (* run until exit *) *)
 ;;
