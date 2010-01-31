@@ -1147,7 +1147,13 @@ class stp_external_engine fname = object(self)
     List.iter self#visitor#declare_var free_vars
 
   method assert_eq var rhs =
-    self#visitor#declare_var_value var rhs
+    try
+      self#visitor#declare_var_value var rhs
+    with
+      | V.TypeError(err) ->
+	  Printf.printf "Typecheck failure on %s: %s\n"
+	    (V.exp_to_string rhs) err;
+	  failwith "Typecheck failure in assert_eq"
 
   method query e =
     output_string self#chan "QUERY(NOT ";
@@ -2299,6 +2305,7 @@ let regstr_to_reg s = match s with
   | _ -> failwith ("Unrecognized register name " ^ s)
 
 exception TooManyIterations
+exception IllegalInstruction
 
 module FragmentMachineFunctor =
   functor (D : DOMAIN) ->
@@ -2339,7 +2346,10 @@ struct
       frag <- (dl, sl);
       V.VarHash.clear temps;
       loop_cnt <- 0;
+      self#concretize_misc;
       insns <- sl
+
+    method concretize_misc = ()
 
     method private on_missing_zero_m (m:GM.granular_memory) =
       m#on_missing
@@ -2389,8 +2399,14 @@ struct
 	reg R_ACFLAG (D.from_concrete_32 0L);
 	reg R_IDFLAG (D.from_concrete_32 0L);
 	reg EFLAGSREST (D.from_concrete_32 0L);
+	reg R_PF (D.from_concrete_1 0);
+	reg R_CF (D.from_concrete_1 0);
+	reg R_AF (D.from_concrete_1 0);
+	reg R_SF (D.from_concrete_1 0);
+	reg R_OF (D.from_concrete_1 0);
+	reg R_ZF (D.from_concrete_1 0);
 	(* reg EFLAGSREST (form_man#fresh_symbolic_32 "initial_eflagsrest");*)
-	(* user space CS segment: *)
+	(* Linux user space CS segment: *)
 	self#store_byte_conc 0x60000020L 0xff;
 	self#store_byte_conc 0x60000021L 0xff;
 	self#store_byte_conc 0x60000022L 0x00;
@@ -2399,7 +2415,7 @@ struct
 	self#store_byte_conc 0x60000025L 0xfb;
 	self#store_byte_conc 0x60000026L 0xcf;
 	self#store_byte_conc 0x60000027L 0x00;
-	(* user space DS/ES segment: *)
+	(* Linux user space DS/ES segment: *)
 	self#store_byte_conc 0x60000028L 0xff;
 	self#store_byte_conc 0x60000029L 0xff;
 	self#store_byte_conc 0x6000002aL 0x00;
@@ -2408,7 +2424,7 @@ struct
 	self#store_byte_conc 0x6000002dL 0xf3;
 	self#store_byte_conc 0x6000002eL 0xcf;
 	self#store_byte_conc 0x6000002fL 0x00;
-	(* user space GS segment: *)
+	(* Linux user space GS segment: *)
 	self#store_byte_conc 0x60000060L 0xff;
 	self#store_byte_conc 0x60000061L 0xff;
 	self#store_byte_conc 0x60000062L 0x00;
@@ -2417,7 +2433,7 @@ struct
 	self#store_byte_conc 0x60000065L 0xf3;
 	self#store_byte_conc 0x60000066L 0xcf;
 	self#store_byte_conc 0x60000067L 0x62;
-	(* kernel space CS segment: *)
+	(* Linux kernel space CS segment: *)
 	self#store_byte_conc 0x60000070L 0xff;
 	self#store_byte_conc 0x60000071L 0xff;
 	self#store_byte_conc 0x60000072L 0x00;
@@ -2426,7 +2442,7 @@ struct
 	self#store_byte_conc 0x60000075L 0xfb;
 	self#store_byte_conc 0x60000076L 0xcf;
 	self#store_byte_conc 0x60000077L 0x00;
-	(* kernel space DS/ES segment: *)
+	(* Linux kernel space DS/ES segment: *)
 	self#store_byte_conc 0x60000078L 0xff;
 	self#store_byte_conc 0x60000079L 0xff;
 	self#store_byte_conc 0x6000007aL 0x00;
@@ -2435,6 +2451,33 @@ struct
 	self#store_byte_conc 0x6000007dL 0xf3;
 	self#store_byte_conc 0x6000007eL 0xcf;
 	self#store_byte_conc 0x6000007fL 0x00;
+	(* ReactOS kernel space FS segment: *)
+(* 	self#store_byte_conc 0x60000030L 0x02; (* limit low *) *)
+(* 	self#store_byte_conc 0x60000031L 0x00; (* limit mid *) *)
+(* 	self#store_byte_conc 0x60000032L 0x00; (* base low *) *)
+(* 	self#store_byte_conc 0x60000033L 0xf0; (* base mid-low *) *)
+(* 	self#store_byte_conc 0x60000034L 0xdf; (* base mid-high *) *)
+(* 	self#store_byte_conc 0x60000035L 0xf3; (* flags *) *)
+(* 	self#store_byte_conc 0x60000036L 0xc0; (* flags, limit high *) *)
+(* 	self#store_byte_conc 0x60000037L 0xff; (* base high *) *)
+	(* Windows 7 kernel space FS segment: *)
+	self#store_byte_conc 0x60000030L 0x04; (* limit low *)
+	self#store_byte_conc 0x60000031L 0x00; (* limit mid *)
+	self#store_byte_conc 0x60000032L 0x00; (* base low *)
+	self#store_byte_conc 0x60000033L 0xec; (* base mid-low *)
+	self#store_byte_conc 0x60000034L 0x92; (* base mid-high *)
+	self#store_byte_conc 0x60000035L 0xf3; (* flags *)
+	self#store_byte_conc 0x60000036L 0xc0; (* flags, limit high *)
+	self#store_byte_conc 0x60000037L 0x82; (* base high *)
+	(* Windows 7 user space FS segment: *)
+	self#store_byte_conc 0x60000038L 0x01; (* limit low *)
+	self#store_byte_conc 0x60000039L 0x00; (* limit mid *)
+	self#store_byte_conc 0x6000003aL 0x00; (* base low *)
+	self#store_byte_conc 0x6000003bL 0xe0; (* base mid-low *)
+	self#store_byte_conc 0x6000003cL 0x92; (* base mid-high *)
+	self#store_byte_conc 0x6000003dL 0xf3; (* flags *)
+	self#store_byte_conc 0x6000003eL 0xfd; (* flags, limit high *)
+	self#store_byte_conc 0x6000003fL 0x7f; (* base high *)
 
     method print_x86_regs =
       let reg str r =
@@ -2743,6 +2786,8 @@ struct
 		| _ -> failwith "bad cast kind in eval_int_exp_ty"
 	    in
 	      ((func v1), ty)
+	(* XXX move this to something like a special handler: *)
+	| V.Unknown("rdtsc") -> ((D.from_concrete_64 1L), V.REG_64) 
 	| _ -> failwith "Unsupported (or non-int) expr type in eval_int_exp_ty"
 	  
     method eval_int_exp exp =
@@ -2781,7 +2826,7 @@ struct
 	  | st :: rest -> find_label lab rest
       in
 	loop_cnt <- loop_cnt + 1;
-	if loop_cnt > 25 then raise TooManyIterations;
+	if loop_cnt > 50 then raise TooManyIterations;
 	let (_, sl) = frag in
 	  match find_label lab sl with
 	    | None -> lab
@@ -2806,6 +2851,8 @@ struct
 	       | V.Move(V.Mem(memv, idx_e, ty), rhs_e) ->
 		   self#handle_store idx_e ty rhs_e;
 		   self#run_sl rest
+	       | V.Special("VEX decode error") ->
+		   raise IllegalInstruction
 	       | V.Special(str) ->
 		   if self#handle_special str then
 		     self#run_sl rest
@@ -2876,10 +2923,16 @@ struct
 	     (bytes_loop 0))
 
     method print_backtrace =
+      let read_addr addr =
+	try
+	  let v = self#load_word_conc addr in
+	  (v, Printf.sprintf "0x%08Lx" v)
+	with NotConcrete(s) -> (0L, "<symbolic " ^ (V.exp_to_string s) ^ ">")
+      in
       let rec loop ebp =
-	let prev_ebp = self#load_word_conc ebp and
-	    ret_addr = self#load_word_conc (Int64.add ebp 4L) in
-	  Printf.printf "0x%08Lx 0x%08Lx 0x%08Lx\n" ebp prev_ebp ret_addr;
+	let (prev_ebp, prev_ebp_s) = read_addr ebp and
+	    (_, ret_addr_s) = read_addr (Int64.add ebp 4L) in
+	  Printf.printf "0x%08Lx %s %s\n" ebp prev_ebp_s ret_addr_s;
 	  if (prev_ebp <> 0L) then
 	    loop prev_ebp
       in
@@ -3485,17 +3538,54 @@ struct
       | V.Constant(V.Int(V.REG_32, off)) when (fix_s32 off) > 0x8000000L
 	  -> ConstantBase(off)
       | V.Constant(V.Int(V.REG_32, off))
-	  when off > 0xc0000000L && off < 0xdf000000L (* Linux kernel *)
+	  when off >= 0xc0000000L && off < 0xe1000000L (* Linux kernel *)
+	  -> ConstantBase(off)
+      | V.Constant(V.Int(V.REG_32, off))
+	  when off >= 0x80800000L && off < 0x88000000L (* ReactOS kernel *)
+	  -> ConstantBase(off)
+      | V.Constant(V.Int(V.REG_32, off))
+	  when off >= 0x82800000L && off < 0x94000000L (* Windows 7 kernel *)
+	  -> ConstantBase(off)
+      | V.Constant(V.Int(V.REG_32, off))
+	  when off >= 0xf88f0000L && off < 0xf88fffffL
+	    (* ReactOS kernel stack *)
+	  -> ConstantBase(off)
+      | V.Constant(V.Int(V.REG_32, off))
+	  when off >= 0x9b200000L && off < 0x9b300000L
+	    (* Windows 7 kernel stack *)
+	  -> ConstantBase(off)
+      | V.Constant(V.Int(V.REG_32, off))
+	  when off >= 0xff400000L && off < 0xffc00000L
+	    (* Windows 7 kernel something *)
+	  -> ConstantBase(off)
+      | V.Constant(V.Int(V.REG_32, off))
+	  when off >= 0x7ff00000L && off < 0x80000000L
+	    (* Windows 7 shared user/kernel something *)
+	  -> ConstantBase(off)
+      | V.Constant(V.Int(V.REG_32, off))
+	  when off >= 0x80000000L && off < 0xffffffffL
+	    (* XXX let Windows 7 wander over the whole top half *)
 	  -> ConstantBase(off)
       | V.UnOp(V.NEG, _) -> ExprOffset(e)
       | V.BinOp(V.LSHIFT, _, V.Constant(V.Int(V.REG_8, (1L|2L|3L|4L|5L))))
 	  -> ExprOffset(e)
-      | V.BinOp(V.TIMES, _, V.Constant(V.Int(V.REG_32, off)))
-	  when off > 1L && off < 0x1000L
+      | V.BinOp(V.TIMES, _, _)
 	  -> ExprOffset(e)
-      | e when (narrow_bitwidth e) < 16
+      | e when (narrow_bitwidth e) < 23
 	  -> ExprOffset(e)
       | V.BinOp(V.ARSHIFT, _, _)
+	  -> ExprOffset(e)
+      | V.BinOp(V.RSHIFT, _, _)
+	  -> ExprOffset(e)
+      | V.BinOp(V.LSHIFT, _, _)
+	  -> ExprOffset(e)
+      | V.BinOp(V.BITOR, _, _) (* XXX happens in Windows 7, don't know why *)
+	  -> ExprOffset(e)
+      | V.Cast(V.CAST_UNSIGNED, V.REG_32,
+	       V.Lval(V.Mem(_, _, V.REG_16)))
+	  -> ExprOffset(e)
+      | V.Cast(V.CAST_UNSIGNED, V.REG_32,
+	       V.Lval(V.Mem(_, _, V.REG_8)))
 	  -> ExprOffset(e)
       | V.Lval(_) -> Symbol(e)
       | _ -> failwith ("Strange term "^(V.exp_to_string e)^" in address")
@@ -3572,7 +3662,7 @@ struct
 	      (V.exp_to_string e) new_region;
 	  new_region
 
-    method private choose_conc_offset e =
+    method private choose_conc_offset_uniform e =
       let c32 x = V.Constant(V.Int(V.REG_32, x)) in
       let bits = ref 0L in
 	self#restore_path_cond
@@ -3588,6 +3678,25 @@ struct
 	     done);
 	!bits
 
+    method private choose_conc_offset_biased e =
+      let c32 x = V.Constant(V.Int(V.REG_32, x)) in
+      let rec try_list l =
+	match l with
+	  | [] -> self#choose_conc_offset_uniform e
+	  | v :: r ->
+	      if self#extend_pc_random (V.BinOp(V.EQ, e, (c32 v))) false then
+		v
+	      else
+		try_list r
+      in
+      let bits = ref 0L in
+	self#restore_path_cond
+	  (fun () ->
+	     bits := try_list
+	       [0L; 1L; 2L; 4L; 8L; 16L; 32L; 64L;
+		0xffffffffL; 0xfffffffeL; 0xfffffffcL; 0xfffffff8L]);
+	!bits
+
     val mutable concrete_cache = Hashtbl.create 101
 
     method private choose_conc_offset_cached e =
@@ -3596,7 +3705,7 @@ struct
 	if Hashtbl.mem concrete_cache e then
 	  (Hashtbl.find concrete_cache e, "Reused")
 	else
-	  let bits = self#choose_conc_offset e in
+	  let bits = self#choose_conc_offset_biased e in
 	    Hashtbl.replace concrete_cache e bits;
 	    (bits, "Picked") in
 	if !opt_trace_sym_addrs then
@@ -3622,6 +3731,9 @@ struct
 		  let (bvar, rest_vars) =
 		    select_one vl (fun () -> self#random_case_split true)
 		  in
+		    if !opt_trace_sym_addrs then
+		      Printf.printf "Choosing %s as the base address\n"
+			(V.exp_to_string bvar);
 		    (Some(self#region_for bvar), rest_vars)
 	      | (off, vl) ->
 		  (None, vl)
@@ -3687,6 +3799,17 @@ struct
 		  | Some r_num -> "region " ^ (string_of_int r_num));
 	     Printf.printf "%08Lx = %s\n" addr (D.to_string_32 value))
 
+    method concretize_misc =
+      let var = Hashtbl.find reg_to_var R_DFLAG in
+      let d = self#get_int_var var in
+	try ignore(D.to_concrete_32 d)
+	with NotConcrete _ ->
+	  let e = D.to_symbolic_32 d in
+	    if e <> V.Unknown("uninit") then
+	      self#set_int_var var
+		(D.from_concrete_32 
+		   (self#choose_conc_offset_cached e))
+
     method reset () =
       spfm#reset ();
       regions <- [];
@@ -3741,8 +3864,11 @@ let rec cfold_with_type e =
 	let (e1', ty1) = cfold_with_type e1 in
 	let e' = if ty = ty1 then e1' else V.Cast(kind, ty, e1') in
 	  (e', ty)
-    | V.Unknown(_) ->
-	raise (Simplify_failure "unhandled unknown in cfold_with_type")
+    | V.Unknown("rdtsc") -> (e, V.REG_64)
+    | V.Unknown("Unknown: Dirty") ->
+	raise IllegalInstruction
+    | V.Unknown(s) ->
+	raise (Simplify_failure ("unhandled unknown "^s^" in cfold_with_type"))
     | V.Let(_) -> failwith "unhandled let in cfold_with_type"
 
 let cfold_exprs_w_type (dl, sl) =
@@ -5501,8 +5627,37 @@ module LinuxLoader = struct
 	(read_program_headers ic eh);
       close_in ic;
       !ldso
-
 end
+
+module StateLoader = struct
+  let load_mem_ranges fm fname areas =
+    let si = Temu_state.open_state fname in
+      List.iter
+	(fun (base,size) ->
+	   let last = Int64.pred (Int64.add base size) in
+	     List.iter
+	       (fun (addr, ch) ->
+		  fm#store_byte_conc addr (Char.code ch))
+	       (si#get_memrange base last))
+	areas;
+      Temu_state.close_state si
+
+  let load_mem_state fm fname =
+    let ic = open_in fname in
+    let i = IO.input_channel ic in
+    let si = Temu_state.open_state fname in
+      List.iter
+	(fun blk ->
+	   assert(Int64.logand blk#first 0xfffL = 0L);
+	   assert(Int64.sub blk#last blk#first = 0xfffL);
+	   LargeFile.seek_in ic blk#file_pos;
+	   let page = IO.really_nread i 4096 in
+	     fm#store_page_conc blk#first page)
+	si#blocks;
+      Temu_state.close_state si
+    
+end
+
 
 let call_replacements fm eip =
   match eip with
@@ -5558,6 +5713,7 @@ let loop_detect = Hashtbl.create 1000
 
 let opt_trace_eip = ref false
 let opt_trace_ir = ref false
+let opt_trace_orig_ir = ref false
 let opt_trace_iterations = ref false
 let opt_trace_stopping = ref false
 let opt_coverage_stats = ref false
@@ -5576,10 +5732,15 @@ let rec runloop fm eip asmir_gamma until =
 	| _ -> failwith "expected asm_addr_to_vine to give single block"
   in
   let decode_insn_at eip =
-    let bytes = Array.init 16
-      (fun i -> Char.chr (load_byte (Int64.add eip (Int64.of_int i))))
-    in
-      decode_insn eip bytes
+    try
+      let bytes = Array.init 16
+	(fun i -> Char.chr (load_byte (Int64.add eip (Int64.of_int i))))
+      in
+	decode_insn eip bytes
+    with
+	NotConcrete(_) ->
+	  Printf.printf "Jump to symbolic memory 0x%08Lx\n" eip;
+	  raise IllegalInstruction
   in
   let label_to_eip s =
     let len = String.length s in
@@ -5613,9 +5774,11 @@ let rec runloop fm eip asmir_gamma until =
       Hashtbl.find trans_cache eip
     with
 	Not_found ->
-	  Hashtbl.add trans_cache eip
-	    (simplify_frag (decode_insns eip 1 true));
-	  Hashtbl.find trans_cache eip
+	  let (dl, sl) = (decode_insns eip 1 true) in
+	    if !opt_trace_orig_ir then
+	      V.pp_program print_string (dl, sl);
+	    Hashtbl.add trans_cache eip (simplify_frag (dl, sl));
+	    Hashtbl.find trans_cache eip
   in
   (* Remove "unknown" statments it seems safe to ignore *)
   let remove_known_unknowns sl =
@@ -5633,7 +5796,7 @@ let rec runloop fm eip asmir_gamma until =
 	 | V.ExpStmt(V.Unknown("Unknown: PutI")) -> false
 	     (* e.g., FPU store *)
 	 | V.ExpStmt(V.Unknown("Unknown: Dirty")) -> false
-	     (* XXX too broad? covers rdtsc *)
+	     (* XXX too broad? *)
 	 | _ -> true)
       sl
   in
@@ -5654,6 +5817,7 @@ let rec runloop fm eip asmir_gamma until =
       (* fm#print_x86_regs; *)
       if !opt_trace_eip then
 	Printf.printf "EIP is %08Lx\n" eip;
+      (* Printf.printf "EFLAGSREST is %08Lx\n" (fm#get_word_var EFLAGSREST);*)
       (* Printf.printf "Watchpoint val is %02x\n" (load_byte 0x501650e8L); *)
       (* Printf.printf ("Insn bytes are %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x\n") (load_byte eip)
 	 (load_byte (Int64.add eip (Int64.of_int 1)))
@@ -5839,6 +6003,7 @@ let fuzz_static start_eip end_eips fm asmir_gamma =
 	    | NullDereference -> stop "at null deref"
 	    | TooManyIterations -> stop "after too many loop iterations"
 	    | UnhandledTrap -> stop "at trap"
+	    | IllegalInstruction -> stop "at bad instruction"
 	    (* | NotConcrete(_) -> () (* shouldn't happen *)
 	    | Simplify_failure(_) -> () (* shouldn't happen *)*)
 	 ); 
@@ -5883,8 +6048,10 @@ let opt_initial_esi = ref None
 let opt_initial_edi = ref None
 let opt_initial_esp = ref None
 let opt_initial_ebp = ref None
+let opt_initial_eflagsrest = ref None
 let opt_load_extra_regions = ref []
 let opt_store_words = ref []
+let opt_state_file = ref None
 
 let add_delimited_pair opt char s =
   let delim_loc = String.index s char in
@@ -5928,12 +6095,18 @@ let main argv =
 	 ("-initial-ebp", Arg.String
 	    (fun s -> opt_initial_ebp := Some(Int64.of_string s)),
 	  "word Concrete initial value for %ebp (frame pointer)");
+	 ("-initial-eflagsrest", Arg.String
+	    (fun s -> opt_initial_eflagsrest := Some(Int64.of_string s)),
+	  "word Concrete initial value for %eflags, less [CPAZSO]F");
 	 ("-load-base", Arg.String
 	    (fun s -> opt_load_base := Int64.of_string s),
 	  "addr Base address for program image");
-	 ("-load-extra-region", Arg.String
+	 ("-load-region", Arg.String
 	    (add_delimited_pair opt_load_extra_regions '+'),
 	  "base+size Load an additional region from program image");
+	 ("-state", Arg.String
+	    (fun s -> opt_state_file := Some s),
+	  "file Load memory state from TEMU state file");
 	 ("-store-word", Arg.String
 	    (add_delimited_pair opt_store_words '='),
 	  "addr=val Fix an address to a concrete value");
@@ -5961,6 +6134,8 @@ let main argv =
 	  " Print PC of each insn executed");
 	 ("-trace-ir", Arg.Set(opt_trace_ir),
 	  " Print Vine IR before executing it");
+	 ("-trace-orig-ir", Arg.Set(opt_trace_orig_ir),
+	  " Print Vine IR as produced by Asmir");
 	 ("-trace-iterations", Arg.Set(opt_trace_iterations),
 	  " Print iteration count");
 	 ("-trace-loads", Arg.Set(opt_trace_loads),
@@ -5999,6 +6174,9 @@ let main argv =
       fm#add_special_handler
 	((new trap_special_nonhandler fm) :> special_handler);
       fm#make_x86_regs_symbolic;
+      (match !opt_state_file with
+	 | Some s -> StateLoader.load_mem_state fm s
+	 | None -> ());
       (match !opt_initial_eax with
 	 | Some v -> fm#set_word_var R_EAX v
 	 | None -> ());
@@ -6022,6 +6200,9 @@ let main argv =
 	 | None -> ());
       (match !opt_initial_ebp with
 	 | Some v -> fm#set_word_var R_EBP v
+	 | None -> ());
+      (match !opt_initial_eflagsrest with
+	 | Some v -> fm#set_word_var EFLAGSREST v
 	 | None -> ());
       List.iter (fun (addr,v) -> fm#store_word_conc addr v) !opt_store_words;
       
