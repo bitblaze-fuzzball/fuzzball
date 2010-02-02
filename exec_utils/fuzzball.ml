@@ -6050,6 +6050,7 @@ let opt_initial_esp = ref None
 let opt_initial_ebp = ref None
 let opt_initial_eflagsrest = ref None
 let opt_load_extra_regions = ref []
+let opt_load_data = ref false
 let opt_store_words = ref []
 let opt_state_file = ref None
 
@@ -6104,6 +6105,8 @@ let main argv =
 	 ("-load-region", Arg.String
 	    (add_delimited_pair opt_load_extra_regions '+'),
 	  "base+size Load an additional region from program image");
+	 ("-load-data", Arg.Bool(fun b -> opt_load_data := b),
+	  "bool Load data segments from a binary?"); 
 	 ("-state", Arg.String
 	    (fun s -> opt_state_file := Some s),
 	  "file Load memory state from TEMU state file");
@@ -6162,7 +6165,7 @@ let main argv =
       (* (fun arg -> prog := Vine_parser.parse_file arg) *)
       (fun arg ->
 	 ignore(LinuxLoader.load_dynamic_program fm arg !opt_load_base
-		  false !opt_load_extra_regions))
+		  !opt_load_data !opt_load_extra_regions))
       "trans_eval [options]* program\n";
     let dl = Asmir.decls_for_arch Asmir.arch_i386 in
     let asmir_gamma = Asmir.gamma_create
