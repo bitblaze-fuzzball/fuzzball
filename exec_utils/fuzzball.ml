@@ -3660,7 +3660,14 @@ struct
 	  if !opt_trace_regions then
 	    Printf.printf "Address %s is region %d\n"
 	      (V.exp_to_string e) new_region;
-	  new_region
+	  let can_be_null = ref false in
+	    self#restore_path_cond
+	      (fun () ->
+		 can_be_null := self#extend_pc_random
+		   (V.BinOp(V.EQ, e, V.Constant(V.Int(V.REG_32, 0L)))) false
+	      );
+	    Printf.printf "Can be null? %b\n" !can_be_null;
+	    new_region
 
     method private choose_conc_offset_uniform e =
       let c32 x = V.Constant(V.Int(V.REG_32, x)) in
