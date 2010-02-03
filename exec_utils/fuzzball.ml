@@ -3207,6 +3207,7 @@ module SymPathFragMachineFunctor =
   functor (D : DOMAIN) ->
 struct
   module FormMan = FormulaManagerFunctor(D)
+  module GM = GranularMemoryFunctor(D)
   module FM = FragmentMachineFunctor(D)
 
   class sym_path_frag_machine = object(self)
@@ -3411,6 +3412,28 @@ struct
 		  self#add_to_path_cond (V.BinOp(V.EQ, e, (c32 !bits)));
 		  !bits
 
+    method private on_missing_random_m (m:GM.granular_memory) =
+      let rec random_int width =
+	if width = 0 then 0 else
+	  2 * (random_int width - 1) + 
+	    (if self#random_case_split false then 1 else 0)
+      in
+      let rec random_int64 width =
+	if width = 0 then 0L else
+	  Int64.add (Int64.mul 2L (random_int64 (width - 1)))
+	    (if self#random_case_split false then 1L else 0L)
+      in
+      m#on_missing
+	(fun size _ -> match size with
+	   | 8  -> D.from_concrete_8  (random_int 8)
+	   | 16 -> D.from_concrete_16 (random_int 16)
+	   | 32 -> D.from_concrete_32 (random_int64 32)
+	   | 64 -> D.from_concrete_64 (random_int64 64)
+	   | _ -> failwith "Bad size in on_missing_random")
+
+    method on_missing_random =
+      self#on_missing_random_m (mem :> GM.granular_memory)
+
     method finish_path =
       dt#mark_all_seen;
       if !opt_trace_binary_paths then
@@ -3565,6 +3588,9 @@ struct
       | V.Constant(V.Int(V.REG_32, off))
 	  when off >= 0x80000000L && off < 0xffffffffL
 	    (* XXX let Windows 7 wander over the whole top half *)
+	  -> ConstantBase(off)
+      | V.Constant(V.Int(V.REG_32, off))
+	    (* XXX -random-memory can produce any value at all *)
 	  -> ConstantBase(off)
       | V.UnOp(V.NEG, _) -> ExprOffset(e)
       | V.BinOp(V.LSHIFT, _, V.Constant(V.Int(V.REG_8, (1L|2L|3L|4L|5L))))
@@ -6058,6 +6084,7 @@ let opt_initial_ebp = ref None
 let opt_initial_eflagsrest = ref None
 let opt_load_extra_regions = ref []
 let opt_load_data = ref false
+let opt_random_memory = ref false
 let opt_store_words = ref []
 let opt_state_file = ref None
 
@@ -6114,6 +6141,8 @@ let main argv =
 	  "base+size Load an additional region from program image");
 	 ("-load-data", Arg.Bool(fun b -> opt_load_data := b),
 	  "bool Load data segments from a binary?"); 
+	 ("-random-memory", Arg.Set(opt_random_memory),
+	  " Use random values for uninitialized memory reads");
 	 ("-state", Arg.String
 	    (fun s -> opt_state_file := Some s),
 	  "file Load memory state from TEMU state file");
@@ -6177,7 +6206,10 @@ let main argv =
     let dl = Asmir.decls_for_arch Asmir.arch_i386 in
     let asmir_gamma = Asmir.gamma_create
       (List.find (fun (i, s, t) -> s = "mem") dl) dl in
-      fm#on_missing_symbol;
+      if !opt_random_memory then
+	fm#on_missing_random
+      else
+	fm#on_missing_symbol;
       fm#init_prog (dl, []);
       fm#add_special_handler
 	((new linux_special_nonhandler fm) :> special_handler);
