@@ -3462,6 +3462,7 @@ let opt_trace_loads = ref false
 let opt_trace_stores = ref false
 let opt_trace_regions = ref false
 let opt_trace_sym_addrs = ref false
+let opt_check_for_null = ref false
 
 module SymRegionFragMachineFunctor =
   functor (D : DOMAIN) ->
@@ -3686,14 +3687,15 @@ struct
 	  if !opt_trace_regions then
 	    Printf.printf "Address %s is region %d\n"
 	      (V.exp_to_string e) new_region;
-	  let can_be_null = ref false in
-	    self#restore_path_cond
-	      (fun () ->
-		 can_be_null := self#extend_pc_random
-		   (V.BinOp(V.EQ, e, V.Constant(V.Int(V.REG_32, 0L)))) false
-	      );
-	    Printf.printf "Can be null? %b\n" !can_be_null;
-	    new_region
+	  if !opt_check_for_null then
+	    (let can_be_null = ref false in
+	      self#restore_path_cond
+		(fun () ->
+		   can_be_null := self#extend_pc_random
+		     (V.BinOp(V.EQ, e, V.Constant(V.Int(V.REG_32, 0L)))) false
+		);
+	       Printf.printf "Can be null? %b\n" !can_be_null);
+	  new_region
 
     method private choose_conc_offset_uniform e =
       let c32 x = V.Constant(V.Int(V.REG_32, x)) in
@@ -6143,6 +6145,8 @@ let main argv =
 	  "bool Load data segments from a binary?"); 
 	 ("-random-memory", Arg.Set(opt_random_memory),
 	  " Use random values for uninitialized memory reads");
+	 ("-check-for-null", Arg.Set(opt_check_for_null),
+	  " Check whether dereferenced values can be null");
 	 ("-state", Arg.String
 	    (fun s -> opt_state_file := Some s),
 	  "file Load memory state from TEMU state file");
