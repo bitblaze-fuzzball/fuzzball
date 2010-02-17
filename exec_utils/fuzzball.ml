@@ -29,6 +29,8 @@ module type DOMAIN = sig
 
   val from_symbolic : V.exp -> t
 
+  val inside_symbolic : (V.exp -> V.exp) -> t -> t
+
   val measure_size : t -> int
 
   val  extract_8_from_64 : t -> int -> t
@@ -223,7 +225,249 @@ module type DOMAIN = sig
   val cast32h16 : t -> t
   val cast64h16 : t -> t
   val cast64h32 : t -> t
+
+  val get_tag : t -> int64
 end
+
+module TaggedDomainFunctor =
+  functor (D : DOMAIN) ->
+struct
+  type t = int64 * D.t
+
+  let next_tag = ref 0L
+
+  let fresh_tag () = 
+    let r = !next_tag in
+      next_tag := Int64.succ !next_tag;
+      r
+
+  let unary_tag tg = tg
+
+  let binary_tag tg tg2 =
+    let tg' = fresh_tag () in
+      (* Printf.printf "%Ld + %Ld -> %Ld\n" tg tg2 tg'; *)
+      tg'
+
+  let from_concrete_1  i = (fresh_tag (), D.from_concrete_1  i)
+  let from_concrete_8  i = (fresh_tag (), D.from_concrete_8  i)
+  let from_concrete_16 i = (fresh_tag (), D.from_concrete_16 i)
+  let from_concrete_32 i = (fresh_tag (), D.from_concrete_32 i)
+  let from_concrete_64 i = (fresh_tag (), D.from_concrete_64 i)
+
+  let to_concrete_1  (tg,v) = D.to_concrete_1  v
+  let to_concrete_8  (tg,v) = D.to_concrete_8  v
+  let to_concrete_16 (tg,v) = D.to_concrete_16 v
+  let to_concrete_32 (tg,v) = D.to_concrete_32 v
+  let to_concrete_64 (tg,v) = D.to_concrete_64 v
+
+  let to_symbolic_1  (tg,v) = D.to_symbolic_1  v
+  let to_symbolic_8  (tg,v) = D.to_symbolic_8  v
+  let to_symbolic_16 (tg,v) = D.to_symbolic_16 v
+  let to_symbolic_32 (tg,v) = D.to_symbolic_32 v
+  let to_symbolic_64 (tg,v) = D.to_symbolic_64 v
+
+  let from_symbolic e = (fresh_tag (), D.from_symbolic e)
+
+  let inside_symbolic fn (tg,v) = (tg, D.inside_symbolic fn v)
+
+  let measure_size (tg,v) = 1 + D.measure_size v
+
+  let  extract_8_from_64 (tg,v) w = (unary_tag tg,  D.extract_8_from_64 v w)
+  let  extract_8_from_32 (tg,v) w = (unary_tag tg,  D.extract_8_from_32 v w)
+  let  extract_8_from_16 (tg,v) w = (unary_tag tg,  D.extract_8_from_16 v w)
+  let extract_16_from_64 (tg,v) w = (unary_tag tg, D.extract_16_from_64 v w)
+  let extract_16_from_32 (tg,v) w = (unary_tag tg, D.extract_16_from_32 v w)
+  let extract_32_from_64 (tg,v) w = (unary_tag tg, D.extract_32_from_64 v w)
+
+  let assemble16 (tg,v) (tg2,v2) = (binary_tag tg tg2, D.assemble16 v v2)
+  let assemble32 (tg,v) (tg2,v2) = (binary_tag tg tg2, D.assemble32 v v2)
+  let assemble64 (tg,v) (tg2,v2) = (binary_tag tg tg2, D.assemble64 v v2)
+
+  let reassemble16 (tg,v) (tg2,v2) = (binary_tag tg tg2, D.reassemble16 v v2)
+  let reassemble32 (tg,v) (tg2,v2) = (binary_tag tg tg2, D.reassemble32 v v2)
+  let reassemble64 (tg,v) (tg2,v2) = (binary_tag tg tg2, D.reassemble64 v v2)
+
+  let to_string_1  (tg,v) = D.to_string_1  v
+  let to_string_8  (tg,v) = D.to_string_8  v
+  let to_string_16 (tg,v) = D.to_string_16 v
+  let to_string_32 (tg,v) = D.to_string_32 v
+  let to_string_64 (tg,v) = D.to_string_64 v
+
+  let uninit = (fresh_tag (), D.uninit)
+
+  let plus1  (tg,v) (tg2,v2) = (binary_tag tg tg2, D.plus1  v v2)
+  let plus8  (tg,v) (tg2,v2) = (binary_tag tg tg2, D.plus8  v v2)
+  let plus16 (tg,v) (tg2,v2) = (binary_tag tg tg2, D.plus16 v v2)
+  let plus32 (tg,v) (tg2,v2) = (binary_tag tg tg2, D.plus32 v v2)
+  let plus64 (tg,v) (tg2,v2) = (binary_tag tg tg2, D.plus64 v v2)
+
+  let minus1  (tg,v) (tg2,v2) = (binary_tag tg tg2, D.minus1  v v2)
+  let minus8  (tg,v) (tg2,v2) = (binary_tag tg tg2, D.minus8  v v2)
+  let minus16 (tg,v) (tg2,v2) = (binary_tag tg tg2, D.minus16 v v2)
+  let minus32 (tg,v) (tg2,v2) = (binary_tag tg tg2, D.minus32 v v2)
+  let minus64 (tg,v) (tg2,v2) = (binary_tag tg tg2, D.minus64 v v2)
+
+  let times1  (tg,v) (tg2,v2) = (binary_tag tg tg2, D.times1  v v2)
+  let times8  (tg,v) (tg2,v2) = (binary_tag tg tg2, D.times8  v v2)
+  let times16 (tg,v) (tg2,v2) = (binary_tag tg tg2, D.times16 v v2)
+  let times32 (tg,v) (tg2,v2) = (binary_tag tg tg2, D.times32 v v2)
+  let times64 (tg,v) (tg2,v2) = (binary_tag tg tg2, D.times64 v v2)
+
+  let divide1  (tg,v) (tg2,v2) = (binary_tag tg tg2, D.divide1  v v2)
+  let divide8  (tg,v) (tg2,v2) = (binary_tag tg tg2, D.divide8  v v2)
+  let divide16 (tg,v) (tg2,v2) = (binary_tag tg tg2, D.divide16 v v2)
+  let divide32 (tg,v) (tg2,v2) = (binary_tag tg tg2, D.divide32 v v2)
+  let divide64 (tg,v) (tg2,v2) = (binary_tag tg tg2, D.divide64 v v2)
+
+  let sdivide1  (tg,v) (tg2,v2) = (binary_tag tg tg2, D.sdivide1  v v2)
+  let sdivide8  (tg,v) (tg2,v2) = (binary_tag tg tg2, D.sdivide8  v v2)
+  let sdivide16 (tg,v) (tg2,v2) = (binary_tag tg tg2, D.sdivide16 v v2)
+  let sdivide32 (tg,v) (tg2,v2) = (binary_tag tg tg2, D.sdivide32 v v2)
+  let sdivide64 (tg,v) (tg2,v2) = (binary_tag tg tg2, D.sdivide64 v v2)
+
+  let mod1  (tg,v) (tg2,v2) = (binary_tag tg tg2, D.mod1  v v2)
+  let mod8  (tg,v) (tg2,v2) = (binary_tag tg tg2, D.mod8  v v2)
+  let mod16 (tg,v) (tg2,v2) = (binary_tag tg tg2, D.mod16 v v2)
+  let mod32 (tg,v) (tg2,v2) = (binary_tag tg tg2, D.mod32 v v2)
+  let mod64 (tg,v) (tg2,v2) = (binary_tag tg tg2, D.mod64 v v2)
+
+  let smod1  (tg,v) (tg2,v2) = (binary_tag tg tg2, D.smod1  v v2)
+  let smod8  (tg,v) (tg2,v2) = (binary_tag tg tg2, D.smod8  v v2)
+  let smod16 (tg,v) (tg2,v2) = (binary_tag tg tg2, D.smod16 v v2)
+  let smod32 (tg,v) (tg2,v2) = (binary_tag tg tg2, D.smod32 v v2)
+  let smod64 (tg,v) (tg2,v2) = (binary_tag tg tg2, D.smod64 v v2)
+
+  let lshift1  (tg,v) (tg2,v2) = (binary_tag tg tg2, D.lshift1  v v2)
+  let lshift8  (tg,v) (tg2,v2) = (binary_tag tg tg2, D.lshift8  v v2)
+  let lshift16 (tg,v) (tg2,v2) = (binary_tag tg tg2, D.lshift16 v v2)
+  let lshift32 (tg,v) (tg2,v2) = (binary_tag tg tg2, D.lshift32 v v2)
+  let lshift64 (tg,v) (tg2,v2) = (binary_tag tg tg2, D.lshift64 v v2)
+
+  let rshift1  (tg,v) (tg2,v2) = (binary_tag tg tg2, D.rshift1  v v2)
+  let rshift8  (tg,v) (tg2,v2) = (binary_tag tg tg2, D.rshift8  v v2)
+  let rshift16 (tg,v) (tg2,v2) = (binary_tag tg tg2, D.rshift16 v v2)
+  let rshift32 (tg,v) (tg2,v2) = (binary_tag tg tg2, D.rshift32 v v2)
+  let rshift64 (tg,v) (tg2,v2) = (binary_tag tg tg2, D.rshift64 v v2)
+
+  let arshift1  (tg,v) (tg2,v2) = (binary_tag tg tg2, D.arshift1  v v2)
+  let arshift8  (tg,v) (tg2,v2) = (binary_tag tg tg2, D.arshift8  v v2)
+  let arshift16 (tg,v) (tg2,v2) = (binary_tag tg tg2, D.arshift16 v v2)
+  let arshift32 (tg,v) (tg2,v2) = (binary_tag tg tg2, D.arshift32 v v2)
+  let arshift64 (tg,v) (tg2,v2) = (binary_tag tg tg2, D.arshift64 v v2)
+
+  let bitand1  (tg,v) (tg2,v2) = (binary_tag tg tg2, D.bitand1  v v2)
+  let bitand8  (tg,v) (tg2,v2) = (binary_tag tg tg2, D.bitand8  v v2)
+  let bitand16 (tg,v) (tg2,v2) = (binary_tag tg tg2, D.bitand16 v v2)
+  let bitand32 (tg,v) (tg2,v2) = (binary_tag tg tg2, D.bitand32 v v2)
+  let bitand64 (tg,v) (tg2,v2) = (binary_tag tg tg2, D.bitand64 v v2)
+
+  let bitor1  (tg,v) (tg2,v2) = (binary_tag tg tg2, D.bitor1  v v2)
+  let bitor8  (tg,v) (tg2,v2) = (binary_tag tg tg2, D.bitor8  v v2)
+  let bitor16 (tg,v) (tg2,v2) = (binary_tag tg tg2, D.bitor16 v v2)
+  let bitor32 (tg,v) (tg2,v2) = (binary_tag tg tg2, D.bitor32 v v2)
+  let bitor64 (tg,v) (tg2,v2) = (binary_tag tg tg2, D.bitor64 v v2)
+
+  let xor1  (tg,v) (tg2,v2) = (binary_tag tg tg2, D.xor1  v v2)
+  let xor8  (tg,v) (tg2,v2) = (binary_tag tg tg2, D.xor8  v v2)
+  let xor16 (tg,v) (tg2,v2) = (binary_tag tg tg2, D.xor16 v v2)
+  let xor32 (tg,v) (tg2,v2) = (binary_tag tg tg2, D.xor32 v v2)
+  let xor64 (tg,v) (tg2,v2) = (binary_tag tg tg2, D.xor64 v v2)
+
+  let eq1  (tg,v) (tg2,v2) = (binary_tag tg tg2, D.eq1  v v2)
+  let eq8  (tg,v) (tg2,v2) = (binary_tag tg tg2, D.eq8  v v2)
+  let eq16 (tg,v) (tg2,v2) = (binary_tag tg tg2, D.eq16 v v2)
+  let eq32 (tg,v) (tg2,v2) = (binary_tag tg tg2, D.eq32 v v2)
+  let eq64 (tg,v) (tg2,v2) = (binary_tag tg tg2, D.eq64 v v2)
+
+  let neq1  (tg,v) (tg2,v2) = (binary_tag tg tg2, D.neq1  v v2)
+  let neq8  (tg,v) (tg2,v2) = (binary_tag tg tg2, D.neq8  v v2)
+  let neq16 (tg,v) (tg2,v2) = (binary_tag tg tg2, D.neq16 v v2)
+  let neq32 (tg,v) (tg2,v2) = (binary_tag tg tg2, D.neq32 v v2)
+  let neq64 (tg,v) (tg2,v2) = (binary_tag tg tg2, D.neq64 v v2)
+
+  let lt1  (tg,v) (tg2,v2) = (binary_tag tg tg2, D.lt1  v v2)
+  let lt8  (tg,v) (tg2,v2) = (binary_tag tg tg2, D.lt8  v v2)
+  let lt16 (tg,v) (tg2,v2) = (binary_tag tg tg2, D.lt16 v v2)
+  let lt32 (tg,v) (tg2,v2) = (binary_tag tg tg2, D.lt32 v v2)
+  let lt64 (tg,v) (tg2,v2) = (binary_tag tg tg2, D.lt64 v v2)
+
+  let le1  (tg,v) (tg2,v2) = (binary_tag tg tg2, D.le1  v v2)
+  let le8  (tg,v) (tg2,v2) = (binary_tag tg tg2, D.le8  v v2)
+  let le16 (tg,v) (tg2,v2) = (binary_tag tg tg2, D.le16 v v2)
+  let le32 (tg,v) (tg2,v2) = (binary_tag tg tg2, D.le32 v v2)
+  let le64 (tg,v) (tg2,v2) = (binary_tag tg tg2, D.le64 v v2)
+
+  let slt1  (tg,v) (tg2,v2) = (binary_tag tg tg2, D.slt1  v v2)
+  let slt8  (tg,v) (tg2,v2) = (binary_tag tg tg2, D.slt8  v v2)
+  let slt16 (tg,v) (tg2,v2) = (binary_tag tg tg2, D.slt16 v v2)
+  let slt32 (tg,v) (tg2,v2) = (binary_tag tg tg2, D.slt32 v v2)
+  let slt64 (tg,v) (tg2,v2) = (binary_tag tg tg2, D.slt64 v v2)
+
+  let sle1  (tg,v) (tg2,v2) = (binary_tag tg tg2, D.sle1  v v2)
+  let sle8  (tg,v) (tg2,v2) = (binary_tag tg tg2, D.sle8  v v2)
+  let sle16 (tg,v) (tg2,v2) = (binary_tag tg tg2, D.sle16 v v2)
+  let sle32 (tg,v) (tg2,v2) = (binary_tag tg tg2, D.sle32 v v2)
+  let sle64 (tg,v) (tg2,v2) = (binary_tag tg tg2, D.sle64 v v2)
+
+  let neg1  (tg,v) = (unary_tag tg, D.neg1  v)
+  let neg8  (tg,v) = (unary_tag tg, D.neg8  v)
+  let neg16 (tg,v) = (unary_tag tg, D.neg16 v)
+  let neg32 (tg,v) = (unary_tag tg, D.neg32 v)
+  let neg64 (tg,v) = (unary_tag tg, D.neg64 v)
+
+  let not1  (tg,v) = (unary_tag tg, D.not1  v)
+  let not8  (tg,v) = (unary_tag tg, D.not8  v)
+  let not16 (tg,v) = (unary_tag tg, D.not16 v)
+  let not32 (tg,v) = (unary_tag tg, D.not32 v)
+  let not64 (tg,v) = (unary_tag tg, D.not64 v)
+
+  let   cast1u8 (tg,v) = (unary_tag tg, D.cast1u8   v)
+  let  cast1u16 (tg,v) = (unary_tag tg, D.cast1u16  v)
+  let  cast1u32 (tg,v) = (unary_tag tg, D.cast1u32  v)
+  let  cast1u64 (tg,v) = (unary_tag tg, D.cast1u64  v)
+  let  cast8u16 (tg,v) = (unary_tag tg, D.cast8u16  v)
+  let  cast8u32 (tg,v) = (unary_tag tg, D.cast8u32  v)
+  let  cast8u64 (tg,v) = (unary_tag tg, D.cast8u64  v)
+  let cast16u32 (tg,v) = (unary_tag tg, D.cast16u32 v)
+  let cast16u64 (tg,v) = (unary_tag tg, D.cast16u64 v)
+  let cast32u64 (tg,v) = (unary_tag tg, D.cast32u64 v)
+
+  let   cast1s8 (tg,v) = (unary_tag tg, D.cast1s8   v)
+  let  cast1s16 (tg,v) = (unary_tag tg, D.cast1s16  v)
+  let  cast1s32 (tg,v) = (unary_tag tg, D.cast1s32  v)
+  let  cast1s64 (tg,v) = (unary_tag tg, D.cast1s64  v)
+  let  cast8s16 (tg,v) = (unary_tag tg, D.cast8s16  v)
+  let  cast8s32 (tg,v) = (unary_tag tg, D.cast8s32  v)
+  let  cast8s64 (tg,v) = (unary_tag tg, D.cast8s64  v)
+  let cast16s32 (tg,v) = (unary_tag tg, D.cast16s32 v)
+  let cast16s64 (tg,v) = (unary_tag tg, D.cast16s64 v)
+  let cast32s64 (tg,v) = (unary_tag tg, D.cast32s64 v)
+
+  let   cast8l1 (tg,v) = (unary_tag tg, D.cast8l1   v)
+  let  cast16l1 (tg,v) = (unary_tag tg, D.cast16l1  v)
+  let  cast32l1 (tg,v) = (unary_tag tg, D.cast32l1  v)
+  let  cast64l1 (tg,v) = (unary_tag tg, D.cast64l1  v)
+  let  cast16l8 (tg,v) = (unary_tag tg, D.cast16l8  v)
+  let  cast32l8 (tg,v) = (unary_tag tg, D.cast32l8  v)
+  let  cast64l8 (tg,v) = (unary_tag tg, D.cast64l8  v)
+  let cast32l16 (tg,v) = (unary_tag tg, D.cast32l16 v)
+  let cast64l16 (tg,v) = (unary_tag tg, D.cast64l16 v)
+  let cast64l32 (tg,v) = (unary_tag tg, D.cast64l32 v)
+
+  let   cast8h1 (tg,v) = (unary_tag tg, D.cast8h1   v)
+  let  cast16h1 (tg,v) = (unary_tag tg, D.cast16h1  v)
+  let  cast32h1 (tg,v) = (unary_tag tg, D.cast32h1  v)
+  let  cast64h1 (tg,v) = (unary_tag tg, D.cast64h1  v)
+  let  cast16h8 (tg,v) = (unary_tag tg, D.cast16h8  v)
+  let  cast32h8 (tg,v) = (unary_tag tg, D.cast32h8  v)
+  let  cast64h8 (tg,v) = (unary_tag tg, D.cast64h8  v)
+  let cast32h16 (tg,v) = (unary_tag tg, D.cast32h16 v)
+  let cast64h16 (tg,v) = (unary_tag tg, D.cast64h16 v)
+  let cast64h32 (tg,v) = (unary_tag tg, D.cast64h32 v)
+
+  let get_tag (tg,v) = tg
+end
+
 
 let fix_u1  x = Int64.logand x 0x1L
 let fix_u8  x = Int64.logand x 0xffL
@@ -257,6 +501,8 @@ module ConcreteDomain : DOMAIN = struct
   let to_symbolic_64 v : V.exp = failwith "to_symbolic in concrete"
 
   let from_symbolic e = failwith "from_symbolic in concrete"
+
+  let inside_symbolic fn v = failwith "inside_symbolic in concrete"
 
   let measure_size v = 1
 
@@ -466,6 +712,8 @@ module ConcreteDomain : DOMAIN = struct
   let cast32h16 = cast_high 16
   let cast64h16 = cast_high 48
   let cast64h32 = cast_high 32
+
+  let get_tag v = 0L
 end
 
 exception NotConcrete of V.exp
@@ -523,6 +771,7 @@ let rec stmt_size = function
   | V.Halt(e) -> 1 + (expr_size e)
 
 let opt_trace_temps = ref false
+let opt_use_tags = ref false
 
 module FormulaManagerFunctor =
   functor (D : DOMAIN) ->
@@ -540,7 +789,10 @@ struct
       V.Lval(V.Temp(self#fresh_symbolic_var str ty))
 
     method private fresh_symbolic str ty =
-	D.from_symbolic (self#fresh_symbolic_vexp str ty)
+      let v = D.from_symbolic (self#fresh_symbolic_vexp str ty) in
+	if !opt_use_tags then
+	  Printf.printf "Symbolic %s is %Ld\n" str (D.get_tag v);
+	v
 
     method fresh_symbolic_1  s = self#fresh_symbolic s V.REG_1
     method fresh_symbolic_8  s = self#fresh_symbolic s V.REG_8
@@ -662,24 +914,26 @@ struct
     val temp_var_to_subexpr = V.VarHash.create 1001
     val mutable temp_var_num = 0
 
-    method simplify (e:D.t) ty =
-      let e' = constant_fold_rec (D.to_symbolic_32 e) in
-	if expr_size e' < 10 then
-	  D.from_symbolic e'
-	else
-	  let var =
-	    (try
-	       Hashtbl.find subexpr_to_temp_var e'
-	     with Not_found ->
-	       let s = "t" ^ (string_of_int temp_var_num) in
-		 temp_var_num <- temp_var_num + 1;
-		 let var = V.newvar s ty in
- 		   Hashtbl.replace subexpr_to_temp_var e' var;
- 		   V.VarHash.replace temp_var_to_subexpr var e';
-		   if !opt_trace_temps then
-		     Printf.printf "%s = %s\n" s (V.exp_to_string e');
-		   var) in
-	    D.from_symbolic (V.Lval(V.Temp(var)))
+    method simplify (v:D.t) ty =
+      D.inside_symbolic
+	(fun e ->
+	   let e' = constant_fold_rec e in
+	     if expr_size e' < 10 then
+	       e'
+	     else
+	       let var =
+		 (try
+		    Hashtbl.find subexpr_to_temp_var e'
+		  with Not_found ->
+		    let s = "t" ^ (string_of_int temp_var_num) in
+		      temp_var_num <- temp_var_num + 1;
+		      let var = V.newvar s ty in
+ 			Hashtbl.replace subexpr_to_temp_var e' var;
+ 			V.VarHash.replace temp_var_to_subexpr var e';
+			if !opt_trace_temps then
+			  Printf.printf "%s = %s\n" s (V.exp_to_string e');
+			var) in
+		 V.Lval(V.Temp(var))) v
 	      
     method simplify1  e = self#simplify e V.REG_1
     method simplify8  e = self#simplify e V.REG_8
@@ -744,6 +998,8 @@ module SymbolicDomain : DOMAIN = struct
   let to_symbolic_64 e = e
 
   let from_symbolic e = e
+
+  let inside_symbolic fn e = (fn e)
 
   let measure_size e = expr_size e
 
@@ -1026,6 +1282,8 @@ module SymbolicDomain : DOMAIN = struct
   let cast32h16 = cast V.CAST_HIGH V.REG_16
   let cast64h16 = cast V.CAST_HIGH V.REG_16
   let cast64h32 = cast V.CAST_HIGH V.REG_32
+
+  let get_tag v = 0L
 end
 
 class virtual query_engine = object(self)
@@ -2494,10 +2752,10 @@ struct
 	reg "%esp" R_ESP;
 	reg "%ebp" R_EBP
 
-    method store_byte  addr b = mem#store_byte  addr b
-    method store_short addr s = mem#store_short addr s
-    method store_word  addr w = mem#store_word  addr w
-    method store_long  addr l = mem#store_long  addr l
+    method private store_byte  addr b = mem#store_byte  addr b
+    method private store_short addr s = mem#store_short addr s
+    method private store_word  addr w = mem#store_word  addr w
+    method private store_long  addr l = mem#store_long  addr l
 
     method store_byte_conc  addr b = mem#store_byte addr (D.from_concrete_8 b)
     method store_short_conc addr s = mem#store_short addr(D.from_concrete_16 s)
@@ -2506,10 +2764,10 @@ struct
 
     method store_page_conc  addr p = mem#store_page addr p
 
-    method load_byte  addr = mem#load_byte  addr
-    method load_short addr = mem#load_short addr
-    method load_word  addr = mem#load_word  addr
-    method load_long  addr = mem#load_long  addr
+    method private load_byte  addr = mem#load_byte  addr
+    method private load_short addr = mem#load_short addr
+    method private load_word  addr = mem#load_word  addr
+    method private load_long  addr = mem#load_long  addr
 
     method load_byte_conc  addr = D.to_concrete_8  (mem#load_byte  addr)
     method load_short_conc addr = D.to_concrete_16 (mem#load_short addr)
@@ -2542,7 +2800,7 @@ struct
       with
 	  Not_found -> false
 
-    method get_int_var ((_,_,ty) as var) =
+    method private get_int_var ((_,_,ty) as var) =
       try
 	V.VarHash.find reg_store var
       with
@@ -2556,7 +2814,7 @@ struct
     method get_word_var reg =
       D.to_concrete_32 (self#get_int_var (Hashtbl.find reg_to_var reg))
 
-    method set_int_var ((_,_,ty) as var) value =
+    method private set_int_var ((_,_,ty) as var) value =
       try
 	ignore(V.VarHash.find reg_store var);
 	V.VarHash.replace reg_store var value
@@ -2574,7 +2832,7 @@ struct
 	(form_man#fresh_symbolic_32 (s ^ "_" ^ (string_of_int symbol_uniq)));
       symbol_uniq <- symbol_uniq + 1
 
-    method handle_load addr_e ty =
+    method private handle_load addr_e ty =
       let addr = self#eval_addr_exp addr_e in
       let v =
 	(match ty with
@@ -2585,7 +2843,7 @@ struct
 	   | _ -> failwith "Unsupported memory type") in
 	(v, ty)
 
-    method handle_store addr_e ty rhs_e =
+    method private handle_store addr_e ty rhs_e =
       let addr = self#eval_addr_exp addr_e and
 	  value = self#eval_int_exp_simplify rhs_e in
 	match ty with
@@ -2595,7 +2853,7 @@ struct
 	  | V.REG_64 -> self#store_long addr value
 	  | _ -> failwith "Unsupported type in memory move"
 
-    method eval_int_exp_ty exp =
+    method private eval_int_exp_ty exp =
       match exp with
 	| V.BinOp(op, e1, e2) ->
 	    let (v1, ty1) = self#eval_int_exp_ty e1 and
@@ -2790,11 +3048,11 @@ struct
 	| V.Unknown("rdtsc") -> ((D.from_concrete_64 1L), V.REG_64) 
 	| _ -> failwith "Unsupported (or non-int) expr type in eval_int_exp_ty"
 	  
-    method eval_int_exp exp =
+    method private eval_int_exp exp =
       let (v, _) = self#eval_int_exp_ty exp in
 	v
 
-    method eval_int_exp_simplify exp =
+    method private eval_int_exp_simplify exp =
       match self#eval_int_exp_ty exp with
 	| (v, V.REG_1) -> form_man#simplify1 v
 	| (v, V.REG_8) -> form_man#simplify8 v
@@ -3665,6 +3923,10 @@ struct
     val mutable regions = []
     val region_vals = Hashtbl.create 101
 
+    val mutable location_id = 0L
+
+    method set_location_id i = location_id <- i
+
     method private region r =
       match r with
 	| None -> (mem :> (GM.granular_memory))
@@ -3788,17 +4050,21 @@ struct
 	  | None -> addr
 	  | Some r_num -> raise SymbolicJump
 
-    method store_byte_region  r addr b = (self#region r)#store_byte  addr b
-    method store_short_region r addr s = (self#region r)#store_short addr s
-    method store_word_region  r addr w = (self#region r)#store_word  addr w
-    method store_long_region  r addr l = (self#region r)#store_long  addr l
+    method private store_byte_region  r addr b =
+      (self#region r)#store_byte  addr b
+    method private store_short_region r addr s =
+      (self#region r)#store_short addr s
+    method private store_word_region  r addr w =
+      (self#region r)#store_word  addr w
+    method private store_long_region  r addr l =
+      (self#region r)#store_long  addr l
 
-    method load_byte_region  r addr = (self#region r)#load_byte  addr
-    method load_short_region r addr = (self#region r)#load_short addr
-    method load_word_region  r addr = (self#region r)#load_word  addr
-    method load_long_region  r addr = (self#region r)#load_long  addr
+    method private load_byte_region  r addr = (self#region r)#load_byte  addr
+    method private load_short_region r addr = (self#region r)#load_short addr
+    method private load_word_region  r addr = (self#region r)#load_word  addr
+    method private load_long_region  r addr = (self#region r)#load_long  addr
 
-    method handle_load addr_e ty =
+    method private handle_load addr_e ty =
       let (r, addr) = self#eval_addr_exp_region addr_e in
       let v =
 	(match ty with
@@ -3807,16 +4073,19 @@ struct
 	   | V.REG_32 -> self#load_word_region r addr
 	   | V.REG_64 -> self#load_long_region r addr
 	   | _ -> failwith "Unsupported memory type") in
-	if !opt_trace_loads then
+	(if !opt_trace_loads then
 	  (Printf.printf "Load from %s "
 	     (match r with | None -> "conc. mem"
 		| Some r_num -> "region " ^ (string_of_int r_num));
-	   Printf.printf "%08Lx = %s\n" addr (D.to_string_32 v));
+	   Printf.printf "%08Lx = %s" addr (D.to_string_32 v);
+	   (if !opt_use_tags then
+	      Printf.printf " (%Ld @ %08Lx)" (D.get_tag v) location_id);
+	   Printf.printf "\n"));
 	if r = None && (Int64.abs (fix_s32 addr)) < 4096L then
 	  raise NullDereference;
 	(v, ty)
 
-    method handle_store addr_e ty rhs_e =
+    method private handle_store addr_e ty rhs_e =
       let (r, addr) = self#eval_addr_exp_region addr_e and
 	  value = self#eval_int_exp_simplify rhs_e in
 	if r = None && (Int64.abs (fix_s32 addr)) < 4096L then
@@ -3832,7 +4101,10 @@ struct
 	    (Printf.printf "Store to %s "
 	       (match r with | None -> "conc. mem"
 		  | Some r_num -> "region " ^ (string_of_int r_num));
-	     Printf.printf "%08Lx = %s\n" addr (D.to_string_32 value))
+	     Printf.printf "%08Lx = %s" addr (D.to_string_32 value);
+	     (if !opt_use_tags then
+		Printf.printf " (%Ld @ %08Lx)" (D.get_tag value) location_id);
+	     Printf.printf "\n")
 
     method concretize_misc =
       let var = Hashtbl.find reg_to_var R_DFLAG in
@@ -5852,6 +6124,7 @@ let rec runloop fm eip asmir_gamma until =
       (* fm#print_x86_regs; *)
       if !opt_trace_eip then
 	Printf.printf "EIP is %08Lx\n" eip;
+      fm#set_location_id eip;
       (* Printf.printf "EFLAGSREST is %08Lx\n" (fm#get_word_var EFLAGSREST);*)
       (* Printf.printf "Watchpoint val is %02x\n" (load_byte 0x501650e8L); *)
       (* Printf.printf ("Insn bytes are %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x\n") (load_byte eip)
@@ -6007,10 +6280,11 @@ let fuzz_sym_str start_eip end_eip buf_addr buf_len fm asmir_gamma
     Gc.print_stat stdout
 
 module SRFM = SymRegionFragMachineFunctor(SymbolicDomain)
-type machine = SRFM.sym_region_frag_machine
+module SRFMT = SymRegionFragMachineFunctor(TaggedDomainFunctor(SymbolicDomain))
+(* type machine = SRFM.sym_region_frag_machine *)
 
-let fuzz_pcre (fm : machine) =
-  fuzz_sym_str 0x08048656L 0x080486d2L 0x08063c20L 20 fm
+(*let fuzz_pcre (fm : machine) =
+  fuzz_sym_str 0x08048656L 0x080486d2L 0x08063c20L 20 fm*)
 
 let print_tree fm =
   let chan = open_out "fuzz.tree" in
@@ -6085,6 +6359,7 @@ let opt_initial_esp = ref None
 let opt_initial_ebp = ref None
 let opt_initial_eflagsrest = ref None
 let opt_load_extra_regions = ref []
+let opt_program_name = ref None
 let opt_load_data = ref false
 let opt_random_memory = ref false
 let opt_store_words = ref []
@@ -6098,118 +6373,131 @@ let add_delimited_pair opt char s =
     opt := (v1, v2) :: !opt
 
 let main argv = 
-  let fm = new SRFM.sym_region_frag_machine in
-    Arg.parse
-      (Arg.align [
-	 ("-fuzz-start-addr", Arg.String
-	    (fun s -> opt_fuzz_start_addr := Some(Int64.of_string s)),
-	  "addr Code address to start fuzzing");
-	 ("-fuzz-end-addr", Arg.String
-	    (fun s -> opt_fuzz_end_addrs :=
-	       (Int64.of_string s) :: !opt_fuzz_end_addrs),
-	  "addr Code address to finish fuzzing, may be repeated");
-	 ("-initial-eax", Arg.String
-	    (fun s -> opt_initial_eax := Some(Int64.of_string s)),
-	  "word Concrete initial value for %eax register");
-	 ("-initial-ebx", Arg.String
-	    (fun s -> opt_initial_ebx := Some(Int64.of_string s)),
-	  "word Concrete initial value for %ebx register");
-	 ("-initial-ecx", Arg.String
-	    (fun s -> opt_initial_ecx := Some(Int64.of_string s)),
-	  "word Concrete initial value for %ecx register");
-	 ("-initial-edx", Arg.String
-	    (fun s -> opt_initial_edx := Some(Int64.of_string s)),
-	  "word Concrete initial value for %edx register");
-	 ("-initial-esi", Arg.String
+  Arg.parse
+    (Arg.align [
+       ("-fuzz-start-addr", Arg.String
+	  (fun s -> opt_fuzz_start_addr := Some(Int64.of_string s)),
+	"addr Code address to start fuzzing");
+       ("-fuzz-end-addr", Arg.String
+	  (fun s -> opt_fuzz_end_addrs :=
+	     (Int64.of_string s) :: !opt_fuzz_end_addrs),
+	"addr Code address to finish fuzzing, may be repeated");
+       ("-initial-eax", Arg.String
+	  (fun s -> opt_initial_eax := Some(Int64.of_string s)),
+	"word Concrete initial value for %eax register");
+       ("-initial-ebx", Arg.String
+	  (fun s -> opt_initial_ebx := Some(Int64.of_string s)),
+	"word Concrete initial value for %ebx register");
+       ("-initial-ecx", Arg.String
+	  (fun s -> opt_initial_ecx := Some(Int64.of_string s)),
+	"word Concrete initial value for %ecx register");
+       ("-initial-edx", Arg.String
+	  (fun s -> opt_initial_edx := Some(Int64.of_string s)),
+	"word Concrete initial value for %edx register");
+       ("-initial-esi", Arg.String
 	    (fun s -> opt_initial_esi := Some(Int64.of_string s)),
-	  "word Concrete initial value for %esi register");
-	 ("-initial-edi", Arg.String
-	    (fun s -> opt_initial_edi := Some(Int64.of_string s)),
-	  "word Concrete initial value for %edi register");
-	 ("-initial-esp", Arg.String
-	    (fun s -> opt_initial_esp := Some(Int64.of_string s)),
-	  "word Concrete initial value for %esp (stack pointer)");
-	 ("-initial-ebp", Arg.String
-	    (fun s -> opt_initial_ebp := Some(Int64.of_string s)),
-	  "word Concrete initial value for %ebp (frame pointer)");
-	 ("-initial-eflagsrest", Arg.String
-	    (fun s -> opt_initial_eflagsrest := Some(Int64.of_string s)),
-	  "word Concrete initial value for %eflags, less [CPAZSO]F");
-	 ("-load-base", Arg.String
-	    (fun s -> opt_load_base := Int64.of_string s),
-	  "addr Base address for program image");
-	 ("-load-region", Arg.String
-	    (add_delimited_pair opt_load_extra_regions '+'),
-	  "base+size Load an additional region from program image");
-	 ("-load-data", Arg.Bool(fun b -> opt_load_data := b),
-	  "bool Load data segments from a binary?"); 
-	 ("-random-memory", Arg.Set(opt_random_memory),
-	  " Use random values for uninitialized memory reads");
-	 ("-check-for-null", Arg.Set(opt_check_for_null),
-	  " Check whether dereferenced values can be null");
-	 ("-state", Arg.String
-	    (fun s -> opt_state_file := Some s),
-	  "file Load memory state from TEMU state file");
-	 ("-store-word", Arg.String
-	    (add_delimited_pair opt_store_words '='),
-	  "addr=val Fix an address to a concrete value");
-	 ("-stp-path", Arg.Set_string(opt_stp_path),
-	  "path Location of external STP binary");
- 	 ("-trace-assigns", Arg.Set(opt_trace_assigns),
-	  " Print satisfying assignments");
-	 ("-trace-basic",
-	  (Arg.Unit
-	     (fun () ->
-		opt_trace_binary_paths := true;
-		opt_trace_decisions := true;
-		opt_trace_iterations := true;
-		opt_trace_setup := true;
-		opt_trace_stopping := true;
-		opt_trace_sym_addrs := true;
-		opt_coverage_stats := true;
-		opt_time_stats := true)),
-	   " Enable several common trace and stats options");
- 	 ("-trace-binary-paths", Arg.Set(opt_trace_binary_paths),
-	  " Print decision paths as bit strings");
- 	 ("-trace-decisions", Arg.Set(opt_trace_decisions),
-	  " Print symbolic branch choices");
-	 ("-trace-eip", Arg.Set(opt_trace_eip),
-	  " Print PC of each insn executed");
-	 ("-trace-ir", Arg.Set(opt_trace_ir),
-	  " Print Vine IR before executing it");
-	 ("-trace-orig-ir", Arg.Set(opt_trace_orig_ir),
-	  " Print Vine IR as produced by Asmir");
-	 ("-trace-iterations", Arg.Set(opt_trace_iterations),
-	  " Print iteration count");
-	 ("-trace-loads", Arg.Set(opt_trace_loads),
-	  " Print each memory load");
-	 ("-trace-stores", Arg.Set(opt_trace_stores),
-	  " Print each memory store");
-	 ("-trace-regions", Arg.Set(opt_trace_regions),
-	  " Print symbolic memory regions");
-	 ("-trace-setup", Arg.Set(opt_trace_setup),
-	  " Print progress of program loading");
-	 ("-trace-stopping", Arg.Set(opt_trace_stopping),
-	  " Print why paths terminate");
-	 ("-trace-sym-addrs", Arg.Set(opt_trace_sym_addrs),
-	  " Print symbolic address values");
-	 ("-trace-temps", Arg.Set(opt_trace_temps),
-	  " Print intermediate formulas");
- 	 ("-coverage-stats", Arg.Set(opt_coverage_stats),
-	  " Print pseudo-BB coverage statistics");
-	 ("-gc-stats", Arg.Set(opt_gc_stats),
-	  " Print memory usage statistics");
-	 ("-time-stats", Arg.Set(opt_gc_stats),
-	  " Print running time statistics");
-       ])
-      (* (fun arg -> prog := Vine_parser.parse_file arg) *)
-      (fun arg ->
-	 ignore(LinuxLoader.load_dynamic_program fm arg !opt_load_base
-		  !opt_load_data !opt_load_extra_regions))
-      "trans_eval [options]* program\n";
-    let dl = Asmir.decls_for_arch Asmir.arch_i386 in
-    let asmir_gamma = Asmir.gamma_create
-      (List.find (fun (i, s, t) -> s = "mem") dl) dl in
+	"word Concrete initial value for %esi register");
+       ("-initial-edi", Arg.String
+	  (fun s -> opt_initial_edi := Some(Int64.of_string s)),
+	"word Concrete initial value for %edi register");
+       ("-initial-esp", Arg.String
+	  (fun s -> opt_initial_esp := Some(Int64.of_string s)),
+	"word Concrete initial value for %esp (stack pointer)");
+       ("-initial-ebp", Arg.String
+	  (fun s -> opt_initial_ebp := Some(Int64.of_string s)),
+	"word Concrete initial value for %ebp (frame pointer)");
+       ("-initial-eflagsrest", Arg.String
+	  (fun s -> opt_initial_eflagsrest := Some(Int64.of_string s)),
+	"word Concrete initial value for %eflags, less [CPAZSO]F");
+       ("-load-base", Arg.String
+	  (fun s -> opt_load_base := Int64.of_string s),
+	"addr Base address for program image");
+       ("-load-region", Arg.String
+	  (add_delimited_pair opt_load_extra_regions '+'),
+	"base+size Load an additional region from program image");
+       ("-load-data", Arg.Bool(fun b -> opt_load_data := b),
+        "bool Load data segments from a binary?"); 
+       ("-random-memory", Arg.Set(opt_random_memory),
+        " Use random values for uninitialized memory reads");
+       ("-check-for-null", Arg.Set(opt_check_for_null),
+        " Check whether dereferenced values can be null");
+       ("-state", Arg.String
+	  (fun s -> opt_state_file := Some s),
+	"file Load memory state from TEMU state file");
+       ("-store-word", Arg.String
+	  (add_delimited_pair opt_store_words '='),
+	"addr=val Fix an address to a concrete value");
+       ("-stp-path", Arg.Set_string(opt_stp_path),
+	"path Location of external STP binary");
+       ("-trace-assigns", Arg.Set(opt_trace_assigns),
+	" Print satisfying assignments");
+       ("-trace-basic",
+	(Arg.Unit
+	   (fun () ->
+	      opt_trace_binary_paths := true;
+	      opt_trace_decisions := true;
+	      opt_trace_iterations := true;
+	      opt_trace_setup := true;
+	      opt_trace_stopping := true;
+	      opt_trace_sym_addrs := true;
+	      opt_coverage_stats := true;
+	      opt_time_stats := true)),
+	" Enable several common trace and stats options");
+       ("-trace-binary-paths", Arg.Set(opt_trace_binary_paths),
+	" Print decision paths as bit strings");
+       ("-trace-decisions", Arg.Set(opt_trace_decisions),
+	" Print symbolic branch choices");
+       ("-trace-eip", Arg.Set(opt_trace_eip),
+	" Print PC of each insn executed");
+       ("-trace-ir", Arg.Set(opt_trace_ir),
+	" Print Vine IR before executing it");
+       ("-trace-orig-ir", Arg.Set(opt_trace_orig_ir),
+	" Print Vine IR as produced by Asmir");
+       ("-trace-iterations", Arg.Set(opt_trace_iterations),
+	" Print iteration count");
+       ("-trace-loads", Arg.Set(opt_trace_loads),
+	" Print each memory load");
+       ("-trace-stores", Arg.Set(opt_trace_stores),
+	" Print each memory store");
+       ("-trace-regions", Arg.Set(opt_trace_regions),
+	" Print symbolic memory regions");
+       ("-trace-setup", Arg.Set(opt_trace_setup),
+	" Print progress of program loading");
+       ("-trace-stopping", Arg.Set(opt_trace_stopping),
+	" Print why paths terminate");
+       ("-trace-sym-addrs", Arg.Set(opt_trace_sym_addrs),
+	" Print symbolic address values");
+       ("-trace-temps", Arg.Set(opt_trace_temps),
+	" Print intermediate formulas");
+       ("-use-tags", Arg.Set(opt_use_tags),
+	" Track data flow with numeric tags");
+       ("-coverage-stats", Arg.Set(opt_coverage_stats),
+	" Print pseudo-BB coverage statistics");
+       ("-gc-stats", Arg.Set(opt_gc_stats),
+	" Print memory usage statistics");
+       ("-time-stats", Arg.Set(opt_gc_stats),
+	" Print running time statistics");
+     ])
+    (* (fun arg -> prog := Vine_parser.parse_file arg) *)
+    (fun arg ->
+       match !opt_program_name with 
+	 | None -> opt_program_name := Some arg
+	 | _ -> failwith "Multiple non-option args not allowed")
+    "trans_eval [options]* program\n";
+  let fm = if !opt_use_tags then
+    new SRFMT.sym_region_frag_machine
+  else
+    new SRFM.sym_region_frag_machine
+in
+  let dl = Asmir.decls_for_arch Asmir.arch_i386 in
+    let asmir_gamma = Asmir.gamma_create 
+      (List.find (fun (i, s, t) -> s = "mem") dl) dl
+    in
+      (match !opt_program_name with
+	 | Some name ->
+	     ignore(LinuxLoader.load_dynamic_program fm name
+		      !opt_load_base !opt_load_data !opt_load_extra_regions)
+	 | _ -> ());
       if !opt_random_memory then
 	fm#on_missing_random
       else
