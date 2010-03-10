@@ -1,5 +1,5 @@
 (*
- Owned and copyright BitBlaze, 2007,2009. All rights reserved.
+ Owned and copyright BitBlaze, 2007, 2009-2010. All rights reserved.
  Do not copy, disclose, or distribute without explicit written
  permission.
 *)
@@ -2565,6 +2565,8 @@ let regstr_to_reg s = match s with
 exception TooManyIterations
 exception IllegalInstruction
 
+let opt_iteration_limit = ref 1000000000000L
+
 module FragmentMachineFunctor =
   functor (D : DOMAIN) ->
 struct
@@ -2584,7 +2586,7 @@ struct
     val temps = V.VarHash.create 100
     val mutable frag = ([], [])
     val mutable insns = []
-    val mutable loop_cnt = 0
+    val mutable loop_cnt = 0L
 
     val mutable snap = (V.VarHash.create 1, V.VarHash.create 1)
 
@@ -2603,7 +2605,7 @@ struct
     method set_frag (dl, sl) =
       frag <- (dl, sl);
       V.VarHash.clear temps;
-      loop_cnt <- 0;
+      loop_cnt <- 0L;
       self#concretize_misc;
       insns <- sl
 
@@ -3083,8 +3085,8 @@ struct
 	  | V.Label(l) :: rest when l = lab -> Some sl
 	  | st :: rest -> find_label lab rest
       in
-	loop_cnt <- loop_cnt + 1;
-	if loop_cnt > 50 then raise TooManyIterations;
+	loop_cnt <- Int64.succ loop_cnt;
+	if loop_cnt > !opt_iteration_limit then raise TooManyIterations;
 	let (_, sl) = frag in
 	  match find_label lab sl with
 	    | None -> lab
@@ -3691,6 +3693,18 @@ struct
 
     method on_missing_random =
       self#on_missing_random_m (mem :> GM.granular_memory)
+
+    method private on_missing_zero_m (m:GM.granular_memory) =
+      m#on_missing
+	(fun size _ -> match size with
+	   | 8  -> D.from_concrete_8  0
+	   | 16 -> D.from_concrete_16 0
+	   | 32 -> D.from_concrete_32 0L
+	   | 64 -> D.from_concrete_64 0L
+	   | _ -> failwith "Bad size in on_missing_zero")
+
+    method on_missing_zero =
+      self#on_missing_zero_m (mem :> GM.granular_memory)
 
     method finish_path =
       dt#mark_all_seen;
@@ -4461,6 +4475,8 @@ end
 
 exception SimulatedExit of int64
 
+let opt_trace_syscalls = ref false
+
 class linux_special_handler fm =
   let put_reg reg v = fm#set_word_var reg v in
   let load_word addr = fm#load_word_conc addr in
@@ -4741,9 +4757,22 @@ object(self)
       the_break := addr;
     put_reg R_EAX !the_break;
 
+  method sys_clock_gettime clkid timep =
+    match clkid with
+      | 0 -> (* CLOCK_REALTIME *)
+	  let ftime = Unix.gettimeofday () in
+	  let fsecs = floor ftime in
+	  let secs = Int64.of_float fsecs and
+	      nanos = Int64.of_float (1000000000.0 *. (ftime -. fsecs)) in
+	    store_word timep 0 secs;
+	    store_word timep 4 nanos;
+	    put_reg R_EAX 0L
+      | _ -> self#put_errno Unix.EINVAL (* unsupported clock type *)
+
   method sys_close fd =
     try
-      Unix.close (self#get_fd fd);
+      if (fd <> 1 && fd <> 2) then
+	Unix.close (self#get_fd fd);
       Array.set unix_fds fd None;
       put_reg R_EAX 0L (* success *)
     with
@@ -4757,6 +4786,9 @@ object(self)
       match (op, value) with
 	| (129 (* FUTEX_WAKE_PRIVATE *), _) ->
 	    0L (* never anyone to wake *)
+	| (393 (* FUTEX_WAIT_BITSET_PRIVATE|FUTEX_CLOCK_REALTIME *), _) ->
+	    (Int64.of_int ~-(self#errno Unix.EAGAIN))
+	      (* simulate lack of setup? *)
 	| _ -> failwith "Unhandled futex operation"
     in
       put_reg R_EAX ret
@@ -4784,6 +4816,17 @@ object(self)
 	  (* let attrs = Unix.tcgetattr (get_fd fd) in *)
 	  failwith "Unhandled TCGETS ioctl"
       | _ -> failwith "Unknown ioctl"
+
+  method sys__llseek fd offset resultp whence =
+    let seek_cmd = match whence with
+      | 0 -> Unix.SEEK_SET
+      | 1 -> Unix.SEEK_CUR
+      | 2 -> Unix.SEEK_END
+      | _ -> failwith "Bad whence value in _llseek"
+    in
+    let loc = Unix.lseek (self#get_fd fd) (Int64.to_int offset) seek_cmd in
+      fm#store_long_conc resultp (Int64.of_int loc);
+      put_reg R_EAX 0L;
 
   method sys_mmap2 addr length prot flags fd pgoffset =
     let do_read addr = 
@@ -4848,6 +4891,14 @@ object(self)
       fm#store_str out_buf 0L (String.sub real 0 written);
       put_reg R_EAX (Int64.of_int written);
 
+  method sys_setgid32 gid =
+    Unix.setgid gid;
+    put_reg R_EAX 0L (* success *)
+
+  method sys_setuid32 uid =
+    Unix.setuid uid;
+    put_reg R_EAX 0L (* success *)
+
   method sys_set_robust_list addr len =
     put_reg R_EAX 0L (* success *)
 
@@ -4856,8 +4907,9 @@ object(self)
     and
 	base  = load_word (lea uinfo 0 0 4) and
 	limit = load_word (lea uinfo 0 0 8) in
-      Printf.printf "set_thread_area({entry: %d, base: %Lx, limit: %Ld})\n"
-	old_ent base limit;
+      if !opt_trace_syscalls then
+	Printf.printf "set_thread_area({entry: %d, base: %Lx, limit: %Ld})\n"
+	  old_ent base limit;
       (match (old_ent, base, limit) with
 	 | (-1, _, _) ->
 	     let new_ent = 12L in
@@ -4979,13 +5031,15 @@ object(self)
 	     let fd    = Int64.to_int ebx and
 		 buf   = ecx and
 		 count = Int64.to_int edx in
-	       Printf.printf "read(%d, 0x%08Lx, %d)" fd buf count;
+	       if !opt_trace_syscalls then
+		 Printf.printf "read(%d, 0x%08Lx, %d)" fd buf count;
 	       self#sys_read fd buf count;
 	 | 4 -> (* write *)
 	     let fd    = Int64.to_int ebx and
 		 buf   = ecx and
 		 count = Int64.to_int edx in
-	       Printf.printf "write(%d, 0x%08Lx, %d)\n" fd buf count;
+	       if !opt_trace_syscalls then
+		 Printf.printf "write(%d, 0x%08Lx, %d)\n" fd buf count;
 	       let bytes = fm#read_buf buf count in
 		 self#sys_write fd bytes count
 	 | 5 -> (* open *)
@@ -4993,11 +5047,13 @@ object(self)
 		 flags    = Int64.to_int ecx and
 		 mode     = Int64.to_int edx in
 	     let path = fm#read_cstr path_buf in
-	       Printf.printf "open(\"%s\", 0x%x, 0o%o)" path flags mode;
+	       if !opt_trace_syscalls then
+		 Printf.printf "open(\"%s\", 0x%x, 0o%o)" path flags mode;
 	       self#sys_open path flags mode
 	 | 6 -> (* close *)
 	     let fd = Int64.to_int ebx in
-	       Printf.printf "close(%d)" fd;
+	       if !opt_trace_syscalls then
+		 Printf.printf "close(%d)" fd;
 	       self#sys_close fd
 	 | 7 -> (* waitpid *)
 	     failwith "Unhandled Linux system call waitpid (7)"
@@ -5013,7 +5069,8 @@ object(self)
 	     failwith "Unhandled Linux system call chdir (12)"
 	 | 13 -> (* time *)
 	     let addr = ebx in
-	       Printf.printf "time(0x%08Lx)" addr;
+	       if !opt_trace_syscalls then
+		 Printf.printf "time(0x%08Lx)" addr;
 	       self#sys_time addr
 	 | 14 -> (* mknod *)
 	     failwith "Unhandled Linux system call mknod (14)"
@@ -5057,7 +5114,8 @@ object(self)
 	     let path_buf = ebx and
 		 mode     = Int64.to_int ecx in
 	     let path = fm#read_cstr path_buf in
-	       Printf.printf "access(\"%s\", 0x%x)" path mode;
+	       if !opt_trace_syscalls then
+		 Printf.printf "access(\"%s\", 0x%x)" path mode;
 	       self#sys_access path mode
 	 | 34 -> (* nice *)
 	     failwith "Unhandled Linux system call nice (34)"
@@ -5079,13 +5137,15 @@ object(self)
 	     failwith "Unhandled Linux system call pipe (42)"
 	 | 43 -> (* times *)
 	     let addr = ebx in
-	       Printf.printf "times(0x%08Lx)" addr;
+	       if !opt_trace_syscalls then
+		 Printf.printf "times(0x%08Lx)" addr;
 	       self#sys_times addr
 	 | 44 -> (* prof *)
 	     failwith "Unhandled Linux system call prof (44)"
 	 | 45 -> (* brk *)
 	     let addr = ebx in
-	       Printf.printf "brk(0x%08Lx)" addr;
+	       if !opt_trace_syscalls then
+		 Printf.printf "brk(0x%08Lx)" addr;
 	       self#sys_brk addr
 	 | 46 -> (* setgid *)
 	     failwith "Unhandled Linux system call setgid (46)"
@@ -5107,7 +5167,8 @@ object(self)
 	     let fd   = Int64.to_int ebx and
 		 req  = ecx and
 		 argp = edx in
-	       Printf.printf "ioctl(%d, 0x%Lx, 0x%08Lx)" fd req argp;
+	       if !opt_trace_syscalls then
+		 Printf.printf "ioctl(%d, 0x%Lx, 0x%08Lx)" fd req argp;
 	       self#sys_ioctl fd req argp;
 	 | 55 -> (* fcntl *)
 	     failwith "Unhandled Linux system call fcntl (55)"
@@ -5174,8 +5235,9 @@ object(self)
 		 out_buf  = ecx and
 		 buflen   = Int64.to_int edx in
 	     let path = fm#read_cstr path_buf in
-	       Printf.printf "readlink(\"%s\", 0x%08Lx, %d)"
-		 path out_buf buflen;
+	       if !opt_trace_syscalls then
+		 Printf.printf "readlink(\"%s\", 0x%08Lx, %d)"
+		   path out_buf buflen;
 	       self#sys_readlink path out_buf buflen
 	 | 86 -> (* uselib *)
 	     failwith "Unhandled Linux system call uselib (86)"
@@ -5190,7 +5252,8 @@ object(self)
 	 | 91 -> (* munmap *)
 	     let addr = ebx and
 		 len  = ecx in
-	       Printf.printf "munmap(0x%08Lx, %Ld)" addr len;
+	       if !opt_trace_syscalls then
+		 Printf.printf "munmap(0x%08Lx, %Ld)" addr len;
 	       self#sys_munmap addr len
 	 | 92 -> (* truncate *)
 	     failwith "Unhandled Linux system call truncate (92)"
@@ -5254,7 +5317,8 @@ object(self)
 	     failwith "Unhandled Linux system call setdomainname (121)"
 	 | 122 -> (* uname *)
 	     let buf = ebx in
-	       Printf.printf "uname(0x%08Lx)" buf;
+	       if !opt_trace_syscalls then
+		 Printf.printf "uname(0x%08Lx)" buf;
 	       self#sys_uname buf
 	 | 123 -> (* modify_ldt *)
 	     failwith "Unhandled Linux system call modify_ldt (123)"
@@ -5264,7 +5328,8 @@ object(self)
 	     let addr = ebx and
 		 len  = ecx and
 		 prot = edx in
-	       Printf.printf "mprotect(0x%08Lx, %Ld, %Ld)" addr len prot;
+	       if !opt_trace_syscalls then
+		 Printf.printf "mprotect(0x%08Lx, %Ld, %Ld)" addr len prot;
 	       self#sys_mprotect addr len prot
 	 | 126 -> (* sigprocmask *)
 	     failwith "Unhandled Linux system call sigprocmask (126)"
@@ -5295,7 +5360,16 @@ object(self)
 	 | 139 -> (* setfsgid *)
 	     failwith "Unhandled Linux system call setfsgid (139)"
 	 | 140 -> (* _llseek *)
-	     failwith "Unhandled Linux system call _llseek (140)"
+	     let fd = Int64.to_int ebx and
+		 off_high = ecx and
+		 off_low = edx and
+		 resultp = esi and
+		 whence = Int64.to_int edi in
+	     let offset = Int64.logor off_low (Int64.shift_left off_high 32) in
+	       if !opt_trace_syscalls then
+		 Printf.printf "_llseek(%d, %Ld, 0x%08Lx, %d)"
+		   fd offset resultp whence;
+	       self#sys__llseek fd offset resultp whence
 	 | 141 -> (* getdents *)
 	     failwith "Unhandled Linux system call getdents (141)"
 	 | 142 -> (* _newselect *)
@@ -5310,7 +5384,8 @@ object(self)
 	     let fd  = Int64.to_int ebx and
 		 iov = ecx and
 		 cnt = Int64.to_int edx in
-	       Printf.printf "writev(%d, 0x%08Lx, %d)" fd iov cnt;
+	       if !opt_trace_syscalls then
+		 Printf.printf "writev(%d, 0x%08Lx, %d)" fd iov cnt;
 	       self#sys_writev fd iov cnt
 	 | 147 -> (* getsid *)
 	     failwith "Unhandled Linux system call getsid (147)"
@@ -5371,16 +5446,18 @@ object(self)
 		 newbuf = ecx and
 		 oldbuf = edx and
 		 setlen = Int64.to_int esi in
-	       Printf.printf "rt_sigaction(%d, 0x%08Lx, 0x%08Lx, %d)"
-		 signum newbuf oldbuf setlen;
+	       if !opt_trace_syscalls then
+		 Printf.printf "rt_sigaction(%d, 0x%08Lx, 0x%08Lx, %d)"
+		   signum newbuf oldbuf setlen;
 	       self#sys_rt_sigaction signum newbuf oldbuf setlen
 	 | 175 -> (* rt_sigprocmask *)
 	     let how    = Int64.to_int ebx and
 		 newset = ecx and
 		 oldset = edx and
 		 setlen = Int64.to_int esi in
-	       Printf.printf "rt_sigprocmask(%d, 0x%08Lx, 0x%08Lx, %d)"
-		 how newset oldset setlen;
+	       if !opt_trace_syscalls then
+		 Printf.printf "rt_sigprocmask(%d, 0x%08Lx, 0x%08Lx, %d)"
+		   how newset oldset setlen;
 	       self#sys_rt_sigprocmask how newset oldset setlen
 	 | 176 -> (* rt_sigpending *)
 	     failwith "Unhandled Linux system call rt_sigpending (176)"
@@ -5415,7 +5492,8 @@ object(self)
 	 | 191 -> (* ugetrlimit *)
 	     let rsrc = Int64.to_int ebx and
 		 buf  = ecx in
-	       Printf.printf "ugetrlimit(%d, 0x%08Lx)" rsrc buf;
+	       if !opt_trace_syscalls then
+		 Printf.printf "ugetrlimit(%d, 0x%08Lx)" rsrc buf;
 	       self#sys_ugetrlimit rsrc buf
 	 | 192 -> (* mmap2 *)
 	     let addr     = ebx and
@@ -5424,8 +5502,9 @@ object(self)
 		 flags    = esi and
 		 fd       = Int64.to_int edi and
 		 pgoffset = Int64.to_int ebp in
-	       Printf.printf "mmap2(0x%08Lx, %Ld, 0x%Lx, 0x%0Lx, %d, %d)"
-		 addr length prot flags fd pgoffset;
+	       if !opt_trace_syscalls then
+		 Printf.printf "mmap2(0x%08Lx, %Ld, 0x%Lx, 0x%0Lx, %d, %d)"
+		   addr length prot flags fd pgoffset;
 	       self#sys_mmap2 addr length prot flags fd pgoffset
 	 | 193 -> (* truncate64 *)
 	     failwith "Unhandled Linux system call truncate64 (193)"
@@ -5435,28 +5514,34 @@ object(self)
 	     let path_buf = ebx and
 		 buf_addr = ecx in
 	     let path = fm#read_cstr path_buf in
-	       Printf.printf "stat64(\"%s\", 0x%08Lx)" path buf_addr;
+	       if !opt_trace_syscalls then
+		 Printf.printf "stat64(\"%s\", 0x%08Lx)" path buf_addr;
 	       self#sys_stat64 path buf_addr
 	 | 196 -> (* lstat64 *)
 	     failwith "Unhandled Linux system call lstat64 (196)"
 	 | 197 -> (* fstat64 *)
 	     let fd = Int64.to_int ebx and
 		 buf_addr = ecx in
-	       Printf.printf "fstat64(%d, 0x%08Lx)" fd buf_addr;
+	       if !opt_trace_syscalls then
+		 Printf.printf "fstat64(%d, 0x%08Lx)" fd buf_addr;
 	       self#sys_fstat64 fd buf_addr
 	 | 198 -> (* lchown32 *)
 	     failwith "Unhandled Linux system call lchown32 (198)"
 	 | 199 -> (* getuid32 *)
-	     Printf.printf "getuid32()";
+	     if !opt_trace_syscalls then
+	       Printf.printf "getuid32()";
 	     self#sys_getuid32 ()
 	 | 200 -> (* getgid32 *)
-	     Printf.printf "getgid32()";
+	     if !opt_trace_syscalls then
+	       Printf.printf "getgid32()";
 	     self#sys_getgid32 ()
 	 | 201 -> (* geteuid32 *)
-	     Printf.printf "geteuid32()";
+	     if !opt_trace_syscalls then
+	       Printf.printf "geteuid32()";
 	     self#sys_geteuid32 ()
 	 | 202 -> (* getegid32 *)
-	     Printf.printf "getegid32()";
+	     if !opt_trace_syscalls then
+	       Printf.printf "getegid32()";
 	     self#sys_getegid32 ()
 	 | 203 -> (* setreuid32 *)
 	     failwith "Unhandled Linux system call setreuid32 (203)"
@@ -5479,9 +5564,15 @@ object(self)
 	 | 212 -> (* chown32 *)
 	     failwith "Unhandled Linux system call chown32 (212)"
 	 | 213 -> (* setuid32 *)
-	     failwith "Unhandled Linux system call setuid32 (213)"
+	     let uid = Int64.to_int ebx in
+	       if !opt_trace_syscalls then
+		 Printf.printf "setuid32(%d)" uid;
+	       self#sys_setuid32 uid
 	 | 214 -> (* setgid32 *)
-	     failwith "Unhandled Linux system call setgid32 (214)"
+	     let gid = Int64.to_int ebx in
+	       if !opt_trace_syscalls then
+		 Printf.printf "setgid32(%d)" gid;
+	       self#sys_setgid32 gid
 	 | 215 -> (* setfsuid32 *)
 	     failwith "Unhandled Linux system call setfsuid32 (215)"
 	 | 216 -> (* setfsgid32 *)
@@ -5535,8 +5626,9 @@ object(self)
 		 timebuf  = esi and
 		 uaddr2   = edi and
 		 val3     = ebp in
-	       Printf.printf "futex(0x%08Lx, %d, %Ld, 0x%08Lx, 0x%08Lx, %Ld)"
-		 uaddr op value timebuf uaddr2 val3;
+	       if !opt_trace_syscalls then
+		 Printf.printf "futex(0x%08Lx, %d, %Ld, 0x%08Lx, 0x%08Lx, %Ld)"
+		   uaddr op value timebuf uaddr2 val3;
 	       self#sys_futex uaddr op value timebuf uaddr2 val3
 	 | 241 -> (* sched_setaffinity *)
 	     failwith "Unhandled Linux system call sched_setaffinity (241)"
@@ -5544,7 +5636,8 @@ object(self)
 	     failwith "Unhandled Linux system call sched_getaffinity (242)"
 	 | 243 -> (* set_thread_area *)
 	     let uinfo = ebx in
-	       Printf.printf "set_thread_area(0x%08Lx)" uinfo;
+	       if !opt_trace_syscalls then
+		 Printf.printf "set_thread_area(0x%08Lx)" uinfo;
 	       self#sys_set_thread_area uinfo
 	 | 244 -> (* get_thread_area *)
 	     failwith "Unhandled Linux system call get_thread_area (244)"
@@ -5562,7 +5655,8 @@ object(self)
 	     failwith "Unhandled Linux system call fadvise64 (250)"
 	 | 252 -> (* exit_group *)
 	     let status = ebx in
-	       Printf.printf "exit_group(%Ld) (no return)\n" status;
+	       if !opt_trace_syscalls then
+		 Printf.printf "exit_group(%Ld) (no return)\n" status;
 	       self#sys_exit_group status
 	 | 253 -> (* lookup_dcookie *)
 	     failwith "Unhandled Linux system call lookup_dcookie (253)"
@@ -5576,17 +5670,39 @@ object(self)
 	     failwith "Unhandled Linux system call remap_file_pages (257)"
 	 | 258 -> (* set_tid_address *)
 	     let addr = ebx in
-	       Printf.printf "set_tid_address(0x08%Lx)" addr;
+	       if !opt_trace_syscalls then
+		 Printf.printf "set_tid_address(0x08%Lx)" addr;
 	       self#sys_set_tid_address addr
 	 | 259 -> (* timer_create *)
 	     failwith "Unhandled Linux system call timer_create (259)"
+	 | 260 -> (* timer_settime *)
+	     failwith "Unhandled Linux system call timer_settime (260)"
+	 | 261 -> (* timer_gettime *)
+	     failwith "Unhandled Linux system call timer_gettime (261)"
+	 | 262 -> (* timer_getoverrun *)
+	     failwith "Unhandled Linux system call timer_getoverrun (262)"
+	 | 263 -> (* timer_delete *)
+	     failwith "Unhandled Linux system call timer_delete (263)"
+	 | 264 -> (* clock_settime *)
+	     failwith "Unhandled Linux system call clock_settime (264)"
+	 | 265 -> (* clock_gettime *)
+	     let clkid = Int64.to_int ebx and
+		 timep = ecx in
+	       if !opt_trace_syscalls then
+		 Printf.printf "clock_gettime(%d, 0x08%Lx)" clkid timep;
+	       self#sys_clock_gettime clkid timep
+	 | 266 -> (* clock_getres *)
+	     failwith "Unhandled Linux system call clock_getres (266)"
+	 | 267 -> (* clock_nanosleep *)
+	     failwith "Unhandled Linux system call clock_nanosleep (267)"
 	 | 268 -> (* statfs64 *)
 	     let path_buf = ebx and
 		 buf_len = Int64.to_int ecx and
 		 struct_buf = edx in
 	     let path = fm#read_cstr path_buf in
-	       Printf.printf "statfs64(\"%s\", %d, 0x%08Lx)"
-		 path buf_len struct_buf;
+	       if !opt_trace_syscalls then
+		 Printf.printf "statfs64(\"%s\", %d, 0x%08Lx)"
+		   path buf_len struct_buf;
 	       self#sys_statfs64 path buf_len struct_buf
 	 | 269 -> (* fstatfs64 *)
 	     failwith "Unhandled Linux system call fstatfs64 (269)"
@@ -5606,6 +5722,16 @@ object(self)
 	     failwith "Unhandled Linux system call set_mempolicy (276)"
 	 | 277 -> (* mq_open *)
 	     failwith "Unhandled Linux system call mq_open (277)"
+	 | 278 -> (* mq_unlink *)
+	     failwith "Unhandled Linux system call mq_unlink (278)"
+	 | 279 -> (* mq_timedsend *)
+	     failwith "Unhandled Linux system call mq_timedsend (279)"
+	 | 280 -> (* mq_timedreceive *)
+	     failwith "Unhandled Linux system call mq_timedreceive (280)"
+	 | 281 -> (* mq_notify *)
+	     failwith "Unhandled Linux system call mq_notify (281)"
+	 | 282 -> (* mq_getsetattr *)
+	     failwith "Unhandled Linux system call mq_getsetattr (282)"
 	 | 283 -> (* kexec_load *)
 	     failwith "Unhandled Linux system call kexec_load (283)"
 	 | 284 -> (* waitid *)
@@ -5663,7 +5789,8 @@ object(self)
 	 | 311 -> (* set_robust_list *)
 	     let addr = ebx and
 		 len  = ecx in
-	       Printf.printf "set_robust_list(0x08%Lx, %Ld)" addr len;
+	       if !opt_trace_syscalls then
+		 Printf.printf "set_robust_list(0x08%Lx, %Ld)" addr len;
 	       self#sys_set_robust_list addr len
 	 | 312 -> (* get_robust_list *)
 	     failwith "Unhandled Linux system call get_robust_list (312)"
@@ -5698,9 +5825,10 @@ object(self)
 	 | _ ->
 	     Printf.printf "Unhandled system call %d\n" syscall_num;
 	     failwith "Unhandled Linux system call");
-    Printf.printf " = %Ld (0x%08Lx)\n"
-      (fix_s32 (fm#get_word_var R_EAX)) (fm#get_word_var R_EAX);
-    flush stdout
+    if !opt_trace_syscalls then
+      (Printf.printf " = %Ld (0x%08Lx)\n"
+	(fix_s32 (fm#get_word_var R_EAX)) (fm#get_word_var R_EAX);
+       flush stdout)
 
   method handle_special str =
     match str with
@@ -5828,6 +5956,7 @@ module LinuxLoader = struct
       | (4L, _) -> "NOTE"
       | (6L, _) -> "PHDR"
       | (0x6474e550L, _) -> "EH_FRAME"
+      | (0x6474e551L, _) -> "STACK"
       | (0x6474e552L, _) -> "RELRO"
       | _ -> "???"
     in
@@ -5838,7 +5967,7 @@ module LinuxLoader = struct
 	  type_str vbase
 	  (Int64.add vbase phr.filesz);
       seek_in ic (Int64.to_int phr.offset);
-      for page_num = 0 to Int64.to_int (Int64.div phr.filesz 4096L) do
+      for page_num = 0 to (Int64.to_int (Int64.div phr.filesz 4096L)) - 1 do
 	let page = IO.really_nread i 4096 and
 	    va = (Int64.add vbase
 		    (Int64.mul (Int64.of_int page_num) 4096L)) in
@@ -5895,18 +6024,80 @@ module LinuxLoader = struct
    let load_ldso fm dso vaddr =
     let ic = open_in dso in
     let dso_eh = read_elf_header ic in
+      if !opt_trace_setup then
+	Printf.printf "Loading from dynamic linker %s\n" dso;
       assert(dso_eh.eh_type = 3);
       List.iter
 	(fun phr ->
 	   if phr.ph_type = 1L || phr.memsz <> 0L then
 	     load_segment fm ic phr vaddr)
 	(read_program_headers ic dso_eh);
-      close_in ic
+      close_in ic;
+      Int64.add vaddr dso_eh.entry
 
-  let load_dynamic_program fm fname load_base data_too extras =
+  let build_startup_state fm eh load_base ldso argv =
+    let esp = ref 0xc0000000L in
+    let push_cstr s =
+      esp := Int64.sub !esp (Int64.of_int ((String.length s) + 1));
+      fm#store_cstr !esp 0L s;
+      !esp
+    in
+    let push_word i =
+      esp := Int64.sub !esp 4L;
+      fm#store_word_conc !esp i
+    in
+    let env = List.concat
+      (List.map
+	 (fun key -> 
+	    try
+	      let v = Sys.getenv key in
+		[key ^ "=" ^ v]
+	    with
+		Not_found -> []
+	 )
+	 ["DISPLAY"; "EDITOR"; "HOME"; "LANG"; "LOGNAME"; "PAGER"; "PATH";
+	  "PWD"; "SHELL"; "TERM"; "USER"; "USERNAME"; "XAUTHORITY"])
+    in
+    let env_locs = List.map push_cstr env in
+    let argv_locs = List.map push_cstr argv in
+    let platform_loc = push_cstr "i686" in
+    let auxv =
+      [(3L, Int64.add load_base eh.phoff);    (* AT_PHDR *)
+       (4L, Int64.of_int eh.phentsize);       (* AT_PHENT *)
+       (5L, Int64.of_int eh.phnum);           (* AT_PHNUM *)
+       (6L, 4096L);                           (* AT_PAGESZ *)
+       (7L, ldso);                            (* AT_BASE: dynamic loader *)
+       (8L, 0L);                              (* AT_FLAGS, no flags *)
+       (9L, eh.entry);                        (* AT_ENTRY *)
+       (11L, Int64.of_int (Unix.getuid ()));  (* AT_UID *)
+       (12L, Int64.of_int (Unix.geteuid ())); (* AT_EUID *)
+       (13L, Int64.of_int (Unix.getgid ()));  (* AT_GID *)
+       (14L, Int64.of_int (Unix.getegid ())); (* AT_EGID *)
+       (15L, platform_loc);                   (* AT_PLATFORM *)
+       (* (16L, 0xbfebfbffL);                    (* AT_HWCAP, Core 2 Duo *) *)
+       (16L, 0L);                             (* AT_HWCAP, bare-bones *)
+       (17L, 100L);                           (* AT_CLKTCK *)
+       (23L, 0L);                             (* AT_SECURE *)
+       (* Let's see if we can avoid bothering with AT_SYSINFO *)
+      ] in
+      esp := Int64.logand !esp (Int64.lognot 0xfL); (* 16-bit align *)
+      if (List.length auxv) mod 2 = 1 then
+	(push_word 0L; push_word 0L);
+      List.iter (fun (k, v) -> push_word v; push_word k) auxv;
+      push_word 0L; (* 0 byte marking end of environment *)
+      List.iter push_word env_locs;
+      push_word 0L; (* 0 byte marking end of argv *)
+      List.iter push_word (List.rev argv_locs);
+      push_word (Int64.of_int (List.length argv)); (* argc *)
+      if !opt_trace_setup then
+	Printf.printf "Initial ESP is 0x%08Lx\n" !esp;
+      fm#set_word_var R_ESP !esp      
+
+  let load_dynamic_program fm fname load_base data_too extras argv =
     let ic = open_in fname in
     let i = IO.input_channel ic in
-    let ldso = ref None in
+    let ldso_base = ref 0L in
+    let ldso_entry = ref 0L in
     let eh = read_elf_header ic in
       assert(eh.eh_type = 2);
       List.iter
@@ -5918,8 +6109,9 @@ module LinuxLoader = struct
 	   else if phr.ph_type = 3L then (* PT_INTERP *)
 	     (seek_in ic (Int64.to_int phr.offset);
 	      let interp = IO.really_nread i (Int64.to_int phr.filesz) in
-	      let ldso_base = 0xb7f00000L in
-		ldso := Some (ldso_base, (load_ldso fm interp ldso_base));
+	      let base = 0xb7f00000L in
+		ldso_entry := load_ldso fm interp base;
+		ldso_base := base;
 		load_segment fm ic phr 0L)
 	   else if phr.memsz != 0L then
 	     load_segment fm ic phr 0L;
@@ -5933,7 +6125,8 @@ module LinuxLoader = struct
 	     extras)
 	(read_program_headers ic eh);
       close_in ic;
-      !ldso
+      build_startup_state fm eh load_base !ldso_base argv;
+      !ldso_entry
 end
 
 module StateLoader = struct
@@ -6112,11 +6305,11 @@ let rec runloop fm eip asmir_gamma until =
        (try
 	  Hashtbl.find loop_detect eip
 	with Not_found ->
-	  Hashtbl.replace loop_detect eip 1;
-	  1)
+	  Hashtbl.replace loop_detect eip 1L;
+	  1L)
      in
-       Hashtbl.replace loop_detect eip (1 + old_count);
-       if old_count > 10 then raise TooManyIterations);
+       Hashtbl.replace loop_detect eip (Int64.succ old_count);
+       if old_count > !opt_iteration_limit then raise TooManyIterations);
     let (dl, sl) = decode_insns_cached eip in
     let prog = (dl, (remove_known_unknowns sl)) in
       (* Libasmir.print_disasm_rawbytes Libasmir.Bfd_arch_i386 eip insn_bytes;
@@ -6358,12 +6551,16 @@ let opt_initial_edi = ref None
 let opt_initial_esp = ref None
 let opt_initial_ebp = ref None
 let opt_initial_eflagsrest = ref None
+let opt_linux_syscalls = ref true
 let opt_load_extra_regions = ref []
 let opt_program_name = ref None
-let opt_load_data = ref false
+let opt_load_data = ref true
 let opt_random_memory = ref false
+let opt_zero_memory = ref false
 let opt_store_words = ref []
 let opt_state_file = ref None
+let opt_symbolic_regs = ref false
+let opt_argv = ref []
 
 let add_delimited_pair opt char s =
   let delim_loc = String.index s char in
@@ -6409,6 +6606,9 @@ let main argv =
        ("-initial-eflagsrest", Arg.String
 	  (fun s -> opt_initial_eflagsrest := Some(Int64.of_string s)),
 	"word Concrete initial value for %eflags, less [CPAZSO]F");
+       ("-iteration-limit", Arg.String
+	  (fun s -> opt_iteration_limit := Int64.of_string s),
+	"N Stop path if a loop iterates more than N times");
        ("-load-base", Arg.String
 	  (fun s -> opt_load_base := Int64.of_string s),
 	"addr Base address for program image");
@@ -6417,8 +6617,12 @@ let main argv =
 	"base+size Load an additional region from program image");
        ("-load-data", Arg.Bool(fun b -> opt_load_data := b),
         "bool Load data segments from a binary?"); 
+       ("-symbolic-regs", Arg.Set(opt_symbolic_regs),
+	" Give symbolic values to registers");
        ("-random-memory", Arg.Set(opt_random_memory),
         " Use random values for uninitialized memory reads");
+       ("-zero-memory", Arg.Set(opt_zero_memory),
+        " Use zero values for uninitialized memory reads");
        ("-check-for-null", Arg.Set(opt_check_for_null),
         " Check whether dereferenced values can be null");
        ("-state", Arg.String
@@ -6467,6 +6671,8 @@ let main argv =
 	" Print why paths terminate");
        ("-trace-sym-addrs", Arg.Set(opt_trace_sym_addrs),
 	" Print symbolic address values");
+       ("-trace-syscalls", Arg.Set(opt_trace_syscalls),
+	" Print systems calls (like strace)");
        ("-trace-temps", Arg.Set(opt_trace_temps),
 	" Print intermediate formulas");
        ("-use-tags", Arg.Set(opt_use_tags),
@@ -6477,6 +6683,8 @@ let main argv =
 	" Print memory usage statistics");
        ("-time-stats", Arg.Set(opt_gc_stats),
 	" Print running time statistics");
+       ("--", Arg.Rest(fun s -> opt_argv := !opt_argv @ [s]),
+	" Pass any remaining arguments to the program");
      ])
     (* (fun arg -> prog := Vine_parser.parse_file arg) *)
     (fun arg ->
@@ -6493,21 +6701,30 @@ in
     let asmir_gamma = Asmir.gamma_create 
       (List.find (fun (i, s, t) -> s = "mem") dl) dl
     in
-      (match !opt_program_name with
-	 | Some name ->
-	     ignore(LinuxLoader.load_dynamic_program fm name
-		      !opt_load_base !opt_load_data !opt_load_extra_regions)
-	 | _ -> ());
       if !opt_random_memory then
 	fm#on_missing_random
+      else if !opt_zero_memory then
+	fm#on_missing_zero
       else
 	fm#on_missing_symbol;
       fm#init_prog (dl, []);
-      fm#add_special_handler
-	((new linux_special_nonhandler fm) :> special_handler);
+      (match !opt_program_name with
+	 | Some name ->
+	     opt_fuzz_start_addr := Some
+	       (LinuxLoader.load_dynamic_program fm name
+		  !opt_load_base !opt_load_data !opt_load_extra_regions
+		  !opt_argv)
+	 | _ -> ());
+      if !opt_linux_syscalls then
+	fm#add_special_handler
+	  ((new linux_special_handler fm) :> special_handler)
+      else
+	fm#add_special_handler
+	  ((new linux_special_nonhandler fm) :> special_handler);
       fm#add_special_handler
 	((new trap_special_nonhandler fm) :> special_handler);
-      fm#make_x86_regs_symbolic;
+      if !opt_symbolic_regs then
+	fm#make_x86_regs_symbolic;
       (match !opt_state_file with
 	 | Some s -> StateLoader.load_mem_state fm s
 	 | None -> ());
