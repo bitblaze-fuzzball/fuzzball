@@ -2636,6 +2636,13 @@ struct
     method on_missing_symbol =
       self#on_missing_symbol_m (mem :> GM.granular_memory) "mem"
 
+    method make_x86_regs_zero =
+      let reg r v =
+	self#set_int_var (Hashtbl.find reg_to_var r) v
+      in
+	reg R_FTOP (D.from_concrete_32 0L);	
+	reg EFLAGSREST (D.from_concrete_32 0L);
+
     method make_x86_regs_symbolic =
       let reg r v =
 	self#set_int_var (Hashtbl.find reg_to_var r) v
@@ -2666,6 +2673,7 @@ struct
 	reg R_OF (D.from_concrete_1 0);
 	reg R_ZF (D.from_concrete_1 0);
 	(* reg EFLAGSREST (form_man#fresh_symbolic_32 "initial_eflagsrest");*)
+	reg R_FTOP (D.from_concrete_32 0L);
 	(* Linux user space CS segment: *)
 	self#store_byte_conc 0x60000020L 0xff;
 	self#store_byte_conc 0x60000021L 0xff;
@@ -4477,6 +4485,8 @@ exception SimulatedExit of int64
 
 let opt_trace_syscalls = ref false
 
+let linux_initial_break = ref None
+
 class linux_special_handler fm =
   let put_reg reg v = fm#set_word_var reg v in
   let load_word addr = fm#load_word_conc addr in
@@ -4594,7 +4604,7 @@ object(self)
 	(Int64.add next_fresh_addr 0x0fffL); (* page align *)
       ret
 
-  val the_break = ref 0x08100000L
+  val the_break = ref None
 
   method do_write fd bytes count =
     (try
@@ -4751,11 +4761,25 @@ object(self)
 	| Unix.Unix_error(err, _, _) -> self#put_errno err
 
   method sys_brk addr =
-    if addr < !the_break then
-      ()
-    else
-      the_break := addr;
-    put_reg R_EAX !the_break;
+    let cur_break = match !the_break with
+      | Some b -> b
+      | None ->
+	  (let first_break = 
+	     (match !linux_initial_break with
+		| Some b -> b
+		| None -> 0x08200000L (* vague guess *) )
+	   in
+	     the_break := Some first_break;
+	     first_break)
+    in
+    let new_break = 
+      if addr < cur_break then
+	cur_break
+      else
+	addr
+    in
+      the_break := Some new_break;
+      put_reg R_EAX new_break;
 
   method sys_clock_gettime clkid timep =
     match clkid with
@@ -6007,6 +6031,13 @@ module LinuxLoader = struct
 	     if !opt_trace_setup then
 	       Printf.printf "      Extra zero filling from %08Lx to %08Lx\n"
 		 !va last_aligned;
+	     (if last_aligned < 0xb7f00000L then
+		match !linux_initial_break with 
+		  | None -> linux_initial_break := Some last_aligned;
+		      if !opt_trace_setup then
+			Printf.printf "Setting initial break to 0x%08Lx\n"
+			  last_aligned;
+		  | _ -> ())	;
 	     let last_space = Int64.to_int (Int64.sub last_aligned !va) in
 	       zero_fill fm !va last_space)
 	  
@@ -6269,6 +6300,19 @@ let rec runloop fm eip asmir_gamma until =
 		  (dl @ dl', sl @ sl')
 	    | _ -> (dl, sl) (* end of basic block, e.g. indirect jump *)
   in
+  (* Disable "unknown" statments it seems safe to ignore *)
+  let noop_known_unknowns (dl, sl) = 
+    (dl,
+     List.map
+       (function
+	  | V.Move((V.Temp(_,_,ty) as lhs),
+		   V.Unknown("Unknown: GetI"|"Floating point binop"|
+				 "Floating point triop"|"floatcast"))
+	    -> V.Move(lhs, V.Constant(V.Int(ty, 0L)))
+	  | V.ExpStmt(V.Unknown("Unknown: PutI"))
+	    -> V.Comment("Unknown: PutI")
+	  | s -> s) sl)
+  in
   let decode_insns_cached eip =
     try
       Hashtbl.find trans_cache eip
@@ -6277,28 +6321,9 @@ let rec runloop fm eip asmir_gamma until =
 	  let (dl, sl) = (decode_insns eip 1 true) in
 	    if !opt_trace_orig_ir then
 	      V.pp_program print_string (dl, sl);
-	    Hashtbl.add trans_cache eip (simplify_frag (dl, sl));
+	    Hashtbl.add trans_cache eip
+	      (simplify_frag  (noop_known_unknowns (dl, sl)));
 	    Hashtbl.find trans_cache eip
-  in
-  (* Remove "unknown" statments it seems safe to ignore *)
-  let remove_known_unknowns sl =
-    List.filter
-      (function
-	 | V.Move(_, V.Unknown("CCall: x86g_create_fpucw")) -> false
-	 | V.Move(_, V.Unknown("CCall: x86g_check_fldcw")) -> false
-	 | V.Move(_, V.Unknown("CCall: x86g_create_mxcsr")) -> false
-	 | V.Move(_, V.Unknown("CCall: x86g_check_ldmxcsr")) -> false
-	 | V.Move(_, V.Unknown("Unknown: GetI")) -> false
-	     (* e.g., FPU load *)
-	 | V.Move(_, V.Unknown("Floating point binop")) -> false
-	 | V.Move(_, V.Unknown("Floating point triop")) -> false
-	 | V.Move(_, V.Unknown("floatcast")) -> false
-	 | V.ExpStmt(V.Unknown("Unknown: PutI")) -> false
-	     (* e.g., FPU store *)
-	 | V.ExpStmt(V.Unknown("Unknown: Dirty")) -> false
-	     (* XXX too broad? *)
-	 | _ -> true)
-      sl
   in
   let rec loop eip =
     (let old_count =
@@ -6311,7 +6336,7 @@ let rec runloop fm eip asmir_gamma until =
        Hashtbl.replace loop_detect eip (Int64.succ old_count);
        if old_count > !opt_iteration_limit then raise TooManyIterations);
     let (dl, sl) = decode_insns_cached eip in
-    let prog = (dl, (remove_known_unknowns sl)) in
+    let prog = (dl, sl) in
       (* Libasmir.print_disasm_rawbytes Libasmir.Bfd_arch_i386 eip insn_bytes;
 	 print_string "\n"; *)
       (* fm#print_x86_regs; *)
@@ -6319,7 +6344,7 @@ let rec runloop fm eip asmir_gamma until =
 	Printf.printf "EIP is %08Lx\n" eip;
       fm#set_location_id eip;
       (* Printf.printf "EFLAGSREST is %08Lx\n" (fm#get_word_var EFLAGSREST);*)
-      (* Printf.printf "Watchpoint val is %02x\n" (load_byte 0x501650e8L); *)
+      (* Printf.printf "Watchpoint val is %02x\n" (load_byte 0x81043c1L); *)
       (* Printf.printf ("Insn bytes are %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x\n") (load_byte eip)
 	 (load_byte (Int64.add eip (Int64.of_int 1)))
 	 (load_byte (Int64.add eip (Int64.of_int 2)))
@@ -6708,6 +6733,10 @@ in
       else
 	fm#on_missing_symbol;
       fm#init_prog (dl, []);
+      if !opt_symbolic_regs then
+	fm#make_x86_regs_symbolic
+      else
+	fm#make_x86_regs_zero;
       (match !opt_program_name with
 	 | Some name ->
 	     opt_fuzz_start_addr := Some
@@ -6723,8 +6752,6 @@ in
 	  ((new linux_special_nonhandler fm) :> special_handler);
       fm#add_special_handler
 	((new trap_special_nonhandler fm) :> special_handler);
-      if !opt_symbolic_regs then
-	fm#make_x86_regs_symbolic;
       (match !opt_state_file with
 	 | Some s -> StateLoader.load_mem_state fm s
 	 | None -> ());
