@@ -4875,7 +4875,7 @@ object(self)
 	    addr
 	| (0L, _, 
 	   (0x1L|0x5L) (* PROT_READ|PROT_EXEC *),
-	   (0x802L|0x2L) (* MAP_PRIVATE|MAP_DENYWRITE *), _, _) ->
+	   (0x802L|0x2L|0x1L) (* MAP_PRIVATE|MAP_DENYWRITE|MAP_SHARED *), _, _) ->
 	    let dest_addr = self#fresh_addr length in
 	      do_read dest_addr
 	| (_, _, 0x3L (* PROT_READ|PROT_WRITE *),
