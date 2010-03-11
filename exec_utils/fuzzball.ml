@@ -2642,6 +2642,8 @@ struct
       in
 	reg R_FTOP (D.from_concrete_32 0L);	
 	reg EFLAGSREST (D.from_concrete_32 0L);
+	reg R_LDT (D.from_concrete_32 0x00000000L);
+	reg R_DFLAG (D.from_concrete_32 1L);
 
     method make_x86_regs_symbolic =
       let reg r v =
@@ -2810,9 +2812,13 @@ struct
       with
 	  Not_found -> false
 
-    method private get_int_var ((_,_,ty) as var) =
+    method private get_int_var ((_,vname,ty) as var) =
       try
-	V.VarHash.find reg_store var
+	let v = V.VarHash.find reg_store var in
+	  (* if v = D.uninit then
+	    Printf.printf "Warning: read uninitialized register %s\n"
+	     vname; *)
+	  v
       with
 	| Not_found ->
 	    (try 
@@ -2821,8 +2827,20 @@ struct
 	       | Not_found -> V.pp_var print_string var; 
 		   failwith "Unknown variable")
 
+    method get_bit_var reg =
+      D.to_concrete_1 (self#get_int_var (Hashtbl.find reg_to_var reg))
+
+    method get_byte_var reg =
+      D.to_concrete_8 (self#get_int_var (Hashtbl.find reg_to_var reg))
+
+    method get_short_var reg =
+      D.to_concrete_16 (self#get_int_var (Hashtbl.find reg_to_var reg))
+
     method get_word_var reg =
       D.to_concrete_32 (self#get_int_var (Hashtbl.find reg_to_var reg))
+
+    method get_long_var reg =
+      D.to_concrete_64 (self#get_int_var (Hashtbl.find reg_to_var reg))
 
     method private set_int_var ((_,_,ty) as var) value =
       try
@@ -2832,8 +2850,20 @@ struct
 	  Not_found ->
 	    V.VarHash.replace temps var value
 
+    method set_bit_var reg v =
+      self#set_int_var (Hashtbl.find reg_to_var reg) (D.from_concrete_1 v)
+
+    method set_byte_var reg v =
+      self#set_int_var (Hashtbl.find reg_to_var reg) (D.from_concrete_8 v)
+
+    method set_short_var reg v =
+      self#set_int_var (Hashtbl.find reg_to_var reg) (D.from_concrete_16 v)
+
     method set_word_var reg v =
       self#set_int_var (Hashtbl.find reg_to_var reg) (D.from_concrete_32 v)
+
+    method set_long_var reg v =
+      self#set_int_var (Hashtbl.find reg_to_var reg) (D.from_concrete_64 v)
 
     val mutable symbol_uniq = 0
       
@@ -3468,6 +3498,7 @@ class decision_tree = object(self)
 end
 
 let opt_trace_assigns = ref false
+let opt_trace_assigns_string = ref false
 let opt_trace_decisions = ref false
 let opt_trace_binary_paths = ref false
 
@@ -3595,13 +3626,12 @@ struct
 	  if verbose then
 	    (if is_sat then
 	       (if !opt_trace_decisions then
-		  (Printf.printf "Satisfiable";
-		   if !opt_trace_assigns then
-		     (Printf.printf " by \"%s\"\n"
-			(String.escaped (self#ce_to_input_str ce));
-		      self#print_ce ce)
-		   else
-		     Printf.printf ".\n"))
+		  Printf.printf "Satisfiable.\n";
+		if !opt_trace_assigns_string then
+		  Printf.printf "Input: \"%s\"\n"
+		    (String.escaped (self#ce_to_input_str ce));
+		if !opt_trace_assigns then
+		  self#print_ce ce)
 	     else
 	       if !opt_trace_decisions then Printf.printf "Unsatisfiable.\n");
 	  if ((Sys.time ()) -. time_before) > 1.0 then
@@ -3894,6 +3924,12 @@ struct
       | V.Cast(V.CAST_UNSIGNED, V.REG_32,
 	       V.Lval(V.Mem(_, _, V.REG_8)))
 	  -> ExprOffset(e)
+      | V.Cast(V.CAST_UNSIGNED, V.REG_32,
+	       V.Lval(V.Temp(_, _, V.REG_16)))
+	  -> ExprOffset(e)
+      | V.Cast(V.CAST_UNSIGNED, V.REG_32,
+	       V.Lval(V.Temp(_, _, V.REG_8)))
+	  -> ExprOffset(e)
       | V.Lval(_) -> Symbol(e)
       | _ -> failwith ("Strange term "^(V.exp_to_string e)^" in address")
 
@@ -4024,7 +4060,7 @@ struct
 	if Hashtbl.mem concrete_cache e then
 	  (Hashtbl.find concrete_cache e, "Reused")
 	else
-	  let bits = self#choose_conc_offset_biased e in
+	  let bits = self#choose_conc_offset_uniform e in
 	    Hashtbl.replace concrete_cache e bits;
 	    (bits, "Picked") in
 	if !opt_trace_sym_addrs then
@@ -4478,6 +4514,7 @@ object(self)
   method handle_special str =
     match str with
       | "int 0x80" -> raise NoSyscalls
+      | "sysenter" -> raise NoSyscalls
       | _ -> false
 end
 
@@ -4487,8 +4524,33 @@ let opt_trace_syscalls = ref false
 
 let linux_initial_break = ref None
 
+let linux_setup_tcb_seg fm new_ent new_gdt base limit =
+  let store_byte base idx v =
+    let addr = Int64.add base (Int64.of_int idx) in
+      fm#store_byte_conc addr (Int64.to_int v)
+  in
+  let new_gs = (new_ent lsl 3) lor 3 in
+  let new_gdt = 0x60000000L in
+  let descr = Int64.add new_gdt (Int64.of_int (new_ent lsl 3)) in
+    fm#set_word_var R_GDT new_gdt;
+    fm#set_short_var R_GS new_gs;
+    store_byte descr 0 (Int64.logand limit 0xffL);
+    store_byte descr 1 (Int64.logand 
+			  (Int64.shift_right limit 8) 0xffL);
+    store_byte descr 2 (Int64.logand base 0xffL);
+    store_byte descr 3 (Int64.logand
+			  (Int64.shift_right base 8) 0xffL);
+    store_byte descr 4 (Int64.logand
+			  (Int64.shift_right base 16) 0xffL);
+    store_byte descr 5 0xf3L; (* pres., ring 3, app, r/w a *)
+    store_byte descr 6 (Int64.logor 0xc0L
+			  (Int64.shift_right limit 16));
+    (* page-gran limit, 32-bit, high nibble of limit *)
+    store_byte descr 7 (Int64.logand
+			  (Int64.shift_right base 24) 0xffL)
+
 class linux_special_handler fm =
-  let put_reg reg v = fm#set_word_var reg v in
+  let put_reg = fm#set_word_var in
   let load_word addr = fm#load_word_conc addr in
   let lea base i step off =
     Int64.add base (Int64.add (Int64.mul (Int64.of_int i) (Int64.of_int step))
@@ -4634,27 +4696,6 @@ object(self)
 	    (loop (left - chunk) (Int64.add a (Int64.of_int chunk)))
     in
       loop count addr
-
-  method setup_tcb_seg new_ent base limit =
-    let new_gs = Int64.logor (Int64.shift_left new_ent 3) 3L in
-    let new_gdt = 0x60000000L in
-    let descr = Int64.add new_gdt (Int64.shift_left new_ent 3) in
-      put_reg R_GDT new_gdt;
-      put_reg R_GS new_gs;
-      store_word descr 0 (Int64.logand limit 0xffL);
-      store_word descr 1 (Int64.logand 
-			    (Int64.shift_right limit 8) 0xffL);
-      store_word descr 2 (Int64.logand base 0xffL);
-      store_word descr 3 (Int64.logand
-			    (Int64.shift_right base 8) 0xffL);
-      store_word descr 4 (Int64.logand
-			    (Int64.shift_right base 16) 0xffL);
-      store_word descr 5 0xf3L; (* pres., ring 3, app, r/w a *)
-      store_word descr 6 (Int64.logor 0xc0L
-			    (Int64.shift_right limit 16));
-      (* page-gran limit, 32-bit, high nibble of limit *)
-      store_word descr 7 (Int64.logand
-			    (Int64.shift_right base 24) 0xffL)
 	
   method oc_kind_to_mode kind = match kind with
     | Unix.S_REG  -> 0o0100000
@@ -4936,9 +4977,9 @@ object(self)
 	  old_ent base limit;
       (match (old_ent, base, limit) with
 	 | (-1, _, _) ->
-	     let new_ent = 12L in
-	       self#setup_tcb_seg new_ent base limit;
-	       store_word uinfo 0 new_ent;
+	     let new_ent = 12 in
+	       linux_setup_tcb_seg fm new_ent 0x60000000L base limit;
+	       store_word uinfo 0 (Int64.of_int new_ent);
 	       put_reg R_EAX 0L (* success *)
 	 | _ -> failwith "Unhandled args to set_thread_area")
 
@@ -5857,6 +5898,7 @@ object(self)
   method handle_special str =
     match str with
       | "int 0x80" -> self#handle_linux_syscall (); true
+      | "sysenter" -> self#handle_linux_syscall (); true
       | _ -> false
 
 end
@@ -6171,8 +6213,7 @@ module LinuxLoader = struct
     let endpos = pos_in ic + descsz in
       assert(descsz mod 4 = 0);
       if name = "CORE" && ntype = 1L then
-	(Printf.printf "NT_PRSTATUS\n";
-	 let si_signo = IO.read_i32 i in
+	(let si_signo = IO.read_i32 i in
 	 let si_code = IO.read_i32 i in
 	 let si_errno = IO.read_i32 i in
 	 let cursig = read_ui32 i in
@@ -6190,16 +6231,16 @@ module LinuxLoader = struct
 	   let edi = read_ui32 i in
 	   let ebp = read_ui32 i in
 	   let eax = read_ui32 i in
-	   let xds = read_ui32 i in
-	   let xes = read_ui32 i in
-	   let xfs = read_ui32 i in
-	   let xgs = read_ui32 i in
+	   let xds = IO.read_i32 i in
+	   let xes = IO.read_i32 i in
+	   let xfs = IO.read_i32 i in
+	   let xgs = IO.read_i32 i in
 	   let orig_eax = read_ui32 i in
 	   let eip = read_ui32 i in
-	   let xcs = read_ui32 i in
+	   let xcs = IO.read_i32 i in
 	   let eflags = read_ui32 i in
 	   let esp = read_ui32 i in
-	   let xss = read_ui32 i in
+	   let xss = IO.read_i32 i in
 	     fm#set_word_var R_EAX eax;
 	     fm#set_word_var R_EBX ebx;
 	     fm#set_word_var R_ECX ecx;
@@ -6210,8 +6251,24 @@ module LinuxLoader = struct
 	     fm#set_word_var R_EBP ebp;
 	     fm#set_word_var EFLAGSREST
 	       (Int64.logand eflags 0xfffff72aL);
-	     (* Todo: load flags *)
-	     start_eip := eip
+	     (let eflags_i = Int64.to_int eflags in
+		fm#set_bit_var R_CF (eflags_i land 1);
+		fm#set_bit_var R_PF ((eflags_i lsr 2) land 1);
+		fm#set_bit_var R_AF ((eflags_i lsr 4) land 1);
+		fm#set_bit_var R_ZF ((eflags_i lsr 6) land 1);
+		fm#set_bit_var R_SF ((eflags_i lsr 7) land 1);
+		fm#set_bit_var R_OF ((eflags_i lsr 11) land 1));
+	     fm#set_short_var R_CS xcs;
+	     fm#set_short_var R_DS xds;
+	     fm#set_short_var R_ES xes;
+	     fm#set_short_var R_FS xfs;
+	     fm#set_short_var R_GS xgs;
+	     fm#set_short_var R_SS xss;
+	     start_eip := eip;
+	     ignore(si_signo); ignore(si_code); ignore(si_errno);
+	     ignore(cursig); ignore(sigpend); ignore(sighold);
+	     ignore(pid); ignore(ppid); ignore(pgrp); ignore(sid);
+	     ignore(orig_eax)
 	);
       seek_in ic endpos
 
@@ -6232,6 +6289,16 @@ module LinuxLoader = struct
 	(read_program_headers ic eh);
       close_in ic;
       !start_eip
+
+  let setup_tls_segment fm gdt tls_base =
+    let gs_sel = fm#get_short_var R_GS in
+      assert(gs_sel land 7 = 3); (* global, ring 3 *)
+      linux_setup_tcb_seg fm (gs_sel asr 3) gdt tls_base 0xfffffL;
+      (* If this is set up correctly, the first word in the TLS
+	 segment will be a pointer to itself. *)
+      let read_tls_base = fm#load_word_conc tls_base in
+	assert(tls_base = read_tls_base);
+    
 end
 
 module StateLoader = struct
@@ -6383,7 +6450,7 @@ let rec runloop fm eip asmir_gamma until =
 		   V.Unknown("Unknown: GetI"|"Floating point binop"|
 				 "Floating point triop"|"floatcast"))
 	    -> V.Move(lhs, V.Constant(V.Int(ty, 0L)))
-	  | V.ExpStmt(V.Unknown("Unknown: PutI"))
+	  | V.ExpStmt(V.Unknown("Unknown: PutI")) 
 	    -> V.Comment("Unknown: PutI")
 	  | s -> s) sl)
   in
@@ -6583,6 +6650,8 @@ let print_tree fm =
     fm#print_tree chan;
     close_out chan
 
+let symbolic_init = ref (fun () -> ())
+
 let fuzz_static start_eip end_eips fm asmir_gamma =
   fm#make_snap ();
   if !opt_trace_setup then Printf.printf "Took snapshot\n";
@@ -6593,6 +6662,7 @@ let fuzz_static start_eip end_eips fm asmir_gamma =
 	 Printf.printf "Stopping %s\n" str
        in
 	 fm#set_iter_seed (Int64.to_int iter);
+	 !symbolic_init ();
 	 (try
 	    runloop fm start_eip asmir_gamma (fun a -> List.mem a end_eips);
 	  with
@@ -6650,7 +6720,8 @@ let opt_initial_edi = ref None
 let opt_initial_esp = ref None
 let opt_initial_ebp = ref None
 let opt_initial_eflagsrest = ref None
-let opt_linux_syscalls = ref true
+let opt_linux_syscalls = ref false
+let opt_tls_base = ref None
 let opt_load_extra_regions = ref []
 let opt_program_name = ref None
 let opt_core_file_name = ref None
@@ -6660,6 +6731,7 @@ let opt_zero_memory = ref false
 let opt_store_words = ref []
 let opt_state_file = ref None
 let opt_symbolic_regs = ref false
+let opt_symbolic_cstrings = ref []
 let opt_argv = ref []
 
 let add_delimited_pair opt char s =
@@ -6719,6 +6791,9 @@ let main argv =
 	"base+size Load an additional region from program image");
        ("-load-data", Arg.Bool(fun b -> opt_load_data := b),
         "bool Load data segments from a binary?"); 
+       ("-symbolic-cstring", Arg.String
+	  (add_delimited_pair opt_symbolic_cstrings '+'),
+	"base+size Make a symbolic C string with given size and concrete NUL");
        ("-symbolic-regs", Arg.Set(opt_symbolic_regs),
 	" Give symbolic values to registers");
        ("-random-memory", Arg.Set(opt_random_memory),
@@ -6735,8 +6810,15 @@ let main argv =
 	"addr=val Fix an address to a concrete value");
        ("-stp-path", Arg.Set_string(opt_stp_path),
 	"path Location of external STP binary");
+       ("-tls-base", Arg.String
+	  (fun s -> opt_tls_base := Some (Int64.of_string s)),
+	"addr Use Linux a TLS (%gs) segment at the given address");
+       ("-linux-syscalls", Arg.Set(opt_linux_syscalls),
+	" Simulate Linux system calls on the real system");
        ("-trace-assigns", Arg.Set(opt_trace_assigns),
 	" Print satisfying assignments");
+       ("-trace-assigns-string", Arg.Set(opt_trace_assigns_string),
+	" Print satisfying assignments as a string");
        ("-trace-basic",
 	(Arg.Unit
 	   (fun () ->
@@ -6837,6 +6919,9 @@ in
       (match !opt_state_file with
 	 | Some s -> StateLoader.load_mem_state fm s
 	 | None -> ());
+      (match !opt_tls_base with
+	 | Some base -> LinuxLoader.setup_tls_segment fm 0x60000000L base
+	 | None -> ());
       (match !opt_initial_eax with
 	 | Some v -> fm#set_word_var R_EAX v
 	 | None -> ());
@@ -6865,6 +6950,11 @@ in
 	 | Some v -> fm#set_word_var EFLAGSREST v
 	 | None -> ());
       List.iter (fun (addr,v) -> fm#store_word_conc addr v) !opt_store_words;
+      symbolic_init :=
+	(fun () ->
+	   List.iter (fun (base, len) -> 
+			fm#store_symbolic_cstr base (Int64.to_int len))
+	     !opt_symbolic_cstrings);
       
       let start_addr = match !opt_fuzz_start_addr with
 	| None -> failwith "Missing starting address"
