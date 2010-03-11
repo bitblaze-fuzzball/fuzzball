@@ -6158,6 +6158,80 @@ module LinuxLoader = struct
       close_in ic;
       build_startup_state fm eh load_base !ldso_base argv;
       !ldso_entry
+
+  let start_eip = ref 0L
+
+  let read_core_note fm ic =
+    let i = IO.input_channel ic in
+    let namesz = IO.read_i32 i in
+    let descsz = IO.read_i32 i in
+    let ntype = read_ui32 i in
+    let namez = IO.really_nread i ((namesz + 3) land (lnot 3)) in
+    let name = String.sub namez 0 (namesz - 1) in
+    let endpos = pos_in ic + descsz in
+      assert(descsz mod 4 = 0);
+      if name = "CORE" && ntype = 1L then
+	(Printf.printf "NT_PRSTATUS\n";
+	 let si_signo = IO.read_i32 i in
+	 let si_code = IO.read_i32 i in
+	 let si_errno = IO.read_i32 i in
+	 let cursig = read_ui32 i in
+	 let sigpend = read_ui32 i in
+	 let sighold = read_ui32 i in
+	 let pid = IO.read_i32 i in
+	 let ppid = IO.read_i32 i in
+	 let pgrp = IO.read_i32 i in
+	 let sid = IO.read_i32 i in
+	   ignore(IO.really_nread i 32);
+	   let ebx = read_ui32 i in
+	   let ecx = read_ui32 i in
+	   let edx = read_ui32 i in
+	   let esi = read_ui32 i in
+	   let edi = read_ui32 i in
+	   let ebp = read_ui32 i in
+	   let eax = read_ui32 i in
+	   let xds = read_ui32 i in
+	   let xes = read_ui32 i in
+	   let xfs = read_ui32 i in
+	   let xgs = read_ui32 i in
+	   let orig_eax = read_ui32 i in
+	   let eip = read_ui32 i in
+	   let xcs = read_ui32 i in
+	   let eflags = read_ui32 i in
+	   let esp = read_ui32 i in
+	   let xss = read_ui32 i in
+	     fm#set_word_var R_EAX eax;
+	     fm#set_word_var R_EBX ebx;
+	     fm#set_word_var R_ECX ecx;
+	     fm#set_word_var R_EDX edx;
+	     fm#set_word_var R_ESI esi;
+	     fm#set_word_var R_EDI edi;
+	     fm#set_word_var R_ESP esp;
+	     fm#set_word_var R_EBP ebp;
+	     fm#set_word_var EFLAGSREST
+	       (Int64.logand eflags 0xfffff72aL);
+	     (* Todo: load flags *)
+	     start_eip := eip
+	);
+      seek_in ic endpos
+
+  let load_core fm fname =
+    let ic = open_in fname in
+    let eh = read_elf_header ic in
+      assert(eh.eh_type = 4);
+      List.iter
+	(fun phr ->
+	   if phr.ph_type = 1L then (* PT_LOAD *)
+	     load_segment fm ic phr 0L
+	   else if phr.ph_type = 4L then (* PT_NOTE *)
+	     (seek_in ic (Int64.to_int phr.offset);
+	      let endpos = Int64.to_int (Int64.add phr.offset phr.filesz) in
+		while pos_in ic < endpos do
+		  read_core_note fm ic
+		done))
+	(read_program_headers ic eh);
+      close_in ic;
+      !start_eip
 end
 
 module StateLoader = struct
@@ -6579,6 +6653,7 @@ let opt_initial_eflagsrest = ref None
 let opt_linux_syscalls = ref true
 let opt_load_extra_regions = ref []
 let opt_program_name = ref None
+let opt_core_file_name = ref None
 let opt_load_data = ref true
 let opt_random_memory = ref false
 let opt_zero_memory = ref false
@@ -6604,6 +6679,8 @@ let main argv =
 	  (fun s -> opt_fuzz_end_addrs :=
 	     (Int64.of_string s) :: !opt_fuzz_end_addrs),
 	"addr Code address to finish fuzzing, may be repeated");
+       ("-core", Arg.String (fun s -> opt_core_file_name := Some s),
+	"corefile Load memory state from an ELF core dump");
        ("-initial-eax", Arg.String
 	  (fun s -> opt_initial_eax := Some(Int64.of_string s)),
 	"word Concrete initial value for %eax register");
@@ -6744,6 +6821,11 @@ in
 		  !opt_load_base !opt_load_data !opt_load_extra_regions
 		  !opt_argv)
 	 | _ -> ());
+      (match !opt_core_file_name with
+	 | Some name -> 
+	     opt_fuzz_start_addr := Some
+	       (LinuxLoader.load_core fm name)
+	 | None -> ());
       if !opt_linux_syscalls then
 	fm#add_special_handler
 	  ((new linux_special_handler fm) :> special_handler)
