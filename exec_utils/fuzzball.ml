@@ -3200,6 +3200,14 @@ struct
       done;
       self#store_byte_idx base len 0
 
+    method store_symbolic_wcstr base len =
+      for i = 0 to len - 1 do
+	self#store_short (Int64.add base (Int64.of_int (2*i)))
+	  (form_man#fresh_symbolic_16 ("input" ^ (string_of_int i)))
+      done;
+      self#store_byte_idx base (2*len) 0;
+      self#store_byte_idx base (2*len + 1) 0
+
     method store_cstr base idx str =
       self#store_str base idx str;
       self#store_byte_idx (Int64.add base idx) (String.length str) 0
@@ -3570,12 +3578,19 @@ struct
 	List.rev !temps
 
     method private ce_to_input_str ce =
+      (* Ideally, I'd like to turn high characters into \\u1234 escapes *)
+      let char_of_int_unbounded i =
+	if i >= 0 && i <= 255 then
+	  char_of_int i
+	else
+	  '?'
+      in
       let str = String.make 30 ' ' in
 	List.iter
 	  (fun (var_s, value) ->
 	     match self#match_input_var var_s with
 	       | Some n -> str.[n] <- 
-		   char_of_int (Int64.to_int value)
+		   char_of_int_unbounded (Int64.to_int value)
 	       | None -> ())
 	  ce;
 	let str' = ref str in
@@ -6732,6 +6747,7 @@ let opt_store_words = ref []
 let opt_state_file = ref None
 let opt_symbolic_regs = ref false
 let opt_symbolic_cstrings = ref []
+let opt_symbolic_string16s = ref []
 let opt_argv = ref []
 
 let add_delimited_pair opt char s =
@@ -6794,6 +6810,9 @@ let main argv =
        ("-symbolic-cstring", Arg.String
 	  (add_delimited_pair opt_symbolic_cstrings '+'),
 	"base+size Make a symbolic C string with given size and concrete NUL");
+       ("-symbolic-string16", Arg.String
+	  (add_delimited_pair opt_symbolic_string16s '+'),
+	"base+shorts As above, but with 16-bit characters");
        ("-symbolic-regs", Arg.Set(opt_symbolic_regs),
 	" Give symbolic values to registers");
        ("-random-memory", Arg.Set(opt_random_memory),
@@ -6954,7 +6973,11 @@ in
 	(fun () ->
 	   List.iter (fun (base, len) -> 
 			fm#store_symbolic_cstr base (Int64.to_int len))
-	     !opt_symbolic_cstrings);
+	     !opt_symbolic_cstrings;
+	   List.iter (fun (base, len) -> 
+			fm#store_symbolic_wcstr base (Int64.to_int len))
+	     !opt_symbolic_string16s
+	);
       
       let start_addr = match !opt_fuzz_start_addr with
 	| None -> failwith "Missing starting address"
