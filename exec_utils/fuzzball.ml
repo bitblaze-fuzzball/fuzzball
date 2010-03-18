@@ -4564,6 +4564,8 @@ let linux_setup_tcb_seg fm new_ent new_gdt base limit =
     store_byte descr 7 (Int64.logand
 			  (Int64.shift_right base 24) 0xffL)
 
+let opt_pid = ref (-1)
+
 class linux_special_handler fm =
   let put_reg = fm#set_word_var in
   let load_word addr = fm#load_word_conc addr in
@@ -5961,7 +5963,14 @@ module LinuxLoader = struct
     ph_flags : int64;
     align : int64
   }
+      
+  let seen_pc = ref false
 
+  let check_single_start_eip pc =
+    if (!seen_pc) 
+    then (failwith ("The process start state (core file) has more than one start eip. Please consider specifying the -pid option.")) 
+    else (seen_pc := true)
+      
   let read_ui32 i =
     Int64.logand 0xffffffffL (Int64.of_int32 (IO.read_real_i32 i))
 
@@ -6235,55 +6244,58 @@ module LinuxLoader = struct
 	 let sigpend = read_ui32 i in
 	 let sighold = read_ui32 i in
 	 let pid = IO.read_i32 i in
-	 let ppid = IO.read_i32 i in
-	 let pgrp = IO.read_i32 i in
-	 let sid = IO.read_i32 i in
-	   ignore(IO.really_nread i 32);
-	   let ebx = read_ui32 i in
-	   let ecx = read_ui32 i in
-	   let edx = read_ui32 i in
-	   let esi = read_ui32 i in
-	   let edi = read_ui32 i in
-	   let ebp = read_ui32 i in
-	   let eax = read_ui32 i in
-	   let xds = IO.read_i32 i in
-	   let xes = IO.read_i32 i in
-	   let xfs = IO.read_i32 i in
-	   let xgs = IO.read_i32 i in
-	   let orig_eax = read_ui32 i in
-	   let eip = read_ui32 i in
-	   let xcs = IO.read_i32 i in
-	   let eflags = read_ui32 i in
-	   let esp = read_ui32 i in
-	   let xss = IO.read_i32 i in
-	     fm#set_word_var R_EAX eax;
-	     fm#set_word_var R_EBX ebx;
-	     fm#set_word_var R_ECX ecx;
-	     fm#set_word_var R_EDX edx;
-	     fm#set_word_var R_ESI esi;
-	     fm#set_word_var R_EDI edi;
-	     fm#set_word_var R_ESP esp;
-	     fm#set_word_var R_EBP ebp;
-	     fm#set_word_var EFLAGSREST
-	       (Int64.logand eflags 0xfffff72aL);
-	     (let eflags_i = Int64.to_int eflags in
-		fm#set_bit_var R_CF (eflags_i land 1);
-		fm#set_bit_var R_PF ((eflags_i lsr 2) land 1);
-		fm#set_bit_var R_AF ((eflags_i lsr 4) land 1);
-		fm#set_bit_var R_ZF ((eflags_i lsr 6) land 1);
-		fm#set_bit_var R_SF ((eflags_i lsr 7) land 1);
-		fm#set_bit_var R_OF ((eflags_i lsr 11) land 1));
-	     fm#set_short_var R_CS xcs;
-	     fm#set_short_var R_DS xds;
-	     fm#set_short_var R_ES xes;
-	     fm#set_short_var R_FS xfs;
-	     fm#set_short_var R_GS xgs;
-	     fm#set_short_var R_SS xss;
-	     start_eip := eip;
-	     ignore(si_signo); ignore(si_code); ignore(si_errno);
-	     ignore(cursig); ignore(sigpend); ignore(sighold);
-	     ignore(pid); ignore(ppid); ignore(pgrp); ignore(sid);
-	     ignore(orig_eax)
+	   if ((pid = !opt_pid) || (!opt_pid = -1)) then (
+	     let ppid = IO.read_i32 i in
+	     let pgrp = IO.read_i32 i in
+	     let sid = IO.read_i32 i in
+	       ignore(IO.really_nread i 32);
+	       let ebx = read_ui32 i in
+	       let ecx = read_ui32 i in
+	       let edx = read_ui32 i in
+	       let esi = read_ui32 i in
+	       let edi = read_ui32 i in
+	       let ebp = read_ui32 i in
+	       let eax = read_ui32 i in
+	       let xds = IO.read_i32 i in
+	       let xes = IO.read_i32 i in
+	       let xfs = IO.read_i32 i in
+	       let xgs = IO.read_i32 i in
+	       let orig_eax = read_ui32 i in
+	       let eip = read_ui32 i in
+	       let () = check_single_start_eip eip in
+	       let xcs = IO.read_i32 i in
+	       let eflags = read_ui32 i in
+	       let esp = read_ui32 i in
+	       let xss = IO.read_i32 i in
+		 fm#set_word_var R_EAX eax;
+		 fm#set_word_var R_EBX ebx;
+		 fm#set_word_var R_ECX ecx;
+		 fm#set_word_var R_EDX edx;
+		 fm#set_word_var R_ESI esi;
+		 fm#set_word_var R_EDI edi;
+		 fm#set_word_var R_ESP esp;
+		 fm#set_word_var R_EBP ebp;
+		 fm#set_word_var EFLAGSREST
+		   (Int64.logand eflags 0xfffff72aL);
+		 (let eflags_i = Int64.to_int eflags in
+		    fm#set_bit_var R_CF (eflags_i land 1);
+		    fm#set_bit_var R_PF ((eflags_i lsr 2) land 1);
+		    fm#set_bit_var R_AF ((eflags_i lsr 4) land 1);
+		    fm#set_bit_var R_ZF ((eflags_i lsr 6) land 1);
+		    fm#set_bit_var R_SF ((eflags_i lsr 7) land 1);
+		    fm#set_bit_var R_OF ((eflags_i lsr 11) land 1));
+		 fm#set_short_var R_CS xcs;
+		 fm#set_short_var R_DS xds;
+		 fm#set_short_var R_ES xes;
+		 fm#set_short_var R_FS xfs;
+		 fm#set_short_var R_GS xgs;
+		 fm#set_short_var R_SS xss;
+		 start_eip := eip;
+		 ignore(si_signo); ignore(si_code); ignore(si_errno);
+		 ignore(cursig); ignore(sigpend); ignore(sighold);
+		 ignore(pid); ignore(ppid); ignore(pgrp); ignore(sid);
+		 ignore(orig_eax)
+	   );
 	);
       seek_in ic endpos
 
@@ -6832,6 +6844,9 @@ let main argv =
        ("-tls-base", Arg.String
 	  (fun s -> opt_tls_base := Some (Int64.of_string s)),
 	"addr Use Linux a TLS (%gs) segment at the given address");
+       ("-pid", Arg.String
+	  (fun s -> opt_pid := (Int32.to_int (Int32.of_string s))),
+	"Optional. Thread or process id of the process/thread to execute.");
        ("-linux-syscalls", Arg.Set(opt_linux_syscalls),
 	" Simulate Linux system calls on the real system");
        ("-trace-assigns", Arg.Set(opt_trace_assigns),
