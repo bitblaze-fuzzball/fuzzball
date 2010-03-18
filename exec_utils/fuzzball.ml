@@ -6846,7 +6846,7 @@ let main argv =
 	"addr Use Linux a TLS (%gs) segment at the given address");
        ("-pid", Arg.String
 	  (fun s -> opt_pid := (Int32.to_int (Int32.of_string s))),
-	"Optional. Thread or process id of the process/thread to execute.");
+	"Thread or process id of the process/thread to execute.");
        ("-linux-syscalls", Arg.Set(opt_linux_syscalls),
 	" Simulate Linux system calls on the real system");
        ("-trace-assigns", Arg.Set(opt_trace_assigns),
