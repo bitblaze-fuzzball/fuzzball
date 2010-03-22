@@ -2749,6 +2749,31 @@ struct
 	self#store_byte_conc 0x6000003eL 0xfd; (* flags, limit high *)
 	self#store_byte_conc 0x6000003fL 0x7f; (* base high *)
 
+    method load_x86_user_regs regs =
+      self#set_word_var R_EAX (Int64.of_int32 regs.Temu_state.eax);
+      self#set_word_var R_EBX (Int64.of_int32 regs.Temu_state.ebx);
+      self#set_word_var R_ECX (Int64.of_int32 regs.Temu_state.ecx);
+      self#set_word_var R_EDX (Int64.of_int32 regs.Temu_state.edx);
+      self#set_word_var R_ESI (Int64.of_int32 regs.Temu_state.esi);
+      self#set_word_var R_EDI (Int64.of_int32 regs.Temu_state.edi);
+      self#set_word_var R_ESP (Int64.of_int32 regs.Temu_state.esp);
+      self#set_word_var R_EBP (Int64.of_int32 regs.Temu_state.ebp);
+      self#set_word_var EFLAGSREST
+	(Int64.logand (Int64.of_int32 regs.Temu_state.eflags) 0xfffff72aL);
+      (let eflags_i = Int32.to_int regs.Temu_state.eflags in
+	 self#set_bit_var R_CF (eflags_i land 1);
+	 self#set_bit_var R_PF ((eflags_i lsr 2) land 1);
+	 self#set_bit_var R_AF ((eflags_i lsr 4) land 1);
+	 self#set_bit_var R_ZF ((eflags_i lsr 6) land 1);
+	 self#set_bit_var R_SF ((eflags_i lsr 7) land 1);
+		    self#set_bit_var R_OF ((eflags_i lsr 11) land 1));
+      self#set_short_var R_CS (Int32.to_int regs.Temu_state.xcs);
+      self#set_short_var R_DS (Int32.to_int regs.Temu_state.xds);
+      self#set_short_var R_ES (Int32.to_int regs.Temu_state.xes);
+      self#set_short_var R_FS (Int32.to_int regs.Temu_state.xfs);
+      self#set_short_var R_GS (Int32.to_int regs.Temu_state.xgs);
+      self#set_short_var R_SS (Int32.to_int regs.Temu_state.xss)
+
     method print_x86_regs =
       let reg str r =
 	Printf.printf "%s: " str;
@@ -3207,6 +3232,9 @@ struct
       done;
       self#store_byte_idx base (2*len) 0;
       self#store_byte_idx base (2*len + 1) 0
+
+    method store_symbolic_word addr varname =
+      self#store_word addr (form_man#fresh_symbolic_32 varname)
 
     method store_cstr base idx str =
       self#store_str base idx str;
@@ -4524,12 +4552,20 @@ let simplify_frag (orig_dl, orig_sl) =
 
 exception NoSyscalls
 
+let opt_trace_stopping = ref false
+
 class linux_special_nonhandler fm =
 object(self)
+  method unhandle_syscall str =
+    if !opt_trace_stopping then
+      (Printf.printf "Not handling system call special %s\n" str;
+       fm#print_x86_regs);
+    raise NoSyscalls
+
   method handle_special str =
     match str with
-      | "int 0x80" -> raise NoSyscalls
-      | "sysenter" -> raise NoSyscalls
+      | "int 0x80" -> self#unhandle_syscall str
+      | "sysenter" -> self#unhandle_syscall str
       | _ -> false
 end
 
@@ -6249,51 +6285,38 @@ module LinuxLoader = struct
 	     let pgrp = IO.read_i32 i in
 	     let sid = IO.read_i32 i in
 	       ignore(IO.really_nread i 32);
-	       let ebx = read_ui32 i in
-	       let ecx = read_ui32 i in
-	       let edx = read_ui32 i in
-	       let esi = read_ui32 i in
-	       let edi = read_ui32 i in
-	       let ebp = read_ui32 i in
-	       let eax = read_ui32 i in
-	       let xds = IO.read_i32 i in
-	       let xes = IO.read_i32 i in
-	       let xfs = IO.read_i32 i in
-	       let xgs = IO.read_i32 i in
-	       let orig_eax = read_ui32 i in
-	       let eip = read_ui32 i in
-	       let () = check_single_start_eip eip in
-	       let xcs = IO.read_i32 i in
-	       let eflags = read_ui32 i in
-	       let esp = read_ui32 i in
-	       let xss = IO.read_i32 i in
-		 fm#set_word_var R_EAX eax;
-		 fm#set_word_var R_EBX ebx;
-		 fm#set_word_var R_ECX ecx;
-		 fm#set_word_var R_EDX edx;
-		 fm#set_word_var R_ESI esi;
-		 fm#set_word_var R_EDI edi;
-		 fm#set_word_var R_ESP esp;
-		 fm#set_word_var R_EBP ebp;
-		 fm#set_word_var EFLAGSREST
-		   (Int64.logand eflags 0xfffff72aL);
-		 (let eflags_i = Int64.to_int eflags in
-		    fm#set_bit_var R_CF (eflags_i land 1);
-		    fm#set_bit_var R_PF ((eflags_i lsr 2) land 1);
-		    fm#set_bit_var R_AF ((eflags_i lsr 4) land 1);
-		    fm#set_bit_var R_ZF ((eflags_i lsr 6) land 1);
-		    fm#set_bit_var R_SF ((eflags_i lsr 7) land 1);
-		    fm#set_bit_var R_OF ((eflags_i lsr 11) land 1));
-		 fm#set_short_var R_CS xcs;
-		 fm#set_short_var R_DS xds;
-		 fm#set_short_var R_ES xes;
-		 fm#set_short_var R_FS xfs;
-		 fm#set_short_var R_GS xgs;
-		 fm#set_short_var R_SS xss;
-		 start_eip := eip;
+	       let ebx = IO.read_real_i32 i in
+	       let ecx = IO.read_real_i32 i in
+	       let edx = IO.read_real_i32 i in
+	       let esi = IO.read_real_i32 i in
+	       let edi = IO.read_real_i32 i in
+	       let ebp = IO.read_real_i32 i in
+	       let eax = IO.read_real_i32 i in
+	       let xds = IO.read_real_i32 i in
+	       let xes = IO.read_real_i32 i in
+	       let xfs = IO.read_real_i32 i in
+	       let xgs = IO.read_real_i32 i in
+	       let orig_eax = IO.read_real_i32 i in
+	       let eip = IO.read_real_i32 i in
+	       let () = check_single_start_eip (Int64.of_int32 eip) in
+	       let xcs = IO.read_real_i32 i in
+	       let eflags = IO.read_real_i32 i in
+	       let esp = IO.read_real_i32 i in
+	       let xss = IO.read_real_i32 i in
+	       let user_regs =
+		 { Temu_state.eax = eax; Temu_state.ebx = ebx;
+		   Temu_state.ecx = ecx; Temu_state.edx = edx;
+		   Temu_state.esi = esi; Temu_state.edi = edi;
+		   Temu_state.ebp = ebp; Temu_state.esp = esp;
+		   Temu_state.eip = eip; Temu_state.eflags = eflags;
+		   Temu_state.xcs = xcs; Temu_state.xds = xds;
+		   Temu_state.xes = xes; Temu_state.xfs = xfs;
+		   Temu_state.xgs = xgs; Temu_state.xss = xss; } in
+		 fm#load_x86_user_regs user_regs;
+		 start_eip := (Int64.of_int32 eip);
 		 ignore(si_signo); ignore(si_code); ignore(si_errno);
 		 ignore(cursig); ignore(sigpend); ignore(sighold);
-		 ignore(pid); ignore(ppid); ignore(pgrp); ignore(sid);
+		 ignore(ppid); ignore(pgrp); ignore(sid);
 		 ignore(orig_eax)
 	   );
 	);
@@ -6353,7 +6376,10 @@ module StateLoader = struct
 	   let page = IO.really_nread i 4096 in
 	     fm#store_page_conc blk#first page)
 	si#blocks;
-      Temu_state.close_state si
+      fm#load_x86_user_regs si#regs;
+      let eip = Int64.of_int32 si#regs.Temu_state.eip in
+	Temu_state.close_state si;
+	eip
     
 end
 
@@ -6412,9 +6438,9 @@ let loop_detect = Hashtbl.create 1000
 
 let opt_trace_eip = ref false
 let opt_trace_ir = ref false
+let opt_trace_insns = ref false
 let opt_trace_orig_ir = ref false
 let opt_trace_iterations = ref false
-let opt_trace_stopping = ref false
 let opt_coverage_stats = ref false
 let opt_gc_stats = ref false
 let opt_time_stats = ref false
@@ -6435,7 +6461,10 @@ let rec runloop fm eip asmir_gamma until =
       let bytes = Array.init 16
 	(fun i -> Char.chr (load_byte (Int64.add eip (Int64.of_int i))))
       in
-	decode_insn eip bytes
+      let prog = decode_insn eip bytes in
+	if !opt_trace_orig_ir then
+	  V.pp_program print_string prog;
+	prog
     with
 	NotConcrete(_) ->
 	  Printf.printf "Jump to symbolic memory 0x%08Lx\n" eip;
@@ -6444,7 +6473,8 @@ let rec runloop fm eip asmir_gamma until =
   let label_to_eip s =
     let len = String.length s in
     let hex = String.sub s 3 (len - 3) in (* remove "pc_" *)
-      Int64.of_string hex
+    let eip = Int64.of_string hex in
+      eip
   in
   let rec last l =
     match l with
@@ -6462,7 +6492,7 @@ let rec runloop fm eip asmir_gamma until =
 	  if first then (dl, sl) else ([], [])
 	else
 	  match last (rm_unused_stmts sl) with
-	    | V.Jmp(V.Name(lab)) ->
+	    | V.Jmp(V.Name(lab)) when lab <> "pc_0x0" ->
 		let next_eip = label_to_eip lab in
 		let (dl', sl') = decode_insns next_eip (k - 1) false in
 		  (dl @ dl', sl @ sl')
@@ -6487,11 +6517,32 @@ let rec runloop fm eip asmir_gamma until =
     with
 	Not_found ->
 	  let (dl, sl) = (decode_insns eip 1 true) in
-	    if !opt_trace_orig_ir then
-	      V.pp_program print_string (dl, sl);
 	    Hashtbl.add trans_cache eip
 	      (simplify_frag  (noop_known_unknowns (dl, sl)));
 	    Hashtbl.find trans_cache eip
+  in
+  let print_insns start_eip (_, sl) =
+    let eip = ref (Some start_eip) in
+    let print_eip () = 
+      match !eip with
+	| Some i -> Printf.printf "%08Lx: " i; eip := None
+	| None -> Printf.printf "          "
+    in
+      List.iter
+	(function
+	   | V.Comment(s) ->
+	       if s <> "NoOp" &&
+		 ((String.length s < 13) ||
+		    (String.sub s 0 13) <> "eflags thunk:") then
+		   (print_eip();
+		    Printf.printf "%s\n" s)
+	   | V.Label(lab) ->
+	       if (String.length lab > 5) &&
+		 (String.sub lab 0 5) = "pc_0x" then
+		    eip := Some (label_to_eip lab)
+	   | _ -> ()
+	)
+	sl
   in
   let rec loop eip =
     (let old_count =
@@ -6535,6 +6586,8 @@ let rec runloop fm eip asmir_gamma until =
 	    thunk ();
 	    decode_insn eip [|'\xc3'|] (* fake "ret" *)
       in
+	if !opt_trace_insns then
+	  print_insns eip prog';
 	if !opt_trace_ir then
 	  V.pp_program print_string prog';
 	fm#set_frag prog';
@@ -6760,14 +6813,23 @@ let opt_state_file = ref None
 let opt_symbolic_regs = ref false
 let opt_symbolic_cstrings = ref []
 let opt_symbolic_string16s = ref []
+let opt_symbolic_words = ref []
 let opt_argv = ref []
 
-let add_delimited_pair opt char s =
+let split_string char s =
   let delim_loc = String.index s char in
-  let v1 = Int64.of_string (String.sub s 0 delim_loc) in
-  let v2 = Int64.of_string (String.sub s (delim_loc + 1)
-			      ((String.length s) - delim_loc - 1)) in
-    opt := (v1, v2) :: !opt
+  let s1 = String.sub s 0 delim_loc in
+  let s2 = String.sub s (delim_loc + 1) ((String.length s) - delim_loc - 1)
+  in
+    (s1, s2)
+
+let add_delimited_pair opt char s =
+  let (s1, s2) = split_string char s in
+    opt := ((Int64.of_string s1), (Int64.of_string s2)) :: !opt
+
+let add_delimited_num_str_pair opt char s =
+  let (s1, s2) = split_string char s in
+    opt := ((Int64.of_string s1), s2) :: !opt
 
 let main argv = 
   Arg.parse
@@ -6781,6 +6843,9 @@ let main argv =
 	"addr Code address to finish fuzzing, may be repeated");
        ("-core", Arg.String (fun s -> opt_core_file_name := Some s),
 	"corefile Load memory state from an ELF core dump");
+       ("-pid", Arg.String
+	  (fun s -> opt_pid := (Int32.to_int (Int32.of_string s))),
+	"pid Use regs from specified LWP when loading from core");
        ("-initial-eax", Arg.String
 	  (fun s -> opt_initial_eax := Some(Int64.of_string s)),
 	"word Concrete initial value for %eax register");
@@ -6807,7 +6872,7 @@ let main argv =
 	"word Concrete initial value for %ebp (frame pointer)");
        ("-initial-eflagsrest", Arg.String
 	  (fun s -> opt_initial_eflagsrest := Some(Int64.of_string s)),
-	"word Concrete initial value for %eflags, less [CPAZSO]F");
+	"word Concrete value for %eflags, less [CPAZSO]F");
        ("-iteration-limit", Arg.String
 	  (fun s -> opt_iteration_limit := Int64.of_string s),
 	"N Stop path if a loop iterates more than N times");
@@ -6821,16 +6886,19 @@ let main argv =
         "bool Load data segments from a binary?"); 
        ("-symbolic-cstring", Arg.String
 	  (add_delimited_pair opt_symbolic_cstrings '+'),
-	"base+size Make a symbolic C string with given size and concrete NUL");
+	"base+size Make a C string with given size, concrete \\0");
        ("-symbolic-string16", Arg.String
 	  (add_delimited_pair opt_symbolic_string16s '+'),
-	"base+shorts As above, but with 16-bit characters");
+	"base+16s As above, but with 16-bit characters");
        ("-symbolic-regs", Arg.Set(opt_symbolic_regs),
 	" Give symbolic values to registers");
+       ("-symbolic-word", Arg.String
+	  (add_delimited_num_str_pair opt_symbolic_words '='),
+	"addr=var Make a memory word symbolic");
        ("-random-memory", Arg.Set(opt_random_memory),
-        " Use random values for uninitialized memory reads");
+        " Use random values for uninit. memory reads");
        ("-zero-memory", Arg.Set(opt_zero_memory),
-        " Use zero values for uninitialized memory reads");
+        " Use zero values for uninit. memory reads");
        ("-check-for-null", Arg.Set(opt_check_for_null),
         " Check whether dereferenced values can be null");
        ("-state", Arg.String
@@ -6843,10 +6911,7 @@ let main argv =
 	"path Location of external STP binary");
        ("-tls-base", Arg.String
 	  (fun s -> opt_tls_base := Some (Int64.of_string s)),
-	"addr Use Linux a TLS (%gs) segment at the given address");
-       ("-pid", Arg.String
-	  (fun s -> opt_pid := (Int32.to_int (Int32.of_string s))),
-	"Thread or process id of the process/thread to execute.");
+	"addr Use a Linux TLS (%gs) segment at the given address");
        ("-linux-syscalls", Arg.Set(opt_linux_syscalls),
 	" Simulate Linux system calls on the real system");
        ("-trace-assigns", Arg.Set(opt_trace_assigns),
@@ -6871,6 +6936,8 @@ let main argv =
 	" Print symbolic branch choices");
        ("-trace-eip", Arg.Set(opt_trace_eip),
 	" Print PC of each insn executed");
+       ("-trace-insns", Arg.Set(opt_trace_insns),
+	" Print assembly-level instructions");
        ("-trace-ir", Arg.Set(opt_trace_ir),
 	" Print Vine IR before executing it");
        ("-trace-orig-ir", Arg.Set(opt_trace_orig_ir),
@@ -6951,7 +7018,8 @@ in
       fm#add_special_handler
 	((new trap_special_nonhandler fm) :> special_handler);
       (match !opt_state_file with
-	 | Some s -> StateLoader.load_mem_state fm s
+	 | Some s -> opt_fuzz_start_addr := Some
+	     (StateLoader.load_mem_state fm s)
 	 | None -> ());
       (match !opt_tls_base with
 	 | Some base -> LinuxLoader.setup_tls_segment fm 0x60000000L base
@@ -6991,7 +7059,10 @@ in
 	     !opt_symbolic_cstrings;
 	   List.iter (fun (base, len) -> 
 			fm#store_symbolic_wcstr base (Int64.to_int len))
-	     !opt_symbolic_string16s
+	     !opt_symbolic_string16s;
+	   List.iter (fun (addr, varname) ->
+			fm#store_symbolic_word addr varname)
+	     !opt_symbolic_words
 	);
       
       let start_addr = match !opt_fuzz_start_addr with
