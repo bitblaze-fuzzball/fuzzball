@@ -4880,6 +4880,8 @@ object(self)
 
   method sys_clock_gettime clkid timep =
     match clkid with
+      | 1 (* CLOCK_MONOTONIC *)
+	  (*This is a hack/approximation. We simply hope that the system correctness does not rely on CLOCK_MONOTONIC *)
       | 0 -> (* CLOCK_REALTIME *)
 	  let ftime = Unix.gettimeofday () in
 	  let fsecs = floor ftime in
@@ -4889,6 +4891,17 @@ object(self)
 	    store_word timep 4 nanos;
 	    put_reg R_EAX 0L
       | _ -> self#put_errno Unix.EINVAL (* unsupported clock type *)
+
+  method sys_gettimeofday timep zonep =
+    (* This is not accurate because the zonep is ignored. It will have junk values *)
+    ignore(zonep);
+    let ftime = Unix.gettimeofday () in
+    let fsecs = floor ftime in
+    let secs = Int64.of_float fsecs and
+	nanos = Int64.of_float (1000000000.0 *. (ftime -. fsecs)) in
+      store_word timep 0 secs;
+      store_word timep 4 nanos;
+      put_reg R_EAX 0L
 
   method sys_close fd =
     try
@@ -5344,7 +5357,11 @@ object(self)
 	 | 77 -> (* getrusage *)
 	     failwith "Unhandled Linux system call getrusage (77)"
 	 | 78 -> (* gettimeofday *)
-	     failwith "Unhandled Linux system call gettimeofday (78)"
+	     let timep = ebx and
+		 zonep = ecx in
+	       if !opt_trace_syscalls then
+		 Printf.printf "gettimeofday(0x08%Lx, 0x08%Lx)" timep zonep;
+	       self#sys_gettimeofday timep zonep
 	 | 79 -> (* settimeofday *)
 	     failwith "Unhandled Linux system call settimeofday (79)"
 	 | 80 -> (* getgroups *)
