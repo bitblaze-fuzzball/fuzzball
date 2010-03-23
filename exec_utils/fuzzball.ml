@@ -716,6 +716,8 @@ module ConcreteDomain : DOMAIN = struct
   let get_tag v = 0L
 end
 
+let max_soln_length = ref 30
+
 exception NotConcrete of V.exp
 
 let rec constant_fold_rec e =
@@ -3613,7 +3615,7 @@ struct
 	else
 	  '?'
       in
-      let str = String.make 30 ' ' in
+      let str = String.make ((!max_soln_length) * 2) ' ' in
 	List.iter
 	  (fun (var_s, value) ->
 	     match self#match_input_var var_s with
@@ -4601,6 +4603,7 @@ let linux_setup_tcb_seg fm new_ent new_gdt base limit =
 			  (Int64.shift_right base 24) 0xffL)
 
 let opt_pid = ref (-1)
+let current_pid =  ref (-1)
 
 class linux_special_handler fm =
   let put_reg = fm#set_word_var in
@@ -5088,6 +5091,12 @@ object(self)
 	store_word addr 0 time else ();
       put_reg R_EAX time
 
+  method sys_gettid =
+    (* On Linux, thread id is the process id *)
+    let tid = Int64.of_int (!current_pid) in
+      if tid = -1L then (failwith ("Can't emulate gettid system call, -pid not specified"));
+      put_reg R_EAX tid
+    
   method sys_times addr =
     let float_to_clocks f = Int64.of_float (f *. 100.0) in
     let pt = Unix.times () in
@@ -5706,7 +5715,9 @@ object(self)
 	 | 221 -> (* fcntl64 *)
 	     failwith "Unhandled Linux system call fcntl64 (221)"
 	 | 224 -> (* gettid *)
-	     failwith "Unhandled Linux system call gettid (224)"
+	     if !opt_trace_syscalls then
+	       Printf.printf "gettid()";
+	     self#sys_gettid 
 	 | 225 -> (* readahead *)
 	     failwith "Unhandled Linux system call readahead (225)"
 	 | 226 -> (* setxattr *)
@@ -6281,6 +6292,7 @@ module LinuxLoader = struct
 	 let sighold = read_ui32 i in
 	 let pid = IO.read_i32 i in
 	   if ((pid = !opt_pid) || (!opt_pid = -1)) then (
+	     current_pid := pid;
 	     let ppid = IO.read_i32 i in
 	     let pgrp = IO.read_i32 i in
 	     let sid = IO.read_i32 i in
@@ -6825,6 +6837,9 @@ let split_string char s =
 
 let add_delimited_pair opt char s =
   let (s1, s2) = split_string char s in
+  let v2 = Int64.of_string (s2) in
+  let newmax = max (!max_soln_length) (Int64.to_int v2) in
+    max_soln_length := newmax;
     opt := ((Int64.of_string s1), (Int64.of_string s2)) :: !opt
 
 let add_delimited_num_str_pair opt char s =
