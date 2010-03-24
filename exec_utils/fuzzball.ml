@@ -3667,8 +3667,9 @@ struct
 	  (m_vars @ t_vars);
 	List.iter (fun (v, exp) -> (query_engine#assert_eq v exp)) m_axioms;
 	List.iter (fun (v, exp) -> (query_engine#assert_eq v exp)) temps;
-	(* Printf.printf "PC is %s\n" (V.exp_to_string pc); *)
-	(* Printf.printf "Condition is %s\n" (V.exp_to_string cond); *)
+(*	Printf.printf "PC is %s\n" (V.exp_to_string pc); 
+	Printf.printf "Condition is %s\n" (V.exp_to_string cond);
+*)
 	let time_before = Sys.time () in
 	let (result, ce) = query_engine#query pc in
 	let is_sat = not result in
@@ -3965,6 +3966,7 @@ struct
 	  -> ExprOffset(e)
       | V.BinOp(V.LSHIFT, _, _)
 	  -> ExprOffset(e)
+      | V.BinOp(V.BITAND, _, _)
       | V.BinOp(V.BITOR, _, _) (* XXX happens in Windows 7, don't know why *)
 	  -> ExprOffset(e)
       | V.Cast(V.CAST_UNSIGNED, V.REG_32,
