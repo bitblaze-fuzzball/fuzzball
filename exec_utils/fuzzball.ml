@@ -962,11 +962,15 @@ end
 module SymbolicDomain : DOMAIN = struct
   type t = V.exp
 
-  let from_concrete_1 v  = V.Constant(V.Int(V.REG_1,  (Int64.of_int v)))
-  let from_concrete_8 v  = V.Constant(V.Int(V.REG_8,  (Int64.of_int v)))
-  let from_concrete_16 v = V.Constant(V.Int(V.REG_16, (Int64.of_int v)))
-  let from_concrete_32 v = V.Constant(V.Int(V.REG_32,               v ))
-  let from_concrete_64 v = V.Constant(V.Int(V.REG_64,               v ))
+  let from_concrete_1 v  = assert(v = 0 || v = 1 || v = -1);    
+    V.Constant(V.Int(V.REG_1,  (Int64.of_int (v land 1))))
+  let from_concrete_8 v  = assert(v >= -128 && v <= 0xff);
+    V.Constant(V.Int(V.REG_8,  (Int64.of_int (v land 0xff))))
+  let from_concrete_16 v = assert(v >= -65536 && v <= 0xffff);
+    V.Constant(V.Int(V.REG_16, (Int64.of_int (v land 0xffff))))
+  let from_concrete_32 v = assert(v >= -4294967296L && v <= 0xffffffffL);
+    V.Constant(V.Int(V.REG_32, (Int64.logand v 0xffffffffL)))
+  let from_concrete_64 v = V.Constant(V.Int(V.REG_64, v))
 
   let to_concrete_1 e = match constant_fold_rec e with
     | V.Constant(V.Int(V.REG_1,  v)) -> (Int64.to_int v)
@@ -6327,7 +6331,8 @@ module LinuxLoader = struct
 	       let xgs = IO.read_real_i32 i in
 	       let orig_eax = IO.read_real_i32 i in
 	       let eip = IO.read_real_i32 i in
-	       let () = check_single_start_eip (Int64.of_int32 eip) in
+	       let () = check_single_start_eip (fix_u32 (Int64.of_int32 eip))
+	       in
 	       let xcs = IO.read_real_i32 i in
 	       let eflags = IO.read_real_i32 i in
 	       let esp = IO.read_real_i32 i in
@@ -6342,7 +6347,7 @@ module LinuxLoader = struct
 		   Temu_state.xes = xes; Temu_state.xfs = xfs;
 		   Temu_state.xgs = xgs; Temu_state.xss = xss; } in
 		 fm#load_x86_user_regs user_regs;
-		 start_eip := (Int64.of_int32 eip);
+		 start_eip := fix_u32 (Int64.of_int32 eip);
 		 ignore(si_signo); ignore(si_code); ignore(si_errno);
 		 ignore(cursig); ignore(sigpend); ignore(sighold);
 		 ignore(ppid); ignore(pgrp); ignore(sid);
@@ -6761,7 +6766,10 @@ let print_tree fm =
 
 let symbolic_init = ref (fun () -> ())
 
-let fuzz_static start_eip end_eips fm asmir_gamma =
+let fuzz start_eip fuzz_start_eip end_eips fm asmir_gamma =
+  (if start_eip <> fuzz_start_eip then
+     (if !opt_trace_setup then Printf.printf "Pre-fuzzing execution...\n";
+      runloop fm start_eip asmir_gamma (fun a -> a = fuzz_start_eip)));
   fm#make_snap ();
   if !opt_trace_setup then Printf.printf "Took snapshot\n";
   loop_w_stats None
@@ -6773,7 +6781,8 @@ let fuzz_static start_eip end_eips fm asmir_gamma =
 	 fm#set_iter_seed (Int64.to_int iter);
 	 !symbolic_init ();
 	 (try
-	    runloop fm start_eip asmir_gamma (fun a -> List.mem a end_eips);
+	    runloop fm fuzz_start_eip asmir_gamma
+	      (fun a -> List.mem a end_eips);
 	  with
 	    | Failure("Jump to 0") -> () (* equivalent of segfault *)
 	    | SimulatedExit(_) -> ()
@@ -6818,6 +6827,7 @@ let fuzz_static start_eip end_eips fm asmir_gamma =
 
 let opt_load_base = ref 0x08048000L (* Linux user space default *)
 
+let opt_start_addr = ref None
 let opt_fuzz_start_addr = ref None
 let opt_fuzz_end_addrs = ref []
 let opt_initial_eax = ref None
@@ -6866,6 +6876,9 @@ let add_delimited_num_str_pair opt char s =
 let main argv = 
   Arg.parse
     (Arg.align [
+       ("-start-addr", Arg.String
+	  (fun s -> opt_start_addr := Some(Int64.of_string s)),
+	"addr Code address to start executing");
        ("-fuzz-start-addr", Arg.String
 	  (fun s -> opt_fuzz_start_addr := Some(Int64.of_string s)),
 	"addr Code address to start fuzzing");
@@ -7015,6 +7028,7 @@ let main argv =
     new SRFM.sym_region_frag_machine
 in
   let dl = Asmir.decls_for_arch Asmir.arch_i386 in
+  let state_start_addr = ref None in
     let asmir_gamma = Asmir.gamma_create 
       (List.find (fun (i, s, t) -> s = "mem") dl) dl
     in
@@ -7031,15 +7045,14 @@ in
 	fm#make_x86_regs_zero;
       (match !opt_program_name with
 	 | Some name ->
-	     opt_fuzz_start_addr := Some
+	     state_start_addr := Some
 	       (LinuxLoader.load_dynamic_program fm name
 		  !opt_load_base !opt_load_data !opt_load_extra_regions
 		  !opt_argv)
 	 | _ -> ());
       (match !opt_core_file_name with
 	 | Some name -> 
-	     opt_fuzz_start_addr := Some
-	       (LinuxLoader.load_core fm name)
+	     state_start_addr := Some (LinuxLoader.load_core fm name)
 	 | None -> ());
       if !opt_linux_syscalls then
 	fm#add_special_handler
@@ -7097,13 +7110,18 @@ in
 	     !opt_symbolic_words
 	);
       
-      let start_addr = match !opt_fuzz_start_addr with
-	| None -> failwith "Missing starting address"
-	| Some l -> l
+      let (start_addr, fuzz_start) = match
+	(!opt_start_addr, !opt_fuzz_start_addr, !state_start_addr) with
+	  | (None,     None,      None) -> failwith "Missing starting address"
+	  | (None,     None,      Some ssa) -> (ssa,  ssa)
+	  | (None,     Some ofsa, Some ssa) -> (ssa,  ofsa)
+	  | (None,     Some ofsa, None    ) -> (ofsa, ofsa)
+	  | (Some osa, Some ofsa, _       ) -> (osa,  ofsa)
+	  | (Some osa, None,      _       ) -> (osa,  osa)
       in
-	
+
 	try
-	  fuzz_static start_addr !opt_fuzz_end_addrs fm asmir_gamma
+	  fuzz start_addr fuzz_start !opt_fuzz_end_addrs fm asmir_gamma
 	with
 	  | Simplify_failure s ->
 	      Printf.printf "Simplify failure <%s> at:\n" s;
