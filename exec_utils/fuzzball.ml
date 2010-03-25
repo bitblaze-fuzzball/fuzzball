@@ -716,7 +716,7 @@ module ConcreteDomain : DOMAIN = struct
   let get_tag v = 0L
 end
 
-let max_soln_length = ref 30
+let max_input_string_length = ref 0
 
 exception NotConcrete of V.exp
 
@@ -2650,6 +2650,14 @@ struct
 	reg EFLAGSREST (D.from_concrete_32 0L);
 	reg R_LDT (D.from_concrete_32 0x00000000L);
 	reg R_DFLAG (D.from_concrete_32 1L);
+	reg R_EBP (D.from_concrete_32 0x00000000L);
+	reg R_ESP (D.from_concrete_32 0x00000000L);
+	reg R_ESI (D.from_concrete_32 0x00000000L);
+	reg R_EDI (D.from_concrete_32 0x00000000L);
+	reg R_EAX (D.from_concrete_32 0x00000000L);
+	reg R_EBX (D.from_concrete_32 0x00000000L);
+	reg R_ECX (D.from_concrete_32 0x00000000L);
+	reg R_EDX (D.from_concrete_32 0x00000000L)
 
     method make_x86_regs_symbolic =
       let reg r v =
@@ -3619,7 +3627,7 @@ struct
 	else
 	  '?'
       in
-      let str = String.make ((!max_soln_length) * 2) ' ' in
+      let str = String.make (!max_input_string_length) ' ' in
 	List.iter
 	  (fun (var_s, value) ->
 	     match self#match_input_var var_s with
@@ -4199,12 +4207,6 @@ struct
 	  value = self#eval_int_exp_simplify rhs_e in
 	if r = None && (Int64.abs (fix_s32 addr)) < 4096L then
 	  raise NullDereference;
-	(match ty with
-	   | V.REG_8 -> self#store_byte_region r addr value
-	   | V.REG_16 -> self#store_short_region r addr value
-	   | V.REG_32 -> self#store_word_region r addr value
-	   | V.REG_64 -> self#store_long_region r addr value
-	   | _ -> failwith "Unsupported type in memory move");
 	if !opt_trace_stores then
 	  if not (ty = V.REG_8 && r = None) then
 	    (Printf.printf "Store to %s "
@@ -4213,7 +4215,13 @@ struct
 	     Printf.printf "%08Lx = %s" addr (D.to_string_32 value);
 	     (if !opt_use_tags then
 		Printf.printf " (%Ld @ %08Lx)" (D.get_tag value) location_id);
-	     Printf.printf "\n")
+	     Printf.printf "\n");
+	(match ty with
+	   | V.REG_8 -> self#store_byte_region r addr value
+	   | V.REG_16 -> self#store_short_region r addr value
+	   | V.REG_32 -> self#store_word_region r addr value
+	   | V.REG_64 -> self#store_long_region r addr value
+	   | _ -> failwith "Unsupported type in memory move")
 
     method concretize_misc =
       let var = Hashtbl.find reg_to_var R_DFLAG in
@@ -5160,12 +5168,28 @@ object(self)
 
   method handle_linux_syscall () =
     (let syscall_num = Int64.to_int (fm#get_word_var R_EAX) and
-	 ebx = fm#get_word_var R_EBX and
-	 ecx = fm#get_word_var R_ECX and
-	 edx = fm#get_word_var R_EDX and
-	 esi = fm#get_word_var R_ESI and
-	 edi = fm#get_word_var R_EDI and
-	 ebp = fm#get_word_var R_EBP in
+	 read_1_reg () = fm#get_word_var R_EBX in
+     let read_2_regs () =
+       let ebx = read_1_reg () and
+	   ecx = fm#get_word_var R_ECX in
+	 (ebx, ecx) in
+     let read_3_regs () = 
+       let (ebx, ecx) = read_2_regs () and
+	   edx = fm#get_word_var R_EDX in
+	 (ebx, ecx, edx) in
+     let read_4_regs () =
+       let (ebx, ecx, edx) = read_3_regs () and
+	   esi = fm#get_word_var R_ESI in
+	 (ebx, ecx, edx, esi) in
+     let read_5_regs () =
+       let (ebx, ecx, edx, esi) = read_4_regs () and
+	   edi = fm#get_word_var R_EDI in
+	 (ebx, ecx, edx, esi, edi) in
+     let read_6_regs () =
+       let (ebx, ecx, edx, esi, edi) = read_5_regs () and
+	   ebp = fm#get_word_var R_EBP in
+	 (ebx, ecx, edx, esi, edi, ebp)
+     in
        match syscall_num with
 	 | 0 -> (* restart_syscall *)
 	     failwith "Unhandled Linux system call restart_syscall (0)"
@@ -5174,6 +5198,7 @@ object(self)
 	 | 2 -> (* fork *)
 	     failwith "Unhandled Linux system call fork (2)"
 	 | 3 -> (* read *)		    
+	     let (ebx, ecx, edx) = read_3_regs () in
 	     let fd    = Int64.to_int ebx and
 		 buf   = ecx and
 		 count = Int64.to_int edx in
@@ -5181,6 +5206,7 @@ object(self)
 		 Printf.printf "read(%d, 0x%08Lx, %d)" fd buf count;
 	       self#sys_read fd buf count;
 	 | 4 -> (* write *)
+	     let (ebx, ecx, edx) = read_3_regs () in
 	     let fd    = Int64.to_int ebx and
 		 buf   = ecx and
 		 count = Int64.to_int edx in
@@ -5189,6 +5215,11 @@ object(self)
 	       let bytes = fm#read_buf buf count in
 		 self#sys_write fd bytes count
 	 | 5 -> (* open *)
+	     let (ebx, ecx) = read_2_regs () in
+	     let edx = (if (Int64.logand ecx 0o100L) <> 0L then
+			  fm#get_word_var R_EDX
+			else
+			  0L) in
 	     let path_buf = ebx and
 		 flags    = Int64.to_int ecx and
 		 mode     = Int64.to_int edx in
@@ -5197,6 +5228,7 @@ object(self)
 		 Printf.printf "open(\"%s\", 0x%x, 0o%o)" path flags mode;
 	       self#sys_open path flags mode
 	 | 6 -> (* close *)
+	     let ebx = read_1_reg () in
 	     let fd = Int64.to_int ebx in
 	       if !opt_trace_syscalls then
 		 Printf.printf "close(%d)" fd;
@@ -5214,6 +5246,7 @@ object(self)
 	 | 12 -> (* chdir *)
 	     failwith "Unhandled Linux system call chdir (12)"
 	 | 13 -> (* time *)
+	     let ebx = read_1_reg () in
 	     let addr = ebx in
 	       if !opt_trace_syscalls then
 		 Printf.printf "time(0x%08Lx)" addr;
@@ -5257,6 +5290,7 @@ object(self)
 	 | 32 -> (* gtty *)
 	     failwith "Unhandled Linux system call gtty (32)"
 	 | 33 -> (* access *)
+	     let (ebx, ecx) = read_2_regs () in
 	     let path_buf = ebx and
 		 mode     = Int64.to_int ecx in
 	     let path = fm#read_cstr path_buf in
@@ -5282,6 +5316,7 @@ object(self)
 	 | 42 -> (* pipe *)
 	     failwith "Unhandled Linux system call pipe (42)"
 	 | 43 -> (* times *)
+	     let ebx = read_1_reg () in
 	     let addr = ebx in
 	       if !opt_trace_syscalls then
 		 Printf.printf "times(0x%08Lx)" addr;
@@ -5289,6 +5324,7 @@ object(self)
 	 | 44 -> (* prof *)
 	     failwith "Unhandled Linux system call prof (44)"
 	 | 45 -> (* brk *)
+	     let ebx = read_1_reg () in
 	     let addr = ebx in
 	       if !opt_trace_syscalls then
 		 Printf.printf "brk(0x%08Lx)" addr;
@@ -5310,6 +5346,7 @@ object(self)
 	 | 53 -> (* lock *)
 	     failwith "Unhandled Linux system call lock (53)"
 	 | 54 -> (* ioctl *)
+	     let (ebx, ecx, edx) = read_3_regs () in
 	     let fd   = Int64.to_int ebx and
 		 req  = ecx and
 		 argp = edx in
@@ -5363,6 +5400,7 @@ object(self)
 	 | 77 -> (* getrusage *)
 	     failwith "Unhandled Linux system call getrusage (77)"
 	 | 78 -> (* gettimeofday *)
+	     let (ebx, ecx) = read_2_regs () in
 	     let timep = ebx and
 		 zonep = ecx in
 	       if !opt_trace_syscalls then
@@ -5381,6 +5419,7 @@ object(self)
 	 | 84 -> (* oldlstat *)
 	     failwith "Unhandled Linux system call oldlstat (84)"
 	 | 85 -> (* readlink *)
+	     let (ebx, ecx, edx) = read_3_regs () in
 	     let path_buf = ebx and
 		 out_buf  = ecx and
 		 buflen   = Int64.to_int edx in
@@ -5400,6 +5439,7 @@ object(self)
 	 | 90 -> (* mmap *)
 	     failwith "Unhandled Linux system call mmap (90)"
 	 | 91 -> (* munmap *)
+	     let (ebx, ecx) = read_2_regs () in
 	     let addr = ebx and
 		 len  = ecx in
 	       if !opt_trace_syscalls then
@@ -5466,6 +5506,7 @@ object(self)
 	 | 121 -> (* setdomainname *)
 	     failwith "Unhandled Linux system call setdomainname (121)"
 	 | 122 -> (* uname *)
+	     let ebx = read_1_reg () in
 	     let buf = ebx in
 	       if !opt_trace_syscalls then
 		 Printf.printf "uname(0x%08Lx)" buf;
@@ -5475,6 +5516,7 @@ object(self)
 	 | 124 -> (* adjtimex *)
 	     failwith "Unhandled Linux system call adjtimex (124)"
 	 | 125 -> (* mprotect *)
+	     let (ebx, ecx, edx) = read_3_regs () in
 	     let addr = ebx and
 		 len  = ecx and
 		 prot = edx in
@@ -5510,6 +5552,7 @@ object(self)
 	 | 139 -> (* setfsgid *)
 	     failwith "Unhandled Linux system call setfsgid (139)"
 	 | 140 -> (* _llseek *)
+	     let (ebx, ecx, edx, esi, edi) = read_5_regs () in
 	     let fd = Int64.to_int ebx and
 		 off_high = ecx and
 		 off_low = edx and
@@ -5531,6 +5574,7 @@ object(self)
 	 | 145 -> (* readv *)
 	     failwith "Unhandled Linux system call readv (145)"
 	 | 146 -> (* writev *)
+	     let (ebx, ecx, edx) = read_3_regs () in
 	     let fd  = Int64.to_int ebx and
 		 iov = ecx and
 		 cnt = Int64.to_int edx in
@@ -5592,6 +5636,7 @@ object(self)
 	 | 173 -> (* rt_sigreturn *)
 	     failwith "Unhandled Linux system call rt_sigreturn (173)"
 	 | 174 -> (* rt_sigaction *)
+	     let (ebx, ecx, edx, esi) = read_4_regs () in
 	     let signum = Int64.to_int ebx and
 		 newbuf = ecx and
 		 oldbuf = edx and
@@ -5601,6 +5646,7 @@ object(self)
 		   signum newbuf oldbuf setlen;
 	       self#sys_rt_sigaction signum newbuf oldbuf setlen
 	 | 175 -> (* rt_sigprocmask *)
+	     let (ebx, ecx, edx, esi) = read_4_regs () in
 	     let how    = Int64.to_int ebx and
 		 newset = ecx and
 		 oldset = edx and
@@ -5640,12 +5686,14 @@ object(self)
 	 | 190 -> (* vfork *)
 	     failwith "Unhandled Linux system call vfork (190)"
 	 | 191 -> (* ugetrlimit *)
+	     let (ebx, ecx) = read_2_regs () in
 	     let rsrc = Int64.to_int ebx and
 		 buf  = ecx in
 	       if !opt_trace_syscalls then
 		 Printf.printf "ugetrlimit(%d, 0x%08Lx)" rsrc buf;
 	       self#sys_ugetrlimit rsrc buf
 	 | 192 -> (* mmap2 *)
+	     let (ebx, ecx, edx, esi, edi, ebp) = read_6_regs () in
 	     let addr     = ebx and
 		 length   = ecx and
 		 prot     = edx and
@@ -5661,6 +5709,7 @@ object(self)
 	 | 194 -> (* ftruncate64 *)
 	     failwith "Unhandled Linux system call ftruncate64 (194)"
 	 | 195 -> (* stat64 *)
+	     let (ebx, ecx) = read_2_regs () in
 	     let path_buf = ebx and
 		 buf_addr = ecx in
 	     let path = fm#read_cstr path_buf in
@@ -5670,6 +5719,7 @@ object(self)
 	 | 196 -> (* lstat64 *)
 	     failwith "Unhandled Linux system call lstat64 (196)"
 	 | 197 -> (* fstat64 *)
+	     let (ebx, ecx) = read_2_regs () in
 	     let fd = Int64.to_int ebx and
 		 buf_addr = ecx in
 	       if !opt_trace_syscalls then
@@ -5714,11 +5764,13 @@ object(self)
 	 | 212 -> (* chown32 *)
 	     failwith "Unhandled Linux system call chown32 (212)"
 	 | 213 -> (* setuid32 *)
+	     let ebx = read_1_reg () in
 	     let uid = Int64.to_int ebx in
 	       if !opt_trace_syscalls then
 		 Printf.printf "setuid32(%d)" uid;
 	       self#sys_setuid32 uid
 	 | 214 -> (* setgid32 *)
+	     let ebx = read_1_reg () in
 	     let gid = Int64.to_int ebx in
 	       if !opt_trace_syscalls then
 		 Printf.printf "setgid32(%d)" gid;
@@ -5772,6 +5824,7 @@ object(self)
 	 | 239 -> (* sendfile64 *)
 	     failwith "Unhandled Linux system call sendfile64 (239)"
 	 | 240 -> (* futex *)
+	     let (ebx, ecx, edx, esi, edi, ebp) = read_6_regs () in
 	     let uaddr    = ebx and
 		 op       = Int64.to_int ecx and
 		 value    = edx and
@@ -5787,6 +5840,7 @@ object(self)
 	 | 242 -> (* sched_getaffinity *)
 	     failwith "Unhandled Linux system call sched_getaffinity (242)"
 	 | 243 -> (* set_thread_area *)
+	     let ebx = read_1_reg () in
 	     let uinfo = ebx in
 	       if !opt_trace_syscalls then
 		 Printf.printf "set_thread_area(0x%08Lx)" uinfo;
@@ -5806,6 +5860,7 @@ object(self)
 	 | 250 -> (* fadvise64 *)
 	     failwith "Unhandled Linux system call fadvise64 (250)"
 	 | 252 -> (* exit_group *)
+	     let ebx = read_1_reg () in
 	     let status = ebx in
 	       if !opt_trace_syscalls then
 		 Printf.printf "exit_group(%Ld) (no return)\n" status;
@@ -5821,6 +5876,7 @@ object(self)
 	 | 257 -> (* remap_file_pages *)
 	     failwith "Unhandled Linux system call remap_file_pages (257)"
 	 | 258 -> (* set_tid_address *)
+	     let ebx = read_1_reg () in
 	     let addr = ebx in
 	       if !opt_trace_syscalls then
 		 Printf.printf "set_tid_address(0x08%Lx)" addr;
@@ -5838,6 +5894,7 @@ object(self)
 	 | 264 -> (* clock_settime *)
 	     failwith "Unhandled Linux system call clock_settime (264)"
 	 | 265 -> (* clock_gettime *)
+	     let (ebx, ecx) = read_2_regs () in
 	     let clkid = Int64.to_int ebx and
 		 timep = ecx in
 	       if !opt_trace_syscalls then
@@ -5848,6 +5905,7 @@ object(self)
 	 | 267 -> (* clock_nanosleep *)
 	     failwith "Unhandled Linux system call clock_nanosleep (267)"
 	 | 268 -> (* statfs64 *)
+	     let (ebx, ecx, edx) = read_3_regs () in
 	     let path_buf = ebx and
 		 buf_len = Int64.to_int ecx and
 		 struct_buf = edx in
@@ -5939,6 +5997,7 @@ object(self)
 	 | 310 -> (* unshare *)
 	     failwith "Unhandled Linux system call unshare (310)"
 	 | 311 -> (* set_robust_list *)
+	     let (ebx, ecx) = read_2_regs () in
 	     let addr = ebx and
 		 len  = ecx in
 	       if !opt_trace_syscalls then
@@ -6866,9 +6925,6 @@ let split_string char s =
 
 let add_delimited_pair opt char s =
   let (s1, s2) = split_string char s in
-  let v2 = Int64.of_string (s2) in
-  let newmax = max (!max_soln_length) (Int64.to_int v2) in
-    max_soln_length := newmax;
     opt := ((Int64.of_string s1), (Int64.of_string s2)) :: !opt
 
 let add_delimited_num_str_pair opt char s =
@@ -7065,7 +7121,7 @@ in
       fm#add_special_handler
 	((new trap_special_nonhandler fm) :> special_handler);
       (match !opt_state_file with
-	 | Some s -> opt_fuzz_start_addr := Some
+	 | Some s -> state_start_addr := Some
 	     (StateLoader.load_mem_state fm s)
 	 | None -> ());
       (match !opt_tls_base with
@@ -7101,15 +7157,21 @@ in
       List.iter (fun (addr,v) -> fm#store_word_conc addr v) !opt_store_words;
       symbolic_init :=
 	(fun () ->
-	   List.iter (fun (base, len) -> 
-			fm#store_symbolic_cstr base (Int64.to_int len))
-	     !opt_symbolic_cstrings;
-	   List.iter (fun (base, len) -> 
-			fm#store_symbolic_wcstr base (Int64.to_int len))
-	     !opt_symbolic_string16s;
-	   List.iter (fun (addr, varname) ->
-			fm#store_symbolic_word addr varname)
-	     !opt_symbolic_words
+	   let new_max i =
+	     max_input_string_length :=
+	       max (!max_input_string_length) (Int64.to_int i)
+	   in
+	     List.iter (fun (base, len) ->
+			  new_max len;
+			  fm#store_symbolic_cstr base (Int64.to_int len))
+	       !opt_symbolic_cstrings;
+	     List.iter (fun (base, len) ->
+			  new_max (Int64.mul 2L len);
+			  fm#store_symbolic_wcstr base (Int64.to_int len))
+	       !opt_symbolic_string16s;
+	     List.iter (fun (addr, varname) ->
+			  fm#store_symbolic_word addr varname)
+	       !opt_symbolic_words
 	);
       
       let (start_addr, fuzz_start) = match
