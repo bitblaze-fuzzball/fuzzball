@@ -4858,6 +4858,15 @@ object(self)
       store_word addr 60 f_frsize
       (* offsets 64, 68, 72, 76, 80: f_spare[5] reserved *)
 
+  (* This works for either a struct timeval or a struct timespec,
+     depending on the resolution *)
+  method write_ftime_as_words ftime addr resolution =
+    let fsecs = floor ftime in
+    let secs = Int64.of_float fsecs and
+	fraction = Int64.of_float (resolution *. (ftime -. fsecs)) in
+      store_word addr 0 secs;
+      store_word addr 4 fraction
+
   method sys_access path mode =
     let oc_mode =
       (if   (mode land 0x7)= 0 then [Unix.F_OK] else []) @
@@ -4894,28 +4903,17 @@ object(self)
 
   method sys_clock_gettime clkid timep =
     match clkid with
-      | 1 (* CLOCK_MONOTONIC *)
-	  (*This is a hack/approximation. We simply hope that the system correctness does not rely on CLOCK_MONOTONIC *)
+      | 1 -> (* CLOCK_MONOTONIC *)
+	  (* For Linux, this is pretty much time since boot, unless you're
+	     changing the system's clock while running the program.
+	     Pretend we were booted on 2010-03-18. *)
+	  (self#write_ftime_as_words (Unix.gettimeofday () -. 1268959142.0)
+	     timep 1000000000.0);
+	  put_reg R_EAX 0L
       | 0 -> (* CLOCK_REALTIME *)
-	  let ftime = Unix.gettimeofday () in
-	  let fsecs = floor ftime in
-	  let secs = Int64.of_float fsecs and
-	      nanos = Int64.of_float (1000000000.0 *. (ftime -. fsecs)) in
-	    store_word timep 0 secs;
-	    store_word timep 4 nanos;
-	    put_reg R_EAX 0L
+	  self#write_ftime_as_words (Unix.gettimeofday ()) timep 1000000000.0;
+	  put_reg R_EAX 0L
       | _ -> self#put_errno Unix.EINVAL (* unsupported clock type *)
-
-  method sys_gettimeofday timep zonep =
-    (* This is not accurate because the zonep is ignored. It will have junk values *)
-    ignore(zonep);
-    let ftime = Unix.gettimeofday () in
-    let fsecs = floor ftime in
-    let secs = Int64.of_float fsecs and
-	nanos = Int64.of_float (1000000000.0 *. (ftime -. fsecs)) in
-      store_word timep 0 secs;
-      store_word timep 4 nanos;
-      put_reg R_EAX 0L
 
   method sys_close fd =
     try
@@ -4957,6 +4955,16 @@ object(self)
 
   method sys_geteuid32 () = 
     put_reg R_EAX (Int64.of_int (Unix.geteuid ()))
+
+  method sys_gettimeofday timep zonep =
+    if timep <> 0L then
+      self#write_ftime_as_words (Unix.gettimeofday ()) timep 1000000.0;
+    if zonep <> 0L then
+      (* Simulate a modern system where the kernel knows nothing about
+	 the timezone: *)
+      (store_word zonep 0 0L; (* UTC *)
+       store_word zonep 4 0L); (* no DST *)
+    put_reg R_EAX 0L
 
   method sys_ioctl fd req argp =
     match req with
