@@ -4167,6 +4167,12 @@ struct
 	  | None -> addr
 	  | Some r_num -> raise SymbolicJump
 
+    method get_word_var_concretize reg : int64 =
+      try (D.to_concrete_32 (self#get_int_var (Hashtbl.find reg_to_var reg)))
+      with NotConcrete _ ->
+	let e = D.to_symbolic_32 (self#get_int_var (Hashtbl.find reg_to_var reg)) in
+	  self#choose_conc_offset_uniform e
+
     method private store_byte_region  r addr b =
       (self#region r)#store_byte  addr b
     method private store_short_region r addr s =
@@ -5175,27 +5181,27 @@ object(self)
       self#do_write fd bytes (Array.length bytes)
 
   method handle_linux_syscall () =
-    (let syscall_num = Int64.to_int (fm#get_word_var R_EAX) and
-	 read_1_reg () = fm#get_word_var R_EBX in
+    (let syscall_num = Int64.to_int (fm#get_word_var_concretize R_EAX) and
+	 read_1_reg () = fm#get_word_var_concretize R_EBX in
      let read_2_regs () =
        let ebx = read_1_reg () and
-	   ecx = fm#get_word_var R_ECX in
+	   ecx = fm#get_word_var_concretize R_ECX in
 	 (ebx, ecx) in
      let read_3_regs () = 
        let (ebx, ecx) = read_2_regs () and
-	   edx = fm#get_word_var R_EDX in
+	   edx = fm#get_word_var_concretize R_EDX in
 	 (ebx, ecx, edx) in
      let read_4_regs () =
        let (ebx, ecx, edx) = read_3_regs () and
-	   esi = fm#get_word_var R_ESI in
+	   esi = fm#get_word_var_concretize R_ESI in
 	 (ebx, ecx, edx, esi) in
      let read_5_regs () =
        let (ebx, ecx, edx, esi) = read_4_regs () and
-	   edi = fm#get_word_var R_EDI in
+	   edi = fm#get_word_var_concretize R_EDI in
 	 (ebx, ecx, edx, esi, edi) in
      let read_6_regs () =
        let (ebx, ecx, edx, esi, edi) = read_5_regs () and
-	   ebp = fm#get_word_var R_EBP in
+	   ebp = fm#get_word_var_concretize R_EBP in
 	 (ebx, ecx, edx, esi, edi, ebp)
      in
        match syscall_num with
@@ -5225,7 +5231,7 @@ object(self)
 	 | 5 -> (* open *)
 	     let (ebx, ecx) = read_2_regs () in
 	     let edx = (if (Int64.logand ecx 0o100L) <> 0L then
-			  fm#get_word_var R_EDX
+			  fm#get_word_var_concretize R_EDX
 			else
 			  0L) in
 	     let path_buf = ebx and
@@ -6046,7 +6052,7 @@ object(self)
 	     failwith "Unhandled Linux system call");
     if !opt_trace_syscalls then
       (Printf.printf " = %Ld (0x%08Lx)\n"
-	(fix_s32 (fm#get_word_var R_EAX)) (fm#get_word_var R_EAX);
+	(fix_s32 (fm#get_word_var_concretize R_EAX)) (fm#get_word_var_concretize R_EAX);
        flush stdout)
 
   method handle_special str =
@@ -6663,7 +6669,7 @@ let rec runloop fm eip asmir_gamma until =
 	 print_string "\n"; *)
       (* fm#print_x86_regs; *)
       if !opt_trace_eip then
-	Printf.printf "EIP is %08Lx\n" eip;
+	Printf.printf "EIP is 0x%08Lx\n" eip;
       fm#set_location_id eip;
       (* Printf.printf "EFLAGSREST is %08Lx\n" (fm#get_word_var EFLAGSREST);*)
       (* Printf.printf "Watchpoint val is %02x\n" (load_byte 0x81043c1L); *)
