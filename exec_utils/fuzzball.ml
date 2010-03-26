@@ -2526,7 +2526,7 @@ let move_hash src dest =
   V.VarHash.iter (fun a b -> V.VarHash.add dest a b) src
 
 class virtual special_handler = object(self)
-  method virtual handle_special : string -> bool
+  method virtual handle_special : string -> V.stmt list option
 end
 
 type register_name = 
@@ -2616,6 +2616,9 @@ struct
       insns <- sl
 
     method concretize_misc = ()
+
+    method set_eip eip =
+      self#set_word_var R_EIP eip
 
     method private on_missing_zero_m (m:GM.granular_memory) =
       m#on_missing
@@ -2845,11 +2848,16 @@ struct
 
     method handle_special str =
       try
-	ignore(List.find (fun h -> (h#handle_special str))
-		 special_handler_list);
-	true
+	let sl_r = ref [] in
+	  ignore(List.find
+		   (fun h ->
+		      match h#handle_special str with
+			| None -> false
+			| Some sl -> sl_r := sl; true)
+		   special_handler_list);
+	  Some !sl_r
       with
-	  Not_found -> false
+	  Not_found -> None
 
     method private get_int_var ((_,vname,ty) as var) =
       try
@@ -3191,11 +3199,12 @@ struct
 	       | V.Special("VEX decode error") ->
 		   raise IllegalInstruction
 	       | V.Special(str) ->
-		   if self#handle_special str then
-		     self#run_sl rest
-		   else
-		     (Printf.printf "Unhandled special %s\n" str;
-		      failwith "Unhandled special")
+		   (match self#handle_special str with
+		      | Some sl -> 
+			  self#run_sl (sl @ rest)
+		      | None ->
+			  Printf.printf "Unhandled special %s\n" str;
+			  failwith "Unhandled special")
 	       | V.Label(_) -> self#run_sl rest
 	       | V.ExpStmt(e) ->
 		   let v = self#eval_int_exp e in
@@ -3825,6 +3834,7 @@ end
 
 exception SymbolicJump
 exception NullDereference
+exception JumpToNull
 
 let opt_trace_loads = ref false
 let opt_trace_stores = ref false
@@ -4042,7 +4052,9 @@ struct
 
     val mutable location_id = 0L
 
-    method set_location_id i = location_id <- i
+    method set_eip i =
+      location_id <- i;
+      spfm#set_eip i
 
     method private region r =
       match r with
@@ -4584,11 +4596,11 @@ object(self)
        fm#print_x86_regs);
     raise NoSyscalls
 
-  method handle_special str =
+  method handle_special str : V.stmt list option =
     match str with
       | "int 0x80" -> self#unhandle_syscall str
       | "sysenter" -> self#unhandle_syscall str
-      | _ -> false
+      | _ -> None
 end
 
 exception SimulatedExit of int64
@@ -4873,6 +4885,31 @@ object(self)
       store_word addr 0 secs;
       store_word addr 4 fraction
 
+  val mutable proc_identities = None
+
+  method set_proc_identities id =
+    proc_identities <- id
+
+  method get_pid =
+    match proc_identities with
+      | Some (pid, _, _, _) -> pid
+      | None -> Unix.getpid ()
+
+  method get_ppid =
+    match proc_identities with
+      | Some (_, ppid, _, _) -> ppid
+      | None -> Unix.getppid ()
+
+  method get_pgrp =
+    match proc_identities with
+      | Some (_, _, pgrp, _) -> pgrp
+      | None -> failwith "OCaml has no getpgrp()"
+
+  method get_sid =
+    match proc_identities with
+      | Some (_, _, _, sid) -> sid
+      | None -> failwith "OCaml has no getsid()"
+
   method sys_access path mode =
     let oc_mode =
       (if   (mode land 0x7)= 0 then [Unix.F_OK] else []) @
@@ -4962,6 +4999,27 @@ object(self)
   method sys_geteuid32 () = 
     put_reg R_EAX (Int64.of_int (Unix.geteuid ()))
 
+  method sys_getpid () =
+    let pid = self#get_pid in
+      put_reg R_EAX (Int64.of_int pid)
+
+  method sys_getpgid target =
+    assert(target = 0 || target = self#get_pid); (* Only works on ourselves *)
+    let pgid = self#get_pgrp in
+      put_reg R_EAX (Int64.of_int pgid)
+
+  method sys_getpgrp () =
+    let pgid = self#get_pgrp in
+      put_reg R_EAX (Int64.of_int pgid)
+
+  method sys_getppid () =
+    let ppid = self#get_ppid in
+      put_reg R_EAX (Int64.of_int ppid)
+
+  method sys_getsid () =
+    let sid = self#get_sid in
+      put_reg R_EAX (Int64.of_int sid)
+
   method sys_gettimeofday timep zonep =
     if timep <> 0L then
       self#write_ftime_as_words (Unix.gettimeofday ()) timep 1000000.0;
@@ -5003,12 +5061,12 @@ object(self)
     let ret =
       match (addr, length, prot, flags, fd, pgoffset) with
 	| (0L, _, 0x3L (* PROT_READ|PROT_WRITE *),
-	   0x22L (* MAP_PRIVATE|MAP_ANONYMOUS *), -1, 0) ->
+	   0x22L (* MAP_PRIVATE|MAP_ANONYMOUS *), -1, _) ->
 	    let fresh = self#fresh_addr length in
 	      zero_region fresh (Int64.to_int length);
 	      fresh
 	| (_, _, 0x3L (* PROT_READ|PROT_WRITE *),
-	   0x32L (* MAP_PRIVATE|FIXED|ANONYMOUS *), -1, 0) ->
+	   0x32L (* MAP_PRIVATE|FIXED|ANONYMOUS *), -1, _) ->
 	    zero_region addr (Int64.to_int length);
 	    addr
 	| (0L, _, 
@@ -5081,7 +5139,7 @@ object(self)
 	 | _ -> failwith "Unhandled args to set_thread_area")
 
   method sys_set_tid_address addr =
-    let pid = Unix.getpid () in
+    let pid = self#get_pid in
       put_reg R_EAX (Int64.of_int pid)
 
   method sys_rt_sigaction signum newbuf oldbuf setlen =
@@ -5134,8 +5192,7 @@ object(self)
 
   method sys_gettid =
     (* On Linux, thread id is the process id *)
-    let tid = Int64.of_int (!current_pid) in
-      if tid = -1L then (failwith ("Can't emulate gettid system call, -pid not specified"));
+    let tid = Int64.of_int (self#get_pid) in
       put_reg R_EAX tid
     
   method sys_times addr =
@@ -5278,7 +5335,9 @@ object(self)
 	 | 19 -> (* lseek *)
 	     failwith "Unhandled Linux system call lseek (19)"
 	 | 20 -> (* getpid *)
-	     failwith "Unhandled Linux system call getpid (20)"
+	     if !opt_trace_syscalls then
+	       Printf.printf "getpid()";
+	     self#sys_getpid ()
 	 | 21 -> (* mount *)
 	     failwith "Unhandled Linux system call mount (21)"
 	 | 22 -> (* umount *)
@@ -5386,9 +5445,13 @@ object(self)
 	 | 63 -> (* dup2 *)
 	     failwith "Unhandled Linux system call dup2 (63)"
 	 | 64 -> (* getppid *)
-	     failwith "Unhandled Linux system call getppid (64)"
+	     if !opt_trace_syscalls then
+	       Printf.printf "getppid()";
+	     self#sys_getppid ()
 	 | 65 -> (* getpgrp *)
-	     failwith "Unhandled Linux system call getpgrp (65)"
+	     if !opt_trace_syscalls then
+	       Printf.printf "getpgrp()";
+	     self#sys_getpgrp ()
 	 | 66 -> (* setsid *)
 	     failwith "Unhandled Linux system call setsid (66)"
 	 | 67 -> (* sigaction *)
@@ -5550,7 +5613,11 @@ object(self)
 	 | 131 -> (* quotactl *)
 	     failwith "Unhandled Linux system call quotactl (131)"
 	 | 132 -> (* getpgid *)
-	     failwith "Unhandled Linux system call getpgid (132)"
+	     let eax = read_1_reg () in
+	     let pid = Int64.to_int eax in
+	       if !opt_trace_syscalls then
+		 Printf.printf "getpgid()";
+	       self#sys_getpgid pid
 	 | 133 -> (* fchdir *)
 	     failwith "Unhandled Linux system call fchdir (133)"
 	 | 134 -> (* bdflush *)
@@ -5596,7 +5663,9 @@ object(self)
 		 Printf.printf "writev(%d, 0x%08Lx, %d)" fd iov cnt;
 	       self#sys_writev fd iov cnt
 	 | 147 -> (* getsid *)
-	     failwith "Unhandled Linux system call getsid (147)"
+	     if !opt_trace_syscalls then
+	       Printf.printf "getsid()";
+	     self#sys_getsid ()
 	 | 148 -> (* fdatasync *)
 	     failwith "Unhandled Linux system call fdatasync (148)"
 	 | 149 -> (* _sysctl *)
@@ -6057,9 +6126,17 @@ object(self)
 
   method handle_special str =
     match str with
-      | "int 0x80" -> self#handle_linux_syscall (); true
-      | "sysenter" -> self#handle_linux_syscall (); true
-      | _ -> false
+      | "int 0x80" ->
+	  self#handle_linux_syscall ();
+	  Some []
+      | "sysenter" ->
+	  let sysenter_eip = fm#get_word_var R_EIP in
+	  let sysexit_eip = (Int64.logor 0x430L
+			       (Int64.logand 0xfffff000L sysenter_eip)) in
+	  let label = "pc_0x" ^ (Printf.sprintf "%08Lx" sysexit_eip) in
+	    self#handle_linux_syscall ();
+	    Some [V.Jmp(V.Name(label))]
+      | _ -> None
 
 end
 
@@ -6067,10 +6144,10 @@ exception UnhandledTrap
 
 class trap_special_nonhandler fm =
 object(self)
-  method handle_special str =
+  method handle_special str : V.stmt list option =
     match str with
       | "trap" -> raise UnhandledTrap
-      | _ -> false
+      | _ -> None
 end
 
 let opt_trace_setup = ref false
@@ -6370,6 +6447,8 @@ module LinuxLoader = struct
 
   let start_eip = ref 0L
 
+  let proc_identities = ref None
+
   let read_core_note fm ic =
     let i = IO.input_channel ic in
     let namesz = IO.read_i32 i in
@@ -6423,9 +6502,9 @@ module LinuxLoader = struct
 		   Temu_state.xgs = xgs; Temu_state.xss = xss; } in
 		 fm#load_x86_user_regs user_regs;
 		 start_eip := fix_u32 (Int64.of_int32 eip);
+		 proc_identities := Some (pid, ppid, pgrp, sid);
 		 ignore(si_signo); ignore(si_code); ignore(si_errno);
 		 ignore(cursig); ignore(sigpend); ignore(sighold);
-		 ignore(ppid); ignore(pgrp); ignore(sid);
 		 ignore(orig_eax)
 	   );
 	);
@@ -6670,7 +6749,7 @@ let rec runloop fm eip asmir_gamma until =
       (* fm#print_x86_regs; *)
       if !opt_trace_eip then
 	Printf.printf "EIP is 0x%08Lx\n" eip;
-      fm#set_location_id eip;
+      fm#set_eip eip;
       (* Printf.printf "EFLAGSREST is %08Lx\n" (fm#get_word_var EFLAGSREST);*)
       (* Printf.printf "Watchpoint val is %02x\n" (load_byte 0x81043c1L); *)
       (* Printf.printf ("Insn bytes are %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x\n") (load_byte eip)
@@ -6704,7 +6783,7 @@ let rec runloop fm eip asmir_gamma until =
 	let new_eip = label_to_eip (fm#run ()) in
 	  match (new_eip, until) with
 	    | (e1, e2) when e2 e1 -> ()
-	    | (0L, _) -> failwith "Jump to 0"
+	    | (0L, _) -> raise JumpToNull
 	    | _ -> loop new_eip
   in
     Hashtbl.clear loop_detect;
@@ -6810,7 +6889,6 @@ let fuzz_sym_str start_eip end_eip buf_addr buf_len fm asmir_gamma
 	   (try
 	      runloop fm start_eip asmir_gamma (fun a -> a = end_eip);
 	    with
-	      | Failure("Jump to 0") -> () (* equivalent of segfault *)
 	      | SimulatedExit(_) -> ()
 	      | BoringPath -> Printf.printf "\n"
 	   );
@@ -6842,6 +6920,9 @@ let print_tree fm =
 let symbolic_init = ref (fun () -> ())
 
 let fuzz start_eip fuzz_start_eip end_eips fm asmir_gamma =
+  if !opt_trace_setup then
+    (Printf.printf "Initial registers:\n";
+     fm#print_x86_regs);
   (if start_eip <> fuzz_start_eip then
      (if !opt_trace_setup then Printf.printf "Pre-fuzzing execution...\n";
       runloop fm start_eip asmir_gamma (fun a -> a = fuzz_start_eip)));
@@ -6859,12 +6940,12 @@ let fuzz start_eip fuzz_start_eip end_eips fm asmir_gamma =
 	    runloop fm fuzz_start_eip asmir_gamma
 	      (fun a -> List.mem a end_eips);
 	  with
-	    | Failure("Jump to 0") -> () (* equivalent of segfault *)
-	    | SimulatedExit(_) -> ()
+	    | SimulatedExit(_) -> stop "when program called exit()"
 	    | BoringPath -> stop "on boring path"
 	    | SymbolicJump -> stop "at symbolic jump"
 	    | NoSyscalls -> stop "at system call"
 	    | NullDereference -> stop "at null deref"
+	    | JumpToNull -> stop "at jump to null"
 	    | TooManyIterations -> stop "after too many loop iterations"
 	    | UnhandledTrap -> stop "at trap"
 	    | IllegalInstruction -> stop "at bad instruction"
@@ -6919,6 +7000,7 @@ let opt_tls_base = ref None
 let opt_load_extra_regions = ref []
 let opt_program_name = ref None
 let opt_core_file_name = ref None
+let opt_use_ids_from_core = ref false
 let opt_load_data = ref true
 let opt_random_memory = ref false
 let opt_zero_memory = ref false
@@ -6963,6 +7045,8 @@ let main argv =
        ("-pid", Arg.String
 	  (fun s -> opt_pid := (Int32.to_int (Int32.of_string s))),
 	"pid Use regs from specified LWP when loading from core");
+       ("-use-ids-from-core", Arg.Set(opt_use_ids_from_core),
+	" Simulate getpid(), etc., using values from core file");
        ("-initial-eax", Arg.String
 	  (fun s -> opt_initial_eax := Some(Int64.of_string s)),
 	"word Concrete initial value for %eax register");
@@ -7127,8 +7211,10 @@ in
 	     state_start_addr := Some (LinuxLoader.load_core fm name)
 	 | None -> ());
       if !opt_linux_syscalls then
-	fm#add_special_handler
-	  ((new linux_special_handler fm) :> special_handler)
+	let lsh = new linux_special_handler fm in
+	  if !opt_use_ids_from_core then
+	    lsh#set_proc_identities !LinuxLoader.proc_identities;
+	  fm#add_special_handler (lsh :> special_handler)
       else
 	fm#add_special_handler
 	  ((new linux_special_nonhandler fm) :> special_handler);
