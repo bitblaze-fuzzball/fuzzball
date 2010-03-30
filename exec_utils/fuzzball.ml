@@ -3667,6 +3667,32 @@ struct
 	       Printf.printf "%s=0x%Lx " nice_name value)
 	ce;
       Printf.printf "\n";
+      
+    method letize_for_influence_compute cond =
+      let pc = form_man#rewrite_for_stp
+	(constant_fold_rec
+	   (List.fold_left (fun a b -> V.BinOp(V.BITAND, a, b))
+	      V.exp_true (List.rev (cond :: path_cond)))) in
+      let temps = 
+	List.map (fun (var, e) -> (var, form_man#rewrite_for_stp e))
+	  (self#walk_temps (fun var e -> (var, e)) pc) in
+      let i_vars = form_man#get_input_vars in
+      let m_axioms = form_man#get_mem_axioms in
+	(*      let t_vars = List.map (fun (v, _) -> v) temps in *)
+      let m_vars = List.map (fun (v, _) -> v) m_axioms in
+      let to_letify = m_axioms @ temps in
+      let declvars =  (Vine_util.list_difference i_vars m_vars) @ (m_vars) in
+      let letified_expr = List.fold_left (fun a (lvar, lvexp) -> 
+					    V.Let(V.Temp(lvar), lvexp, a)
+					 ) (pc) to_letify in
+      let prog = (declvars, [V.ExpStmt(letified_expr)]) in
+	Printf.printf "Condition is %s\n" (V.exp_to_string cond);
+	List.iter (fun x -> Printf.printf "%s\n" (V.var_to_string x)) declvars;
+	Printf.printf "Letified expression is %s\n" (V.exp_to_string letified_expr);
+	let () = ignore(prog) in
+	  ()
+
+	
 
     method query_with_path_cond cond verbose =
       let pc = form_man#rewrite_for_stp
@@ -3684,6 +3710,7 @@ struct
 	  (m_vars @ t_vars);
 	List.iter (fun (v, exp) -> (query_engine#assert_eq v exp)) m_axioms;
 	List.iter (fun (v, exp) -> (query_engine#assert_eq v exp)) temps;
+	self#letize_for_influence_compute cond;
 (*	Printf.printf "PC is %s\n" (V.exp_to_string pc); 
 	Printf.printf "Condition is %s\n" (V.exp_to_string cond);
 *)
