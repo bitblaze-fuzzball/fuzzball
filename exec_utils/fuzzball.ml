@@ -6,6 +6,7 @@
 
 module V = Vine;;
 
+
 module type DOMAIN = sig
   type t
 
@@ -1359,7 +1360,27 @@ class stpvc_engine = object(self)
     ctx <- None;
     Libstp.vc_push vc;
     Libstp.vc_pop vc;
+
+  method push_vc = Libstp.vc_push vc
+    
+  method get_vc = vc
+      
 end
+
+type argparams_t = {
+  mutable _tmp_name : string;
+  mutable _get_val_bounds : bool;
+  mutable _low_bound_to : float;
+  mutable _sample_pts : int;
+  mutable _xor_count : int;
+  mutable _xor_seed : int;
+  mutable _stp_file : string;
+  mutable _ps_file : string;
+} ;;
+
+let get_influence (prog: Vine.program) (args: argparams_t) (q: V.exp) =
+  ()
+;;
 
 let opt_stp_path = ref "stp"
 
@@ -1441,6 +1462,7 @@ class stp_external_engine fname = object(self)
 
   method unprepare =
     visitor <- None
+
 end
 
 class virtual concrete_memory = object(self)
@@ -3668,27 +3690,32 @@ struct
 	ce;
       Printf.printf "\n";
       
-    method letize_for_influence_compute cond =
+    method letize_for_influence_compute (target_expr : V.exp) =
       let pc = form_man#rewrite_for_stp
 	(constant_fold_rec
 	   (List.fold_left (fun a b -> V.BinOp(V.BITAND, a, b))
-	      V.exp_true (List.rev (cond :: path_cond)))) in
+	      V.exp_true (List.rev (path_cond)))) in
       let temps = 
 	List.map (fun (var, e) -> (var, form_man#rewrite_for_stp e))
 	  (self#walk_temps (fun var e -> (var, e)) pc) in
+      let temps = temps @ (List.map (fun (var, e) -> (var, form_man#rewrite_for_stp e))
+			     (self#walk_temps (fun var e -> (var, e)) target_expr)) in
       let i_vars = form_man#get_input_vars in
       let m_axioms = form_man#get_mem_axioms in
-	(*      let t_vars = List.map (fun (v, _) -> v) temps in *)
+      let t_vars = List.map (fun (v, _) -> v) temps in 
       let m_vars = List.map (fun (v, _) -> v) m_axioms in
       let to_letify = m_axioms @ temps in
-      let declvars =  (Vine_util.list_difference i_vars m_vars) @ (m_vars) in
-      let letified_expr = List.fold_left (fun a (lvar, lvexp) -> 
-					    V.Let(V.Temp(lvar), lvexp, a)
-					 ) (pc) to_letify in
-      let prog = (declvars, [V.ExpStmt(letified_expr)]) in
-	Printf.printf "Condition is %s\n" (V.exp_to_string cond);
-	List.iter (fun x -> Printf.printf "%s\n" (V.var_to_string x)) declvars;
-	Printf.printf "Letified expression is %s\n" (V.exp_to_string letified_expr);
+      let declvars =  (Vine_util.list_difference i_vars m_vars) @ (m_vars @ t_vars) in
+	(*      let letified_expr = List.fold_left (fun a (lvar, lvexp) -> 
+		V.Let(V.Temp(lvar), lvexp, a)
+		) pc (List.rev to_letify) in 
+		let prog = (declvars, [V.ExpStmt(letified_expr)]) in
+	*)
+      let letified_expr = List.fold_left (fun a (lvar, lvexp) ->                                                                                                                                     
+					    a @ [V.Move(V.Temp(lvar), lvexp)]
+					 ) [] to_letify in
+      let prog = (declvars, letified_expr) in
+	(* V.pp_program (fun x -> Printf.printf "%s" x) prog; *)
 	let () = ignore(prog) in
 	  ()
 
@@ -3710,7 +3737,6 @@ struct
 	  (m_vars @ t_vars);
 	List.iter (fun (v, exp) -> (query_engine#assert_eq v exp)) m_axioms;
 	List.iter (fun (v, exp) -> (query_engine#assert_eq v exp)) temps;
-	self#letize_for_influence_compute cond;
 (*	Printf.printf "PC is %s\n" (V.exp_to_string pc); 
 	Printf.printf "Condition is %s\n" (V.exp_to_string cond);
 *)
@@ -3788,6 +3814,7 @@ struct
 	    NotConcrete _ ->
 	      let e = (D.to_symbolic_32 v) in
 		Printf.printf "Symbolic address %s\n" (V.exp_to_string e);
+		self#letize_for_influence_compute e;
 		let bits = ref 0L in
 		  self#restore_path_cond
 		    (fun () ->
@@ -4175,6 +4202,7 @@ struct
 	  let e = D.to_symbolic_32 v in
 	    if !opt_trace_sym_addrs then
 	      Printf.printf "Symbolic address %s\n" (V.exp_to_string e);
+	    self#letize_for_influence_compute e;
 	    let (cbases, coffs, eoffs, syms) = classify_terms e form_man in
 	    let cbase = List.fold_left Int64.add 0L cbases in
 	    let (base, off_syms) = match (cbase, syms) with
