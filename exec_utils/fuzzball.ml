@@ -775,6 +775,7 @@ let rec stmt_size = function
 
 let opt_trace_temps = ref false
 let opt_use_tags = ref false
+let opt_print_callrets = ref false
 
 module FormulaManagerFunctor =
   functor (D : DOMAIN) ->
@@ -3232,7 +3233,9 @@ struct
 		   let v = self#eval_int_exp e in
 		     ignore(v);
 		     self#run_sl rest
-	       | V.Comment(_) -> self#run_sl rest
+	       | V.Comment(s) -> 
+		   if (Str.string_match (Str.regexp ".*\(call\|ret\).*") s 0) then (if (!opt_print_callrets) then (Printf.printf "%s\n" s););
+		   self#run_sl rest
 	       | V.Block(_,_) -> failwith "Block unsupported"
 	       | V.Function(_,_,_,_,_) -> failwith "Function unsupported"
 	       | V.Return(_) -> failwith "Return unsupported"
@@ -7226,6 +7229,8 @@ let main argv =
 	" Print memory usage statistics");
        ("-time-stats", Arg.Set(opt_gc_stats),
 	" Print running time statistics");
+       ("-print-callrets", Arg.Set(opt_print_callrets),
+	" Print call and ret instructions executed. Can be used with ./getbacktrace.pl to generate the backtrace at any point.");
        ("--", Arg.Rest(fun s -> opt_argv := !opt_argv @ [s]),
 	" Pass any remaining arguments to the program");
      ])
