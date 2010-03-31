@@ -3234,7 +3234,12 @@ struct
 		     ignore(v);
 		     self#run_sl rest
 	       | V.Comment(s) -> 
-		   if (Str.string_match (Str.regexp ".*\(call\|ret\).*") s 0) then (if (!opt_print_callrets) then (Printf.printf "%s\n" s););
+		   if (Str.string_match (Str.regexp ".*\(call\|ret\).*") s 0) then (
+		     if (!opt_print_callrets) then (
+		       let eip = self#get_word_var R_EIP in
+			 Printf.printf "%s @ 0x%Lx\n" s eip
+		     );
+		   );
 		   self#run_sl rest
 	       | V.Block(_,_) -> failwith "Block unsupported"
 	       | V.Function(_,_,_,_,_) -> failwith "Function unsupported"
