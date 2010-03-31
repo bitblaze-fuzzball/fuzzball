@@ -3813,7 +3813,8 @@ struct
 	with
 	    NotConcrete _ ->
 	      let e = (D.to_symbolic_32 v) in
-		Printf.printf "Symbolic address %s\n" (V.exp_to_string e);
+	      let eip = self#get_word_var R_EIP in
+		Printf.printf "Symbolic address %s @ (0x%Lx)\n" (V.exp_to_string e) (eip);
 		self#letize_for_influence_compute e;
 		let bits = ref 0L in
 		  self#restore_path_cond
@@ -4200,8 +4201,9 @@ struct
 	  (None, D.to_concrete_32 v)
 	with NotConcrete _ ->
 	  let e = D.to_symbolic_32 v in
+	  let eip = self#get_word_var R_EIP in
 	    if !opt_trace_sym_addrs then
-	      Printf.printf "Symbolic address %s\n" (V.exp_to_string e);
+	      Printf.printf "Symbolic address %s @ (0x%Lx)\n" (V.exp_to_string e) (eip);
 	    self#letize_for_influence_compute e;
 	    let (cbases, coffs, eoffs, syms) = classify_terms e form_man in
 	    let cbase = List.fold_left Int64.add 0L cbases in
