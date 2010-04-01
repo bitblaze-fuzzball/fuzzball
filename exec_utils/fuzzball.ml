@@ -3699,6 +3699,7 @@ struct
       Printf.printf "\n";
       
     method letize_for_influence_compute (target_expr : V.exp) =
+      let target_expr = form_man#rewrite_for_stp target_expr in
       let pc = form_man#rewrite_for_stp
 	(constant_fold_rec
 	   (List.fold_left (fun a b -> V.BinOp(V.BITAND, a, b))
@@ -3719,8 +3720,7 @@ struct
 		) pc (List.rev to_letify) in 
 		let prog = (declvars, [V.ExpStmt(letified_expr)]) in
 	*)
-      let letified_expr = List.fold_left (fun a (lvar, lvexp) ->                                                                                                                                     
-					    a @ [V.Move(V.Temp(lvar), lvexp)]
+      let letified_expr = List.fold_left (fun a (lvar, lvexp) ->                                                                                                      		    a @ [V.Move(V.Temp(lvar), lvexp)]
 					 ) [] to_letify in
       let dl = letified_expr @ [V.Assert(pc)] in
       let prog = (declvars, dl) in
