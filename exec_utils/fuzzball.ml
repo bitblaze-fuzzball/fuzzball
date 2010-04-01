@@ -3722,8 +3722,9 @@ struct
       let letified_expr = List.fold_left (fun a (lvar, lvexp) ->                                                                                                                                     
 					    a @ [V.Move(V.Temp(lvar), lvexp)]
 					 ) [] to_letify in
-      let prog = (declvars, letified_expr) in
-	(* V.pp_program (fun x -> Printf.printf "%s" x) prog; *)
+      let dl = letified_expr @ [V.Assert(pc)] in
+      let prog = (declvars, dl) in
+	V.pp_program (fun x -> Printf.printf "%s" x) prog; 
 	let () = ignore(prog) in
 	  ()
 
