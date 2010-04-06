@@ -4839,7 +4839,9 @@ object(self)
 	      let str = Array.fold_left (^) ""
 		(Array.map (String.make 1) bytes)
 	      in
-		match Unix.write (self#get_fd fd) str 0 (String.length str)
+	      let (ufd, toapp) = if ((fd = 1) || (fd = 2))  then (Unix.stdout, (Printf.sprintf "[Trans-eval fd %d]: " fd)) else ((self#get_fd fd), "") in
+	      let strout = toapp ^ str in
+		match Unix.write (ufd) strout 0 (String.length strout)
 		with
 		  | i when i = count -> put_reg R_EAX (Int64.of_int count)
 		  | _ -> raise (Unix.Unix_error(Unix.EINTR, "", "")))
