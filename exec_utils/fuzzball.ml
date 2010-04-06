@@ -6,6 +6,7 @@
 
 module V = Vine;;
 
+exception UnhandledSysCall of string;;
 
 module type DOMAIN = sig
   type t
@@ -776,6 +777,7 @@ let rec stmt_size = function
 let opt_trace_temps = ref false
 let opt_use_tags = ref false
 let opt_print_callrets = ref false
+let opt_fail_offset_heuristic = ref true
 
 module FormulaManagerFunctor =
   functor (D : DOMAIN) ->
@@ -4063,9 +4065,14 @@ struct
       | V.Cast(V.CAST_UNSIGNED, V.REG_32,
 	       V.Lval(V.Temp(_, _, V.REG_8)))
 	  -> ExprOffset(e)
+      | V.Cast(V.CAST_UNSIGNED, V.REG_32,
+               V.Cast(_, (V.REG_8|V.REG_16), _))
+          -> ExprOffset(e)
       | V.Lval(_) -> Symbol(e)
-      | _ -> failwith ("Strange term "^(V.exp_to_string e)^" in address")
-
+      | _ -> if (!opt_fail_offset_heuristic) then (
+	  failwith ("Strange term "^(V.exp_to_string e)^" in address")
+	) else ExprOffset(e)
+	  
   let classify_terms e form_man =
     let l = List.map classify_term (split_terms e form_man) in
     let (cbases, coffs, eoffs, syms) = (ref [], ref [], ref [], ref []) in
@@ -4825,6 +4832,7 @@ object(self)
   method do_write fd bytes count =
     (try
        (match fd with
+	  | 2
 	  | 1 -> Array.iter print_char bytes;
 	      put_reg R_EAX (Int64.of_int count)
 	  | _ ->
@@ -5327,13 +5335,13 @@ object(self)
 	   ebp = fm#get_word_var_concretize R_EBP in
 	 (ebx, ecx, edx, esi, edi, ebp)
      in
-       match syscall_num with
+       match syscall_num with 
 	 | 0 -> (* restart_syscall *)
-	     failwith "Unhandled Linux system call restart_syscall (0)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call restart_syscall (0)"))
 	 | 1 -> (* exit *)
-	     failwith "Unhandled Linux system call exit (1)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call exit (1)"))
 	 | 2 -> (* fork *)
-	     failwith "Unhandled Linux system call fork (2)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call fork (2)"))
 	 | 3 -> (* read *)		    
 	     let (ebx, ecx, edx) = read_3_regs () in
 	     let fd    = Int64.to_int ebx and
@@ -5371,17 +5379,17 @@ object(self)
 		 Printf.printf "close(%d)" fd;
 	       self#sys_close fd
 	 | 7 -> (* waitpid *)
-	     failwith "Unhandled Linux system call waitpid (7)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call waitpid (7)"))
 	 | 8 -> (* creat *)
-	     failwith "Unhandled Linux system call creat (8)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call creat (8)"))
 	 | 9 -> (* link *)
-	     failwith "Unhandled Linux system call link (9)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call link (9)"))
 	 | 10 -> (* unlink *)
-	     failwith "Unhandled Linux system call unlink (10)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call unlink (10)"))
 	 | 11 -> (* execve *)
-	     failwith "Unhandled Linux system call execve (11)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call execve (11)"))
 	 | 12 -> (* chdir *)
-	     failwith "Unhandled Linux system call chdir (12)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call chdir (12)"))
 	 | 13 -> (* time *)
 	     let ebx = read_1_reg () in
 	     let addr = ebx in
@@ -5389,45 +5397,45 @@ object(self)
 		 Printf.printf "time(0x%08Lx)" addr;
 	       self#sys_time addr
 	 | 14 -> (* mknod *)
-	     failwith "Unhandled Linux system call mknod (14)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call mknod (14)"))
 	 | 15 -> (* chmod *)
-	     failwith "Unhandled Linux system call chmod (15)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call chmod (15)"))
 	 | 16 -> (* lchown *)
-	     failwith "Unhandled Linux system call lchown (16)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call lchown (16)"))
 	 | 17 -> (* break *)
-	     failwith "Unhandled Linux system call break (17)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call break (17)"))
 	 | 18 -> (* oldstat *)
-	     failwith "Unhandled Linux system call oldstat (18)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call oldstat (18)"))
 	 | 19 -> (* lseek *)
-	     failwith "Unhandled Linux system call lseek (19)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call lseek (19)"))
 	 | 20 -> (* getpid *)
 	     if !opt_trace_syscalls then
 	       Printf.printf "getpid()";
 	     self#sys_getpid ()
 	 | 21 -> (* mount *)
-	     failwith "Unhandled Linux system call mount (21)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call mount (21)"))
 	 | 22 -> (* umount *)
-	     failwith "Unhandled Linux system call umount (22)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call umount (22)"))
 	 | 23 -> (* setuid *)
-	     failwith "Unhandled Linux system call setuid (23)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call setuid (23)"))
 	 | 24 -> (* getuid *)
-	     failwith "Unhandled Linux system call getuid (24)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call getuid (24)"))
 	 | 25 -> (* stime *)
-	     failwith "Unhandled Linux system call stime (25)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call stime (25)"))
 	 | 26 -> (* ptrace *)
-	     failwith "Unhandled Linux system call ptrace (26)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call ptrace (26)"))
 	 | 27 -> (* alarm *)
-	     failwith "Unhandled Linux system call alarm (27)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call alarm (27)"))
 	 | 28 -> (* oldfstat *)
-	     failwith "Unhandled Linux system call oldfstat (28)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call oldfstat (28)"))
 	 | 29 -> (* pause *)
-	     failwith "Unhandled Linux system call pause (29)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call pause (29)"))
 	 | 30 -> (* utime *)
-	     failwith "Unhandled Linux system call utime (30)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call utime (30)"))
 	 | 31 -> (* stty *)
-	     failwith "Unhandled Linux system call stty (31)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call stty (31)"))
 	 | 32 -> (* gtty *)
-	     failwith "Unhandled Linux system call gtty (32)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call gtty (32)"))
 	 | 33 -> (* access *)
 	     let (ebx, ecx) = read_2_regs () in
 	     let path_buf = ebx and
@@ -5437,23 +5445,23 @@ object(self)
 		 Printf.printf "access(\"%s\", 0x%x)" path mode;
 	       self#sys_access path mode
 	 | 34 -> (* nice *)
-	     failwith "Unhandled Linux system call nice (34)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call nice (34)"))
 	 | 35 -> (* ftime *)
-	     failwith "Unhandled Linux system call ftime (35)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call ftime (35)"))
 	 | 36 -> (* sync *)
-	     failwith "Unhandled Linux system call sync (36)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call sync (36)"))
 	 | 37 -> (* kill *)
-	     failwith "Unhandled Linux system call kill (37)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call kill (37)"))
 	 | 38 -> (* rename *)
-	     failwith "Unhandled Linux system call rename (38)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call rename (38)"))
 	 | 39 -> (* mkdir *)
-	     failwith "Unhandled Linux system call mkdir (39)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call mkdir (39)"))
 	 | 40 -> (* rmdir *)
-	     failwith "Unhandled Linux system call rmdir (40)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call rmdir (40)"))
 	 | 41 -> (* dup *)
-	     failwith "Unhandled Linux system call dup (41)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call dup (41)"))
 	 | 42 -> (* pipe *)
-	     failwith "Unhandled Linux system call pipe (42)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call pipe (42)"))
 	 | 43 -> (* times *)
 	     let ebx = read_1_reg () in
 	     let addr = ebx in
@@ -5461,7 +5469,7 @@ object(self)
 		 Printf.printf "times(0x%08Lx)" addr;
 	       self#sys_times addr
 	 | 44 -> (* prof *)
-	     failwith "Unhandled Linux system call prof (44)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call prof (44)"))
 	 | 45 -> (* brk *)
 	     let ebx = read_1_reg () in
 	     let addr = ebx in
@@ -5469,21 +5477,21 @@ object(self)
 		 Printf.printf "brk(0x%08Lx)" addr;
 	       self#sys_brk addr
 	 | 46 -> (* setgid *)
-	     failwith "Unhandled Linux system call setgid (46)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call setgid (46)"))
 	 | 47 -> (* getgid *)
-	     failwith "Unhandled Linux system call getgid (47)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call getgid (47)"))
 	 | 48 -> (* signal *)
-	     failwith "Unhandled Linux system call signal (48)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call signal (48)"))
 	 | 49 -> (* geteuid *)
-	     failwith "Unhandled Linux system call geteuid (49)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call geteuid (49)"))
 	 | 50 -> (* getegid *)
-	     failwith "Unhandled Linux system call getegid (50)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call getegid (50)"))
 	 | 51 -> (* acct *)
-	     failwith "Unhandled Linux system call acct (51)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call acct (51)"))
 	 | 52 -> (* umount2 *)
-	     failwith "Unhandled Linux system call umount2 (52)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call umount2 (52)"))
 	 | 53 -> (* lock *)
-	     failwith "Unhandled Linux system call lock (53)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call lock (53)"))
 	 | 54 -> (* ioctl *)
 	     let (ebx, ecx, edx) = read_3_regs () in
 	     let fd   = Int64.to_int ebx and
@@ -5493,23 +5501,23 @@ object(self)
 		 Printf.printf "ioctl(%d, 0x%Lx, 0x%08Lx)" fd req argp;
 	       self#sys_ioctl fd req argp;
 	 | 55 -> (* fcntl *)
-	     failwith "Unhandled Linux system call fcntl (55)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call fcntl (55)"))
 	 | 56 -> (* mpx *)
-	     failwith "Unhandled Linux system call mpx (56)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call mpx (56)"))
 	 | 57 -> (* setpgid *)
-	     failwith "Unhandled Linux system call setpgid (57)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call setpgid (57)"))
 	 | 58 -> (* ulimit *)
-	     failwith "Unhandled Linux system call ulimit (58)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call ulimit (58)"))
 	 | 59 -> (* oldolduname *)
-	     failwith "Unhandled Linux system call oldolduname (59)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call oldolduname (59)"))
 	 | 60 -> (* umask *)
-	     failwith "Unhandled Linux system call umask (60)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call umask (60)"))
 	 | 61 -> (* chroot *)
-	     failwith "Unhandled Linux system call chroot (61)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call chroot (61)"))
 	 | 62 -> (* ustat *)
-	     failwith "Unhandled Linux system call ustat (62)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call ustat (62)"))
 	 | 63 -> (* dup2 *)
-	     failwith "Unhandled Linux system call dup2 (63)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call dup2 (63)"))
 	 | 64 -> (* getppid *)
 	     if !opt_trace_syscalls then
 	       Printf.printf "getppid()";
@@ -5519,29 +5527,29 @@ object(self)
 	       Printf.printf "getpgrp()";
 	     self#sys_getpgrp ()
 	 | 66 -> (* setsid *)
-	     failwith "Unhandled Linux system call setsid (66)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call setsid (66)"))
 	 | 67 -> (* sigaction *)
-	     failwith "Unhandled Linux system call sigaction (67)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call sigaction (67)"))
 	 | 68 -> (* sgetmask *)
-	     failwith "Unhandled Linux system call sgetmask (68)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call sgetmask (68)"))
 	 | 69 -> (* ssetmask *)
-	     failwith "Unhandled Linux system call ssetmask (69)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call ssetmask (69)"))
 	 | 70 -> (* setreuid *)
-	     failwith "Unhandled Linux system call setreuid (70)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call setreuid (70)"))
 	 | 71 -> (* setregid *)
-	     failwith "Unhandled Linux system call setregid (71)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call setregid (71)"))
 	 | 72 -> (* sigsuspend *)
-	     failwith "Unhandled Linux system call sigsuspend (72)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call sigsuspend (72)"))
 	 | 73 -> (* sigpending *)
-	     failwith "Unhandled Linux system call sigpending (73)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call sigpending (73)"))
 	 | 74 -> (* sethostname *)
-	     failwith "Unhandled Linux system call sethostname (74)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call sethostname (74)"))
 	 | 75 -> (* setrlimit *)
-	     failwith "Unhandled Linux system call setrlimit (75)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call setrlimit (75)"))
 	 | 76 -> (* getrlimit *)
-	     failwith "Unhandled Linux system call getrlimit (76)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call getrlimit (76)"))
 	 | 77 -> (* getrusage *)
-	     failwith "Unhandled Linux system call getrusage (77)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call getrusage (77)"))
 	 | 78 -> (* gettimeofday *)
 	     let (ebx, ecx) = read_2_regs () in
 	     let timep = ebx and
@@ -5550,17 +5558,17 @@ object(self)
 		 Printf.printf "gettimeofday(0x08%Lx, 0x08%Lx)" timep zonep;
 	       self#sys_gettimeofday timep zonep
 	 | 79 -> (* settimeofday *)
-	     failwith "Unhandled Linux system call settimeofday (79)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call settimeofday (79)"))
 	 | 80 -> (* getgroups *)
-	     failwith "Unhandled Linux system call getgroups (80)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call getgroups (80)"))
 	 | 81 -> (* setgroups *)
-	     failwith "Unhandled Linux system call setgroups (81)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call setgroups (81)"))
 	 | 82 -> (* select *)
-	     failwith "Unhandled Linux system call select (82)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call select (82)"))
 	 | 83 -> (* symlink *)
-	     failwith "Unhandled Linux system call symlink (83)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call symlink (83)"))
 	 | 84 -> (* oldlstat *)
-	     failwith "Unhandled Linux system call oldlstat (84)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call oldlstat (84)"))
 	 | 85 -> (* readlink *)
 	     let (ebx, ecx, edx) = read_3_regs () in
 	     let path_buf = ebx and
@@ -5572,15 +5580,15 @@ object(self)
 		   path out_buf buflen;
 	       self#sys_readlink path out_buf buflen
 	 | 86 -> (* uselib *)
-	     failwith "Unhandled Linux system call uselib (86)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call uselib (86)"))
 	 | 87 -> (* swapon *)
-	     failwith "Unhandled Linux system call swapon (87)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call swapon (87)"))
 	 | 88 -> (* reboot *)
-	     failwith "Unhandled Linux system call reboot (88)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call reboot (88)"))
 	 | 89 -> (* readdir *)
-	     failwith "Unhandled Linux system call readdir (89)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call readdir (89)"))
 	 | 90 -> (* mmap *)
-	     failwith "Unhandled Linux system call mmap (90)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call mmap (90)"))
 	 | 91 -> (* munmap *)
 	     let (ebx, ecx) = read_2_regs () in
 	     let addr = ebx and
@@ -5589,65 +5597,65 @@ object(self)
 		 Printf.printf "munmap(0x%08Lx, %Ld)" addr len;
 	       self#sys_munmap addr len
 	 | 92 -> (* truncate *)
-	     failwith "Unhandled Linux system call truncate (92)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call truncate (92)"))
 	 | 93 -> (* ftruncate *)
-	     failwith "Unhandled Linux system call ftruncate (93)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call ftruncate (93)"))
 	 | 94 -> (* fchmod *)
-	     failwith "Unhandled Linux system call fchmod (94)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call fchmod (94)"))
 	 | 95 -> (* fchown *)
-	     failwith "Unhandled Linux system call fchown (95)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call fchown (95)"))
 	 | 96 -> (* getpriority *)
-	     failwith "Unhandled Linux system call getpriority (96)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call getpriority (96)"))
 	 | 97 -> (* setpriority *)
-	     failwith "Unhandled Linux system call setpriority (97)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call setpriority (97)"))
 	 | 98 -> (* profil *)
-	     failwith "Unhandled Linux system call profil (98)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call profil (98)"))
 	 | 99 -> (* statfs *)
-	     failwith "Unhandled Linux system call statfs (99)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call statfs (99)"))
 	 | 100 -> (* fstatfs *)
-	     failwith "Unhandled Linux system call fstatfs (100)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call fstatfs (100)"))
 	 | 101 -> (* ioperm *)
-	     failwith "Unhandled Linux system call ioperm (101)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call ioperm (101)"))
 	 | 102 -> (* socketcall *)
-	     failwith "Unhandled Linux system call socketcall (102)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call socketcall (102)"))
 	 | 103 -> (* syslog *)
-	     failwith "Unhandled Linux system call syslog (103)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call syslog (103)"))
 	 | 104 -> (* setitimer *)
-	     failwith "Unhandled Linux system call setitimer (104)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call setitimer (104)"))
 	 | 105 -> (* getitimer *)
-	     failwith "Unhandled Linux system call getitimer (105)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call getitimer (105)"))
 	 | 106 -> (* stat *)
-	     failwith "Unhandled Linux system call stat (106)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call stat (106)"))
 	 | 107 -> (* lstat *)
-	     failwith "Unhandled Linux system call lstat (107)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call lstat (107)"))
 	 | 108 -> (* fstat *)
-	     failwith "Unhandled Linux system call fstat (108)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call fstat (108)"))
 	 | 109 -> (* olduname *)
-	     failwith "Unhandled Linux system call olduname (109)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call olduname (109)"))
 	 | 110 -> (* iopl *)
-	     failwith "Unhandled Linux system call iopl (110)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call iopl (110)"))
 	 | 111 -> (* vhangup *)
-	     failwith "Unhandled Linux system call vhangup (111)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call vhangup (111)"))
 	 | 112 -> (* idle *)
-	     failwith "Unhandled Linux system call idle (112)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call idle (112)"))
 	 | 113 -> (* vm86old *)
-	     failwith "Unhandled Linux system call vm86old (113)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call vm86old (113)"))
 	 | 114 -> (* wait4 *)
-	     failwith "Unhandled Linux system call wait4 (114)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call wait4 (114)"))
 	 | 115 -> (* swapoff *)
-	     failwith "Unhandled Linux system call swapoff (115)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call swapoff (115)"))
 	 | 116 -> (* sysinfo *)
-	     failwith "Unhandled Linux system call sysinfo (116)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call sysinfo (116)"))
 	 | 117 -> (* ipc *)
-	     failwith "Unhandled Linux system call ipc (117)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call ipc (117)"))
 	 | 118 -> (* fsync *)
-	     failwith "Unhandled Linux system call fsync (118)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call fsync (118)"))
 	 | 119 -> (* sigreturn *)
-	     failwith "Unhandled Linux system call sigreturn (119)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call sigreturn (119)"))
 	 | 120 -> (* clone *)
-	     failwith "Unhandled Linux system call clone (120)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call clone (120)"))
 	 | 121 -> (* setdomainname *)
-	     failwith "Unhandled Linux system call setdomainname (121)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call setdomainname (121)"))
 	 | 122 -> (* uname *)
 	     let ebx = read_1_reg () in
 	     let buf = ebx in
@@ -5655,9 +5663,9 @@ object(self)
 		 Printf.printf "uname(0x%08Lx)" buf;
 	       self#sys_uname buf
 	 | 123 -> (* modify_ldt *)
-	     failwith "Unhandled Linux system call modify_ldt (123)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call modify_ldt (123)"))
 	 | 124 -> (* adjtimex *)
-	     failwith "Unhandled Linux system call adjtimex (124)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call adjtimex (124)"))
 	 | 125 -> (* mprotect *)
 	     let (ebx, ecx, edx) = read_3_regs () in
 	     let addr = ebx and
@@ -5667,17 +5675,17 @@ object(self)
 		 Printf.printf "mprotect(0x%08Lx, %Ld, %Ld)" addr len prot;
 	       self#sys_mprotect addr len prot
 	 | 126 -> (* sigprocmask *)
-	     failwith "Unhandled Linux system call sigprocmask (126)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call sigprocmask (126)"))
 	 | 127 -> (* create_module *)
-	     failwith "Unhandled Linux system call create_module (127)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call create_module (127)"))
 	 | 128 -> (* init_module *)
-	     failwith "Unhandled Linux system call init_module (128)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call init_module (128)"))
 	 | 129 -> (* delete_module *)
-	     failwith "Unhandled Linux system call delete_module (129)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call delete_module (129)"))
 	 | 130 -> (* get_kernel_syms *)
-	     failwith "Unhandled Linux system call get_kernel_syms (130)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call get_kernel_syms (130)"))
 	 | 131 -> (* quotactl *)
-	     failwith "Unhandled Linux system call quotactl (131)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call quotactl (131)"))
 	 | 132 -> (* getpgid *)
 	     let eax = read_1_reg () in
 	     let pid = Int64.to_int eax in
@@ -5685,19 +5693,19 @@ object(self)
 		 Printf.printf "getpgid()";
 	       self#sys_getpgid pid
 	 | 133 -> (* fchdir *)
-	     failwith "Unhandled Linux system call fchdir (133)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call fchdir (133)"))
 	 | 134 -> (* bdflush *)
-	     failwith "Unhandled Linux system call bdflush (134)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call bdflush (134)"))
 	 | 135 -> (* sysfs *)
-	     failwith "Unhandled Linux system call sysfs (135)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call sysfs (135)"))
 	 | 136 -> (* personality *)
-	     failwith "Unhandled Linux system call personality (136)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call personality (136)"))
 	 | 137 -> (* afs_syscall *)
-	     failwith "Unhandled Linux system call afs_syscall (137)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call afs_syscall (137)"))
 	 | 138 -> (* setfsuid *)
-	     failwith "Unhandled Linux system call setfsuid (138)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call setfsuid (138)"))
 	 | 139 -> (* setfsgid *)
-	     failwith "Unhandled Linux system call setfsgid (139)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call setfsgid (139)"))
 	 | 140 -> (* _llseek *)
 	     let (ebx, ecx, edx, esi, edi) = read_5_regs () in
 	     let fd = Int64.to_int ebx and
@@ -5711,15 +5719,15 @@ object(self)
 		   fd offset resultp whence;
 	       self#sys__llseek fd offset resultp whence
 	 | 141 -> (* getdents *)
-	     failwith "Unhandled Linux system call getdents (141)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call getdents (141)"))
 	 | 142 -> (* _newselect *)
-	     failwith "Unhandled Linux system call _newselect (142)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call _newselect (142)"))
 	 | 143 -> (* flock *)
-	     failwith "Unhandled Linux system call flock (143)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call flock (143)"))
 	 | 144 -> (* msync *)
-	     failwith "Unhandled Linux system call msync (144)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call msync (144)"))
 	 | 145 -> (* readv *)
-	     failwith "Unhandled Linux system call readv (145)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call readv (145)"))
 	 | 146 -> (* writev *)
 	     let (ebx, ecx, edx) = read_3_regs () in
 	     let fd  = Int64.to_int ebx and
@@ -5733,57 +5741,57 @@ object(self)
 	       Printf.printf "getsid()";
 	     self#sys_getsid ()
 	 | 148 -> (* fdatasync *)
-	     failwith "Unhandled Linux system call fdatasync (148)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call fdatasync (148)"))
 	 | 149 -> (* _sysctl *)
-	     failwith "Unhandled Linux system call _sysctl (149)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call _sysctl (149)"))
 	 | 150 -> (* mlock *)
-	     failwith "Unhandled Linux system call mlock (150)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call mlock (150)"))
 	 | 151 -> (* munlock *)
-	     failwith "Unhandled Linux system call munlock (151)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call munlock (151)"))
 	 | 152 -> (* mlockall *)
-	     failwith "Unhandled Linux system call mlockall (152)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call mlockall (152)"))
 	 | 153 -> (* munlockall *)
-	     failwith "Unhandled Linux system call munlockall (153)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call munlockall (153)"))
 	 | 154 -> (* sched_setparam *)
-	     failwith "Unhandled Linux system call sched_setparam (154)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call sched_setparam (154)"))
 	 | 155 -> (* sched_getparam *)
-	     failwith "Unhandled Linux system call sched_getparam (155)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call sched_getparam (155)"))
 	 | 156 -> (* sched_setscheduler *)
-	     failwith "Unhandled Linux system call sched_setscheduler (156)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call sched_setscheduler (156)"))
 	 | 157 -> (* sched_getscheduler *)
-	     failwith "Unhandled Linux system call sched_getscheduler (157)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call sched_getscheduler (157)"))
 	 | 158 -> (* sched_yield *)
-	     failwith "Unhandled Linux system call sched_yield (158)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call sched_yield (158)"))
 	 | 159 -> (* sched_get_priority_max *)
-	     failwith "Unhandled Linux system call sched_get_priority_max (159)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call sched_get_priority_max (159)"))
 	 | 160 -> (* sched_get_priority_min *)
-	     failwith "Unhandled Linux system call sched_get_priority_min (160)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call sched_get_priority_min (160)"))
 	 | 161 -> (* sched_rr_get_interval *)
-	     failwith "Unhandled Linux system call sched_rr_get_interval (161)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call sched_rr_get_interval (161)"))
 	 | 162 -> (* nanosleep *)
-	     failwith "Unhandled Linux system call nanosleep (162)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call nanosleep (162)"))
 	 | 163 -> (* mremap *)
-	     failwith "Unhandled Linux system call mremap (163)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call mremap (163)"))
 	 | 164 -> (* setresuid *)
-	     failwith "Unhandled Linux system call setresuid (164)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call setresuid (164)"))
 	 | 165 -> (* getresuid *)
-	     failwith "Unhandled Linux system call getresuid (165)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call getresuid (165)"))
 	 | 166 -> (* vm86 *)
-	     failwith "Unhandled Linux system call vm86 (166)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call vm86 (166)"))
 	 | 167 -> (* query_module *)
-	     failwith "Unhandled Linux system call query_module (167)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call query_module (167)"))
 	 | 168 -> (* poll *)
-	     failwith "Unhandled Linux system call poll (168)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call poll (168)"))
 	 | 169 -> (* nfsservctl *)
-	     failwith "Unhandled Linux system call nfsservctl (169)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call nfsservctl (169)"))
 	 | 170 -> (* setresgid *)
-	     failwith "Unhandled Linux system call setresgid (170)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call setresgid (170)"))
 	 | 171 -> (* getresgid *)
-	     failwith "Unhandled Linux system call getresgid (171)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call getresgid (171)"))
 	 | 172 -> (* prctl *)
-	     failwith "Unhandled Linux system call prctl (172)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call prctl (172)"))
 	 | 173 -> (* rt_sigreturn *)
-	     failwith "Unhandled Linux system call rt_sigreturn (173)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call rt_sigreturn (173)"))
 	 | 174 -> (* rt_sigaction *)
 	     let (ebx, ecx, edx, esi) = read_4_regs () in
 	     let signum = Int64.to_int ebx and
@@ -5805,35 +5813,35 @@ object(self)
 		   how newset oldset setlen;
 	       self#sys_rt_sigprocmask how newset oldset setlen
 	 | 176 -> (* rt_sigpending *)
-	     failwith "Unhandled Linux system call rt_sigpending (176)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call rt_sigpending (176)"))
 	 | 177 -> (* rt_sigtimedwait *)
-	     failwith "Unhandled Linux system call rt_sigtimedwait (177)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call rt_sigtimedwait (177)"))
 	 | 178 -> (* rt_sigqueueinfo *)
-	     failwith "Unhandled Linux system call rt_sigqueueinfo (178)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call rt_sigqueueinfo (178)"))
 	 | 179 -> (* rt_sigsuspend *)
-	     failwith "Unhandled Linux system call rt_sigsuspend (179)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call rt_sigsuspend (179)"))
 	 | 180 -> (* pread64 *)
-	     failwith "Unhandled Linux system call pread64 (180)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call pread64 (180)"))
 	 | 181 -> (* pwrite64 *)
-	     failwith "Unhandled Linux system call pwrite64 (181)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call pwrite64 (181)"))
 	 | 182 -> (* chown *)
-	     failwith "Unhandled Linux system call chown (182)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call chown (182)"))
 	 | 183 -> (* getcwd *)
-	     failwith "Unhandled Linux system call getcwd (183)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call getcwd (183)"))
 	 | 184 -> (* capget *)
-	     failwith "Unhandled Linux system call capget (184)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call capget (184)"))
 	 | 185 -> (* capset *)
-	     failwith "Unhandled Linux system call capset (185)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call capset (185)"))
 	 | 186 -> (* sigaltstack *)
-	     failwith "Unhandled Linux system call sigaltstack (186)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call sigaltstack (186)"))
 	 | 187 -> (* sendfile *)
-	     failwith "Unhandled Linux system call sendfile (187)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call sendfile (187)"))
 	 | 188 -> (* getpmsg *)
-	     failwith "Unhandled Linux system call getpmsg (188)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call getpmsg (188)"))
 	 | 189 -> (* putpmsg *)
-	     failwith "Unhandled Linux system call putpmsg (189)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call putpmsg (189)"))
 	 | 190 -> (* vfork *)
-	     failwith "Unhandled Linux system call vfork (190)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call vfork (190)"))
 	 | 191 -> (* ugetrlimit *)
 	     let (ebx, ecx) = read_2_regs () in
 	     let rsrc = Int64.to_int ebx and
@@ -5854,9 +5862,9 @@ object(self)
 		   addr length prot flags fd pgoffset;
 	       self#sys_mmap2 addr length prot flags fd pgoffset
 	 | 193 -> (* truncate64 *)
-	     failwith "Unhandled Linux system call truncate64 (193)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call truncate64 (193)"))
 	 | 194 -> (* ftruncate64 *)
-	     failwith "Unhandled Linux system call ftruncate64 (194)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call ftruncate64 (194)"))
 	 | 195 -> (* stat64 *)
 	     let (ebx, ecx) = read_2_regs () in
 	     let path_buf = ebx and
@@ -5866,7 +5874,7 @@ object(self)
 		 Printf.printf "stat64(\"%s\", 0x%08Lx)" path buf_addr;
 	       self#sys_stat64 path buf_addr
 	 | 196 -> (* lstat64 *)
-	     failwith "Unhandled Linux system call lstat64 (196)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call lstat64 (196)"))
 	 | 197 -> (* fstat64 *)
 	     let (ebx, ecx) = read_2_regs () in
 	     let fd = Int64.to_int ebx and
@@ -5875,7 +5883,7 @@ object(self)
 		 Printf.printf "fstat64(%d, 0x%08Lx)" fd buf_addr;
 	       self#sys_fstat64 fd buf_addr
 	 | 198 -> (* lchown32 *)
-	     failwith "Unhandled Linux system call lchown32 (198)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call lchown32 (198)"))
 	 | 199 -> (* getuid32 *)
 	     if !opt_trace_syscalls then
 	       Printf.printf "getuid32()";
@@ -5893,25 +5901,25 @@ object(self)
 	       Printf.printf "getegid32()";
 	     self#sys_getegid32 ()
 	 | 203 -> (* setreuid32 *)
-	     failwith "Unhandled Linux system call setreuid32 (203)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call setreuid32 (203)"))
 	 | 204 -> (* setregid32 *)
-	     failwith "Unhandled Linux system call setregid32 (204)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call setregid32 (204)"))
 	 | 205 -> (* getgroups32 *)
-	     failwith "Unhandled Linux system call getgroups32 (205)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call getgroups32 (205)"))
 	 | 206 -> (* setgroups32 *)
-	     failwith "Unhandled Linux system call setgroups32 (206)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call setgroups32 (206)"))
 	 | 207 -> (* fchown32 *)
-	     failwith "Unhandled Linux system call fchown32 (207)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call fchown32 (207)"))
 	 | 208 -> (* setresuid32 *)
-	     failwith "Unhandled Linux system call setresuid32 (208)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call setresuid32 (208)"))
 	 | 209 -> (* getresuid32 *)
-	     failwith "Unhandled Linux system call getresuid32 (209)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call getresuid32 (209)"))
 	 | 210 -> (* setresgid32 *)
-	     failwith "Unhandled Linux system call setresgid32 (210)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call setresgid32 (210)"))
 	 | 211 -> (* getresgid32 *)
-	     failwith "Unhandled Linux system call getresgid32 (211)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call getresgid32 (211)"))
 	 | 212 -> (* chown32 *)
-	     failwith "Unhandled Linux system call chown32 (212)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call chown32 (212)"))
 	 | 213 -> (* setuid32 *)
 	     let ebx = read_1_reg () in
 	     let uid = Int64.to_int ebx in
@@ -5925,53 +5933,53 @@ object(self)
 		 Printf.printf "setgid32(%d)" gid;
 	       self#sys_setgid32 gid
 	 | 215 -> (* setfsuid32 *)
-	     failwith "Unhandled Linux system call setfsuid32 (215)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call setfsuid32 (215)"))
 	 | 216 -> (* setfsgid32 *)
-	     failwith "Unhandled Linux system call setfsgid32 (216)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call setfsgid32 (216)"))
 	 | 217 -> (* pivot_root *)
-	     failwith "Unhandled Linux system call pivot_root (217)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call pivot_root (217)"))
 	 | 218 -> (* mincore *)
-	     failwith "Unhandled Linux system call mincore (218)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call mincore (218)"))
 	 | 219 -> (* madvise *)
-	     failwith "Unhandled Linux system call madvise (219)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call madvise (219)"))
 	 | 220 -> (* getdents64 *)
-	     failwith "Unhandled Linux system call getdents64 (220)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call getdents64 (220)"))
 	 | 221 -> (* fcntl64 *)
-	     failwith "Unhandled Linux system call fcntl64 (221)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call fcntl64 (221)"))
 	 | 224 -> (* gettid *)
 	     if !opt_trace_syscalls then
 	       Printf.printf "gettid()";
 	     self#sys_gettid 
 	 | 225 -> (* readahead *)
-	     failwith "Unhandled Linux system call readahead (225)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call readahead (225)"))
 	 | 226 -> (* setxattr *)
-	     failwith "Unhandled Linux system call setxattr (226)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call setxattr (226)"))
 	 | 227 -> (* lsetxattr *)
-	     failwith "Unhandled Linux system call lsetxattr (227)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call lsetxattr (227)"))
 	 | 228 -> (* fsetxattr *)
-	     failwith "Unhandled Linux system call fsetxattr (228)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call fsetxattr (228)"))
 	 | 229 -> (* getxattr *)
-	     failwith "Unhandled Linux system call getxattr (229)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call getxattr (229)"))
 	 | 230 -> (* lgetxattr *)
-	     failwith "Unhandled Linux system call lgetxattr (230)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call lgetxattr (230)"))
 	 | 231 -> (* fgetxattr *)
-	     failwith "Unhandled Linux system call fgetxattr (231)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call fgetxattr (231)"))
 	 | 232 -> (* listxattr *)
-	     failwith "Unhandled Linux system call listxattr (232)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call listxattr (232)"))
 	 | 233 -> (* llistxattr *)
-	     failwith "Unhandled Linux system call llistxattr (233)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call llistxattr (233)"))
 	 | 234 -> (* flistxattr *)
-	     failwith "Unhandled Linux system call flistxattr (234)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call flistxattr (234)"))
 	 | 235 -> (* removexattr *)
-	     failwith "Unhandled Linux system call removexattr (235)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call removexattr (235)"))
 	 | 236 -> (* lremovexattr *)
-	     failwith "Unhandled Linux system call lremovexattr (236)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call lremovexattr (236)"))
 	 | 237 -> (* fremovexattr *)
-	     failwith "Unhandled Linux system call fremovexattr (237)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call fremovexattr (237)"))
 	 | 238 -> (* tkill *)
-	     failwith "Unhandled Linux system call tkill (238)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call tkill (238)"))
 	 | 239 -> (* sendfile64 *)
-	     failwith "Unhandled Linux system call sendfile64 (239)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call sendfile64 (239)"))
 	 | 240 -> (* futex *)
 	     let (ebx, ecx, edx, esi, edi, ebp) = read_6_regs () in
 	     let uaddr    = ebx and
@@ -5985,9 +5993,9 @@ object(self)
 		   uaddr op value timebuf uaddr2 val3;
 	       self#sys_futex uaddr op value timebuf uaddr2 val3
 	 | 241 -> (* sched_setaffinity *)
-	     failwith "Unhandled Linux system call sched_setaffinity (241)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call sched_setaffinity (241)"))
 	 | 242 -> (* sched_getaffinity *)
-	     failwith "Unhandled Linux system call sched_getaffinity (242)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call sched_getaffinity (242)"))
 	 | 243 -> (* set_thread_area *)
 	     let ebx = read_1_reg () in
 	     let uinfo = ebx in
@@ -5995,19 +6003,19 @@ object(self)
 		 Printf.printf "set_thread_area(0x%08Lx)" uinfo;
 	       self#sys_set_thread_area uinfo
 	 | 244 -> (* get_thread_area *)
-	     failwith "Unhandled Linux system call get_thread_area (244)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call get_thread_area (244)"))
 	 | 245 -> (* io_setup *)
-	     failwith "Unhandled Linux system call io_setup (245)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call io_setup (245)"))
 	 | 246 -> (* io_destroy *)
-	     failwith "Unhandled Linux system call io_destroy (246)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call io_destroy (246)"))
 	 | 247 -> (* io_getevents *)
-	     failwith "Unhandled Linux system call io_getevents (247)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call io_getevents (247)"))
 	 | 248 -> (* io_submit *)
-	     failwith "Unhandled Linux system call io_submit (248)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call io_submit (248)"))
 	 | 249 -> (* io_cancel *)
-	     failwith "Unhandled Linux system call io_cancel (249)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call io_cancel (249)"))
 	 | 250 -> (* fadvise64 *)
-	     failwith "Unhandled Linux system call fadvise64 (250)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call fadvise64 (250)"))
 	 | 252 -> (* exit_group *)
 	     let ebx = read_1_reg () in
 	     let status = ebx in
@@ -6015,15 +6023,15 @@ object(self)
 		 Printf.printf "exit_group(%Ld) (no return)\n" status;
 	       self#sys_exit_group status
 	 | 253 -> (* lookup_dcookie *)
-	     failwith "Unhandled Linux system call lookup_dcookie (253)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call lookup_dcookie (253)"))
 	 | 254 -> (* epoll_create *)
-	     failwith "Unhandled Linux system call epoll_create (254)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call epoll_create (254)"))
 	 | 255 -> (* epoll_ctl *)
-	     failwith "Unhandled Linux system call epoll_ctl (255)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call epoll_ctl (255)"))
 	 | 256 -> (* epoll_wait *)
-	     failwith "Unhandled Linux system call epoll_wait (256)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call epoll_wait (256)"))
 	 | 257 -> (* remap_file_pages *)
-	     failwith "Unhandled Linux system call remap_file_pages (257)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call remap_file_pages (257)"))
 	 | 258 -> (* set_tid_address *)
 	     let ebx = read_1_reg () in
 	     let addr = ebx in
@@ -6031,17 +6039,17 @@ object(self)
 		 Printf.printf "set_tid_address(0x08%Lx)" addr;
 	       self#sys_set_tid_address addr
 	 | 259 -> (* timer_create *)
-	     failwith "Unhandled Linux system call timer_create (259)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call timer_create (259)"))
 	 | 260 -> (* timer_settime *)
-	     failwith "Unhandled Linux system call timer_settime (260)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call timer_settime (260)"))
 	 | 261 -> (* timer_gettime *)
-	     failwith "Unhandled Linux system call timer_gettime (261)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call timer_gettime (261)"))
 	 | 262 -> (* timer_getoverrun *)
-	     failwith "Unhandled Linux system call timer_getoverrun (262)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call timer_getoverrun (262)"))
 	 | 263 -> (* timer_delete *)
-	     failwith "Unhandled Linux system call timer_delete (263)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call timer_delete (263)"))
 	 | 264 -> (* clock_settime *)
-	     failwith "Unhandled Linux system call clock_settime (264)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call clock_settime (264)"))
 	 | 265 -> (* clock_gettime *)
 	     let (ebx, ecx) = read_2_regs () in
 	     let clkid = Int64.to_int ebx and
@@ -6050,9 +6058,9 @@ object(self)
 		 Printf.printf "clock_gettime(%d, 0x08%Lx)" clkid timep;
 	       self#sys_clock_gettime clkid timep
 	 | 266 -> (* clock_getres *)
-	     failwith "Unhandled Linux system call clock_getres (266)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call clock_getres (266)"))
 	 | 267 -> (* clock_nanosleep *)
-	     failwith "Unhandled Linux system call clock_nanosleep (267)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call clock_nanosleep (267)"))
 	 | 268 -> (* statfs64 *)
 	     let (ebx, ecx, edx) = read_3_regs () in
 	     let path_buf = ebx and
@@ -6064,87 +6072,87 @@ object(self)
 		   path buf_len struct_buf;
 	       self#sys_statfs64 path buf_len struct_buf
 	 | 269 -> (* fstatfs64 *)
-	     failwith "Unhandled Linux system call fstatfs64 (269)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call fstatfs64 (269)"))
 	 | 270 -> (* tgkill *)
-	     failwith "Unhandled Linux system call tgkill (270)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call tgkill (270)"))
 	 | 271 -> (* utimes *)
-	     failwith "Unhandled Linux system call utimes (271)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call utimes (271)"))
 	 | 272 -> (* fadvise64_64 *)
-	     failwith "Unhandled Linux system call fadvise64_64 (272)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call fadvise64_64 (272)"))
 	 | 273 -> (* vserver *)
-	     failwith "Unhandled Linux system call vserver (273)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call vserver (273)"))
 	 | 274 -> (* mbind *)
-	     failwith "Unhandled Linux system call mbind (274)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call mbind (274)"))
 	 | 275 -> (* get_mempolicy *)
-	     failwith "Unhandled Linux system call get_mempolicy (275)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call get_mempolicy (275)"))
 	 | 276 -> (* set_mempolicy *)
-	     failwith "Unhandled Linux system call set_mempolicy (276)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call set_mempolicy (276)"))
 	 | 277 -> (* mq_open *)
-	     failwith "Unhandled Linux system call mq_open (277)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call mq_open (277)"))
 	 | 278 -> (* mq_unlink *)
-	     failwith "Unhandled Linux system call mq_unlink (278)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call mq_unlink (278)"))
 	 | 279 -> (* mq_timedsend *)
-	     failwith "Unhandled Linux system call mq_timedsend (279)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call mq_timedsend (279)"))
 	 | 280 -> (* mq_timedreceive *)
-	     failwith "Unhandled Linux system call mq_timedreceive (280)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call mq_timedreceive (280)"))
 	 | 281 -> (* mq_notify *)
-	     failwith "Unhandled Linux system call mq_notify (281)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call mq_notify (281)"))
 	 | 282 -> (* mq_getsetattr *)
-	     failwith "Unhandled Linux system call mq_getsetattr (282)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call mq_getsetattr (282)"))
 	 | 283 -> (* kexec_load *)
-	     failwith "Unhandled Linux system call kexec_load (283)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call kexec_load (283)"))
 	 | 284 -> (* waitid *)
-	     failwith "Unhandled Linux system call waitid (284)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call waitid (284)"))
 	 | 286 -> (* add_key *)
-	     failwith "Unhandled Linux system call add_key (286)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call add_key (286)"))
 	 | 287 -> (* request_key *)
-	     failwith "Unhandled Linux system call request_key (287)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call request_key (287)"))
 	 | 288 -> (* keyctl *)
-	     failwith "Unhandled Linux system call keyctl (288)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call keyctl (288)"))
 	 | 289 -> (* ioprio_set *)
-	     failwith "Unhandled Linux system call ioprio_set (289)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call ioprio_set (289)"))
 	 | 290 -> (* ioprio_get *)
-	     failwith "Unhandled Linux system call ioprio_get (290)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call ioprio_get (290)"))
 	 | 291 -> (* inotify_init *)
-	     failwith "Unhandled Linux system call inotify_init (291)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call inotify_init (291)"))
 	 | 292 -> (* inotify_add_watch *)
-	     failwith "Unhandled Linux system call inotify_add_watch (292)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call inotify_add_watch (292)"))
 	 | 293 -> (* inotify_rm_watch *)
-	     failwith "Unhandled Linux system call inotify_rm_watch (293)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call inotify_rm_watch (293)"))
 	 | 294 -> (* migrate_pages *)
-	     failwith "Unhandled Linux system call migrate_pages (294)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call migrate_pages (294)"))
 	 | 295 -> (* openat *)
-	     failwith "Unhandled Linux system call openat (295)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call openat (295)"))
 	 | 296 -> (* mkdirat *)
-	     failwith "Unhandled Linux system call mkdirat (296)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call mkdirat (296)"))
 	 | 297 -> (* mknodat *)
-	     failwith "Unhandled Linux system call mknodat (297)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call mknodat (297)"))
 	 | 298 -> (* fchownat *)
-	     failwith "Unhandled Linux system call fchownat (298)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call fchownat (298)"))
 	 | 299 -> (* futimesat *)
-	     failwith "Unhandled Linux system call futimesat (299)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call futimesat (299)"))
 	 | 300 -> (* fstatat64 *)
-	     failwith "Unhandled Linux system call fstatat64 (300)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call fstatat64 (300)"))
 	 | 301 -> (* unlinkat *)
-	     failwith "Unhandled Linux system call unlinkat (301)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call unlinkat (301)"))
 	 | 302 -> (* renameat *)
-	     failwith "Unhandled Linux system call renameat (302)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call renameat (302)"))
 	 | 303 -> (* linkat *)
-	     failwith "Unhandled Linux system call linkat (303)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call linkat (303)"))
 	 | 304 -> (* symlinkat *)
-	     failwith "Unhandled Linux system call symlinkat (304)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call symlinkat (304)"))
 	 | 305 -> (* readlinkat *)
-	     failwith "Unhandled Linux system call readlinkat (305)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call readlinkat (305)"))
 	 | 306 -> (* fchmodat *)
-	     failwith "Unhandled Linux system call fchmodat (306)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call fchmodat (306)"))
 	 | 307 -> (* faccessat *)
-	     failwith "Unhandled Linux system call faccessat (307)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call faccessat (307)"))
 	 | 308 -> (* pselect6 *)
-	     failwith "Unhandled Linux system call pselect6 (308)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call pselect6 (308)"))
 	 | 309 -> (* ppoll *)
-	     failwith "Unhandled Linux system call ppoll (309)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call ppoll (309)"))
 	 | 310 -> (* unshare *)
-	     failwith "Unhandled Linux system call unshare (310)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call unshare (310)"))
 	 | 311 -> (* set_robust_list *)
 	     let (ebx, ecx) = read_2_regs () in
 	     let addr = ebx and
@@ -6153,35 +6161,35 @@ object(self)
 		 Printf.printf "set_robust_list(0x08%Lx, %Ld)" addr len;
 	       self#sys_set_robust_list addr len
 	 | 312 -> (* get_robust_list *)
-	     failwith "Unhandled Linux system call get_robust_list (312)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call get_robust_list (312)"))
 	 | 313 -> (* splice *)
-	     failwith "Unhandled Linux system call splice (313)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call splice (313)"))
 	 | 314 -> (* sync_file_range *)
-	     failwith "Unhandled Linux system call sync_file_range (314)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call sync_file_range (314)"))
 	 | 315 -> (* tee *)
-	     failwith "Unhandled Linux system call tee (315)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call tee (315)"))
 	 | 316 -> (* vmsplice *)
-	     failwith "Unhandled Linux system call vmsplice (316)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call vmsplice (316)"))
 	 | 317 -> (* move_pages *)
-	     failwith "Unhandled Linux system call move_pages (317)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call move_pages (317)"))
 	 | 318 -> (* getcpu *)
-	     failwith "Unhandled Linux system call getcpu (318)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call getcpu (318)"))
 	 | 319 -> (* epoll_pwait *)
-	     failwith "Unhandled Linux system call epoll_pwait (319)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call epoll_pwait (319)"))
 	 | 320 -> (* utimensat *)
-	     failwith "Unhandled Linux system call utimensat (320)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call utimensat (320)"))
 	 | 321 -> (* signalfd *)
-	     failwith "Unhandled Linux system call signalfd (321)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call signalfd (321)"))
 	 | 322 -> (* timerfd_create *)
-	     failwith "Unhandled Linux system call timerfd_create (322)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call timerfd_create (322)"))
 	 | 323 -> (* eventfd *)
-	     failwith "Unhandled Linux system call eventfd (323)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call eventfd (323)"))
 	 | 324 -> (* fallocate *)
-	     failwith "Unhandled Linux system call fallocate (324)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call fallocate (324)"))
 	 | 325 -> (* timerfd_settime *)
-	     failwith "Unhandled Linux system call timerfd_settime (325)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call timerfd_settime (325)"))
 	 | 326 -> (* timerfd_gettime *)
-	     failwith "Unhandled Linux system call timerfd_gettime (326)"
+	     raise (UnhandledSysCall( "Unhandled Linux system call timerfd_gettime (326)"))
 	 | _ ->
 	     Printf.printf "Unhandled system call %d\n" syscall_num;
 	     failwith "Unhandled Linux system call");
@@ -6846,11 +6854,13 @@ let rec runloop fm eip asmir_gamma until =
 	  V.pp_program print_string prog';
 	fm#set_frag prog';
 	(* flush stdout; *)
-	let new_eip = label_to_eip (fm#run ()) in
-	  match (new_eip, until) with
-	    | (e1, e2) when e2 e1 -> ()
-	    | (0L, _) -> raise JumpToNull
-	    | _ -> loop new_eip
+	try ( 
+	  let new_eip = label_to_eip (fm#run ()) in
+	    match (new_eip, until) with
+	      | (e1, e2) when e2 e1 -> ()
+	      | (0L, _) -> raise JumpToNull
+	      | _ -> loop new_eip
+	) with UnhandledSysCall(s) -> (Printf.printf "[trans_eval WARNING]: %s\n%!" s) 
   in
     Hashtbl.clear loop_detect;
     loop eip
@@ -7237,6 +7247,8 @@ let main argv =
 	" Print running time statistics");
        ("-print-callrets", Arg.Set(opt_print_callrets),
 	" Print call and ret instructions executed. Can be used with ./getbacktrace.pl to generate the backtrace at any point.");
+       ("-no-fail-on-huer", Arg.Clear(opt_fail_offset_heuristic),
+	" Do not fail when a heuristic (e.g. offset optimization) fails.");
        ("--", Arg.Rest(fun s -> opt_argv := !opt_argv @ [s]),
 	" Pass any remaining arguments to the program");
      ])
