@@ -4832,7 +4832,6 @@ object(self)
   method do_write fd bytes count =
     (try
        (match fd with
-	  | 2
 	  | 1 -> Array.iter print_char bytes;
 	      put_reg R_EAX (Int64.of_int count)
 	  | _ ->
@@ -4844,6 +4843,7 @@ object(self)
 		match Unix.write (ufd) strout 0 (String.length strout)
 		with
 		  | i when i = count -> put_reg R_EAX (Int64.of_int count)
+		  | i when i = (count + (String.length toapp)) ->  put_reg R_EAX (Int64.of_int count)
 		  | _ -> raise (Unix.Unix_error(Unix.EINTR, "", "")))
      with
        | Unix.Unix_error(err, _, _) -> self#put_errno err);
