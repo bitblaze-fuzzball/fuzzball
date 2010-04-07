@@ -1418,6 +1418,14 @@ class stp_external_engine fname = object(self)
 
   val mutable chan = None
   val mutable visitor = None
+  val mutable filenum = 0
+  val mutable curr_fname = "fuzz.stp"
+
+  method get_fresh_fname = 
+    filenum <- filenum + 1;
+    curr_fname <- (Printf.sprintf "%s-%d" fname filenum);
+    Printf.printf "Creating stp file : %s\n" curr_fname;
+    curr_fname
 
   method private chan =
     match chan with
@@ -1430,6 +1438,7 @@ class stp_external_engine fname = object(self)
       | None -> failwith "Missing visitor in stp_external_engine"
 
   method prepare free_vars temp_vars =
+    let fname = self#get_fresh_fname in
     chan <- Some(open_out fname);
     visitor <- Some(new Stp.vine_cvcl_print_visitor (output_string self#chan));
     List.iter self#visitor#declare_var free_vars
@@ -1450,11 +1459,11 @@ class stp_external_engine fname = object(self)
     output_string self#chan "COUNTEREXAMPLE;\n";
     close_out self#chan;
     chan <- None;
-    let rcode = Sys.command (!opt_stp_path ^ " " ^ fname 
-			     ^ " >" ^ fname ^ ".out") in
-    let results = open_in (fname ^ ".out") in
+    let rcode = Sys.command (!opt_stp_path ^ " " ^ curr_fname 
+			     ^ " >" ^ curr_fname ^ ".out") in
+    let results = open_in (curr_fname ^ ".out") in
       if rcode <> 0 then
-	(ignore(Sys.command ("cat " ^ fname ^ ".out"));
+	(ignore(Sys.command ("cat " ^ curr_fname ^ ".out"));
 	 failwith "Fatal STP error");
       let result_s = input_line results in
 	assert(result_s = "Valid." or result_s = "Invalid.");
@@ -3761,6 +3770,9 @@ struct
 		if !opt_trace_assigns_string then
 		  Printf.printf "Input: \"%s\"\n"
 		    (String.escaped (self#ce_to_input_str ce));
+		Printf.printf "Input hex:";
+		  self#print_ce ce;
+		  Printf.printf "\n";
 		if !opt_trace_assigns then
 		  self#print_ce ce)
 	     else
@@ -3770,6 +3782,10 @@ struct
 	      ((Sys.time ()) -. time_before);
 	  flush stdout;
 	  query_engine#unprepare;
+	  (let path_str = String.concat ""
+	     (List.map (fun b -> if b then "1" else "0") (List.rev dt#get_hist));
+	   in
+	     Printf.printf "Current Path String: %s\n" path_str);
 	  is_sat
 
     method private try_extend trans_func try_func non_try_func =
