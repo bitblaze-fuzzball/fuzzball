@@ -1386,6 +1386,7 @@ let get_influence (prog: Vine.program) (args: argparams_t) (q: V.exp) =
 ;;
 
 let opt_stp_path = ref "stp"
+let opt_follow_path  = ref ""
 
 let map_lines f chan =
   let results = ref [] in
@@ -3440,7 +3441,7 @@ class decision_tree = object(self)
 	  failwith "Trying to make sat branch unsat in record_unsat"
 
   method try_extend (trans_func : bool -> V.exp)
-    try_func (non_try_func : bool -> unit) =
+    try_func (non_try_func : bool -> unit) (random_bit_gen : unit -> bool) =
     let known b = 
       non_try_func b;
       self#extend b;
@@ -3463,7 +3464,7 @@ class decision_tree = object(self)
 	   known (not b))
     in
     let try_both () =
-      let b = self#random_bit in
+      let b = random_bit_gen () in
       let c = trans_func b and
 	  c' = trans_func (not b) in
 	if try_func b c then
@@ -3487,12 +3488,12 @@ class decision_tree = object(self)
 	    (match (f_kid.all_seen, t_kid.all_seen) with
 	       | (true, true) -> 
 		   if cur.all_seen then
-		     known (self#random_bit)
+		     known (random_bit_gen ())
 		   else
 		     failwith "all_seen invariant failure"
 	       | (false, true) -> known false
 	       | (true, false) -> known true
-	       | (false, false) -> known (self#random_bit))
+	       | (false, false) -> known (random_bit_gen ()))
 	| (Some(Some f_kid), Some None) ->
 	    assert(not f_kid.all_seen);
 	    known false
@@ -3516,7 +3517,7 @@ class decision_tree = object(self)
 	    try_both ()
 
   method try_extend_memoryless (trans_func : bool -> V.exp)
-    try_func (non_try_func : bool -> unit) =
+    try_func (non_try_func : bool -> unit) (random_bit_gen : unit -> bool) =
     let known b = 
       non_try_func b;
       self#extend b;
@@ -3532,7 +3533,7 @@ class decision_tree = object(self)
 	    else
 	      (self#record_unsat b; (fn b))
     in
-    if self#random_bit then
+    if (random_bit_gen ()) then
       try_branch false (trans_func false) cur.f_child
 	(fun _ -> try_branch true (trans_func true) cur.t_child
 	   (fun _ -> failwith "Both branches unsat in try_extend"))
@@ -3789,8 +3790,15 @@ struct
 	  is_sat
 
     method private try_extend trans_func try_func non_try_func =
-      dt#try_extend trans_func try_func non_try_func
-
+      (* let unbiased_rand_gen () = (dt#random_bit) in *)
+      let follow_given_path () = 
+	let currpath_str = String.concat "" (List.map (fun b -> if b then "1" else "0") (List.rev dt#get_hist)) in
+	let (followplen, currplen) = ((String.length !opt_follow_path), (String.length currpath_str)) in
+	  if ((followplen > currplen) && ((String.sub !opt_follow_path 0 currplen) = currpath_str))
+	  then (if ((String.sub !opt_follow_path currplen 1) = "1") then (true) else (false))
+	  else (dt#random_bit) 
+      in dt#try_extend trans_func try_func non_try_func follow_given_path (* unbiased_rand_gen *)
+	     
     method query_with_pc_random cond verbose =
       let trans_func b =
 	if b then cond else V.UnOp(V.NOT, cond)
@@ -7267,6 +7275,8 @@ let main argv =
 	" Print call and ret instructions executed. Can be used with ./getbacktrace.pl to generate the backtrace at any point.");
        ("-no-fail-on-huer", Arg.Clear(opt_fail_offset_heuristic),
 	" Do not fail when a heuristic (e.g. offset optimization) fails.");
+       ("-follow-path", Arg.Set_string(opt_follow_path),
+	"string of 0's and 1's signifying the specific path decisions to make.");
        ("--", Arg.Rest(fun s -> opt_argv := !opt_argv @ [s]),
 	" Pass any remaining arguments to the program");
      ])
