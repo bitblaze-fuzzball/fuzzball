@@ -3246,7 +3246,7 @@ struct
 		     ignore(v);
 		     self#run_sl rest
 	       | V.Comment(s) -> 
-		   if (Str.string_match (Str.regexp ".*\(call\|ret\).*") s 0) then (
+		   if (Str.string_match (Str.regexp ".*\\(call\\|ret\\).*") s 0) then (
 		     if (!opt_print_callrets) then (
 		       let eip = self#get_word_var R_EIP in
 			 Printf.printf "%s @ 0x%Lx\n" s eip
@@ -3979,7 +3979,7 @@ struct
     let rec loop e =
       match e with
 	| V.BinOp(V.PLUS, e1, e2) -> (loop e1) @ (loop e2)
-	| V.BinOp(V.BITAND, e, V.Constant(V.Int(ty, v)))
+(*	| V.BinOp(V.BITAND, e, V.Constant(V.Int(ty, v)))
 	    when is_high_mask ty v ->
 	    (* x & 0xfffffff0 = x - (x & 0xf), etc. *)
 	    (loop e) @
@@ -4009,7 +4009,7 @@ struct
 		      [V.UnOp(V.NEG, masked);
 		       V.BinOp(V.BITOR, masked, e_y)]
 	      else
-		[e]
+		[e] *)
 	| V.Lval(V.Temp(var)) ->
 	    FormMan.if_expr_temp form_man var
 	      (fun e' -> loop e') [e]
