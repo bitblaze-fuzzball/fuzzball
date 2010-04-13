@@ -5246,9 +5246,9 @@ object(self)
     (if oldbuf = 0L then () else
       let (action, mask_low, mask_high, flags) =
 	match signum with
+          | 11 | 4 | 13
 	  | 8 (* SIGFPE *) -> (0L, 0L, 0L, 0L)
-	  | _ -> failwith
-	      "Unhandled old signal in rt_sigaction";
+	  | _ -> raise (UnhandledSysCall("Unhandled old signal in rt_sigaction"));
       in
 	store_word oldbuf 0 action;
 	store_word oldbuf 4 flags;
