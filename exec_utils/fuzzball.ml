@@ -947,19 +947,23 @@ struct
     method simplify32 e = self#simplify e V.REG_32
     method simplify64 e = self#simplify e V.REG_64
 
-    method if_expr_temp_unit var fn_t =
+    method if_expr_temp_unit var (fn_t: V.exp option  -> unit) =
       try
 	let e = V.VarHash.find temp_var_to_subexpr var in
-	  (fn_t e)
-      with Not_found -> ()
+	  (fn_t (Some(e)) )
+      with Not_found -> (fn_t None)
   end
 
   (* This has to be outside the class because I want it to have
      polymorphic type. *)
-  let if_expr_temp form_man var fn_t else_val =
+  let if_expr_temp form_man var fn_t else_val else_fn =
     let box = ref else_val in
       form_man#if_expr_temp_unit var
-	(fun e -> box := fn_t e);
+	(fun e -> 
+	   match e with
+	     | Some (e) -> box := fn_t e
+	     | None -> (else_fn var)
+	);
       !box
 end
 
@@ -3648,6 +3652,8 @@ struct
     method walk_temps f exp =
       let h = V.VarHash.create 21 in
       let temps = ref [] in
+      let nontemps_h = V.VarHash.create 21 in
+      let nontemps = ref [] in
       let rec walk = function
 	| V.BinOp(_, e1, e2) -> walk e1; walk e2
 	| V.UnOp(_, e1) -> walk e1
@@ -3655,12 +3661,17 @@ struct
 	| V.Lval(V.Temp(var)) ->
 	    if (try V.VarHash.find h var; true with Not_found -> false) then
 	      ()
-	    else
-	      FormMan.if_expr_temp form_man var
-		(fun e ->
-		   V.VarHash.replace h var ();
-		   walk e;
-		   temps := (f var e) :: !temps) ()
+	    else (
+	      let fn_t = (fun e ->
+			    V.VarHash.replace h var ();
+			    walk e;
+			    temps := (f var e) :: !temps) in
+	      let else_fn = (fun v -> (* v is not a temp *)
+			       if (try V.VarHash.find nontemps_h var; true with Not_found -> false) then ()
+			       else (V.VarHash.replace nontemps_h var (); nontemps := var :: !nontemps)
+			    )	in
+		FormMan.if_expr_temp form_man var fn_t () else_fn
+	    )	   
 	| V.Lval(V.Mem(_, e1, _)) -> walk e1
 	| V.Name(_) -> ()
 	| V.Cast(_, _, e1) -> walk e1
@@ -3668,7 +3679,7 @@ struct
 	| V.Let(_, _, _) -> failwith "Unhandled let in walk_temps"
       in
 	walk exp;
-	List.rev !temps
+	((List.rev !nontemps), (List.rev !temps))
 
     method private ce_to_input_str ce =
       (* Ideally, I'd like to turn high characters into \\u1234 escapes *)
@@ -3716,12 +3727,12 @@ struct
 	(constant_fold_rec
 	   (List.fold_left (fun a b -> V.BinOp(V.BITAND, a, b))
 	      V.exp_true (List.rev (path_cond)))) in
+      let (nts, ts) = (self#walk_temps (fun var e -> (var, e)) pc) in
       let temps = 
-	List.map (fun (var, e) -> (var, form_man#rewrite_for_stp e))
-	  (self#walk_temps (fun var e -> (var, e)) pc) in
-      let temps = temps @ (List.map (fun (var, e) -> (var, form_man#rewrite_for_stp e))
-			     (self#walk_temps (fun var e -> (var, e)) target_expr)) in
-      let i_vars = form_man#get_input_vars in
+	List.map (fun (var, e) -> (var, form_man#rewrite_for_stp e)) ts in
+      let (nts1, ts1) = (self#walk_temps (fun var e -> (var, e)) target_expr) in
+      let temps = temps @ (List.map (fun (var, e) -> (var, form_man#rewrite_for_stp e)) ts1) in
+      let i_vars = nts @ nts1 in (* form_man#get_input_vars in *)
       let m_axioms = form_man#get_mem_axioms in
       let t_vars = List.map (fun (v, _) -> v) temps in 
       let m_vars = List.map (fun (v, _) -> v) m_axioms in
@@ -3747,10 +3758,10 @@ struct
 	(constant_fold_rec
 	   (List.fold_left (fun a b -> V.BinOp(V.BITAND, a, b))
 	      V.exp_true (List.rev (cond :: path_cond)))) in
+      let (nts, ts) = (self#walk_temps (fun var e -> (var, e)) pc) in
       let temps = 
-	List.map (fun (var, e) -> (var, form_man#rewrite_for_stp e))
-	  (self#walk_temps (fun var e -> (var, e)) pc) in
-      let i_vars = form_man#get_input_vars in
+	List.map (fun (var, e) -> (var, form_man#rewrite_for_stp e)) ts in
+      let i_vars = nts in  (* form_man#get_input_vars in *)
       let m_axioms = form_man#get_mem_axioms in
       let t_vars = List.map (fun (v, _) -> v) temps in
       let m_vars = List.map (fun (v, _) -> v) m_axioms in
@@ -4012,7 +4023,7 @@ struct
 		[e] *)
 	| V.Lval(V.Temp(var)) ->
 	    FormMan.if_expr_temp form_man var
-	      (fun e' -> loop e') [e]
+	      (fun e' -> loop e') [e] (fun v -> ())
 	| e -> [e]
     in
       loop e
