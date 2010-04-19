@@ -1427,6 +1427,7 @@ class stp_external_engine fname = object(self)
   val mutable curr_fname = "fuzz.stp"
 
   method get_fresh_fname = 
+    Sys.command (Printf.sprintf "rm %s" curr_fname);
     filenum <- filenum + 1;
     curr_fname <- (Printf.sprintf "%s-%d" fname filenum);
     Printf.printf "Creating stp file : %s\n" curr_fname;
@@ -3689,7 +3690,7 @@ struct
 	else
 	  '?'
       in
-      let str = String.make (!max_input_string_length) ' ' in
+      let str = String.make (!max_input_string_length) ' ' in 
 	List.iter
 	  (fun (var_s, value) ->
 	     match self#match_input_var var_s with
@@ -3780,8 +3781,8 @@ struct
 	       (if !opt_trace_decisions then
 		  Printf.printf "Satisfiable.\n";
 		if !opt_trace_assigns_string then
-		  Printf.printf "Input: \"%s\"\n"
-		    (String.escaped (self#ce_to_input_str ce));
+(*		  Printf.printf "Input: \"%s\"\n"
+		    (String.escaped (self#ce_to_input_str ce));*)
 		Printf.printf "Input hex:";
 		  self#print_ce ce;
 		  Printf.printf "\n";
@@ -5089,7 +5090,7 @@ object(self)
 	| (393 (* FUTEX_WAIT_BITSET_PRIVATE|FUTEX_CLOCK_REALTIME *), _) ->
 	    (Int64.of_int ~-(self#errno Unix.EAGAIN))
 	      (* simulate lack of setup? *)
-	| _ -> failwith "Unhandled futex operation"
+    | _ -> raise( UnhandledSysCall("Unhandled futex operation"));
     in
       put_reg R_EAX ret
 
