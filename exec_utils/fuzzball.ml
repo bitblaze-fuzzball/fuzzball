@@ -6,8 +6,6 @@
 
 module V = Vine;;
 
-exception UnhandledSysCall of string;;
-
 module type DOMAIN = sig
   type t
 
@@ -778,6 +776,7 @@ let opt_trace_temps = ref false
 let opt_use_tags = ref false
 let opt_print_callrets = ref false
 let opt_fail_offset_heuristic = ref true
+let opt_trace_solver = ref false
 
 module FormulaManagerFunctor =
   functor (D : DOMAIN) ->
@@ -838,9 +837,16 @@ struct
       in
 	self#fresh_symbolic_var name ty
 
+    val mem_byte_vars = V.VarHash.create 30
+
+    method private mem_var_byte region_str addr =
+      let var = self#mem_var region_str V.REG_8 addr in
+	V.VarHash.replace mem_byte_vars var ();
+	var
+
     method private mem_axioms_short region_str addr svar =
-      let bvar0 = self#mem_var region_str V.REG_8 addr and
-	  bvar1 = self#mem_var region_str V.REG_8 (Int64.add addr 1L) in
+      let bvar0 = self#mem_var_byte region_str addr and
+	  bvar1 = self#mem_var_byte region_str (Int64.add addr 1L) in
 	[svar, D.to_symbolic_16
 	   (D.assemble16 (D.from_symbolic (V.Lval(V.Temp(bvar0))))
 	      (D.from_symbolic (V.Lval(V.Temp(bvar1)))))]
@@ -866,20 +872,20 @@ struct
     val mem_axioms = V.VarHash.create 30
 
     method private add_mem_axioms region_str ty addr =
-      if ty <> V.REG_8 && 
-	not (V.VarHash.mem mem_axioms (self#mem_var region_str ty addr))
-      then
-	let var = self#mem_var region_str ty addr in
-	let al = (match ty with
-		    | V.REG_8  -> []
-		    | V.REG_16 -> self#mem_axioms_short region_str addr var
-		    | V.REG_32 -> self#mem_axioms_word region_str addr var
-		    | V.REG_64 -> self#mem_axioms_long region_str addr var
-		    | _ -> failwith "Unexpected type in add_mem_axioms") in
-	  List.iter
-	    (fun (lhs, rhs) -> V.VarHash.replace mem_axioms lhs rhs)
-	    al;
-	  assert(ty = V.REG_8 || V.VarHash.mem mem_axioms var);
+      let var = self#mem_var region_str ty addr in
+	if ty = V.REG_8 then
+	  V.VarHash.replace mem_byte_vars var ()
+	else
+	  let al = (match ty with
+		      | V.REG_8  -> failwith "Unexpected REG_8"
+		      | V.REG_16 -> self#mem_axioms_short region_str addr var
+		      | V.REG_32 -> self#mem_axioms_word region_str addr var
+		      | V.REG_64 -> self#mem_axioms_long region_str addr var
+		      | _ -> failwith "Unexpected type in add_mem_axioms") in
+	    List.iter
+	      (fun (lhs, rhs) -> V.VarHash.replace mem_axioms lhs rhs)
+	      al;
+	    assert(V.VarHash.mem mem_axioms var);
 
     method rewrite_mem_expr e =
       match e with
@@ -913,7 +919,12 @@ struct
 	  longs  = List.filter (of_type V.REG_64) l in
 	shorts @ words @ longs
 
-    method reset_mem_axioms = V.VarHash.clear mem_axioms
+    method get_mem_bytes =
+      V.VarHash.fold (fun v _ l -> v :: l) mem_byte_vars []
+
+    method reset_mem_axioms = 
+      V.VarHash.clear mem_byte_vars;
+      V.VarHash.clear mem_axioms
 
     (* subexpression cache *)
     val subexpr_to_temp_var = Hashtbl.create 1001
@@ -1390,6 +1401,7 @@ let get_influence (prog: Vine.program) (args: argparams_t) (q: V.exp) =
 ;;
 
 let opt_stp_path = ref "stp"
+let opt_save_solver_files = ref false
 let opt_follow_path  = ref ""
 
 let map_lines f chan =
@@ -1424,13 +1436,13 @@ class stp_external_engine fname = object(self)
   val mutable chan = None
   val mutable visitor = None
   val mutable filenum = 0
-  val mutable curr_fname = "fuzz.stp"
+  val mutable curr_fname = fname
 
   method get_fresh_fname = 
-    Sys.command (Printf.sprintf "rm %s" curr_fname);
     filenum <- filenum + 1;
     curr_fname <- (Printf.sprintf "%s-%d" fname filenum);
-    Printf.printf "Creating stp file : %s\n" curr_fname;
+    if !opt_trace_solver then
+      Printf.printf "Creating STP file: %s.stp\n" curr_fname;
     curr_fname
 
   method private chan =
@@ -1445,9 +1457,10 @@ class stp_external_engine fname = object(self)
 
   method prepare free_vars temp_vars =
     let fname = self#get_fresh_fname in
-    chan <- Some(open_out fname);
-    visitor <- Some(new Stp.vine_cvcl_print_visitor (output_string self#chan));
-    List.iter self#visitor#declare_var free_vars
+      chan <- Some(open_out (fname ^ ".stp"));
+      visitor <- Some(new Stp.vine_cvcl_print_visitor
+			(output_string self#chan));
+      List.iter self#visitor#declare_var free_vars
 
   method assert_eq var rhs =
     try
@@ -1465,18 +1478,24 @@ class stp_external_engine fname = object(self)
     output_string self#chan "COUNTEREXAMPLE;\n";
     close_out self#chan;
     chan <- None;
-    let rcode = Sys.command (!opt_stp_path ^ " " ^ curr_fname 
-			     ^ " >" ^ curr_fname ^ ".out") in
-    let results = open_in (curr_fname ^ ".out") in
-      if rcode <> 0 then
-	(ignore(Sys.command ("cat " ^ curr_fname ^ ".out"));
-	 failwith "Fatal STP error");
-      let result_s = input_line results in
-	assert(result_s = "Valid." or result_s = "Invalid.");
-	let result = (result_s = "Valid.") in
-	let ce = map_lines parse_counterex results in
-	  close_in results;
-	  (result, ce)
+    let cmd = !opt_stp_path ^ " " ^ curr_fname 
+      ^ ".stp >" ^ curr_fname ^ ".stp.out" in
+      if !opt_trace_solver then
+	Printf.printf "Solver command: %s\n" cmd;
+      let rcode = Sys.command cmd in
+      let results = open_in (curr_fname ^ ".stp.out") in
+	if rcode <> 0 then
+	  (ignore(Sys.command ("cat " ^ curr_fname ^ ".stp.out"));
+	   failwith "Fatal STP error");
+	let result_s = input_line results in
+	  assert(result_s = "Valid." or result_s = "Invalid.");
+	  let result = (result_s = "Valid.") in
+	  let ce = map_lines parse_counterex results in
+	    close_in results;
+	    if not !opt_save_solver_files then
+	      (Sys.remove (curr_fname ^ ".stp");
+	       Sys.remove (curr_fname ^ ".stp.out"));
+	    (result, ce)
 
   method unprepare =
     visitor <- None
@@ -3326,6 +3345,11 @@ struct
 	  (List.map (fun b -> String.make 1 (Char.chr b))
 	     (bytes_loop 0))
 
+    method zero_fill vaddr n =
+      for i = 0 to n - 1 do
+	self#store_byte_conc (Int64.add vaddr (Int64.of_int i)) 0
+      done
+
     method print_backtrace =
       let read_addr addr =
 	try
@@ -3396,6 +3420,10 @@ class decision_tree = object(self)
 	| Some p -> (last_choice n p) :: loop p
     in
       loop cur
+
+  method get_hist_str = 
+    String.concat ""
+      (List.map (fun b -> if b then "1" else "0") (List.rev self#get_hist));
 
   method add_kid b =
     match (b, cur.f_child, cur.t_child) with
@@ -3603,6 +3631,7 @@ class decision_tree = object(self)
 
 end
 
+let opt_measure_influence_derefs = ref false
 let opt_trace_assigns = ref false
 let opt_trace_assigns_string = ref false
 let opt_trace_decisions = ref false
@@ -3631,7 +3660,7 @@ struct
 	ret
 
     (* val query_engine = new stpvc_engine *)
-    val query_engine = new stp_external_engine "fuzz.stp"
+    val query_engine = new stp_external_engine "fuzz"
 
     method match_input_var s =
       try
@@ -3690,7 +3719,7 @@ struct
 	else
 	  '?'
       in
-      let str = String.make (!max_input_string_length) ' ' in 
+      let str = String.make (!max_input_string_length) ' ' in
 	List.iter
 	  (fun (var_s, value) ->
 	     match self#match_input_var var_s with
@@ -3722,7 +3751,7 @@ struct
 	ce;
       Printf.printf "\n";
       
-    method letize_for_influence_compute (target_expr : V.exp) =
+    method measure_influence (target_expr : V.exp) =
       let target_expr = form_man#rewrite_for_stp target_expr in
       let pc = form_man#rewrite_for_stp
 	(constant_fold_rec
@@ -3733,7 +3762,7 @@ struct
 	List.map (fun (var, e) -> (var, form_man#rewrite_for_stp e)) ts in
       let (nts1, ts1) = (self#walk_temps (fun var e -> (var, e)) target_expr) in
       let temps = temps @ (List.map (fun (var, e) -> (var, form_man#rewrite_for_stp e)) ts1) in
-      let i_vars = nts @ nts1 in (* form_man#get_input_vars in *)
+      let i_vars = nts @ nts1 @ (form_man#get_mem_bytes) in
       let m_axioms = form_man#get_mem_axioms in
       let t_vars = List.map (fun (v, _) -> v) temps in 
       let m_vars = List.map (fun (v, _) -> v) m_axioms in
@@ -3762,7 +3791,7 @@ struct
       let (nts, ts) = (self#walk_temps (fun var e -> (var, e)) pc) in
       let temps = 
 	List.map (fun (var, e) -> (var, form_man#rewrite_for_stp e)) ts in
-      let i_vars = nts in  (* form_man#get_input_vars in *)
+      let i_vars = nts @ form_man#get_mem_bytes in
       let m_axioms = form_man#get_mem_axioms in
       let t_vars = List.map (fun (v, _) -> v) temps in
       let m_vars = List.map (fun (v, _) -> v) m_axioms in
@@ -3781,13 +3810,11 @@ struct
 	       (if !opt_trace_decisions then
 		  Printf.printf "Satisfiable.\n";
 		if !opt_trace_assigns_string then
-(*		  Printf.printf "Input: \"%s\"\n"
-		    (String.escaped (self#ce_to_input_str ce));*)
-		Printf.printf "Input hex:";
-		  self#print_ce ce;
-		  Printf.printf "\n";
+		  Printf.printf "Input: \"%s\"\n"
+		    (String.escaped (self#ce_to_input_str ce));
 		if !opt_trace_assigns then
-		  self#print_ce ce)
+		  (Printf.printf "Input vars: ";
+		   self#print_ce ce))
 	     else
 	       if !opt_trace_decisions then Printf.printf "Unsatisfiable.\n");
 	  if ((Sys.time ()) -. time_before) > 1.0 then
@@ -3795,16 +3822,12 @@ struct
 	      ((Sys.time ()) -. time_before);
 	  flush stdout;
 	  query_engine#unprepare;
-	  (let path_str = String.concat ""
-	     (List.map (fun b -> if b then "1" else "0") (List.rev dt#get_hist));
-	   in
-	     Printf.printf "Current Path String: %s\n" path_str);
 	  is_sat
 
     method private try_extend trans_func try_func non_try_func =
       (* let unbiased_rand_gen () = (dt#random_bit) in *)
       let follow_given_path () = 
-	let currpath_str = String.concat "" (List.map (fun b -> if b then "1" else "0") (List.rev dt#get_hist)) in
+	let currpath_str = dt#get_hist_str in
 	let (followplen, currplen) = ((String.length !opt_follow_path), (String.length currpath_str)) in
 	  if ((followplen > currplen) && ((String.sub !opt_follow_path 0 currplen) = currpath_str))
 	  then (if ((String.sub !opt_follow_path currplen 1) = "1") then (true) else (false))
@@ -3824,7 +3847,12 @@ struct
 	if verbose && !opt_trace_decisions then
 	  Printf.printf "Known %B\n" b
       in
-	self#try_extend trans_func try_func non_try_func
+	if !opt_trace_binary_paths then
+	  Printf.printf "Current Path String: %s\n" dt#get_hist_str;
+	let r = self#try_extend trans_func try_func non_try_func in
+	  if !opt_trace_binary_paths then
+	    Printf.printf "Current Path String: %s\n" dt#get_hist_str;
+	  r
 
     method extend_pc_random cond verbose =
       let (result, cond') = self#query_with_pc_random cond verbose in
@@ -3862,7 +3890,8 @@ struct
 	      let e = (D.to_symbolic_32 v) in
 	      let eip = self#get_word_var R_EIP in
 		Printf.printf "Symbolic address %s @ (0x%Lx)\n" (V.exp_to_string e) (eip);
-		self#letize_for_influence_compute e;
+		if !opt_measure_influence_derefs then
+		  self#measure_influence e;
 		let bits = ref 0L in
 		  self#restore_path_cond
 		    (fun () ->
@@ -3916,10 +3945,7 @@ struct
     method finish_path =
       dt#mark_all_seen;
       if !opt_trace_binary_paths then
-	(let path_str = String.concat ""
-	   (List.map (fun b -> if b then "1" else "0") (List.rev dt#get_hist));
-	 in
-	   Printf.printf "Path: %s\n" path_str);
+	Printf.printf "Path: %s\n" dt#get_hist_str;
       dt#try_again_p
 
     method print_tree chan = dt#print_tree chan
@@ -3942,6 +3968,7 @@ let opt_trace_loads = ref false
 let opt_trace_stores = ref false
 let opt_trace_regions = ref false
 let opt_trace_sym_addrs = ref false
+let opt_trace_sym_addr_details = ref false
 let opt_check_for_null = ref false
 
 module SymRegionFragMachineFunctor =
@@ -4256,8 +4283,22 @@ struct
 	  let eip = self#get_word_var R_EIP in
 	    if !opt_trace_sym_addrs then
 	      Printf.printf "Symbolic address %s @ (0x%Lx)\n" (V.exp_to_string e) (eip);
-	    self#letize_for_influence_compute e;
+	    if !opt_measure_influence_derefs then
+	      self#measure_influence e;
 	    let (cbases, coffs, eoffs, syms) = classify_terms e form_man in
+	      if !opt_trace_sym_addr_details then
+		(Printf.printf "Concrete base terms: %s\n"
+		   (String.concat " "
+		      (List.map (Printf.sprintf "0x%08Lx") cbases));
+		 Printf.printf "Concrete offset terms: %s\n"
+		   (String.concat " "
+		      (List.map (Printf.sprintf "0x%08Lx") coffs));
+		 Printf.printf "Offset expression terms: %s\n"
+		   (String.concat " "
+		      (List.map V.exp_to_string eoffs));
+		 Printf.printf "Ambiguous symbol terms: %s\n"
+		   (String.concat " "
+		      (List.map V.exp_to_string syms)));
 	    let cbase = List.fold_left Int64.add 0L cbases in
 	    let (base, off_syms) = match (cbase, syms) with
 	      | (0L, []) -> raise NullDereference
@@ -4693,7 +4734,7 @@ let simplify_frag (orig_dl, orig_sl) =
        V.pp_program print_string (copy_prop (dl', sl')); *)
     (dl', sl')
 
-exception NoSyscalls
+exception UnhandledSysCall of string;;
 
 let opt_trace_stopping = ref false
 
@@ -4703,7 +4744,7 @@ object(self)
     if !opt_trace_stopping then
       (Printf.printf "Not handling system call special %s\n" str;
        fm#print_x86_regs);
-    raise NoSyscalls
+    raise (UnhandledSysCall("System calls disabled"))
 
   method handle_special str : V.stmt list option =
     match str with
@@ -5050,8 +5091,9 @@ object(self)
     let new_break = 
       if addr < cur_break then
 	cur_break
-      else
-	addr
+      else 
+	(fm#zero_fill cur_break (Int64.to_int (Int64.sub addr cur_break));
+	 addr)
     in
       the_break := Some new_break;
       put_reg R_EAX new_break;
@@ -5150,15 +5192,19 @@ object(self)
       | _ -> failwith "Unknown ioctl"
 
   method sys__llseek fd offset resultp whence =
-    let seek_cmd = match whence with
-      | 0 -> Unix.SEEK_SET
-      | 1 -> Unix.SEEK_CUR
-      | 2 -> Unix.SEEK_END
-      | _ -> failwith "Bad whence value in _llseek"
-    in
-    let loc = Unix.lseek (self#get_fd fd) (Int64.to_int offset) seek_cmd in
-      fm#store_long_conc resultp (Int64.of_int loc);
-      put_reg R_EAX 0L;
+    try
+      let seek_cmd = match whence with
+	| 0 -> Unix.SEEK_SET
+	| 1 -> Unix.SEEK_CUR
+	| 2 -> Unix.SEEK_END
+	| _ -> raise
+	    (Unix.Unix_error(Unix.EINVAL, "Bad whence argument to llseek", ""))
+      in
+      let loc = Unix.lseek (self#get_fd fd) (Int64.to_int offset) seek_cmd in
+	fm#store_long_conc resultp (Int64.of_int loc);
+	put_reg R_EAX 0L
+    with
+      | Unix.Unix_error(err, _, _) -> self#put_errno err
 
   method sys_mmap2 addr length prot flags fd pgoffset =
     let do_read addr = 
@@ -6362,25 +6408,22 @@ module LinuxLoader = struct
     else
       fm#store_str vaddr 0L str
 
-  let zero_fill fm vaddr n =
-    for i = 0 to n - 1 do
-      fm#store_byte_conc (Int64.add vaddr (Int64.of_int i)) 0
-    done
-
    let load_segment fm ic phr virt_off =
     let i = IO.input_channel ic in
     let type_str = match (phr.ph_type, phr.ph_flags) with
       | (1L, 5L) -> "text"
       | (1L, 6L)
       | (1L, 7L) -> "data"
+      | (1L, flags) -> (Printf.sprintf "LOAD:%08Lx" flags)
       | (2L, _) -> "DYNAMIC"
       | (3L, _) -> "INTERP"
       | (4L, _) -> "NOTE"
       | (6L, _) -> "PHDR"
+      | (7L, _) -> "TLS"
       | (0x6474e550L, _) -> "EH_FRAME"
       | (0x6474e551L, _) -> "STACK"
       | (0x6474e552L, _) -> "RELRO"
-      | _ -> "???"
+      | (ty, flags) -> (Printf.sprintf "??? %08Lx:%08Lx" ty flags)
     in
     let partial = Int64.rem phr.filesz 0x1000L in
     let vbase = Int64.add phr.vaddr virt_off in
@@ -6393,14 +6436,14 @@ module LinuxLoader = struct
 	let page = IO.really_nread i 4096 and
 	    va = (Int64.add vbase
 		    (Int64.mul (Int64.of_int page_num) 4096L)) in
-	store_page fm va page
+	  store_page fm va page
       done;
       (if partial <> 0L then
 	 let page = IO.really_nread i (Int64.to_int partial) and
 	     va = (Int64.add vbase
 		     (Int64.sub phr.filesz partial)) in
 	   store_page fm va page);
-      if phr.memsz > phr.filesz then
+      if phr.memsz > phr.filesz && type_str = "data" then
 	(* E.g., a BSS region. Zero fill to avoid uninit-value errors. *)
 	(if !opt_trace_setup then
 	   Printf.printf "            Zero filling from %08Lx to %08Lx\n"
@@ -6410,7 +6453,7 @@ module LinuxLoader = struct
 			     (Int64.lognot 4095L)) in
 	 let remaining = ref (Int64.sub phr.memsz phr.filesz) in
 	 let partial1 = min (Int64.sub first_full !va) !remaining in
-	   zero_fill fm !va (Int64.to_int partial1);
+	   fm#zero_fill !va (Int64.to_int partial1);
 	   va := Int64.add !va partial1;
 	   remaining := Int64.sub !remaining partial1;
 	   while !remaining >= 4096L do
@@ -6418,7 +6461,7 @@ module LinuxLoader = struct
 	     va := Int64.add !va 4096L;
 	     remaining := Int64.sub !remaining 4096L
 	   done;
-	   zero_fill fm !va (Int64.to_int !remaining);
+	   fm#zero_fill !va (Int64.to_int !remaining);
 	   va := Int64.add !va !remaining;
 	   (* ld.so knows that it can use beyond its BSS to the end of
 	      the page that it's stored on as the first part of its heap
@@ -6437,7 +6480,7 @@ module LinuxLoader = struct
 			  last_aligned;
 		  | _ -> ())	;
 	     let last_space = Int64.to_int (Int64.sub last_aligned !va) in
-	       zero_fill fm !va last_space)
+	       fm#zero_fill !va last_space)
 	  
    let load_partial_segment fm ic phr vbase size =
      let i = IO.input_channel ic in
@@ -6526,9 +6569,10 @@ module LinuxLoader = struct
     let ic = open_in fname in
     let i = IO.input_channel ic in
     let ldso_base = ref 0L in
-    let ldso_entry = ref 0L in
     let eh = read_elf_header ic in
+    let entry_point = ref eh.entry in
       assert(eh.eh_type = 2);
+      entry_point := eh.entry;
       List.iter
 	(fun phr ->
 	   if phr.ph_type = 1L then (* PT_LOAD *)
@@ -6539,7 +6583,7 @@ module LinuxLoader = struct
 	     (seek_in ic (Int64.to_int phr.offset);
 	      let interp = IO.really_nread i (Int64.to_int phr.filesz) in
 	      let base = 0xb7f00000L in
-		ldso_entry := load_ldso fm interp base;
+		entry_point := load_ldso fm interp base;
 		ldso_base := base;
 		load_segment fm ic phr 0L)
 	   else if phr.memsz != 0L then
@@ -6554,8 +6598,9 @@ module LinuxLoader = struct
 	     extras)
 	(read_program_headers ic eh);
       close_in ic;
-      build_startup_state fm eh load_base !ldso_base argv;
-      !ldso_entry
+      if data_too then
+	build_startup_state fm eh load_base !ldso_base argv;
+      !entry_point
 
   let start_eip = ref 0L
 
@@ -6805,7 +6850,9 @@ let rec runloop fm eip asmir_gamma until =
        (function
 	  | V.Move((V.Temp(_,_,ty) as lhs),
 		   V.Unknown("Unknown: GetI"|"Floating point binop"|
-				 "Floating point triop"|"floatcast"))
+				 "Floating point triop"|"floatcast"|
+				     "CCall: x86g_create_fpucw"|
+					 "CCall: x86g_check_fldcw"))
 	    -> V.Move(lhs, V.Constant(V.Int(ty, 0L)))
 	  | V.ExpStmt(V.Unknown("Unknown: PutI")) 
 	    -> V.Comment("Unknown: PutI")
@@ -6892,13 +6939,11 @@ let rec runloop fm eip asmir_gamma until =
 	  V.pp_program print_string prog';
 	fm#set_frag prog';
 	(* flush stdout; *)
-	try ( 
-	  let new_eip = label_to_eip (fm#run ()) in
-	    match (new_eip, until) with
-	      | (e1, e2) when e2 e1 -> ()
-	      | (0L, _) -> raise JumpToNull
-	      | _ -> loop new_eip
-	) with UnhandledSysCall(s) -> (Printf.printf "[trans_eval WARNING]: %s\n%!" s) 
+	let new_eip = label_to_eip (fm#run ()) in
+	  match (new_eip, until) with
+	    | (e1, e2) when e2 e1 -> ()
+	    | (0L, _) -> raise JumpToNull
+	    | _ -> loop new_eip
   in
     Hashtbl.clear loop_detect;
     loop eip
@@ -7057,12 +7102,14 @@ let fuzz start_eip fuzz_start_eip end_eips fm asmir_gamma =
 	    | SimulatedExit(_) -> stop "when program called exit()"
 	    | BoringPath -> stop "on boring path"
 	    | SymbolicJump -> stop "at symbolic jump"
-	    | NoSyscalls -> stop "at system call"
 	    | NullDereference -> stop "at null deref"
 	    | JumpToNull -> stop "at jump to null"
 	    | TooManyIterations -> stop "after too many loop iterations"
 	    | UnhandledTrap -> stop "at trap"
 	    | IllegalInstruction -> stop "at bad instruction"
+	    | UnhandledSysCall(s) ->
+		Printf.printf "[trans_eval WARNING]: %s\n%!" s;
+		stop "at unhandled system call"
 	    (* | NotConcrete(_) -> () (* shouldn't happen *)
 	    | Simplify_failure(_) -> () (* shouldn't happen *)*)
 	 ); 
@@ -7216,6 +7263,8 @@ let main argv =
         " Use zero values for uninit. memory reads");
        ("-check-for-null", Arg.Set(opt_check_for_null),
         " Check whether dereferenced values can be null");
+       ("-measure-influence-derefs", Arg.Set(opt_measure_influence_derefs),
+	" Measure influence on uses of sym. pointer values");
        ("-state", Arg.String
 	  (fun s -> opt_state_file := Some s),
 	"file Load memory state from TEMU state file");
@@ -7224,6 +7273,8 @@ let main argv =
 	"addr=val Fix an address to a concrete value");
        ("-stp-path", Arg.Set_string(opt_stp_path),
 	"path Location of external STP binary");
+       ("-save-solver-files", Arg.Set(opt_save_solver_files),
+	" Retain STP input and output files");
        ("-tls-base", Arg.String
 	  (fun s -> opt_tls_base := Some (Int64.of_string s)),
 	"addr Use a Linux TLS (%gs) segment at the given address");
@@ -7267,10 +7318,14 @@ let main argv =
 	" Print symbolic memory regions");
        ("-trace-setup", Arg.Set(opt_trace_setup),
 	" Print progress of program loading");
+       ("-trace-solver", Arg.Set(opt_trace_solver),
+	" Print calls to decision procedure");
        ("-trace-stopping", Arg.Set(opt_trace_stopping),
 	" Print why paths terminate");
        ("-trace-sym-addrs", Arg.Set(opt_trace_sym_addrs),
 	" Print symbolic address values");
+       ("-trace-sym-addr-details", Arg.Set(opt_trace_sym_addr_details),
+	" Print even more about symbolic address values");
        ("-trace-syscalls", Arg.Set(opt_trace_syscalls),
 	" Print systems calls (like strace)");
        ("-trace-temps", Arg.Set(opt_trace_temps),
@@ -7288,7 +7343,7 @@ let main argv =
        ("-no-fail-on-huer", Arg.Clear(opt_fail_offset_heuristic),
 	" Do not fail when a heuristic (e.g. offset optimization) fails.");
        ("-follow-path", Arg.Set_string(opt_follow_path),
-	"string of 0's and 1's signifying the specific path decisions to make.");
+	"string String of 0's and 1's signifying the specific path decisions to make.");
        ("--", Arg.Rest(fun s -> opt_argv := !opt_argv @ [s]),
 	" Pass any remaining arguments to the program");
      ])
@@ -7404,6 +7459,9 @@ in
 	  | (Some osa, None,      _       ) -> (osa,  osa)
       in
 
+	(if !opt_trace_setup then
+	   Printf.printf "Starting address 0x%08Lx, fuzz start 0x%08Lx\n"
+	     start_addr fuzz_start);
 	try
 	  fuzz start_addr fuzz_start !opt_fuzz_end_addrs fm asmir_gamma
 	with
