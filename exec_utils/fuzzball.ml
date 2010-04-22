@@ -6740,9 +6740,16 @@ module StateLoader = struct
     
 end
 
+let opt_skip_call_addr = ref []
 
 let call_replacements fm eip =
-  match eip with
+  let eaxreplace = List.fold_left (fun ret (addr, retval) -> 
+				     if (addr = eip) then Some (retval) else ret
+				  ) None !opt_skip_call_addr in
+    match eaxreplace with 
+      | Some(x) -> Some (fun () -> fm#set_word_var R_EAX x)
+      | None ->
+	  match eip with
       (* vx_alloc: *)
 (*     | 0x0804836cL (* malloc *) -> *)
 (* 	Some (fun () -> fm#set_word_reg_symbolic R_EAX "malloc") *)
@@ -7261,6 +7268,9 @@ let main argv =
        ("-symbolic-cstring", Arg.String
 	  (add_delimited_pair opt_symbolic_cstrings '+'),
 	"base+size Make a C string with given size, concrete \\0");
+       ("-skip-call-addr", Arg.String
+	  (add_delimited_pair opt_skip_call_addr '='),
+	"addr=retval Replace the call instruction at address 'addr' with a nop, and place 'retval' in EAX (return value)");
        ("-symbolic-string16", Arg.String
 	  (add_delimited_pair opt_symbolic_string16s '+'),
 	"base+16s As above, but with 16-bit characters");
