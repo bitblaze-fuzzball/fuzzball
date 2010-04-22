@@ -5269,6 +5269,9 @@ object(self)
       fm#store_str out_buf 0L (String.sub real 0 written);
       put_reg R_EAX (Int64.of_int written);
 
+  method sys_select nfds readfds writefds exceptfds timeout =
+    put_reg R_EAX 0L (* no events *)
+    
   method sys_setgid32 gid =
     Unix.setgid gid;
     put_reg R_EAX 0L (* success *)
@@ -5805,7 +5808,16 @@ object(self)
 	 | 141 -> (* getdents *)
 	     raise (UnhandledSysCall( "Unhandled Linux system call getdents (141)"))
 	 | 142 -> (* _newselect *)
-	     raise (UnhandledSysCall( "Unhandled Linux system call _newselect (142)"))
+	     let (ebx, ecx, edx, esi, edi) = read_5_regs () in
+	     let nfds = Int64.to_int ebx and
+		 readfds = ecx and
+		 writefds = edx and
+		 exceptfds = esi and
+		 timeout = edi in
+	       if !opt_trace_syscalls then
+		 Printf.printf "select(%d, 0x%08Lx, 0x%08Lx, 0x%08Lx, 0x%08Lx)"
+		   nfds readfds writefds exceptfds timeout;
+	       self#sys_select nfds readfds writefds exceptfds timeout
 	 | 143 -> (* flock *)
 	     raise (UnhandledSysCall( "Unhandled Linux system call flock (143)"))
 	 | 144 -> (* msync *)
