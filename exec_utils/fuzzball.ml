@@ -781,6 +781,18 @@ let opt_trace_solver = ref false
 module FormulaManagerFunctor =
   functor (D : DOMAIN) ->
 struct
+  (* This has to be outside the class because I want it to have
+     polymorphic type. *)
+  let if_expr_temp form_man var fn_t else_val else_fn =
+    let box = ref else_val in
+      form_man#if_expr_temp_unit var
+	(fun e -> 
+	   match e with
+	     | Some (e) -> box := fn_t e
+	     | None -> (else_fn var)
+	);
+      !box
+
   class formula_manager = object(self)
     val input_vars = Hashtbl.create 30
 
@@ -895,7 +907,7 @@ struct
 	      V.Lval(V.Temp(self#mem_var region_str ty2 addr)))
 	| _ -> failwith "Bad expression in rewrite_mem_expr"
 
-    method rewrite_for_stp e =
+    method rewrite_for_solver e =
       let rec loop e =
 	match e with
 	  | V.BinOp(op, e1, e2) -> V.BinOp(op, (loop e1), (loop e2))
@@ -906,7 +918,7 @@ struct
 	  | V.Name(_) -> e
 	  | V.Cast(kind, ty, e1) -> V.Cast(kind, ty, (loop e1))
 	  | V.Unknown(_) -> e
-	  | V.Let(_, _, _) -> failwith "Unexpected let in rewrite_for_stp"
+	  | V.Let(_, _, _) -> failwith "Unexpected let in rewrite_for_solver"
       in
 	loop e
 
@@ -963,19 +975,61 @@ struct
 	let e = V.VarHash.find temp_var_to_subexpr var in
 	  (fn_t (Some(e)) )
       with Not_found -> (fn_t None)
-  end
+	
+    (* This was originally designed to be polymorphic in the return
+       type of f, and could be made so again as with if_expr_temp *)
+    method walk_temps (f : (V.var -> V.exp -> (V.var * V.exp))) exp =
+      let h = V.VarHash.create 21 in
+      let temps = ref [] in
+      let nontemps_h = V.VarHash.create 21 in
+      let nontemps = ref [] in
+      let rec walk = function
+	| V.BinOp(_, e1, e2) -> walk e1; walk e2
+	| V.UnOp(_, e1) -> walk e1
+	| V.Constant(_) -> ()
+	| V.Lval(V.Temp(var)) ->
+	    if not (V.VarHash.mem h var) then
+	      (let fn_t = (fun e ->
+			     V.VarHash.replace h var ();
+			     walk e;
+			     temps := (f var e) :: !temps) in
+	       let else_fn =
+		 (fun v -> (* v is not a temp *)
+		    if not (V.VarHash.mem nontemps_h var) then
+		      (V.VarHash.replace nontemps_h var ();
+		       nontemps := var :: !nontemps)) in
+		 if_expr_temp self var fn_t () else_fn)	   
+	| V.Lval(V.Mem(_, e1, _)) -> walk e1
+	| V.Name(_) -> ()
+	| V.Cast(_, _, e1) -> walk e1
+	| V.Unknown(_) -> ()
+	| V.Let(_, _, _) -> failwith "Unhandled let in walk_temps"
+      in
+	walk exp;
+	((List.rev !nontemps), (List.rev !temps))
 
-  (* This has to be outside the class because I want it to have
-     polymorphic type. *)
-  let if_expr_temp form_man var fn_t else_val else_fn =
-    let box = ref else_val in
-      form_man#if_expr_temp_unit var
-	(fun e -> 
-	   match e with
-	     | Some (e) -> box := fn_t e
-	     | None -> (else_fn var)
-	);
-      !box
+    method collect_for_solving conds val_e =
+      let conjoin l =
+	match l with
+	  | [] -> V.exp_true
+	  | e :: el -> List.fold_left (fun a b -> V.BinOp(V.BITAND, a, b)) e el
+      in
+      let val_expr = self#rewrite_for_solver val_e in
+      let cond_expr = self#rewrite_for_solver (conjoin (List.rev conds)) in
+      let (nts1, ts1) = self#walk_temps (fun var e -> (var, e)) cond_expr in
+      let (nts2, ts2) = self#walk_temps (fun var e -> (var, e)) val_expr in
+      let temps = 
+	List.map (fun (var, e) -> (var, self#rewrite_for_solver e))
+	  (ts1 @ ts2) in
+      let i_vars = nts1 @ nts2 @ (self#get_mem_bytes) in
+      let m_axioms = self#get_mem_axioms in
+      let m_vars = List.map (fun (v, _) -> v) m_axioms in
+      let assigns = m_axioms @ temps in
+      let decls = Vine_util.list_difference i_vars m_vars
+      in
+	(decls, assigns, cond_expr, val_expr)
+
+  end
 end
 
 module SymbolicDomain : DOMAIN = struct
@@ -3390,7 +3444,9 @@ let hash_round h x =
   let h' = Int32.logxor h (Int32.of_int x) in
     Int32.mul h' (Int32.of_int 0x1000193)
 
-exception BoringPath
+exception KnownPath
+exception DeepPath
+let opt_path_depth_limit = ref 2000L (* 1000000000000L *)
 
 class decision_tree = object(self)
   val root = new_dt_node None
@@ -3442,8 +3498,8 @@ class decision_tree = object(self)
   method extend b =
     self#add_kid b;
     depth <- depth + 1;
-    if depth > 2000 then
-      raise BoringPath;
+    if (Int64.of_int depth) > !opt_path_depth_limit then
+      raise DeepPath;
     path_hash <- hash_round path_hash (if b then 49 else 48);
     Random.init (Int32.to_int path_hash);
     match (b, cur.f_child, cur.t_child) with
@@ -3559,7 +3615,7 @@ class decision_tree = object(self)
     let try_branch b c field fn = 
       match field with
 	| (Some(Some f_kid)) -> known b
-	| Some None -> raise BoringPath
+	| Some None -> raise KnownPath
 	| None ->
 	    if try_func b c then
 	      (self#extend b; (b, c))
@@ -3632,10 +3688,13 @@ class decision_tree = object(self)
 end
 
 let opt_measure_influence_derefs = ref false
+let opt_measure_deref_influence_at = ref None
 let opt_trace_assigns = ref false
 let opt_trace_assigns_string = ref false
 let opt_trace_decisions = ref false
 let opt_trace_binary_paths = ref false
+
+exception ReachedMeasurePoint
 
 module SymPathFragMachineFunctor =
   functor (D : DOMAIN) ->
@@ -3659,6 +3718,14 @@ struct
 	path_cond <- saved_pc;
 	ret
 
+    val mutable measured_values = []
+      
+    method take_measure e =
+      let pc =  List.fold_left (fun a b -> V.BinOp(V.BITAND, a, b))
+	V.exp_true (List.rev path_cond) in
+      measured_values <- (pc, e) :: measured_values;
+      raise ReachedMeasurePoint
+
     (* val query_engine = new stpvc_engine *)
     val query_engine = new stp_external_engine "fuzz"
 
@@ -3678,38 +3745,6 @@ struct
       with
 	| Not_found -> None
 	| Failure "int_of_string" -> None
-
-    method walk_temps f exp =
-      let h = V.VarHash.create 21 in
-      let temps = ref [] in
-      let nontemps_h = V.VarHash.create 21 in
-      let nontemps = ref [] in
-      let rec walk = function
-	| V.BinOp(_, e1, e2) -> walk e1; walk e2
-	| V.UnOp(_, e1) -> walk e1
-	| V.Constant(_) -> ()
-	| V.Lval(V.Temp(var)) ->
-	    if (try V.VarHash.find h var; true with Not_found -> false) then
-	      ()
-	    else (
-	      let fn_t = (fun e ->
-			    V.VarHash.replace h var ();
-			    walk e;
-			    temps := (f var e) :: !temps) in
-	      let else_fn = (fun v -> (* v is not a temp *)
-			       if (try V.VarHash.find nontemps_h var; true with Not_found -> false) then ()
-			       else (V.VarHash.replace nontemps_h var (); nontemps := var :: !nontemps)
-			    )	in
-		FormMan.if_expr_temp form_man var fn_t () else_fn
-	    )	   
-	| V.Lval(V.Mem(_, e1, _)) -> walk e1
-	| V.Name(_) -> ()
-	| V.Cast(_, _, e1) -> walk e1
-	| V.Unknown(_) -> ()
-	| V.Let(_, _, _) -> failwith "Unhandled let in walk_temps"
-      in
-	walk exp;
-	((List.rev !nontemps), (List.rev !temps))
 
     method private ce_to_input_str ce =
       (* Ideally, I'd like to turn high characters into \\u1234 escapes *)
@@ -3752,58 +3787,36 @@ struct
       Printf.printf "\n";
       
     method measure_influence (target_expr : V.exp) =
-      let target_expr = form_man#rewrite_for_stp target_expr in
-      let pc = form_man#rewrite_for_stp
-	(constant_fold_rec
-	   (List.fold_left (fun a b -> V.BinOp(V.BITAND, a, b))
-	      V.exp_true (List.rev (path_cond)))) in
-      let (nts, ts) = (self#walk_temps (fun var e -> (var, e)) pc) in
-      let temps = 
-	List.map (fun (var, e) -> (var, form_man#rewrite_for_stp e)) ts in
-      let (nts1, ts1) = (self#walk_temps (fun var e -> (var, e)) target_expr) in
-      let temps = temps @ (List.map (fun (var, e) -> (var, form_man#rewrite_for_stp e)) ts1) in
-      let i_vars = nts @ nts1 @ (form_man#get_mem_bytes) in
-      let m_axioms = form_man#get_mem_axioms in
-      let t_vars = List.map (fun (v, _) -> v) temps in 
-      let m_vars = List.map (fun (v, _) -> v) m_axioms in
-      let to_letify = m_axioms @ temps in
-      let declvars =  (Vine_util.list_difference i_vars m_vars) @ (m_vars @ t_vars) in
-	(*      let letified_expr = List.fold_left (fun a (lvar, lvexp) -> 
-		V.Let(V.Temp(lvar), lvexp, a)
-		) pc (List.rev to_letify) in 
-		let prog = (declvars, [V.ExpStmt(letified_expr)]) in
-	*)
-      let letified_expr = List.fold_left (fun a (lvar, lvexp) ->                                                                                                      		    a @ [V.Move(V.Temp(lvar), lvexp)]
-					 ) [] to_letify in
-      let dl = letified_expr @ [V.Assert(pc)] in
-      let prog = (declvars, dl) in
+      let (free_decls, assigns, cond_e, target_e) =
+	form_man#collect_for_solving path_cond target_expr in
+      let assigns_sl =
+	List.fold_left
+	  (fun a (lvar, lvexp) -> a @ [V.Move(V.Temp(lvar), lvexp)])
+	  [] assigns in
+      let assign_vars = List.map (fun (v, exp) -> v) assigns in
+      let prog = (free_decls @ assign_vars,
+		  assigns_sl @ [V.Assert(cond_e)]) in
 	V.pp_program (fun x -> Printf.printf "%s" x) prog; 
 	let () = ignore(prog) in
 	  ()
 
-	
+    method compute_multipath_influence =
+      List.iter
+	(fun (pc, v) -> 
+	   Printf.printf "%s => %s\n" (V.exp_to_string pc) (V.exp_to_string v))
+	measured_values
 
     method query_with_path_cond cond verbose =
-      let pc = form_man#rewrite_for_stp
-	(constant_fold_rec
-	   (List.fold_left (fun a b -> V.BinOp(V.BITAND, a, b))
-	      V.exp_true (List.rev (cond :: path_cond)))) in
-      let (nts, ts) = (self#walk_temps (fun var e -> (var, e)) pc) in
-      let temps = 
-	List.map (fun (var, e) -> (var, form_man#rewrite_for_stp e)) ts in
-      let i_vars = nts @ form_man#get_mem_bytes in
-      let m_axioms = form_man#get_mem_axioms in
-      let t_vars = List.map (fun (v, _) -> v) temps in
-      let m_vars = List.map (fun (v, _) -> v) m_axioms in
-	query_engine#prepare (Vine_util.list_difference i_vars m_vars)
-	  (m_vars @ t_vars);
-	List.iter (fun (v, exp) -> (query_engine#assert_eq v exp)) m_axioms;
-	List.iter (fun (v, exp) -> (query_engine#assert_eq v exp)) temps;
-(*	Printf.printf "PC is %s\n" (V.exp_to_string pc); 
-	Printf.printf "Condition is %s\n" (V.exp_to_string cond);
-*)
+      let pc = cond :: path_cond and
+	  expr = V.Unknown("") in
+      let (decls, assigns, cond_e, _) =
+	form_man#collect_for_solving pc expr
+      in
+      let assign_vars = List.map (fun (v, exp) -> v) assigns in
+	query_engine#prepare decls assign_vars;
+	List.iter (fun (v, exp) -> (query_engine#assert_eq v exp)) assigns;
 	let time_before = Sys.time () in
-	let (result, ce) = query_engine#query pc in
+	let (result, ce) = query_engine#query cond_e in
 	let is_sat = not result in
 	  if verbose then
 	    (if is_sat then
@@ -3890,8 +3903,12 @@ struct
 	      let e = (D.to_symbolic_32 v) in
 	      let eip = self#get_word_var R_EIP in
 		Printf.printf "Symbolic address %s @ (0x%Lx)\n" (V.exp_to_string e) (eip);
-		if !opt_measure_influence_derefs then
-		  self#measure_influence e;
+		(match !opt_measure_deref_influence_at with
+		   | Some addr when addr = eip ->
+		       self#take_measure e;
+		   | _ ->
+		       if !opt_measure_influence_derefs then
+			 self#measure_influence e);
 		let bits = ref 0L in
 		  self#restore_path_cond
 		    (fun () ->
@@ -4283,8 +4300,12 @@ struct
 	  let eip = self#get_word_var R_EIP in
 	    if !opt_trace_sym_addrs then
 	      Printf.printf "Symbolic address %s @ (0x%Lx)\n" (V.exp_to_string e) (eip);
-	    if !opt_measure_influence_derefs then
-	      self#measure_influence e;
+	    (match !opt_measure_deref_influence_at with
+	       | Some a when a = eip ->
+		   self#take_measure e;
+	       | _ ->
+		   if !opt_measure_influence_derefs then
+		     self#measure_influence e);
 	    let (cbases, coffs, eoffs, syms) = classify_terms e form_man in
 	      if !opt_trace_sym_addr_details then
 		(Printf.printf "Concrete base terms: %s\n"
@@ -4404,8 +4425,6 @@ struct
 
     method reset () =
       spfm#reset ();
-      regions <- [];
-      Hashtbl.clear region_vals;
       Hashtbl.clear concrete_cache
   end
 end
@@ -6577,7 +6596,7 @@ module LinuxLoader = struct
 	Printf.printf "Initial ESP is 0x%08Lx\n" !esp;
       fm#set_word_var R_ESP !esp      
 
-  let load_dynamic_program fm fname load_base data_too extras argv =
+  let load_dynamic_program fm fname load_base data_too do_setup extras argv =
     let ic = open_in fname in
     let i = IO.input_channel ic in
     let ldso_base = ref 0L in
@@ -6610,7 +6629,7 @@ module LinuxLoader = struct
 	     extras)
 	(read_program_headers ic eh);
       close_in ic;
-      if data_too then
+      if do_setup then
 	build_startup_state fm eh load_base !ldso_base argv;
       !entry_point
 
@@ -7052,43 +7071,9 @@ let loop_w_stats count fn =
     if !opt_gc_stats then
       Gc.full_major () (* for the benefit of leak checking *)
 
-let fuzz_sym_str start_eip end_eip buf_addr buf_len fm asmir_gamma
-    =
-  let eip = fm#get_word_var R_EIP
-  in
-    runloop fm eip asmir_gamma (fun a -> a = start_eip);
-    fm#make_snap ();
-    if !opt_trace_setup then Printf.printf "Took snapshot\n";
-    loop_w_stats None
-      (fun iter ->
-	 let old_tcs = Hashtbl.length trans_cache in
-	   fm#set_iter_seed (Int64.to_int iter);
-	   fm#store_symbolic_cstr buf_addr buf_len;
-	   (try
-	      runloop fm start_eip asmir_gamma (fun a -> a = end_eip);
-	    with
-	      | SimulatedExit(_) -> ()
-	      | BoringPath -> Printf.printf "\n"
-	   );
-	   if not fm#finish_path then raise LastIteration;
-	   if !opt_coverage_stats && 
-	     (Hashtbl.length trans_cache - old_tcs > 0) then
-	       (* Printf.printf "Coverage increased to %d with %s on %Ld\n"
-		  (Hashtbl.length trans_cache) regex iter *)
-	       Printf.printf "Coverage increased to %d on %Ld\n"
-		 (Hashtbl.length trans_cache) iter;
-	   if !opt_gc_stats then
-	     check_memory_usage fm;
-	   fm#reset ()
-      );
-    Gc.print_stat stdout
-
 module SRFM = SymRegionFragMachineFunctor(SymbolicDomain)
 module SRFMT = SymRegionFragMachineFunctor(TaggedDomainFunctor(SymbolicDomain))
 (* type machine = SRFM.sym_region_frag_machine *)
-
-(*let fuzz_pcre (fm : machine) =
-  fuzz_sym_str 0x08048656L 0x080486d2L 0x08063c20L 20 fm*)
 
 let print_tree fm =
   let chan = open_out "fuzz.tree" in
@@ -7119,7 +7104,9 @@ let fuzz start_eip fuzz_start_eip end_eips fm asmir_gamma =
 	      (fun a -> List.mem a end_eips);
 	  with
 	    | SimulatedExit(_) -> stop "when program called exit()"
-	    | BoringPath -> stop "on boring path"
+	    | KnownPath -> stop "on previously-explored path"
+		(* KnownPath currently shouldn't happen *)
+	    | DeepPath -> stop "on too-deep path"
 	    | SymbolicJump -> stop "at symbolic jump"
 	    | NullDereference -> stop "at null deref"
 	    | JumpToNull -> stop "at jump to null"
@@ -7129,6 +7116,7 @@ let fuzz start_eip fuzz_start_eip end_eips fm asmir_gamma =
 	    | UnhandledSysCall(s) ->
 		Printf.printf "[trans_eval WARNING]: %s\n%!" s;
 		stop "at unhandled system call"
+	    | ReachedMeasurePoint -> stop "at measurement point"
 	    (* | NotConcrete(_) -> () (* shouldn't happen *)
 	    | Simplify_failure(_) -> () (* shouldn't happen *)*)
 	 ); 
@@ -7145,6 +7133,9 @@ let fuzz start_eip fuzz_start_eip end_eips fm asmir_gamma =
 	     check_memory_usage fm;
 	 fm#reset ()
     );
+  (match !opt_measure_deref_influence_at with
+     | Some _ -> fm#compute_multipath_influence
+     | _ -> ());
   print_tree fm;
   if !opt_gc_stats then
     Gc.print_stat stdout
@@ -7176,6 +7167,7 @@ let opt_initial_esp = ref None
 let opt_initial_ebp = ref None
 let opt_initial_eflagsrest = ref None
 let opt_linux_syscalls = ref false
+let opt_setup_initial_proc_state = ref None
 let opt_tls_base = ref None
 let opt_load_extra_regions = ref []
 let opt_program_name = ref None
@@ -7257,6 +7249,9 @@ let main argv =
        ("-iteration-limit", Arg.String
 	  (fun s -> opt_iteration_limit := Int64.of_string s),
 	"N Stop path if a loop iterates more than N times");
+       ("-path-depth-limit", Arg.String
+	  (fun s -> opt_path_depth_limit := Int64.of_string s),
+	"N Stop path after N bits of symbolic branching");
        ("-load-base", Arg.String
 	  (fun s -> opt_load_base := Int64.of_string s),
 	"addr Base address for program image");
@@ -7265,6 +7260,9 @@ let main argv =
 	"base+size Load an additional region from program image");
        ("-load-data", Arg.Bool(fun b -> opt_load_data := b),
         "bool Load data segments from a binary?"); 
+       ("-setup-initial-proc-state",
+	Arg.Bool(fun b -> opt_setup_initial_proc_state := Some b),
+        "bool Setup initial process state (argv, etc.)?"); 
        ("-symbolic-cstring", Arg.String
 	  (add_delimited_pair opt_symbolic_cstrings '+'),
 	"base+size Make a C string with given size, concrete \\0");
@@ -7287,6 +7285,10 @@ let main argv =
         " Check whether dereferenced values can be null");
        ("-measure-influence-derefs", Arg.Set(opt_measure_influence_derefs),
 	" Measure influence on uses of sym. pointer values");
+       ("-measure-deref-influence-at", Arg.String
+	  (fun s -> opt_measure_deref_influence_at :=
+	     Some (Int64.of_string s)),
+	"eip Measure influence of value at given code address");
        ("-state", Arg.String
 	  (fun s -> opt_state_file := Some s),
 	"file Load memory state from TEMU state file");
@@ -7398,10 +7400,21 @@ in
 	fm#make_x86_regs_zero;
       (match !opt_program_name with
 	 | Some name ->
-	     state_start_addr := Some
-	       (LinuxLoader.load_dynamic_program fm name
-		  !opt_load_base !opt_load_data !opt_load_extra_regions
-		  !opt_argv)
+	     let do_setup = match !opt_setup_initial_proc_state with
+	       | Some b -> b
+	       | None ->
+		   if !opt_start_addr <> None then
+		     false
+		   else if !opt_argv <> [] then
+		     true
+		   else
+		     failwith ("Can't decide whether to "^
+				 "-setup-initial-proc-state")
+	     in
+	       state_start_addr := Some
+		 (LinuxLoader.load_dynamic_program fm name
+		    !opt_load_base !opt_load_data do_setup
+		    !opt_load_extra_regions !opt_argv)
 	 | _ -> ());
       (match !opt_core_file_name with
 	 | Some name -> 
