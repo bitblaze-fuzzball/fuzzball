@@ -918,7 +918,10 @@ struct
 	  | V.Name(_) -> e
 	  | V.Cast(kind, ty, e1) -> V.Cast(kind, ty, (loop e1))
 	  | V.Unknown(_) -> e
-	  | V.Let(_, _, _) -> failwith "Unexpected let in rewrite_for_solver"
+	  | V.Let(V.Temp(v), e1, e2) ->
+	      V.Let(V.Temp(v), (loop e1), (loop e2))
+	  | V.Let(V.Mem(_,_,_), _, _) ->	      
+	      failwith "Unexpected memory let in rewrite_for_solver"
       in
 	loop e
 
@@ -1003,19 +1006,25 @@ struct
 	| V.Name(_) -> ()
 	| V.Cast(_, _, e1) -> walk e1
 	| V.Unknown(_) -> ()
-	| V.Let(_, _, _) -> failwith "Unhandled let in walk_temps"
+	| V.Let(_, e1, e2) -> walk e1; walk e2 
       in
 	walk exp;
 	((List.rev !nontemps), (List.rev !temps))
 
+    method conjoin l =
+      match l with
+	| [] -> V.exp_true
+	| e :: el -> List.fold_left (fun a b -> V.BinOp(V.BITAND, a, b)) e el
+
+    method disjoin l =
+      match l with
+	| [] -> V.exp_false
+	| e :: el -> List.fold_left (fun a b -> V.BinOp(V.BITOR, a, b)) e el
+
     method collect_for_solving conds val_e =
-      let conjoin l =
-	match l with
-	  | [] -> V.exp_true
-	  | e :: el -> List.fold_left (fun a b -> V.BinOp(V.BITAND, a, b)) e el
-      in
       let val_expr = self#rewrite_for_solver val_e in
-      let cond_expr = self#rewrite_for_solver (conjoin (List.rev conds)) in
+      let cond_expr = self#rewrite_for_solver
+	(self#conjoin (List.rev conds)) in
       let (nts1, ts1) = self#walk_temps (fun var e -> (var, e)) cond_expr in
       let (nts2, ts2) = self#walk_temps (fun var e -> (var, e)) val_expr in
       let temps = 
@@ -3446,7 +3455,7 @@ let hash_round h x =
 
 exception KnownPath
 exception DeepPath
-let opt_path_depth_limit = ref 2000L (* 1000000000000L *)
+let opt_path_depth_limit = ref 1000000000000L
 
 class decision_tree = object(self)
   val root = new_dt_node None
@@ -3721,9 +3730,7 @@ struct
     val mutable measured_values = []
       
     method take_measure e =
-      let pc =  List.fold_left (fun a b -> V.BinOp(V.BITAND, a, b))
-	V.exp_true (List.rev path_cond) in
-      measured_values <- (pc, e) :: measured_values;
+      measured_values <- (path_cond, e) :: measured_values;
       raise ReachedMeasurePoint
 
     (* val query_engine = new stpvc_engine *)
@@ -3785,10 +3792,9 @@ struct
 	       Printf.printf "%s=0x%Lx " nice_name value)
 	ce;
       Printf.printf "\n";
+
       
-    method measure_influence (target_expr : V.exp) =
-      let (free_decls, assigns, cond_e, target_e) =
-	form_man#collect_for_solving path_cond target_expr in
+    method measure_influence_common free_decls assigns cond_e target_e =
       let assigns_sl =
 	List.fold_left
 	  (fun a (lvar, lvexp) -> a @ [V.Move(V.Temp(lvar), lvexp)])
@@ -3800,11 +3806,36 @@ struct
 	let () = ignore(prog) in
 	  ()
 
+    method measure_influence (target_expr : V.exp) =
+      let (free_decls, assigns, cond_e, target_e) =
+	form_man#collect_for_solving path_cond target_expr in
+	self#measure_influence_common free_decls assigns cond_e target_e
+
     method compute_multipath_influence =
-      List.iter
-	(fun (pc, v) -> 
-	   Printf.printf "%s => %s\n" (V.exp_to_string pc) (V.exp_to_string v))
-	measured_values
+      let fresh_cond_var =
+	let counter = ref 0 in
+	  fun () -> counter := !counter + 1;
+	  V.newvar ("cond_" ^ (string_of_int !counter)) V.REG_1
+      in
+      let conjoined = List.map
+	(fun (pc, e) -> (fresh_cond_var (), form_man#conjoin pc, e))
+	measured_values in
+      let cond_assigns =
+	List.map (fun (lhs, rhs, _) ->
+		    (lhs, form_man#rewrite_for_solver rhs)) conjoined in
+      let cond_vars = List.map (fun (v, _) -> v) cond_assigns in
+      let cond_var_exps = List.map (fun v -> V.Lval(V.Temp(v))) cond_vars in
+      let cond = form_man#disjoin cond_var_exps in
+      let expr = List.fold_left
+	(fun e (cond_v, _, v_e) ->
+	   V.exp_ite (V.Lval(V.Temp(cond_v))) V.REG_32 v_e e)
+	(V.Constant(V.Int(V.REG_32, 0L))) conjoined in
+      let (free_decls, t_assigns, cond_e, target_e) =
+	form_man#collect_for_solving [cond] expr in
+	Printf.printf "Exp: %s\n" (V.exp_to_string target_e);
+	self#measure_influence_common
+	  (Vine_util.list_difference free_decls cond_vars)
+	  (t_assigns @ cond_assigns) cond_e target_e
 
     method query_with_path_cond cond verbose =
       let pc = cond :: path_cond and
