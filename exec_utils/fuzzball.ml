@@ -1022,6 +1022,22 @@ struct
 	| e :: el -> List.fold_left (fun a b -> V.BinOp(V.BITOR, a, b)) e el
 
     method collect_for_solving u_temps conds val_e =
+      (* Unlike Vine_util.list_unique, this preserves order (keeping the
+	 first occurrence) which is important because the temps have to
+	 retain a topological ordering. *)
+      let list_unique l = 
+	let h = Hashtbl.create 10 in
+	let rec loop = function
+	  | [] -> []
+	  | e :: el ->
+	      if Hashtbl.mem h e then
+		loop el
+	      else
+		(Hashtbl.replace h e ();
+		 e :: (loop el))
+	in
+	  (loop l)
+      in
       let val_expr = self#rewrite_for_solver val_e in
       let cond_expr = self#rewrite_for_solver
 	(self#conjoin (List.rev conds)) in
@@ -1034,9 +1050,9 @@ struct
 	([], []) u_temps in
       let temps = 
 	List.map (fun (var, e) -> (var, self#rewrite_for_solver e))
-	  (Vine_util.list_unique (ts1 @ ts2 @ ts3 @ u_temps)) in
+	  (list_unique (ts1 @ ts2 @ ts3 @ u_temps)) in
       let i_vars =
-	Vine_util.list_unique (nts1 @ nts2 @ nts3 @ self#get_mem_bytes) in
+	list_unique (nts1 @ nts2 @ nts3 @ self#get_mem_bytes) in
       let m_axioms = self#get_mem_axioms in
       let m_vars = List.map (fun (v, _) -> v) m_axioms in
       let assigns = m_axioms @ temps in
@@ -3385,20 +3401,26 @@ struct
 	self#store_byte_idx (Int64.add base idx) i (Char.code str.[i])
       done
 
+    val mutable symbolic_string_id = 0
+
     method store_symbolic_cstr base len =
-      for i = 0 to len - 1 do
-	self#store_byte (Int64.add base (Int64.of_int i))
-	  (form_man#fresh_symbolic_8 ("input" ^ (string_of_int i)))
-      done;
-      self#store_byte_idx base len 0
+      let varname = "input" ^ (string_of_int symbolic_string_id) ^ "_" in
+	symbolic_string_id <- symbolic_string_id + 1;
+	for i = 0 to len - 1 do
+	  self#store_byte (Int64.add base (Int64.of_int i))
+	    (form_man#fresh_symbolic_8 (varname ^ (string_of_int i)))
+	done;
+	self#store_byte_idx base len 0
 
     method store_symbolic_wcstr base len =
-      for i = 0 to len - 1 do
-	self#store_short (Int64.add base (Int64.of_int (2*i)))
-	  (form_man#fresh_symbolic_16 ("input" ^ (string_of_int i)))
-      done;
-      self#store_byte_idx base (2*len) 0;
-      self#store_byte_idx base (2*len + 1) 0
+      let varname = "winput" ^ (string_of_int symbolic_string_id) ^ "_" in
+	symbolic_string_id <- symbolic_string_id + 1;
+	for i = 0 to len - 1 do
+	  self#store_short (Int64.add base (Int64.of_int (2*i)))
+	    (form_man#fresh_symbolic_16 (varname ^ (string_of_int i)))
+	done;
+	self#store_byte_idx base (2*len) 0;
+	self#store_byte_idx base (2*len + 1) 0
 
     method store_symbolic_word addr varname =
       self#store_word addr (form_man#fresh_symbolic_32 varname)
@@ -3753,8 +3775,8 @@ struct
 
     method match_input_var s =
       try
-	if (String.sub s 0 5) = "input" then
-	  let wo_input = String.sub s 5 ((String.length s) - 5) in
+	if (String.sub s 0 7) = "input0_" then
+	  let wo_input = String.sub s 7 ((String.length s) - 7) in
 	    try
 	      let uscore_loc = String.index wo_input '_' in
 	      let n_str = String.sub wo_input 0 uscore_loc in
