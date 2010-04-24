@@ -2442,6 +2442,14 @@ struct
       diff#clear (); ()
   end
 
+  class granular_second_snapshot_memory
+    (mem1_2:granular_snapshot_memory) (mem3:granular_memory) =
+  object(self) 
+    inherit granular_snapshot_memory (mem1_2 :> granular_memory) mem3
+      
+    method inner_make_snap () = mem1_2#make_snap ()
+  end
+    
   class concrete_adaptor_memory (mem:concrete_memory) = object(self)
     method on_missing (m:int -> int64 -> D.t) = ()
 
@@ -2702,9 +2710,11 @@ struct
   module FormMan = FormulaManagerFunctor(D)
 
   class frag_machine = object(self)
-    val mem = (new GM.granular_snapshot_memory
-		 (new GM.concrete_maybe_adaptor_memory
-		    (new string_maybe_memory))
+    val mem = (new GM.granular_second_snapshot_memory
+		 (new GM.granular_snapshot_memory
+		    (new GM.concrete_maybe_adaptor_memory
+		       (new string_maybe_memory))
+		    (new GM.granular_hash_memory))
 		 (new GM.granular_hash_memory))
 
     val form_man = new FormMan.formula_manager
@@ -2950,15 +2960,14 @@ struct
     method load_word_conc  addr = D.to_concrete_32 (mem#load_word  addr)
     method load_long_conc  addr = D.to_concrete_64 (mem#load_long  addr)
 
-    method make_mem_snap () = mem#make_snap ()
-    method mem_reset () = mem#reset ()
+    method start_symbolic = mem#inner_make_snap ()
 
     method make_snap () =
-      self#make_mem_snap ();
+      mem#make_snap ();
       snap <- (V.VarHash.copy reg_store, V.VarHash.copy temps)
 
     method reset () =
-      self#mem_reset ();
+      mem#reset ();
       match snap with (r, t) ->
 	move_hash r reg_store;
 	move_hash t temps;
@@ -4956,6 +4965,11 @@ object(self)
 
   val the_break = ref None
 
+  method string_create len =
+    try String.create len
+    with Invalid_argument("String.create")
+	-> raise (Unix.Unix_error(Unix.EFAULT, "String.create", ""))
+
   method do_write fd bytes count =
     (try
        (match fd with
@@ -4980,7 +4994,7 @@ object(self)
     let rec loop left a =
       if (left <= 0) then 0 else
 	let chunk = if (left < 16384) then left else 16384 in
-	let str = String.create chunk in
+	let str = self#string_create chunk in
 	let num_read = Unix.read fd str 0 chunk in
 	  fm#store_str a 0L (String.sub str 0 num_read);
 	  num_read +
@@ -5308,11 +5322,14 @@ object(self)
       | Unix.Unix_error(err, _, _) -> self#put_errno err
 
   method sys_read fd buf count =
-    let str = String.create count in
-    let num_read = Unix.read (self#get_fd fd) str 0 count in
-      fm#store_str buf 0L (String.sub str 0 num_read);
-      put_reg R_EAX (Int64.of_int num_read)
-
+    try
+      let str = self#string_create count in
+      let num_read = Unix.read (self#get_fd fd) str 0 count in
+	fm#store_str buf 0L (String.sub str 0 num_read);
+	put_reg R_EAX (Int64.of_int num_read)
+    with
+      | Unix.Unix_error(err, _, _) -> self#put_errno err
+	  
   method sys_readlink path out_buf buflen =
     let real = Unix.readlink path in
     let written = min buflen (String.length real) in
@@ -7120,6 +7137,8 @@ let fuzz start_eip fuzz_start_eip end_eips fm asmir_gamma =
   (if start_eip <> fuzz_start_eip then
      (if !opt_trace_setup then Printf.printf "Pre-fuzzing execution...\n";
       runloop fm start_eip asmir_gamma (fun a -> a = fuzz_start_eip)));
+  fm#start_symbolic;
+  !symbolic_init ();
   fm#make_snap ();
   if !opt_trace_setup then Printf.printf "Took snapshot\n";
   loop_w_stats None
@@ -7129,7 +7148,6 @@ let fuzz start_eip fuzz_start_eip end_eips fm asmir_gamma =
 	 Printf.printf "Stopping %s\n" str
        in
 	 fm#set_iter_seed (Int64.to_int iter);
-	 !symbolic_init ();
 	 (try
 	    runloop fm fuzz_start_eip asmir_gamma
 	      (fun a -> List.mem a end_eips);
