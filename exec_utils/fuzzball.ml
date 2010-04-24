@@ -1021,16 +1021,22 @@ struct
 	| [] -> V.exp_false
 	| e :: el -> List.fold_left (fun a b -> V.BinOp(V.BITOR, a, b)) e el
 
-    method collect_for_solving conds val_e =
+    method collect_for_solving u_temps conds val_e =
       let val_expr = self#rewrite_for_solver val_e in
       let cond_expr = self#rewrite_for_solver
 	(self#conjoin (List.rev conds)) in
       let (nts1, ts1) = self#walk_temps (fun var e -> (var, e)) cond_expr in
       let (nts2, ts2) = self#walk_temps (fun var e -> (var, e)) val_expr in
+      let (nts3, ts3) = List.fold_left 
+	(fun (ntl, tl) (lhs, rhs) ->
+	   let (nt, t) = self#walk_temps (fun var e -> (var, e)) rhs in
+	     (nt @ ntl, t @ tl))
+	([], []) u_temps in
       let temps = 
 	List.map (fun (var, e) -> (var, self#rewrite_for_solver e))
-	  (ts1 @ ts2) in
-      let i_vars = nts1 @ nts2 @ (self#get_mem_bytes) in
+	  (Vine_util.list_unique (ts1 @ ts2 @ ts3 @ u_temps)) in
+      let i_vars =
+	Vine_util.list_unique (nts1 @ nts2 @ nts3 @ self#get_mem_bytes) in
       let m_axioms = self#get_mem_axioms in
       let m_vars = List.map (fun (v, _) -> v) m_axioms in
       let assigns = m_axioms @ temps in
@@ -3817,7 +3823,7 @@ struct
 
     method measure_influence (target_expr : V.exp) =
       let (free_decls, assigns, cond_e, target_e) =
-	form_man#collect_for_solving path_cond target_expr in
+	form_man#collect_for_solving [] path_cond target_expr in
 	self#measure_influence_common free_decls assigns cond_e target_e
 
     method compute_multipath_influence =
@@ -3830,8 +3836,7 @@ struct
 	(fun (pc, e) -> (fresh_cond_var (), form_man#conjoin pc, e))
 	measured_values in
       let cond_assigns =
-	List.map (fun (lhs, rhs, _) ->
-		    (lhs, form_man#rewrite_for_solver rhs)) conjoined in
+	List.map (fun (lhs, rhs, _) -> (lhs, rhs)) conjoined in
       let cond_vars = List.map (fun (v, _) -> v) cond_assigns in
       let cond_var_exps = List.map (fun v -> V.Lval(V.Temp(v))) cond_vars in
       let cond = form_man#disjoin cond_var_exps in
@@ -3840,17 +3845,15 @@ struct
 	   V.exp_ite (V.Lval(V.Temp(cond_v))) V.REG_32 v_e e)
 	(V.Constant(V.Int(V.REG_32, 0L))) conjoined in
       let (free_decls, t_assigns, cond_e, target_e) =
-	form_man#collect_for_solving [cond] expr in
+	form_man#collect_for_solving cond_assigns [cond] expr in
 	Printf.printf "Exp: %s\n" (V.exp_to_string target_e);
-	self#measure_influence_common
-	  (Vine_util.list_difference free_decls cond_vars)
-	  (t_assigns @ cond_assigns) cond_e target_e
+	self#measure_influence_common free_decls t_assigns cond_e target_e
 
     method query_with_path_cond cond verbose =
       let pc = cond :: path_cond and
 	  expr = V.Unknown("") in
       let (decls, assigns, cond_e, _) =
-	form_man#collect_for_solving pc expr
+	form_man#collect_for_solving [] pc expr
       in
       let assign_vars = List.map (fun (v, exp) -> v) assigns in
 	query_engine#prepare decls assign_vars;
