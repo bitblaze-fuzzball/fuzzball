@@ -3766,11 +3766,13 @@ struct
 	path_cond <- saved_pc;
 	ret
 
-    val mutable measured_values = []
+    val measured_values = Hashtbl.create 30
       
     method take_measure e =
-      measured_values <- (path_cond, e) :: measured_values;
-      raise ReachedMeasurePoint
+      let eip = self#get_word_var R_EIP in
+      let old = (try Hashtbl.find measured_values eip
+		 with Not_found -> []) in
+	Hashtbl.replace measured_values eip ((path_cond, e) :: old)
 
     (* val query_engine = new stpvc_engine *)
     val query_engine = new stp_external_engine "fuzz"
@@ -3850,15 +3852,17 @@ struct
 	form_man#collect_for_solving [] path_cond target_expr in
 	self#measure_influence_common free_decls assigns cond_e target_e
 
-    method compute_multipath_influence =
+    method compute_multipath_influence eip =
       let fresh_cond_var =
 	let counter = ref 0 in
 	  fun () -> counter := !counter + 1;
 	  V.newvar ("cond_" ^ (string_of_int !counter)) V.REG_1
       in
+      let measurements = (try Hashtbl.find measured_values eip
+			  with Not_found -> []) in
       let conjoined = List.map
 	(fun (pc, e) -> (fresh_cond_var (), form_man#conjoin pc, e))
-	measured_values in
+	measurements in
       let cond_assigns =
 	List.map (fun (lhs, rhs, _) -> (lhs, rhs)) conjoined in
       let cond_vars = List.map (fun (v, _) -> v) cond_assigns in
@@ -3871,6 +3875,10 @@ struct
       let (free_decls, t_assigns, cond_e, target_e) =
 	form_man#collect_for_solving cond_assigns [cond] expr in
 	self#measure_influence_common free_decls t_assigns cond_e target_e
+
+    method compute_all_multipath_influence =
+      Hashtbl.iter (fun eip _ -> self#compute_multipath_influence eip)
+	measured_values
 
     method query_with_path_cond cond verbose =
       let pc = cond :: path_cond and
@@ -3967,6 +3975,7 @@ struct
 	match !opt_measure_deref_influence_at with
 	  | Some addr when addr = eip ->
 	      self#take_measure e;
+	      raise ReachedMeasurePoint
 	  | _ -> if !opt_measure_influence_derefs then
 	      let loc = Printf.sprintf "%s:%08Lx:%Ld"
 		(dt#get_hist_str) eip loop_cnt in
@@ -3976,6 +3985,7 @@ struct
 		       "Skipping redundant influence measurement at %s\n" loc)
 		else
 		  (Hashtbl.replace unique_measurements loc ();
+		   self#take_measure e;
 		   self#measure_influence e)
 
     method eval_addr_exp exp =
@@ -7227,8 +7237,8 @@ let fuzz start_eip fuzz_start_eip end_eips fm asmir_gamma =
 	 fm#reset ()
     );
   (match !opt_measure_deref_influence_at with
-     | Some _ -> fm#compute_multipath_influence
-     | _ -> ());
+     | Some eip -> fm#compute_multipath_influence eip
+     | _ -> fm#compute_all_multipath_influence);
   print_tree fm;
   if !opt_gc_stats then
     Gc.print_stat stdout
