@@ -6904,6 +6904,10 @@ let opt_time_stats = ref false
 let rec runloop fm eip asmir_gamma until =
   let load_byte addr = fm#load_byte_conc addr in
   let decode_insn eip insn_bytes =
+    (* It's important to flush buffers here because VEX will also
+       print error messages to stdout, but its buffers are different from
+       OCaml's. *)
+    flush stdout;
     let asmp = Libasmir.byte_insn_to_asmp
       Libasmir.Bfd_arch_i386 eip insn_bytes in
     let sl = Asmir.asm_addr_to_vine asmir_gamma asmp eip in
@@ -7159,13 +7163,18 @@ let fuzz start_eip fuzz_start_eip end_eips fm asmir_gamma =
   if !opt_trace_setup then
     (Printf.printf "Initial registers:\n";
      fm#print_x86_regs);
+  flush stdout;
   (if start_eip <> fuzz_start_eip then
      (if !opt_trace_setup then Printf.printf "Pre-fuzzing execution...\n";
+      flush stdout;
       runloop fm start_eip asmir_gamma (fun a -> a = fuzz_start_eip)));
   fm#start_symbolic;
+  if !opt_trace_setup then
+    (Printf.printf "Setting up symbolic values:\n"; flush stdout);
   !symbolic_init ();
   fm#make_snap ();
-  if !opt_trace_setup then Printf.printf "Took snapshot\n";
+  if !opt_trace_setup then
+    (Printf.printf "Took snapshot\n"; flush stdout);
   loop_w_stats None
     (fun iter ->
        let old_tcs = Hashtbl.length trans_cache in
