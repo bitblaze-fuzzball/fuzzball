@@ -3739,6 +3739,8 @@ let opt_trace_assigns = ref false
 let opt_trace_assigns_string = ref false
 let opt_trace_decisions = ref false
 let opt_trace_binary_paths = ref false
+let opt_trace_sym_addrs = ref false
+let opt_trace_sym_addr_details = ref false
 
 exception ReachedMeasurePoint
 
@@ -3868,7 +3870,6 @@ struct
 	(V.Constant(V.Int(V.REG_32, 0L))) conjoined in
       let (free_decls, t_assigns, cond_e, target_e) =
 	form_man#collect_for_solving cond_assigns [cond] expr in
-	Printf.printf "Exp: %s\n" (V.exp_to_string target_e);
 	self#measure_influence_common free_decls t_assigns cond_e target_e
 
     method query_with_path_cond cond verbose =
@@ -3958,6 +3959,24 @@ struct
 	      (* Printf.printf "Symbolic branch condition %s\n"
 		 (V.exp_to_string v#to_symbolic_1); *)
 	      self#extend_pc_random (D.to_symbolic_1 v) true
+		
+    val unique_measurements = Hashtbl.create 30
+
+    method maybe_measure_influence_deref e =
+      let eip = self#get_word_var R_EIP in
+	match !opt_measure_deref_influence_at with
+	  | Some addr when addr = eip ->
+	      self#take_measure e;
+	  | _ -> if !opt_measure_influence_derefs then
+	      let loc = Printf.sprintf "%s:%08Lx:%Ld"
+		(dt#get_hist_str) eip loop_cnt in
+		if Hashtbl.mem unique_measurements loc then
+		  (if !opt_trace_sym_addrs then
+		     Printf.printf
+		       "Skipping redundant influence measurement at %s\n" loc)
+		else
+		  (Hashtbl.replace unique_measurements loc ();
+		   self#measure_influence e)
 
     method eval_addr_exp exp =
       let c32 x = V.Constant(V.Int(V.REG_32, x)) in
@@ -3967,13 +3986,10 @@ struct
 	    NotConcrete _ ->
 	      let e = (D.to_symbolic_32 v) in
 	      let eip = self#get_word_var R_EIP in
-		Printf.printf "Symbolic address %s @ (0x%Lx)\n" (V.exp_to_string e) (eip);
-		(match !opt_measure_deref_influence_at with
-		   | Some addr when addr = eip ->
-		       self#take_measure e;
-		   | _ ->
-		       if !opt_measure_influence_derefs then
-			 self#measure_influence e);
+		if !opt_trace_sym_addrs then
+		  Printf.printf "Symbolic address %s @ (0x%Lx)\n"
+		    (V.exp_to_string e) eip;
+		self#maybe_measure_influence_deref e;
 		let bits = ref 0L in
 		  self#restore_path_cond
 		    (fun () ->
@@ -4049,8 +4065,6 @@ exception JumpToNull
 let opt_trace_loads = ref false
 let opt_trace_stores = ref false
 let opt_trace_regions = ref false
-let opt_trace_sym_addrs = ref false
-let opt_trace_sym_addr_details = ref false
 let opt_check_for_null = ref false
 
 module SymRegionFragMachineFunctor =
@@ -4364,13 +4378,9 @@ struct
 	  let e = D.to_symbolic_32 v in
 	  let eip = self#get_word_var R_EIP in
 	    if !opt_trace_sym_addrs then
-	      Printf.printf "Symbolic address %s @ (0x%Lx)\n" (V.exp_to_string e) (eip);
-	    (match !opt_measure_deref_influence_at with
-	       | Some a when a = eip ->
-		   self#take_measure e;
-	       | _ ->
-		   if !opt_measure_influence_derefs then
-		     self#measure_influence e);
+	      Printf.printf "Symbolic address %s @ (0x%Lx)\n"
+		(V.exp_to_string e) eip;
+	    self#maybe_measure_influence_deref e;
 	    let (cbases, coffs, eoffs, syms) = classify_terms e form_man in
 	      if !opt_trace_sym_addr_details then
 		(Printf.printf "Concrete base terms: %s\n"
