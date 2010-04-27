@@ -1492,28 +1492,37 @@ let opt_follow_path  = ref ""
 let map_lines f chan =
   let results = ref [] in
     (try while true do
-       results := (f (input_line chan)) :: !results
+       match (f (input_line chan)) with
+	 | Some x -> results := x :: !results
+	 | None -> ()
      done
      with End_of_file -> ());
     List.rev !results
 
 let parse_counterex line =
-  assert((String.sub line 0 8) = "ASSERT( ");
-  assert((String.sub line ((String.length line) - 4) 4) = "  );");
-  let trimmed = String.sub line 8 ((String.length line) - 12) in
-  let eq_loc = String.index trimmed '=' in
-  let lhs = String.sub trimmed 0 eq_loc and
-      rhs = (String.sub trimmed (eq_loc + 1)
-	       ((String.length trimmed) - eq_loc - 1)) in
-  (* let uscore_loc = String.index lhs '_' in
-     let varname = String.sub lhs 0 uscore_loc in *)
-    assert((String.sub lhs ((String.length lhs) - 2) 2) = "  ");
-    let varname = String.sub lhs 0 ((String.length lhs) - 2) in
-      assert((String.sub rhs 0 5) = " 0hex");
-      let hex_val = String.sub rhs 5 ((String.length rhs) - 5) in
-	(* Printf.printf "%s = %Lx\n" varname
-	   (Int64.of_string ("0x" ^ hex_val)); *)
-	(varname, (Int64.of_string ("0x" ^ hex_val)))
+  if line = "Invalid." then
+    None
+  else
+    (assert((String.sub line 0 8) = "ASSERT( ");
+     assert((String.sub line ((String.length line) - 4) 4) = "  );");
+     let trimmed = String.sub line 8 ((String.length line) - 12) in
+     let eq_loc = String.index trimmed '=' in
+     let lhs = String.sub trimmed 0 eq_loc and
+	 rhs = (String.sub trimmed (eq_loc + 1)
+		  ((String.length trimmed) - eq_loc - 1)) in
+       assert((String.sub lhs ((String.length lhs) - 2) 2) = "  ");
+       let varname = String.sub lhs 0 ((String.length lhs) - 2) in
+       let hex_val =
+	 if String.length rhs >= 6 && (String.sub rhs 0 5) = " 0hex" then
+	   String.sub rhs 5 ((String.length rhs) - 5)
+	 else if String.length rhs >= 4 && (String.sub rhs 0 3) = " 0x" then
+	   String.sub rhs 3 ((String.length rhs) - 3)
+	 else
+	   failwith "Failed to parse hex string in counterexample"
+       in
+	 (* Printf.printf "%s = %Lx\n" varname
+	    (Int64.of_string ("0x" ^ hex_val)); *)
+	 Some (varname, (Int64.of_string ("0x" ^ hex_val))))
 
 class stp_external_engine fname = object(self)
   inherit query_engine
@@ -1573,14 +1582,21 @@ class stp_external_engine fname = object(self)
 	  (ignore(Sys.command ("cat " ^ curr_fname ^ ".stp.out"));
 	   failwith "Fatal STP error");
 	let result_s = input_line results in
-	  assert(result_s = "Valid." or result_s = "Invalid.");
+	let first_assert = (String.sub result_s 0 6) = "ASSERT" in
+	  assert(result_s = "Valid." or result_s = "Invalid." or
+	      first_assert);
 	  let result = (result_s = "Valid.") in
+	  let first_assign = if first_assert then
+	    [(match parse_counterex result_s with
+		| Some ce -> ce | None -> failwith "Unexpected parse failure")]
+	  else
+	    [] in
 	  let ce = map_lines parse_counterex results in
 	    close_in results;
 	    if not !opt_save_solver_files then
 	      (Sys.remove (curr_fname ^ ".stp");
 	       Sys.remove (curr_fname ^ ".stp.out"));
-	    (result, ce)
+	    (result, first_assign @ ce)
 
   method unprepare =
     visitor <- None
