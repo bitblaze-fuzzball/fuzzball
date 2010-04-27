@@ -1396,10 +1396,12 @@ module SymbolicDomain : DOMAIN = struct
   let get_tag v = 0L
 end
 
+let opt_solver_timeout = ref None
+
 class virtual query_engine = object(self)
   method virtual prepare : V.var list -> V.var list -> unit
   method virtual assert_eq : V.var -> V.exp -> unit
-  method virtual query : V.exp -> bool * ((string * int64) list)
+  method virtual query : V.exp -> (bool option) * ((string * int64) list)
   method virtual unprepare : unit
 end
 
@@ -1455,7 +1457,7 @@ class stpvc_engine = object(self)
 		      (Stpvc.get_term_from_counterexample vc var_s wce)))
 		free_vars))
     in
-      (result, ce)
+      ((Some result), ce)
 
   method unprepare =
     Libstp.vc_clearDecls vc;
@@ -1524,6 +1526,8 @@ let parse_counterex line =
 	    (Int64.of_string ("0x" ^ hex_val)); *)
 	 Some (varname, (Int64.of_string ("0x" ^ hex_val))))
 
+exception Signal of string
+
 class stp_external_engine fname = object(self)
   inherit query_engine
 
@@ -1572,20 +1576,34 @@ class stp_external_engine fname = object(self)
     output_string self#chan "COUNTEREXAMPLE;\n";
     close_out self#chan;
     chan <- None;
-    let cmd = !opt_stp_path ^ " " ^ curr_fname 
+    let timeout_opt = match !opt_solver_timeout with
+      | Some s -> "-g " ^ (string_of_int s) ^ " "
+      | None -> ""
+    in
+    let cmd = !opt_stp_path ^ " " ^ timeout_opt ^ curr_fname 
       ^ ".stp >" ^ curr_fname ^ ".stp.out" in
       if !opt_trace_solver then
 	Printf.printf "Solver command: %s\n" cmd;
+      flush stdout;
       let rcode = Sys.command cmd in
       let results = open_in (curr_fname ^ ".stp.out") in
 	if rcode <> 0 then
-	  (ignore(Sys.command ("cat " ^ curr_fname ^ ".stp.out"));
-	   failwith "Fatal STP error");
-	let result_s = input_line results in
-	let first_assert = (String.sub result_s 0 6) = "ASSERT" in
-	  assert(result_s = "Valid." or result_s = "Invalid." or
-	      first_assert);
-	  let result = (result_s = "Valid.") in
+	  (Printf.printf "STP died with result code %d\n" rcode;
+	   (match rcode with 
+	      | 131 -> raise (Signal "QUIT")
+	      | _ -> ());
+	   ignore(Sys.command ("cat " ^ curr_fname ^ ".stp.out"));
+	   (None, []))
+	else
+	  let result_s = input_line results in
+	  let first_assert = (String.sub result_s 0 6) = "ASSERT" in
+	  let result = match result_s with
+	    | "Valid." -> Some true
+	    | "Timed Out." -> Printf.printf "STP timeout\n"; None
+	    | "Invalid." -> Some false
+	    | _ when first_assert -> Some false
+	    | _ -> failwith "Unexpected first output line"
+	  in
 	  let first_assign = if first_assert then
 	    [(match parse_counterex result_s with
 		| Some ce -> ce | None -> failwith "Unexpected parse failure")]
@@ -1593,14 +1611,13 @@ class stp_external_engine fname = object(self)
 	    [] in
 	  let ce = map_lines parse_counterex results in
 	    close_in results;
-	    if not !opt_save_solver_files then
+	    if not !opt_save_solver_files && result <> None then
 	      (Sys.remove (curr_fname ^ ".stp");
 	       Sys.remove (curr_fname ^ ".stp.out"));
 	    (result, first_assign @ ce)
 
   method unprepare =
     visitor <- None
-
 end
 
 class virtual concrete_memory = object(self)
@@ -3768,6 +3785,11 @@ let opt_trace_sym_addrs = ref false
 let opt_trace_sym_addr_details = ref false
 
 exception ReachedMeasurePoint
+exception SolverFailure
+
+let solver_sats = ref 0L
+let solver_unsats = ref 0L
+let solver_fails = ref 0L
 
 module SymPathFragMachineFunctor =
   functor (D : DOMAIN) ->
@@ -3915,8 +3937,18 @@ struct
 	query_engine#prepare decls assign_vars;
 	List.iter (fun (v, exp) -> (query_engine#assert_eq v exp)) assigns;
 	let time_before = Sys.time () in
-	let (result, ce) = query_engine#query cond_e in
-	let is_sat = not result in
+	let (result_o, ce) = query_engine#query cond_e in
+	let is_sat = match result_o with
+	  | Some true ->
+	      solver_unsats := Int64.succ !solver_unsats;
+	      false
+	  | Some false ->
+	      solver_sats := Int64.succ !solver_sats;
+	      true
+	  | None ->
+	      solver_fails := Int64.succ !solver_fails;
+	      raise SolverFailure
+	in
 	  if verbose then
 	    (if is_sat then
 	       (if !opt_trace_decisions then
@@ -6944,6 +6976,7 @@ let opt_trace_orig_ir = ref false
 let opt_trace_iterations = ref false
 let opt_coverage_stats = ref false
 let opt_gc_stats = ref false
+let opt_solver_stats = ref false
 let opt_time_stats = ref false
 let opt_watch_expr_str = ref None
 let opt_watch_expr = ref None
@@ -7210,6 +7243,21 @@ let print_tree fm =
 
 let symbolic_init = ref (fun () -> ())
 
+let opt_nonfatal_solver = ref false
+
+let periodic_stats fm at_end force = 
+  if true || force then
+    print_tree fm;
+  if !opt_gc_stats || force then
+    check_memory_usage fm;
+  if !opt_gc_stats || force then
+    Gc.print_stat stdout;
+  if (!opt_solver_stats && at_end) || force then
+    (Printf.printf "Solver returned satisfiable %Ld time(s)\n" !solver_sats;
+     Printf.printf "Solver returned unsatisfiable %Ld time(s)\n"
+       !solver_unsats;
+     Printf.printf "Solver failed %Ld time(s)\n" !solver_fails)
+
 let fuzz start_eip fuzz_start_eip end_eips fm asmir_gamma =
   if !opt_trace_setup then
     (Printf.printf "Initial registers:\n";
@@ -7226,53 +7274,69 @@ let fuzz start_eip fuzz_start_eip end_eips fm asmir_gamma =
   fm#make_snap ();
   if !opt_trace_setup then
     (Printf.printf "Took snapshot\n"; flush stdout);
-  loop_w_stats None
-    (fun iter ->
-       let old_tcs = Hashtbl.length trans_cache in
-       let stop str = if !opt_trace_stopping then
-	 Printf.printf "Stopping %s\n" str
-       in
-	 fm#set_iter_seed (Int64.to_int iter);
-	 (try
-	    runloop fm fuzz_start_eip asmir_gamma
-	      (fun a -> List.mem a end_eips);
-	  with
-	    | SimulatedExit(_) -> stop "when program called exit()"
-	    | KnownPath -> stop "on previously-explored path"
-		(* KnownPath currently shouldn't happen *)
-	    | DeepPath -> stop "on too-deep path"
-	    | SymbolicJump -> stop "at symbolic jump"
-	    | NullDereference -> stop "at null deref"
-	    | JumpToNull -> stop "at jump to null"
-	    | TooManyIterations -> stop "after too many loop iterations"
-	    | UnhandledTrap -> stop "at trap"
-	    | IllegalInstruction -> stop "at bad instruction"
-	    | UnhandledSysCall(s) ->
-		Printf.printf "[trans_eval WARNING]: %s\n%!" s;
-		stop "at unhandled system call"
-	    | ReachedMeasurePoint -> stop "at measurement point"
-	    (* | NotConcrete(_) -> () (* shouldn't happen *)
-	    | Simplify_failure(_) -> () (* shouldn't happen *)*)
-	 ); 
-	 if not fm#finish_path then raise LastIteration;
-	 if !opt_coverage_stats && 
-	   (Hashtbl.length trans_cache - old_tcs > 0) then
-	     (* Printf.printf "Coverage increased to %d with %s on %Ld\n"
-		(Hashtbl.length trans_cache) regex iter *)
-	     Printf.printf "Coverage increased to %d on %Ld\n"
-	       (Hashtbl.length trans_cache) iter;
-	 if Int64.rem iter 50L = 0L then
-	   print_tree fm;
-	   if !opt_gc_stats then
-	     check_memory_usage fm;
-	 fm#reset ()
-    );
-  (match !opt_measure_deref_influence_at with
-     | Some eip -> fm#compute_multipath_influence eip
-     | _ -> fm#compute_all_multipath_influence);
-  print_tree fm;
-  if !opt_gc_stats then
-    Gc.print_stat stdout
+     Sys.set_signal  Sys.sighup
+       (Sys.Signal_handle(fun _ -> raise (Signal "HUP")));
+     Sys.set_signal  Sys.sigint
+       (Sys.Signal_handle(fun _ -> raise (Signal "INT")));
+     Sys.set_signal Sys.sigterm
+       (Sys.Signal_handle(fun _ -> raise (Signal "TERM")));
+     Sys.set_signal Sys.sigquit
+       (Sys.Signal_handle(fun _ -> raise (Signal "QUIT")));
+     Sys.set_signal Sys.sigusr1
+       (Sys.Signal_handle(fun _ -> raise (Signal "USR1")));
+     Sys.set_signal Sys.sigusr2
+       (Sys.Signal_handle(fun _ -> periodic_stats fm false true));
+  (try
+     (try
+	loop_w_stats None
+	  (fun iter ->
+	     let old_tcs = Hashtbl.length trans_cache in
+	     let stop str = if !opt_trace_stopping then
+	       Printf.printf "Stopping %s\n" str
+	     in
+	       fm#set_iter_seed (Int64.to_int iter);
+	       (try
+		  runloop fm fuzz_start_eip asmir_gamma
+		    (fun a -> List.mem a end_eips);
+		with
+		  | SimulatedExit(_) -> stop "when program called exit()"
+		  | KnownPath -> stop "on previously-explored path"
+		      (* KnownPath currently shouldn't happen *)
+		  | DeepPath -> stop "on too-deep path"
+		  | SymbolicJump -> stop "at symbolic jump"
+		  | NullDereference -> stop "at null deref"
+		  | JumpToNull -> stop "at jump to null"
+		  | TooManyIterations -> stop "after too many loop iterations"
+		  | UnhandledTrap -> stop "at trap"
+		  | IllegalInstruction -> stop "at bad instruction"
+		  | UnhandledSysCall(s) ->
+		      Printf.printf "[trans_eval WARNING]: %s\n%!" s;
+		      stop "at unhandled system call"
+		  | ReachedMeasurePoint -> stop "at measurement point"
+		  | SolverFailure when !opt_nonfatal_solver
+		      -> stop "on solver failure"
+		  | Signal("USR1") -> stop "on SIGUSR1"
+		  (* | NotConcrete(_) -> () (* shouldn't happen *)
+		     | Simplify_failure(_) -> () (* shouldn't happen *)*)
+	       ); 
+	       if not fm#finish_path then raise LastIteration;
+	       if !opt_coverage_stats && 
+		 (Hashtbl.length trans_cache - old_tcs > 0) then
+		   Printf.printf "Coverage increased to %d on %Ld\n"
+		     (Hashtbl.length trans_cache) iter;
+	       periodic_stats fm false false;
+	       fm#reset ()
+	  );
+      with
+	| LastIteration -> ()
+	| Signal("QUIT") -> Printf.printf "Caught SIGQUIT\n");
+     (match !opt_measure_deref_influence_at with
+	| Some eip -> fm#compute_multipath_influence eip
+	| _ -> fm#compute_all_multipath_influence)
+   with
+     | Signal(("INT"|"HUP"|"TERM") as s) -> Printf.printf "Caught SIG%s\n" s
+     | e -> Printf.printf "Caught fatal error %s\n" (Printexc.to_string e));
+  periodic_stats fm true false
 
 (* let fuzz_vxalloc (fm : machine) = *)
 (*   fuzz_static 0x08048434L [0x080485f7L] fm *)
@@ -7433,6 +7497,9 @@ let main argv =
 	"path Location of external STP binary");
        ("-save-solver-files", Arg.Set(opt_save_solver_files),
 	" Retain STP input and output files");
+       ("-solver-timeout", Arg.String
+	  (fun s -> opt_solver_timeout := Some (int_of_string s)),
+	"secs Run each query for at most N seconds");
        ("-tls-base", Arg.String
 	  (fun s -> opt_tls_base := Some (Int64.of_string s)),
 	"addr Use a Linux TLS (%gs) segment at the given address");
@@ -7494,12 +7561,16 @@ let main argv =
 	" Print pseudo-BB coverage statistics");
        ("-gc-stats", Arg.Set(opt_gc_stats),
 	" Print memory usage statistics");
+       ("-solver-stats", Arg.Set(opt_solver_stats),
+	" Print solver statistics");
        ("-time-stats", Arg.Set(opt_gc_stats),
 	" Print running time statistics");
        ("-print-callrets", Arg.Set(opt_print_callrets),
 	" Print call and ret instructions executed. Can be used with ./getbacktrace.pl to generate the backtrace at any point.");
        ("-no-fail-on-huer", Arg.Clear(opt_fail_offset_heuristic),
 	" Do not fail when a heuristic (e.g. offset optimization) fails.");
+       ("-nonfatal-solver", Arg.Set(opt_nonfatal_solver),
+	" Keep going even if the solver fails/crashes");
        ("-follow-path", Arg.Set_string(opt_follow_path),
 	"string String of 0's and 1's signifying the specific path decisions to make.");
        ("-watch-expr", Arg.String
