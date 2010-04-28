@@ -2804,8 +2804,11 @@ struct
 
     method concretize_misc = ()
 
+    method eip_hook eip = ignore(eip)
+
     method set_eip eip =
-      self#set_word_var R_EIP eip
+      self#set_word_var R_EIP eip;
+      self#eip_hook eip
 
     method private on_missing_zero_m (m:GM.granular_memory) =
       m#on_missing
@@ -3569,6 +3572,8 @@ class decision_tree = object(self)
     String.concat ""
       (List.map (fun b -> if b then "1" else "0") (List.rev self#get_hist));
 
+  method get_depth = depth
+
   method add_kid b =
     match (b, cur.f_child, cur.t_child) with
       | (false, Some(Some kid), _)
@@ -3776,6 +3781,10 @@ class decision_tree = object(self)
 end
 
 let opt_measure_influence_derefs = ref false
+let opt_periodic_influence = ref None
+let next_periodic_influence : int ref = ref (-1)
+let opt_influence_bound = ref (-2.0)
+let opt_disqualify_addrs = ref []
 let opt_measure_deref_influence_at = ref None
 let opt_trace_assigns = ref false
 let opt_trace_assigns_string = ref false
@@ -3785,6 +3794,8 @@ let opt_trace_sym_addrs = ref false
 let opt_trace_sym_addr_details = ref false
 
 exception ReachedMeasurePoint
+exception ReachedInfluenceBound
+exception DisqualifiedPath
 exception SolverFailure
 
 let solver_sats = ref 0L
@@ -3815,11 +3826,19 @@ struct
 
     val measured_values = Hashtbl.create 30
       
-    method take_measure e =
-      let eip = self#get_word_var R_EIP in
-      let old = (try Hashtbl.find measured_values eip
+    method private take_measure key e =
+      let old = (try Hashtbl.find measured_values key
 		 with Not_found -> []) in
-	Hashtbl.replace measured_values eip ((path_cond, e) :: old)
+	Hashtbl.replace measured_values key ((path_cond, e) :: old)
+
+    method take_measure_eip e =
+      let eip = self#get_word_var R_EIP in
+      let str = Printf.sprintf "eip 0x%08Lx" eip in
+	self#take_measure str e
+
+    method take_measure_expr key_expr e =
+      let str = Printf.sprintf "expr %s" (V.exp_to_string key_expr) in
+	self#take_measure str e
 
     (* val query_engine = new stpvc_engine *)
     val query_engine = new stp_external_engine "fuzz"
@@ -3892,20 +3911,24 @@ struct
 		  assigns_sl @ [V.Assert(cond_e)]) in
 	V.pp_program (fun x -> Printf.printf "%s" x) prog; 
 	let () = ignore(prog) in
-	  ()
+	  0.0
 
     method measure_influence (target_expr : V.exp) =
       let (free_decls, assigns, cond_e, target_e) =
 	form_man#collect_for_solving [] path_cond target_expr in
-	self#measure_influence_common free_decls assigns cond_e target_e
+      let i =
+	self#measure_influence_common free_decls assigns cond_e target_e in
+	Printf.printf "Estimated influence on %s is %f\n"
+	  (V.exp_to_string target_expr) i;
+	i
 
-    method compute_multipath_influence eip =
+    method compute_multipath_influence loc =
       let fresh_cond_var =
 	let counter = ref 0 in
 	  fun () -> counter := !counter + 1;
 	  V.newvar ("cond_" ^ (string_of_int !counter)) V.REG_1
       in
-      let measurements = (try Hashtbl.find measured_values eip
+      let measurements = (try Hashtbl.find measured_values loc
 			  with Not_found -> []) in
       let conjoined = List.map
 	(fun (pc, e) -> (fresh_cond_var (), form_man#conjoin pc, e))
@@ -3921,11 +3944,42 @@ struct
 	(V.Constant(V.Int(V.REG_32, 0L))) conjoined in
       let (free_decls, t_assigns, cond_e, target_e) =
 	form_man#collect_for_solving cond_assigns [cond] expr in
-	self#measure_influence_common free_decls t_assigns cond_e target_e
+      let i =
+	self#measure_influence_common free_decls t_assigns cond_e target_e in
+	Printf.printf "Estimated multipath influence at %s is %f\n"
+	  loc i;
 
     method compute_all_multipath_influence =
       Hashtbl.iter (fun eip _ -> self#compute_multipath_influence eip)
 	measured_values
+
+    val mutable periodic_influence_exprs = []
+
+    method store_symbolic_word_influence addr varname =
+      let v = form_man#fresh_symbolic_32 varname in
+	self#store_word addr v;
+	periodic_influence_exprs <-
+	  (D.to_symbolic_32 v) :: periodic_influence_exprs
+
+    method maybe_periodic_influence =
+      match !opt_periodic_influence with
+	| None -> ()
+	| Some period when dt#get_depth >= !next_periodic_influence ->
+	    next_periodic_influence := dt#get_depth + period;
+	    let num_bounded = ref 0 in
+	      List.iter
+		(fun e -> let i = self#measure_influence e in
+		   if i <= !opt_influence_bound then
+		     incr num_bounded)
+		periodic_influence_exprs;
+	      if !num_bounded = List.length periodic_influence_exprs then
+		raise ReachedInfluenceBound
+	| Some _ -> ()
+
+    method path_end_influence =
+      List.iter
+	(fun e -> self#take_measure_expr e e)
+	periodic_influence_exprs
 
     method query_with_path_cond cond verbose =
       let pc = cond :: path_cond and
@@ -3966,6 +4020,7 @@ struct
 	      ((Sys.time ()) -. time_before);
 	  flush stdout;
 	  query_engine#unprepare;
+	  self#maybe_periodic_influence;
 	  is_sat
 
     method private try_extend trans_func try_func non_try_func =
@@ -4031,7 +4086,7 @@ struct
       let eip = self#get_word_var R_EIP in
 	match !opt_measure_deref_influence_at with
 	  | Some addr when addr = eip ->
-	      self#take_measure e;
+	      self#take_measure_eip e;
 	      raise ReachedMeasurePoint
 	  | _ -> if !opt_measure_influence_derefs then
 	      let loc = Printf.sprintf "%s:%08Lx:%Ld"
@@ -4042,8 +4097,8 @@ struct
 		       "Skipping redundant influence measurement at %s\n" loc)
 		else
 		  (Hashtbl.replace unique_measurements loc ();
-		   self#take_measure e;
-		   self#measure_influence e)
+		   self#take_measure_eip e;
+		   ignore(self#measure_influence e))
 
     method eval_addr_exp exp =
       let c32 x = V.Constant(V.Int(V.REG_32, x)) in
@@ -4107,8 +4162,20 @@ struct
     method on_missing_zero =
       self#on_missing_zero_m (mem :> GM.granular_memory)
 
+    val mutable qualified = true
+
+    method disqualify_path = qualified <- false
+
+    method eip_hook eip = 
+      fm#eip_hook eip;
+      if List.mem eip !opt_disqualify_addrs then
+	(self#disqualify_path;
+	 raise DisqualifiedPath)
+	  
     method finish_path =
       dt#mark_all_seen;
+      if qualified then
+	self#path_end_influence;
       if !opt_trace_binary_paths then
 	Printf.printf "Path: %s\n" dt#get_hist_str;
       dt#try_again_p
@@ -4121,6 +4188,7 @@ struct
       fm#reset ();
       form_man#reset_mem_axioms;
       path_cond <- [];
+      qualified <- true;
       dt#reset
   end
 end
@@ -6910,60 +6978,24 @@ module StateLoader = struct
 end
 
 let opt_skip_call_addr = ref []
+let opt_skip_call_addr_symbol = ref []
 
 let call_replacements fm eip =
-  let eaxreplace = List.fold_left (fun ret (addr, retval) -> 
-				     if (addr = eip) then Some (retval) else ret
-				  ) None !opt_skip_call_addr in
+  let eaxreplace = List.fold_left
+    (fun ret (addr, retval) -> 
+       if (addr = eip) then Some (retval) else ret)
+    None !opt_skip_call_addr in
     match eaxreplace with 
       | Some(x) -> Some (fun () -> fm#set_word_var R_EAX x)
       | None ->
-	  match eip with
-      (* vx_alloc: *)
-(*     | 0x0804836cL (* malloc *) -> *)
-(* 	Some (fun () -> fm#set_word_reg_symbolic R_EAX "malloc") *)
-(*     | 0x0804834cL (* __assert_fail *) -> *)
-(* 	Some (fun () -> raise (SimulatedExit(-1L))) *)
-
-    (* hv_fetch v1: *)
-(*     | 0x08063550L (* pthread_getspecific *) -> *)
-(* 	Some (fun () -> fm#set_word_reg_symbolic R_EAX "pthread_thingie") *)
-(*     | 0x08063b80L (* malloc *) -> *)
-(* 	Some (fun () -> fm#set_word_reg_symbolic R_EAX "malloc") *)
-(*     | 0x080633b0L (* calloc *) -> *)
-(* 	Some (fun () -> fm#set_word_reg_symbolic R_EAX "calloc") *)
-(*     | 0x080638f0L (* strlen *) -> *)
-(* 	Some (fun () -> fm#set_word_reg_symbolic R_EAX "strlen") *)
-(*     | 0x080634d0L (* memset *) -> *)
-(* 	Some (fun () -> fm#set_word_reg_symbolic R_EAX "memset") *)
-(*     | 0x08063cd0L (* memmove *) -> *)
-(* 	Some (fun () -> fm#set_word_reg_symbolic R_EAX "memmove") *)
-(*     | 0x08063160L (* __errno_location *) -> *)
-(* 	Some (fun () -> fm#set_word_reg_symbolic R_EAX "errno_loc") *)
-(*     | 0x08063410L (* write *) -> *)
-(* 	Some (fun () -> raise (SimulatedExit(-1L))) *)
-
-    (* hv_fetch v2: *)
-(*     | 0x08302d70L (* __libc_malloc *) ->  *)
-(*  	Some (fun () -> fm#set_word_reg_symbolic R_EAX "malloc") *)
-(*     | 0x082ee3e0L (* __assert_fail *) -> *)
-(*  	Some (fun () -> raise (SimulatedExit(-1L))) *)
-(*     | 0x08302a50L (* __calloc *) -> *)
-(* 	Some (fun () -> fm#set_word_reg_symbolic R_EAX "calloc") *)
-(*     | 0x08303180L (* __libc_realloc *) -> *)
-(*  	Some (fun () -> fm#set_word_reg_symbolic R_EAX "realloc")	 *)
-(*     | 0x08300610L (* __cfree *) -> *)
-(*  	Some (fun () -> fm#set_word_var R_EAX 1L)	 *)
-
-    (* bst_find *)
-(*     | 0x08048304L (* __assert_fail *) -> *)
-(*  	Some (fun () -> raise (SimulatedExit(-1L))) *)
-
-    (* vmlinux *)
-    | 0xc0103700L (* native_iret *) ->
-  	Some (fun () -> raise (SimulatedExit(0L)))
-
-    | _ -> None
+	  let eax_sym = List.fold_left
+	    (fun ret (addr, symname) -> 
+	       if (addr = eip) then Some symname else ret)
+	    None !opt_skip_call_addr_symbol in
+	    match eax_sym with 
+	      | Some symname ->
+		  Some (fun () -> fm#set_word_reg_symbolic R_EAX symname)
+	      | _ -> None
 
 let trans_cache = Hashtbl.create 100000 
 
@@ -7313,6 +7345,8 @@ let fuzz start_eip fuzz_start_eip end_eips fm asmir_gamma =
 		      Printf.printf "[trans_eval WARNING]: %s\n%!" s;
 		      stop "at unhandled system call"
 		  | ReachedMeasurePoint -> stop "at measurement point"
+		  | ReachedInfluenceBound -> stop "at influence bound"
+		  | DisqualifiedPath -> stop "on disqualified path"
 		  | SolverFailure when !opt_nonfatal_solver
 		      -> stop "on solver failure"
 		  | Signal("USR1") -> stop "on SIGUSR1"
@@ -7331,7 +7365,8 @@ let fuzz start_eip fuzz_start_eip end_eips fm asmir_gamma =
 	| LastIteration -> ()
 	| Signal("QUIT") -> Printf.printf "Caught SIGQUIT\n");
      (match !opt_measure_deref_influence_at with
-	| Some eip -> fm#compute_multipath_influence eip
+	| Some eip -> fm#compute_multipath_influence 
+	    (Printf.sprintf "eip 0x%08Lx" eip)
 	| _ -> fm#compute_all_multipath_influence)
    with
      | Signal(("INT"|"HUP"|"TERM") as s) -> Printf.printf "Caught SIG%s\n" s
@@ -7380,6 +7415,7 @@ let opt_symbolic_regs = ref false
 let opt_symbolic_cstrings = ref []
 let opt_symbolic_string16s = ref []
 let opt_symbolic_words = ref []
+let opt_symbolic_words_influence = ref []
 let opt_argv = ref []
 
 let split_string char s =
@@ -7410,6 +7446,10 @@ let main argv =
 	  (fun s -> opt_fuzz_end_addrs :=
 	     (Int64.of_string s) :: !opt_fuzz_end_addrs),
 	"addr Code address to finish fuzzing, may be repeated");
+       ("-disqualify-addr", Arg.String
+	  (fun s -> opt_disqualify_addrs :=
+	     (Int64.of_string s) :: !opt_disqualify_addrs),
+	"addr As above, but also remove from influence");
        ("-core", Arg.String (fun s -> opt_core_file_name := Some s),
 	"corefile Load memory state from an ELF core dump");
        ("-pid", Arg.String
@@ -7467,6 +7507,9 @@ let main argv =
        ("-skip-call-addr", Arg.String
 	  (add_delimited_pair opt_skip_call_addr '='),
 	"addr=retval Replace the call instruction at address 'addr' with a nop, and place 'retval' in EAX (return value)");
+       ("-skip-call-addr-symbol", Arg.String
+	  (add_delimited_num_str_pair opt_skip_call_addr_symbol '='),
+	"addr=symname As above, but return a fresh symbol");
        ("-symbolic-string16", Arg.String
 	  (add_delimited_pair opt_symbolic_string16s '+'),
 	"base+16s As above, but with 16-bit characters");
@@ -7475,6 +7518,9 @@ let main argv =
        ("-symbolic-word", Arg.String
 	  (add_delimited_num_str_pair opt_symbolic_words '='),
 	"addr=var Make a memory word symbolic");
+       ("-symbolic-word-influence", Arg.String
+	  (add_delimited_num_str_pair opt_symbolic_words_influence '='),
+	"addr=var As above, but also use for -periodic-influence");
        ("-random-memory", Arg.Set(opt_random_memory),
         " Use random values for uninit. memory reads");
        ("-zero-memory", Arg.Set(opt_zero_memory),
@@ -7487,6 +7533,14 @@ let main argv =
 	  (fun s -> opt_measure_deref_influence_at :=
 	     Some (Int64.of_string s)),
 	"eip Measure influence of value at given code address");
+       ("-periodic-influence", Arg.String
+	  (fun s ->
+	     let k = int_of_string s in
+	       opt_periodic_influence := Some k;
+	       next_periodic_influence := k),
+	"k Check influence every K bits of branching");
+       ("-influence-bound", Arg.Set_float(opt_influence_bound),
+	"float Stop path when influence is <= this value");
        ("-state", Arg.String
 	  (fun s -> opt_state_file := Some s),
 	"file Load memory state from TEMU state file");
@@ -7693,7 +7747,10 @@ in
 	       !opt_symbolic_string16s;
 	     List.iter (fun (addr, varname) ->
 			  fm#store_symbolic_word addr varname)
-	       !opt_symbolic_words
+	       !opt_symbolic_words;
+	     List.iter (fun (addr, varname) ->
+			  fm#store_symbolic_word_influence addr varname)
+	       !opt_symbolic_words_influence
 	);
       
       let (start_addr, fuzz_start) = match
