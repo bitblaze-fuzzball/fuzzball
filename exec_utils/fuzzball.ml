@@ -4202,6 +4202,16 @@ let opt_trace_stores = ref false
 let opt_trace_regions = ref false
 let opt_check_for_null = ref false
 
+type offset_strategy = UniformStrat | BiasedSmallStrat
+
+let offset_strategy_of_string s =
+  match s with
+    | "uniform" -> UniformStrat
+    | "biased-small" -> BiasedSmallStrat
+    | _ -> failwith "Unknown offset strategy"
+
+let opt_offset_strategy = ref UniformStrat
+
 module SymRegionFragMachineFunctor =
   functor (D : DOMAIN) ->
 struct
@@ -4499,7 +4509,11 @@ struct
 	if Hashtbl.mem concrete_cache e then
 	  (Hashtbl.find concrete_cache e, "Reused")
 	else
-	  let bits = self#choose_conc_offset_uniform e in
+	  let bits = 
+	    match !opt_offset_strategy with
+	      | UniformStrat -> self#choose_conc_offset_uniform e
+	      | BiasedSmallStrat -> self#choose_conc_offset_biased e
+	  in
 	    Hashtbl.replace concrete_cache e bits;
 	    (bits, "Picked") in
 	if !opt_trace_sym_addrs then
@@ -7632,8 +7646,12 @@ let main argv =
 	" Print running time statistics");
        ("-print-callrets", Arg.Set(opt_print_callrets),
 	" Print call and ret instructions executed. Can be used with ./getbacktrace.pl to generate the backtrace at any point.");
+       (* This flag is misspelled, and will be renamed in the future. *)
        ("-no-fail-on-huer", Arg.Clear(opt_fail_offset_heuristic),
 	" Do not fail when a heuristic (e.g. offset optimization) fails.");
+       ("-offset-strategy", Arg.String
+	  (fun s -> opt_offset_strategy := offset_strategy_of_string s),
+	"strategy Strategy for offset concretization: uniform, biased-small");
        ("-nonfatal-solver", Arg.Set(opt_nonfatal_solver),
 	" Keep going even if the solver fails/crashes");
        ("-follow-path", Arg.Set_string(opt_follow_path),
