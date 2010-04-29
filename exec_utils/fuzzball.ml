@@ -3519,6 +3519,8 @@ type decision_tree_node = {
   mutable f_child : decision_tree_node option option;
   mutable t_child : decision_tree_node option option;
   mutable all_seen : bool;
+  mutable query_children : int option;
+  mutable query_counted : bool;
   mutable ident : int }
 
 let next_dt_ident = ref 1
@@ -3527,6 +3529,7 @@ let new_dt_node the_parent =
   next_dt_ident := !next_dt_ident + 1;
   {parent = the_parent;
    f_child = None; t_child = None;
+   query_children = None; query_counted = false;
    all_seen = false; ident = !next_dt_ident}
 
 (* This hash algorithm is FNV-1a,
@@ -3537,15 +3540,30 @@ let hash_round h x =
 
 exception KnownPath
 exception DeepPath
+exception BranchLimit
+
 let opt_path_depth_limit = ref 1000000000000L
+let opt_query_branch_limit = ref 999999999
+let opt_trace_decision_tree = ref false
 
 class decision_tree = object(self)
   val root = new_dt_node None
   val mutable cur = new_dt_node None (* garbage *)
+  val mutable cur_query = new_dt_node None (* garbage *)
   val mutable depth = 0
   val mutable path_hash = Int64.to_int32 0x811c9dc5L
 
-  method init = cur <- root; self
+  method init =
+    root.query_children <- Some 0;
+    cur <- root;
+    cur_query <- root;
+    self
+
+  method reset =
+    cur <- root;
+    cur_query <- root;
+    depth <- 0;
+    path_hash <- Int64.to_int32 0x811c9dc5L
 
   method get_hist =
     let child_is kid n =
@@ -3575,6 +3593,7 @@ class decision_tree = object(self)
   method get_depth = depth
 
   method add_kid b =
+    assert(not cur.all_seen);
     match (b, cur.f_child, cur.t_child) with
       | (false, Some(Some kid), _)
       | (true,  _, Some(Some kid)) -> () (* already there *)
@@ -3587,6 +3606,55 @@ class decision_tree = object(self)
       | (false, Some None, _)
       | (true,  _, Some None) ->
 	  failwith "Tried to extend an unsat branch"
+
+  method start_new_query =
+    assert(cur.query_children <> None);
+    cur_query <- cur
+
+  method start_new_query_binary =
+    self#start_new_query;
+    match cur_query.query_children with
+      |	None | Some 0 | Some 1 | Some 2 -> ()
+      | _ -> failwith "Too many children in start_new_query_binary"
+
+  method count_query =
+    let rec finish_internal_nodes n top =
+      if !opt_trace_decision_tree then
+	Printf.printf "DT: Finish internal nodes at %d (%b)\n" n.ident top;
+      if n.query_children = None || top then
+	((match n.f_child with
+	    | Some(Some kid) -> finish_internal_nodes kid false
+	    | Some None -> ()
+	    | None -> n.f_child <- Some None);
+	 (match n.t_child with
+	    | Some(Some kid) -> finish_internal_nodes kid false
+	    | Some None -> ()
+	    | None -> n.t_child <- Some None);
+	 self#maybe_mark_all_seen_node n)
+    in
+      if !opt_trace_decision_tree then
+	Printf.printf "DT: count_query at %d (q %d)" cur.ident cur_query.ident;
+      if cur.ident <> cur_query.ident then 
+	(if cur.query_children = None then
+	   cur.query_children <- Some 0;
+	 (match cur_query.query_children with
+	    | None -> failwith "Count_query outside a query"
+	    | Some k when not cur.query_counted ->
+		if !opt_trace_decision_tree then	
+		  Printf.printf " -> %d" (k+1);
+		assert(k < !opt_query_branch_limit);
+ 		cur_query.query_children <- Some (k + 1);
+		cur.query_counted <- true
+	    | Some k -> ());
+	 if !opt_trace_decision_tree then	
+	   Printf.printf "\n";
+	 match cur_query.query_children with 
+	   | Some k when k >= !opt_query_branch_limit ->
+	       finish_internal_nodes cur_query true
+	   | _ -> ())
+      else
+	if !opt_trace_decision_tree then	
+	  Printf.printf "\n"
 
   method extend b =
     self#add_kid b;
@@ -3665,8 +3733,14 @@ class decision_tree = object(self)
 	     failwith "Both branches unsat in try_extend")
     in
       assert(not cur.all_seen);
-      match (cur.f_child, cur.t_child) with
-	| (Some(Some f_kid), Some(Some t_kid)) ->
+      let limited = match cur_query.query_children with 
+	| Some k when k >= !opt_query_branch_limit -> true
+	| _ -> false
+      in
+      if !opt_trace_decision_tree then	
+	Printf.printf "try_extend at %d\n" cur.ident;
+      match (cur.f_child, cur.t_child, limited) with
+	| (Some(Some f_kid), Some(Some t_kid), _) ->
 	    (match (f_kid.all_seen, t_kid.all_seen) with
 	       | (true, true) -> 
 		   if cur.all_seen then
@@ -3676,27 +3750,31 @@ class decision_tree = object(self)
 	       | (false, true) -> known false
 	       | (true, false) -> known true
 	       | (false, false) -> known (random_bit_gen ()))
-	| (Some(Some f_kid), Some None) ->
+	| (Some(Some f_kid), Some None, _) ->
 	    assert(not f_kid.all_seen);
 	    known false
-	| (Some None, Some(Some t_kid)) ->
+	| (Some None, Some(Some t_kid), _) ->
 	    assert(not t_kid.all_seen);
 	    known true
-	| (Some None, Some None) -> failwith "Unsat node in try_extend"
-	| (Some(Some f_kid), None) ->
+	| (Some None, Some None, _) -> failwith "Unsat node in try_extend"
+	| (Some(Some f_kid), None, false) ->
 	    if f_kid.all_seen then
 	      try_or_boring true
 	    else
 	      try_both ()
-	| (None, Some(Some t_kid)) ->
+	| (Some(Some f_kid), None, true) -> known false
+	| (None, Some(Some t_kid), false) ->
 	    if t_kid.all_seen then
 	      try_or_boring false
 	    else
 	      try_both ()
-	| (None, Some None) -> known_check false
-	| (Some None, None) -> known_check true
-	| (None, None) ->
+	| (None, Some(Some t_kid), true) -> known true
+	| (None, Some None, _) -> known_check false
+	| (Some None, None, _) -> known_check true
+	| (None, None, false) ->
 	    try_both ()
+	| (None, None, true) ->
+	    failwith "Limited/unknown invariant failure in try_extend"
 
   method try_extend_memoryless (trans_func : bool -> V.exp)
     try_func (non_try_func : bool -> unit) (random_bit_gen : unit -> bool) =
@@ -3725,8 +3803,63 @@ class decision_tree = object(self)
 	   (fun _ -> failwith "Both branches unsat in try_extend"))
 
   method private mark_all_seen_node node =
+    let mark n =
+      (* check the invariant that a node can only be marked all_seen
+	 if all of its children are. *)
+      (match n.f_child with
+	 | Some(Some kid) -> assert(kid.all_seen);
+	 | _ -> ());
+      (match n.t_child with
+	 | Some(Some kid) ->
+	     if not kid.all_seen then
+	       (Printf.printf "all_seen invariant failure at node %d\n"
+		  n.ident;
+		self#print_tree stdout;
+	       assert(kid.all_seen))
+	 | _ -> ());
+      n.all_seen <- true
+    in
+    let rec mark_internal_nodes n =
+      (match n.f_child with
+	 | Some(Some kid) when
+	     kid.query_children = None && not kid.all_seen ->
+	     mark_internal_nodes kid
+	 | _ -> ());
+      (match n.t_child with
+	 | Some(Some kid) when
+	     kid.query_children = None && not kid.all_seen ->
+	     mark_internal_nodes kid
+	 | _ -> ());
+      mark n
+    in
+    let rec internal_nodes_check n top =
+      if n.all_seen then
+	true
+      else if n.query_children <> None && not top then
+	false
+      else if
+	(match n.f_child with
+	   | Some(Some kid) -> internal_nodes_check kid false
+	   | _ -> true)
+	  &&
+	(match n.t_child with
+	   | Some(Some kid) -> internal_nodes_check kid false
+	   | _ -> true)
+      then
+	(mark n; true)
+      else
+	false
+    in
+    let rec query_parent n =
+      match n.query_children with
+	| Some k -> n
+	| None ->
+	    match n.parent with
+	      | Some p -> query_parent p
+	      | _ -> failwith "Missing query node parent"
+    in
     let rec loop n = 
-      n.all_seen <- true;
+      mark n;
       match n.parent with
 	| None -> ()
 	| Some p ->
@@ -3740,9 +3873,37 @@ class decision_tree = object(self)
 	       | (false, Some None, Some(Some t_kid))
 		   when t_kid.all_seen ->
 		   loop p
-	       | _ -> ())
+	       | _ -> ());
+	    let q_parent = query_parent p in
+	      match q_parent.query_children with
+		| Some k when k >= !opt_query_branch_limit ->
+		    if k > !opt_query_branch_limit then
+		      (Printf.printf "Node %d has excessive count %d\n"
+			 q_parent.ident k;
+		       assert(k = !opt_query_branch_limit)
+		      );
+		    if internal_nodes_check q_parent true then
+		      loop q_parent
+		| _ -> ()
     in
+      if !opt_trace_decision_tree then	
+	Printf.printf "DT: Mark_all_seen at %d\n" node.ident;
       loop node
+
+  method private maybe_mark_all_seen_node n =
+    if !opt_trace_decision_tree then	
+      Printf.printf "DT: maybe_mark_all_seen_node at %d\n" n.ident;
+    if (match n.f_child with
+	  | None -> false
+	  | Some None -> true
+	  | Some(Some kid) -> kid.all_seen)
+      &&
+	  (match n.t_child with
+	     | None -> false
+	     | Some None -> true
+	     | Some(Some kid) -> kid.all_seen)
+    then
+      self#mark_all_seen_node n
 
   method mark_all_seen = self#mark_all_seen_node cur
 
@@ -3757,10 +3918,15 @@ class decision_tree = object(self)
     in
     let print_node n =
       Printf.fprintf chan "%d: " n.ident;
-      Printf.fprintf chan "%s %s " (kid_to_string n.f_child)
-	(kid_to_string n.t_child);
-      Printf.fprintf chan "%s %s\n" (if n.all_seen then "*" else "?")
-	(kid_to_string (Some n.parent))
+      Printf.fprintf chan "%s " (kid_to_string n.f_child);
+      Printf.fprintf chan "%s " (kid_to_string n.t_child);
+      Printf.fprintf chan "%s " (if n.all_seen then "*" else "?");
+      Printf.fprintf chan "%s " (kid_to_string (Some n.parent));
+      Printf.fprintf chan "%s\n"
+	(match n.query_children with
+	   | None -> "[]"
+	   | Some k -> "[" ^ (string_of_int k) ^ "]");
+      
     in
     let rec loop n =
       print_node n;
@@ -3772,12 +3938,6 @@ class decision_tree = object(self)
 	 | _ -> ());
     in
       loop root
-
-  method reset =
-    cur <- root;
-    depth <- 0;
-    path_hash <- Int64.to_int32 0x811c9dc5L
-
 end
 
 let opt_measure_influence_derefs = ref false
@@ -4078,7 +4238,10 @@ struct
 	    NotConcrete _ ->
 	      (* Printf.printf "Symbolic branch condition %s\n"
 		 (V.exp_to_string v#to_symbolic_1); *)
-	      self#extend_pc_random (D.to_symbolic_1 v) true
+	      dt#start_new_query_binary;
+	      let b = self#extend_pc_random (D.to_symbolic_1 v) true in
+		dt#count_query;
+		b
 		
     val unique_measurements = Hashtbl.create 30
 
@@ -4112,6 +4275,7 @@ struct
 		  Printf.printf "Symbolic address %s @ (0x%Lx)\n"
 		    (V.exp_to_string e) eip;
 		self#maybe_measure_influence_deref e;
+		dt#start_new_query;
 		let bits = ref 0L in
 		  self#restore_path_cond
 		    (fun () ->
@@ -4126,6 +4290,7 @@ struct
 		       done);
 		  Printf.printf "Picked concrete value 0x%Lx\n" !bits;
 		  self#add_to_path_cond (V.BinOp(V.EQ, e, (c32 !bits)));
+		  dt#count_query;
 		  !bits
 
     method private on_missing_random_m (m:GM.granular_memory) =
@@ -4455,11 +4620,13 @@ struct
 	      (V.exp_to_string e) new_region;
 	  if !opt_check_for_null then
 	    (let can_be_null = ref false in
-	      self#restore_path_cond
-		(fun () ->
-		   can_be_null := self#extend_pc_random
-		     (V.BinOp(V.EQ, e, V.Constant(V.Int(V.REG_32, 0L)))) false
-		);
+	       dt#start_new_query;
+	       self#restore_path_cond
+		 (fun () ->
+		    can_be_null := self#extend_pc_random
+		      (V.BinOp(V.EQ, e, V.Constant(V.Int(V.REG_32, 0L)))) false
+		 );
+	       dt#count_query;
 	       Printf.printf "Can be null? %b\n" !can_be_null);
 	  new_region
 
@@ -4533,6 +4700,7 @@ struct
 	      Printf.printf "Symbolic address %s @ (0x%Lx)\n"
 		(V.exp_to_string e) eip;
 	    self#maybe_measure_influence_deref e;
+	    dt#start_new_query;
 	    let (cbases, coffs, eoffs, syms) = classify_terms e form_man in
 	      if !opt_trace_sym_addr_details then
 		(Printf.printf "Concrete base terms: %s\n"
@@ -4576,6 +4744,7 @@ struct
 		 | (el, vel) -> 
 		     (self#choose_conc_offset_cached (sum_list (el @ vel))))
 	    in
+	      dt#count_query;
 	      (base, (fix_u32 offset))
 		  
     method eval_addr_exp exp =
@@ -7372,6 +7541,7 @@ let fuzz start_eip fuzz_start_eip end_eips fm asmir_gamma =
 		  | ReachedMeasurePoint -> stop "at measurement point"
 		  | ReachedInfluenceBound -> stop "at influence bound"
 		  | DisqualifiedPath -> stop "on disqualified path"
+		  | BranchLimit -> stop "on branch limit"
 		  | SolverFailure when !opt_nonfatal_solver
 		      -> stop "on solver failure"
 		  | Signal("USR1") -> stop "on SIGUSR1"
@@ -7395,7 +7565,8 @@ let fuzz start_eip fuzz_start_eip end_eips fm asmir_gamma =
 	| _ -> fm#compute_all_multipath_influence)
    with
      | Signal(("INT"|"HUP"|"TERM") as s) -> Printf.printf "Caught SIG%s\n" s
-     | e -> Printf.printf "Caught fatal error %s\n" (Printexc.to_string e));
+     | e -> Printf.printf "Caught fatal error %s\n" (Printexc.to_string e);
+	 Printexc.print_backtrace stderr);
   periodic_stats fm true false
 
 (* let fuzz_vxalloc (fm : machine) = *)
@@ -7515,6 +7686,8 @@ let main argv =
        ("-path-depth-limit", Arg.String
 	  (fun s -> opt_path_depth_limit := Int64.of_string s),
 	"N Stop path after N bits of symbolic branching");
+       ("-query-branch-limit", Arg.Set_int opt_query_branch_limit,
+	"N Try at most N possibilities per branch");
        ("-load-base", Arg.String
 	  (fun s -> opt_load_base := Int64.of_string s),
 	"addr Base address for program image");
@@ -7604,6 +7777,8 @@ let main argv =
 	" Print decision paths as bit strings");
        ("-trace-decisions", Arg.Set(opt_trace_decisions),
 	" Print symbolic branch choices");
+       ("-trace-decision-tree", Arg.Set(opt_trace_decision_tree),
+	" Print internal decision tree operations");
        ("-trace-eip", Arg.Set(opt_trace_eip),
 	" Print PC of each insn executed");
        ("-trace-insns", Arg.Set(opt_trace_insns),
