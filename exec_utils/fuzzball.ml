@@ -4453,6 +4453,9 @@ struct
 	       Printf.printf "Can be null? %b\n" !can_be_null);
 	  new_region
 
+    method private is_region_base e =
+      Hashtbl.mem region_vals e
+
     method private choose_conc_offset_uniform e =
       let c32 x = V.Constant(V.Int(V.REG_32, x)) in
       let bits = ref 0L in
@@ -4536,7 +4539,14 @@ struct
 	      | (0L, [v]) -> (Some(self#region_for v), [])
 	      | (0L, vl) ->
 		  let (bvar, rest_vars) =
-		    select_one vl (fun () -> self#random_case_split true)
+		    let (known_regions, not_known) =
+		      List.partition (fun e -> self#is_region_base e) vl
+		    in
+		      match known_regions with
+			| [v] -> (v, not_known)
+			| _ -> 
+			    select_one vl
+			      (fun () -> self#random_case_split true)
 		  in
 		    if !opt_trace_sym_addrs then
 		      Printf.printf "Choosing %s as the base address\n"
@@ -4635,6 +4645,7 @@ struct
 
     method reset () =
       spfm#reset ();
+      List.iter (fun gm -> gm#clear ()) regions;
       Hashtbl.clear concrete_cache
   end
 end
@@ -6830,7 +6841,7 @@ module LinuxLoader = struct
 		load_segment fm ic phr 0L)
 	   else if phr.ph_type = 3L then (* PT_INTERP *)
 	     (seek_in ic (Int64.to_int phr.offset);
-	      let interp = IO.really_nread i (Int64.to_int phr.filesz) in
+	      let interp = IO.really_nread i ((Int64.to_int phr.filesz) - 1) in
 	      let base = 0xb7f00000L in
 		entry_point := load_ldso fm interp base;
 		ldso_base := base;
