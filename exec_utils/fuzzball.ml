@@ -2845,6 +2845,8 @@ struct
 	reg EFLAGSREST (D.from_concrete_32 0L);
 	reg R_LDT (D.from_concrete_32 0x00000000L);
 	reg R_DFLAG (D.from_concrete_32 1L);
+	reg R_IDFLAG (D.from_concrete_32 0L);
+	reg R_ACFLAG (D.from_concrete_32 0L);
 	reg R_EBP (D.from_concrete_32 0x00000000L);
 	reg R_ESP (D.from_concrete_32 0x00000000L);
 	reg R_ESI (D.from_concrete_32 0x00000000L);
@@ -5626,6 +5628,20 @@ object(self)
 	  failwith "Unhandled TCGETS ioctl"
       | _ -> failwith "Unknown ioctl"
 
+  method sys_lseek (fd: int) (offset: Int64.t) (whence: int) =
+    try
+      let seek_cmd = match whence with
+	| 0 -> Unix.SEEK_SET
+	| 1 -> Unix.SEEK_CUR
+	| 2 -> Unix.SEEK_END
+	| _ -> raise
+	    (Unix.Unix_error(Unix.EINVAL, "Bad whence argument to llseek", ""))
+      in
+      let loc = Unix.lseek (self#get_fd fd) (Int64.to_int offset) seek_cmd in
+	put_reg R_EAX (Int64.of_int loc);
+    with
+      | Unix.Unix_error(err, _, _) -> self#put_errno err
+
   method sys__llseek fd offset resultp whence =
     try
       let seek_cmd = match whence with
@@ -5658,7 +5674,7 @@ object(self)
 	    let fresh = self#fresh_addr length in
 	      zero_region fresh (Int64.to_int length);
 	      fresh
-	| (_, _, 0x3L (* PROT_READ|PROT_WRITE *),
+	| (_, _, (0x3L|0x7L) (* PROT_READ|PROT_WRITE|PROT_EXEC) *),
 	   0x32L (* MAP_PRIVATE|FIXED|ANONYMOUS *), -1, _) ->
 	    zero_region addr (Int64.to_int length);
 	    addr
@@ -5667,7 +5683,7 @@ object(self)
 	   (0x802L|0x2L|0x1L) (* MAP_PRIVATE|MAP_DENYWRITE|MAP_SHARED *), _, _) ->
 	    let dest_addr = self#fresh_addr length in
 	      do_read dest_addr
-	| (_, _, 0x3L (* PROT_READ|PROT_WRITE *),
+	| (_, _, (0x3L|0x7L) (* PROT_READ|PROT_WRITE|PROT_EXEC *),
 	   0x812L (* MAP_DENYWRITE|PRIVATE|FIXED *), _, _) ->
 	    do_read addr
 	| _ -> failwith "Unhandled mmap operation"
@@ -5934,7 +5950,13 @@ object(self)
 	 | 18 -> (* oldstat *)
 	     raise (UnhandledSysCall( "Unhandled Linux system call oldstat (18)"))
 	 | 19 -> (* lseek *)
-	     raise (UnhandledSysCall( "Unhandled Linux system call lseek (19)"))
+	     let (ebx, ecx, edx) = read_3_regs () in
+	     let (fd: int) = Int64.to_int ebx and
+		 offset = ecx and
+		 whence = (Int64.to_int edx) in
+	       if !opt_trace_syscalls then
+		 Printf.printf "lseek(%d, %Ld, %d)" fd offset whence;
+	       self#sys_lseek fd offset whence
 	 | 20 -> (* getpid *)
 	     if !opt_trace_syscalls then
 	       Printf.printf "getpid()";
@@ -6760,6 +6782,30 @@ object(self)
       | _ -> None
 end
 
+class cpuid_special_handler fm =
+object(self)
+  method handle_special str : V.stmt list option =
+    match str with
+      | "cpuid" -> ( 
+	  (* Taken from VEX/priv/guest-x86/ghelpers.c *)
+	  let eaxval = fm#get_word_var R_EAX in
+	    (match eaxval with 
+	       | 0L -> 
+		   fm#set_word_var R_EAX 1L;
+		   fm#set_word_var R_EBX 0x756e6547L;
+		   fm#set_word_var R_ECX 0x6c65746eL;
+		   fm#set_word_var R_EDX 0x49656e69L;
+	       | _ ->
+		   fm#set_word_var R_EAX 0x543L;
+		   fm#set_word_var R_EBX 0x0L;
+		   fm#set_word_var R_ECX 0x0L;
+		   fm#set_word_var R_EDX 0x8001bfL;
+	    );
+	    Some ([])
+	)
+      | _ -> None
+end
+  
 let opt_trace_setup = ref false
 
 module LinuxLoader = struct
@@ -7907,6 +7953,8 @@ in
 	  ((new linux_special_nonhandler fm) :> special_handler);
       fm#add_special_handler
 	((new trap_special_nonhandler fm) :> special_handler);
+      fm#add_special_handler
+	((new cpuid_special_handler fm) :> special_handler);
       (match !opt_state_file with
 	 | Some s -> state_start_addr := Some
 	     (StateLoader.load_mem_state fm s)
