@@ -777,6 +777,8 @@ let opt_use_tags = ref false
 let opt_print_callrets = ref false
 let opt_fail_offset_heuristic = ref true
 let opt_trace_solver = ref false
+let opt_measure_influence_syscall_args = ref false
+
 
 module FormulaManagerFunctor =
   functor (D : DOMAIN) ->
@@ -4757,6 +4759,10 @@ struct
       try (D.to_concrete_32 (self#get_int_var (Hashtbl.find reg_to_var reg)))
       with NotConcrete _ ->
 	let e = D.to_symbolic_32 (self#get_int_var (Hashtbl.find reg_to_var reg)) in
+	  if (!opt_measure_influence_syscall_args) then (
+	    Printf.printf "Measuring Symbolic syscall arg influence...";
+	    let i = self#measure_influence e in ignore(i)
+	  );
 	  self#choose_conc_offset_uniform e
 
     method private store_byte_region  r addr b =
@@ -7725,6 +7731,8 @@ let main argv =
         " Use zero values for uninit. memory reads");
        ("-check-for-null", Arg.Set(opt_check_for_null),
         " Check whether dereferenced values can be null");
+       ("-measure-influence-syscall-args", Arg.Set(opt_measure_influence_syscall_args),
+	" Measure influence on uses of sym. system call args.");
        ("-measure-influence-derefs", Arg.Set(opt_measure_influence_derefs),
 	" Measure influence on uses of sym. pointer values");
        ("-measure-deref-influence-at", Arg.String
