@@ -2759,6 +2759,8 @@ exception TooManyIterations
 exception IllegalInstruction
 
 let opt_iteration_limit = ref 1000000000000L
+let opt_watch_expr_str = ref None
+let opt_watch_expr = ref None
 
 module FragmentMachineFunctor =
   functor (D : DOMAIN) ->
@@ -3506,7 +3508,7 @@ struct
       in
 	loop (self#get_word_var R_EBP)
 
-    method eval_expr_to_string e =
+    method private eval_expr_to_string e =
       match self#eval_int_exp_ty e with
 	| (v, V.REG_1) -> D.to_string_1 v
 	| (v, V.REG_8) -> D.to_string_8 v
@@ -3514,6 +3516,13 @@ struct
 	| (v, V.REG_32) -> D.to_string_32 v
 	| (v, V.REG_64) -> D.to_string_64 v
 	| _ -> failwith "Unexpected type in eval_expr_to_string"
+
+    method watchpoint =
+      match !opt_watch_expr with
+	| Some e -> Printf.printf "Watched expression %s = %s\n"
+	    (match !opt_watch_expr_str with Some s -> s | None -> "???")
+	      (self#eval_expr_to_string e)
+	| None -> ()
   end
 end
 
@@ -6904,9 +6913,8 @@ module LinuxLoader = struct
 	     })
 
   let store_page fm vaddr str =
-    if Int64.rem vaddr 0x1000L = 0L then
-      fm#store_page_conc vaddr
-	(str ^ (String.make (4096 - String.length str) '\000'))
+    if Int64.rem vaddr 0x1000L = 0L && (String.length str) = 4096 then
+      fm#store_page_conc vaddr str
     else
       fm#store_str vaddr 0L str
 
@@ -6993,7 +7001,8 @@ module LinuxLoader = struct
        assert(size <= 4096L);
        seek_in ic (Int64.to_int (Int64.add phr.offset file_base));
        let data = IO.really_nread i (Int64.to_int size) in
-	 store_page fm vbase data
+	 store_page fm vbase data;
+	 fm#watchpoint
 	  
    let load_ldso fm dso vaddr =
     let ic = open_in dso in
@@ -7263,8 +7272,6 @@ let opt_coverage_stats = ref false
 let opt_gc_stats = ref false
 let opt_solver_stats = ref false
 let opt_time_stats = ref false
-let opt_watch_expr_str = ref None
-let opt_watch_expr = ref None
 
 let rec runloop fm eip asmir_gamma until =
   let load_byte addr = fm#load_byte_conc addr in
@@ -7390,11 +7397,7 @@ let rec runloop fm eip asmir_gamma until =
 	Printf.printf "EIP is 0x%08Lx\n" eip;
       fm#set_eip eip;
       (* Printf.printf "EFLAGSREST is %08Lx\n" (fm#get_word_var EFLAGSREST);*)
-      (match !opt_watch_expr with
-	 | Some e -> Printf.printf "Watched expression %s = %s\n"
-	     (match !opt_watch_expr_str with Some s -> s | None -> "???")
-	       (fm#eval_expr_to_string e)
-	 | None -> ());
+      fm#watchpoint;
       (* Printf.printf ("Insn bytes are %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x\n") (load_byte eip)
 	 (load_byte (Int64.add eip (Int64.of_int 1)))
 	 (load_byte (Int64.add eip (Int64.of_int 2)))
@@ -7921,6 +7924,10 @@ in
       else
 	fm#on_missing_symbol;
       fm#init_prog (dl, []);
+      (match !opt_watch_expr_str with
+	 | Some s -> opt_watch_expr :=
+	     Some (Vine_parser.parse_exp_from_string dl s)
+	 | None -> ());
       if !opt_symbolic_regs then
 	fm#make_x86_regs_symbolic
       else
@@ -7965,10 +7972,6 @@ in
 	 | None -> ());
       (match !opt_tls_base with
 	 | Some base -> LinuxLoader.setup_tls_segment fm 0x60000000L base
-	 | None -> ());
-      (match !opt_watch_expr_str with
-	 | Some s -> opt_watch_expr :=
-	     Some (Vine_parser.parse_exp_from_string dl s)
 	 | None -> ());
       (match !opt_initial_eax with
 	 | Some v -> fm#set_word_var R_EAX v
