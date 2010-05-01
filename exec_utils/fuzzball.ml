@@ -479,6 +479,8 @@ let fix_s8  x = Int64.shift_right (Int64.shift_left x 56) 56
 let fix_s16 x = Int64.shift_right (Int64.shift_left x 48) 48
 let fix_s32 x = Int64.shift_right (Int64.shift_left x 32) 32
 
+exception DivideByZero
+
 module ConcreteDomain : DOMAIN = struct
   type t = int64
 
@@ -552,29 +554,85 @@ module ConcreteDomain : DOMAIN = struct
   let times32 = Int64.mul
   let times64 = Int64.mul
 
-  let divide1  v v2 = Vine_util.int64_udiv (fix_u1  v) (fix_u1  v2)
-  let divide8  v v2 = Vine_util.int64_udiv (fix_u8  v) (fix_u8  v2)
-  let divide16 v v2 = Vine_util.int64_udiv (fix_u16 v) (fix_u16 v2)
-  let divide32 v v2 = Vine_util.int64_udiv (fix_u32 v) (fix_u32 v2)
-  let divide64 v v2 = Vine_util.int64_udiv          v           v2
+  let divide1  v v2 = 
+    let d = fix_u1 v2 in
+      if d = 0L then raise DivideByZero;
+      Vine_util.int64_udiv (fix_u1  v) d
+  let divide8  v v2 =
+    let d = fix_u8 v2 in
+      if d = 0L then raise DivideByZero;
+      Vine_util.int64_udiv (fix_u8  v) d
+  let divide16 v v2 =
+    let d = fix_u16 v2 in
+      if d = 0L then raise DivideByZero;
+      Vine_util.int64_udiv (fix_u16 v) d
+  let divide32 v v2 =
+    let d = fix_u32 v2 in
+      if d = 0L then raise DivideByZero;
+      Vine_util.int64_udiv (fix_u32 v) d
+  let divide64 v v2 =
+    if v2 = 0L then raise DivideByZero;
+    Vine_util.int64_udiv v v2
 
-  let sdivide1  v v2 = Int64.div (fix_s1  v) (fix_s1  v2)
-  let sdivide8  v v2 = Int64.div (fix_s8  v) (fix_s8  v2)
-  let sdivide16 v v2 = Int64.div (fix_s16 v) (fix_s16 v2)
-  let sdivide32 v v2 = Int64.div (fix_s32 v) (fix_s32 v2)
-  let sdivide64 v v2 = Int64.div          v           v2 
+  let sdivide1  v v2 =
+    let d = fix_s1  v2 in
+      if d = 0L then raise DivideByZero;
+      Int64.div (fix_s1  v) d
+  let sdivide8  v v2 =
+    let d = fix_s8  v2 in
+      if d = 0L then raise DivideByZero;
+      Int64.div (fix_s8  v)d
+  let sdivide16 v v2 =
+    let d = fix_s16 v2 in
+      if d = 0L then raise DivideByZero;
+      Int64.div (fix_s16 v) d
+  let sdivide32 v v2 =
+    let d = fix_s32 v2 in
+      if d = 0L then raise DivideByZero;
+      Int64.div (fix_s32 v) d
+  let sdivide64 v v2 =
+    if v2 = 0L then raise DivideByZero;
+    Int64.div v v2 
 
-  let mod1  v v2 = Vine_util.int64_urem (fix_u1  v) (fix_u1  v2)
-  let mod8  v v2 = Vine_util.int64_urem (fix_u8  v) (fix_u8  v2)
-  let mod16 v v2 = Vine_util.int64_urem (fix_u16 v) (fix_u16 v2)
-  let mod32 v v2 = Vine_util.int64_urem (fix_u32 v) (fix_u32 v2)
-  let mod64 v v2 = Vine_util.int64_urem          v           v2 
+  let mod1  v v2 =
+    let d = fix_u1 v2 in
+      if d = 0L then raise DivideByZero;
+      Vine_util.int64_urem (fix_u1  v) d
+  let mod8  v v2 =
+    let d = fix_u8 v2 in
+      if d = 0L then raise DivideByZero;
+      Vine_util.int64_urem (fix_u8  v) d
+  let mod16 v v2 =
+    let d = fix_u16 v2 in
+      if d = 0L then raise DivideByZero;
+      Vine_util.int64_urem (fix_u16 v) d
+  let mod32 v v2 =
+    let d = fix_u32 v2 in
+      if d = 0L then raise DivideByZero;
+      Vine_util.int64_urem (fix_u32 v) d
+  let mod64 v v2 =
+    if v2 = 0L then raise DivideByZero;
+    Vine_util.int64_urem v v2 
 
-  let smod1  v v2 = Int64.rem (fix_s1  v) (fix_s1  v2)
-  let smod8  v v2 = Int64.rem (fix_s8  v) (fix_s8  v2)
-  let smod16 v v2 = Int64.rem (fix_s16 v) (fix_s16 v2)
-  let smod32 v v2 = Int64.rem (fix_s32 v) (fix_s32 v2)
-  let smod64 v v2 = Int64.rem          v           v2 
+  let smod1  v v2 =
+    let d = fix_s1  v2 in
+      if d = 0L then raise DivideByZero;
+      Int64.rem (fix_s1  v) d
+  let smod8  v v2 =
+    let d = fix_s8  v2 in
+      if d = 0L then raise DivideByZero;
+    Int64.rem (fix_s8  v) d
+  let smod16 v v2 =
+    let d = fix_s16 v2 in
+      if d = 0L then raise DivideByZero;
+    Int64.rem (fix_s16 v) d
+  let smod32 v v2 =
+    let d = fix_s32 v2 in
+      if d = 0L then raise DivideByZero;
+    Int64.rem (fix_s32 v) d
+  let smod64 v v2 =
+    if v2 = 0L then raise DivideByZero;
+    Int64.rem v v2 
 
   let lshift1  v v2 = Int64.shift_left v (Int64.to_int (fix_u8 v2))
   let lshift8  v v2 = Int64.shift_left v (Int64.to_int (fix_u8 v2))
@@ -1239,29 +1297,41 @@ module SymbolicDomain : DOMAIN = struct
   let times32 = binop V.TIMES
   let times64 = binop V.TIMES
 
-  let divide1  = binop V.DIVIDE
-  let divide8  = binop V.DIVIDE
-  let divide16 = binop V.DIVIDE
-  let divide32 = binop V.DIVIDE
-  let divide64 = binop V.DIVIDE
+  let binop_zero_check op e e2 =
+    let e2' = constant_fold_rec e2 in
+    match e2' with
+      | V.Constant(V.Int(ty, zero))
+	  when (ty = V.REG_64 && zero = 0L) ||
+	    (ty = V.REG_32 && (fix_u32 zero) = 0L) ||
+	    (ty = V.REG_16 && (fix_u16 zero) = 0L) ||
+	    (ty = V.REG_8  && (fix_u8  zero) = 0L) ||
+	    (ty = V.REG_1  && (fix_u1  zero) = 0L)
+	    -> raise DivideByZero
+      | _ -> binop op e e2'
 
-  let sdivide1  = binop V.SDIVIDE
-  let sdivide8  = binop V.SDIVIDE
-  let sdivide16 = binop V.SDIVIDE
-  let sdivide32 = binop V.SDIVIDE
-  let sdivide64 = binop V.SDIVIDE
+  let divide1  = binop_zero_check V.DIVIDE
+  let divide8  = binop_zero_check V.DIVIDE
+  let divide16 = binop_zero_check V.DIVIDE
+  let divide32 = binop_zero_check V.DIVIDE
+  let divide64 = binop_zero_check V.DIVIDE
 
-  let mod1  = binop V.MOD
-  let mod8  = binop V.MOD
-  let mod16 = binop V.MOD
-  let mod32 = binop V.MOD
-  let mod64 = binop V.MOD
+  let sdivide1  = binop_zero_check V.SDIVIDE
+  let sdivide8  = binop_zero_check V.SDIVIDE
+  let sdivide16 = binop_zero_check V.SDIVIDE
+  let sdivide32 = binop_zero_check V.SDIVIDE
+  let sdivide64 = binop_zero_check V.SDIVIDE
 
-  let smod1  = binop V.SMOD
-  let smod8  = binop V.SMOD
-  let smod16 = binop V.SMOD
-  let smod32 = binop V.SMOD
-  let smod64 = binop V.SMOD
+  let mod1  = binop_zero_check V.MOD
+  let mod8  = binop_zero_check V.MOD
+  let mod16 = binop_zero_check V.MOD
+  let mod32 = binop_zero_check V.MOD
+  let mod64 = binop_zero_check V.MOD
+
+  let smod1  = binop_zero_check V.SMOD
+  let smod8  = binop_zero_check V.SMOD
+  let smod16 = binop_zero_check V.SMOD
+  let smod32 = binop_zero_check V.SMOD
+  let smod64 = binop_zero_check V.SMOD
 
   let lshift1  = binop V.LSHIFT
   let lshift8  = binop V.LSHIFT
@@ -7594,6 +7664,7 @@ let fuzz start_eip fuzz_start_eip end_eips fm asmir_gamma =
 		  | SymbolicJump -> stop "at symbolic jump"
 		  | NullDereference -> stop "at null deref"
 		  | JumpToNull -> stop "at jump to null"
+		  | DivideByZero -> stop "at division by zero"
 		  | TooManyIterations -> stop "after too many loop iterations"
 		  | UnhandledTrap -> stop "at trap"
 		  | IllegalInstruction -> stop "at bad instruction"
