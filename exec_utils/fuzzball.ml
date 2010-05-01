@@ -3597,6 +3597,8 @@ class decision_tree = object(self)
   method get_depth = depth
 
   method add_kid b =
+    if !opt_trace_decision_tree then
+      Printf.printf "DT: Adding %b child to %d\n" b cur.ident;
     assert(not cur.all_seen);
     match (b, cur.f_child, cur.t_child) with
       | (false, Some(Some kid), _)
@@ -3661,20 +3663,22 @@ class decision_tree = object(self)
 	  Printf.printf "\n"
 
   method extend b =
+    if !opt_trace_decision_tree then
+      Printf.printf "DT: Extending with %b at %d\n" b cur.ident;
     self#add_kid b;
-    depth <- depth + 1;
-    if (Int64.of_int depth) > !opt_path_depth_limit then
-      raise DeepPath;
     path_hash <- hash_round path_hash (if b then 49 else 48);
     Random.init (Int32.to_int path_hash);
-    match (b, cur.f_child, cur.t_child) with
-      | (false, Some(Some kid), _) -> cur <- kid
-      | (true,  _, Some(Some kid)) -> cur <- kid
-      | (false, None, _)
-      | (true,  _, None)
-      | (false, Some None, _)
-      | (true,  _, Some None) ->
-	  failwith "Add_kid failed in extend"
+    (match (b, cur.f_child, cur.t_child) with
+       | (false, Some(Some kid), _) -> cur <- kid
+       | (true,  _, Some(Some kid)) -> cur <- kid
+       | (false, None, _)
+       | (true,  _, None)
+       | (false, Some None, _)
+       | (true,  _, Some None) ->
+	   failwith "Add_kid failed in extend");
+    depth <- depth + 1;
+    if (Int64.of_int depth) > !opt_path_depth_limit then
+      raise DeepPath
 
   method set_iter_seed i =
     path_hash <- hash_round path_hash i
