@@ -3602,6 +3602,14 @@ struct
 
     val mutable symbolic_string_id = 0
 
+    method make_symbolic_region base len =
+      let varname = "input" ^ (string_of_int symbolic_string_id) in
+	symbolic_string_id <- symbolic_string_id + 1;
+	for i = 0 to len - 1 do
+	  self#store_byte (Int64.add base (Int64.of_int i))
+	    (form_man#fresh_symbolic_mem_8 varname (Int64.of_int i))
+	done
+
     method store_symbolic_cstr base len =
       let varname = "input" ^ (string_of_int symbolic_string_id) ^ "_" in
 	symbolic_string_id <- symbolic_string_id + 1;
@@ -4182,11 +4190,15 @@ struct
 
     method match_input_var s =
       try
-	if (String.sub s 0 7) = "input0_" then
-	  let wo_input = String.sub s 7 ((String.length s) - 7) in
-	    Some (int_of_string wo_input)
-	else
-	  None
+	let len = String.length s in
+	  if len > 12 && (String.sub s 0 12) = "input0_byte_" then
+	    let wo_input = String.sub s 12 (len - 12) in
+	      Some (int_of_string wo_input)
+	  else if (String.sub s 0 7) = "input0_" then
+	    let wo_input = String.sub s 7 (len - 7) in
+	      Some (int_of_string wo_input)
+	  else
+	    None
       with
 	| Not_found -> None
 	| Failure "int_of_string" -> None
@@ -4203,8 +4215,10 @@ struct
 	List.iter
 	  (fun (var_s, value) ->
 	     match self#match_input_var var_s with
-	       | Some n -> str.[n] <- 
-		   char_of_int_unbounded (Int64.to_int value)
+	       | Some n -> 
+		   assert(n < !max_input_string_length);
+		   str.[n] <-
+		     char_of_int_unbounded (Int64.to_int value)
 	       | None -> ())
 	  ce;
 	let str' = ref str in
@@ -4304,6 +4318,7 @@ struct
 	periodic_influence_exprs
 
     method query_with_path_cond cond verbose =
+      let get_time () = Unix.gettimeofday () in
       let pc = cond :: path_cond and
 	  expr = V.Unknown("") in
       let (decls, assigns, cond_e, _) =
@@ -4312,7 +4327,7 @@ struct
       let assign_vars = List.map (fun (v, exp) -> v) assigns in
 	query_engine#prepare decls assign_vars;
 	List.iter (fun (v, exp) -> (query_engine#assert_eq v exp)) assigns;
-	let time_before = Sys.time () in
+	let time_before = get_time () in
 	let (result_o, ce) = query_engine#query cond_e in
 	let is_sat = match result_o with
 	  | Some true ->
@@ -4337,9 +4352,9 @@ struct
 		   self#print_ce ce))
 	     else
 	       if !opt_trace_decisions then Printf.printf "Unsatisfiable.\n");
-	  if ((Sys.time ()) -. time_before) > 1.0 then
+	  if ((get_time ()) -. time_before) > 1.0 then
 	    Printf.printf "Slow query (%f sec)\n"
-	      ((Sys.time ()) -. time_before);
+	      ((get_time ()) -. time_before);
 	  flush stdout;
 	  query_engine#unprepare;
 	  self#maybe_periodic_influence;
@@ -7854,6 +7869,7 @@ let opt_symbolic_cstrings = ref []
 let opt_symbolic_string16s = ref []
 let opt_symbolic_words = ref []
 let opt_symbolic_words_influence = ref []
+let opt_symbolic_regions = ref []
 let opt_argv = ref []
 
 let split_string char s =
@@ -7941,6 +7957,9 @@ let main argv =
        ("-setup-initial-proc-state",
 	Arg.Bool(fun b -> opt_setup_initial_proc_state := Some b),
         "bool Setup initial process state (argv, etc.)?"); 
+       ("-symbolic-region", Arg.String
+	  (add_delimited_pair opt_symbolic_regions '+'),
+	"base+size Memory region of unknown structure");
        ("-symbolic-cstring", Arg.String
 	  (add_delimited_pair opt_symbolic_cstrings '+'),
 	"base+size Make a C string with given size, concrete \\0");
@@ -8189,6 +8208,10 @@ in
 	     max_input_string_length :=
 	       max (!max_input_string_length) (Int64.to_int i)
 	   in
+	     List.iter (fun (base, len) ->
+			  new_max len;
+			  fm#make_symbolic_region base (Int64.to_int len))
+	       !opt_symbolic_regions;
 	     List.iter (fun (base, len) ->
 			  new_max len;
 			  fm#store_symbolic_cstr base (Int64.to_int len))
