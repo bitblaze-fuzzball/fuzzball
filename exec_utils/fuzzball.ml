@@ -2959,8 +2959,10 @@ struct
     method eip_hook eip = ignore(eip)
 
     method set_eip eip =
-      self#set_word_var R_EIP eip;
-      self#eip_hook eip
+      self#set_word_var R_EIP eip
+
+    method run_eip_hooks =
+      self#eip_hook (self#get_word_var R_EIP)
 
     method private on_missing_zero_m (m:GM.granular_memory) =
       m#on_missing
@@ -4113,6 +4115,7 @@ class decision_tree = object(self)
 end
 
 let opt_measure_influence_derefs = ref false
+let opt_measure_influence_reploops = ref false
 let opt_periodic_influence = ref None
 let next_periodic_influence : int ref = ref (-1)
 let opt_influence_bound = ref (-2.0)
@@ -4404,6 +4407,19 @@ struct
 		
     val unique_measurements = Hashtbl.create 30
 
+    method measure_point_influence name e = 
+      let eip = self#get_word_var R_EIP in
+      let loc = Printf.sprintf "%s %s:%08Lx:%Ld" name
+		(dt#get_hist_str) eip loop_cnt in
+	if Hashtbl.mem unique_measurements loc then
+	  (if !opt_trace_sym_addrs then
+	     Printf.printf
+	       "Skipping redundant influence measurement at %s\n" loc)
+	else
+	  (Hashtbl.replace unique_measurements loc ();
+	   self#take_measure_eip e;
+	   ignore(self#measure_influence e))
+
     method maybe_measure_influence_deref e =
       let eip = self#get_word_var R_EIP in
 	match !opt_measure_deref_influence_at with
@@ -4411,16 +4427,13 @@ struct
 	      self#take_measure_eip e;
 	      raise ReachedMeasurePoint
 	  | _ -> if !opt_measure_influence_derefs then
-	      let loc = Printf.sprintf "%s:%08Lx:%Ld"
-		(dt#get_hist_str) eip loop_cnt in
-		if Hashtbl.mem unique_measurements loc then
-		  (if !opt_trace_sym_addrs then
-		     Printf.printf
-		       "Skipping redundant influence measurement at %s\n" loc)
-		else
-		  (Hashtbl.replace unique_measurements loc ();
-		   self#take_measure_eip e;
-		   ignore(self#measure_influence e))
+	      self#measure_point_influence "deref" e
+
+    method measure_influence_rep =
+      let count = self#get_int_var (Hashtbl.find reg_to_var R_ECX) in
+	try ignore(D.to_concrete_32 count)
+	with NotConcrete _ ->	    
+	  self#measure_point_influence "reploop" (D.to_symbolic_32 count)
 
     method eval_addr_exp exp =
       let c32 x = V.Constant(V.Int(V.REG_32, x)) in
@@ -4494,7 +4507,13 @@ struct
       fm#eip_hook eip;
       if List.mem eip !opt_disqualify_addrs then
 	(self#disqualify_path;
-	 raise DisqualifiedPath)
+	 raise DisqualifiedPath);
+      if !opt_measure_influence_reploops then
+	let prefix = self#load_byte_conc eip in
+	  match prefix with
+	    | 0xf2 | 0xf3 ->
+		self#measure_influence_rep
+	    | _ -> ()
 	  
     method finish_path =
       dt#mark_all_seen;
@@ -4917,10 +4936,9 @@ struct
       try (D.to_concrete_32 v)
       with NotConcrete _ ->
 	let e = D.to_symbolic_32 v in
-	  if do_influence then (
-	    Printf.printf "Measuring symbolic %s influence..." name;
-	    let i = self#measure_influence e in ignore(i)
-	  );
+	  if do_influence then 
+	    (Printf.printf "Measuring symbolic %s influence..." name;
+	     self#measure_point_influence name e);
 	  self#choose_conc_offset_cached e
 
     method load_word_concretize addr do_influence name =
@@ -4928,10 +4946,9 @@ struct
       try (D.to_concrete_32 v)
       with NotConcrete _ ->
 	let e = D.to_symbolic_32 v in
-	  if do_influence then (
-	    Printf.printf "Measuring symbolic %s influence..." name;
-	    let i = self#measure_influence e in ignore(i)
-	  );
+	  if do_influence then 
+	    (Printf.printf "Measuring symbolic %s influence..." name;
+	     self#measure_point_influence name e);
 	  self#choose_conc_offset_cached e
 
     method private store_byte_region  r addr b =
@@ -7585,6 +7602,7 @@ let rec runloop fm eip asmir_gamma until =
 	if !opt_trace_ir then
 	  V.pp_program print_string prog';
 	fm#set_frag prog';
+	fm#run_eip_hooks;
 	(* flush stdout; *)
 	let new_eip = label_to_eip (fm#run ()) in
 	  match (new_eip, until) with
@@ -7949,10 +7967,12 @@ let main argv =
         " Use zero values for uninit. memory reads");
        ("-check-for-null", Arg.Set(opt_check_for_null),
         " Check whether dereferenced values can be null");
-       ("-measure-influence-syscall-args", Arg.Set(opt_measure_influence_syscall_args),
-	" Measure influence on uses of sym. system call args.");
        ("-measure-influence-derefs", Arg.Set(opt_measure_influence_derefs),
 	" Measure influence on uses of sym. pointer values");
+       ("-measure-influence-reploops", Arg.Set(opt_measure_influence_reploops),
+	" Measure influence on %ecx at rep-prefixed instructions");
+       ("-measure-influence-syscall-args", Arg.Set(opt_measure_influence_syscall_args),
+	" Measure influence on uses of sym. system call args.");
        ("-measure-deref-influence-at", Arg.String
 	  (fun s -> opt_measure_deref_influence_at :=
 	     Some (Int64.of_string s)),
