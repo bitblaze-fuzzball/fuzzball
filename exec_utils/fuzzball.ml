@@ -3004,7 +3004,14 @@ struct
 	reg R_EAX (D.from_concrete_32 0x00000000L);
 	reg R_EBX (D.from_concrete_32 0x00000000L);
 	reg R_ECX (D.from_concrete_32 0x00000000L);
-	reg R_EDX (D.from_concrete_32 0x00000000L)
+	reg R_EDX (D.from_concrete_32 0x00000000L);
+	reg R_CS (D.from_concrete_16 0);
+	reg R_DS (D.from_concrete_16 0);
+	reg R_ES (D.from_concrete_16 0);
+	reg R_FS (D.from_concrete_16 0);
+	reg R_GS (D.from_concrete_16 0);
+	reg R_GDT (D.from_concrete_32 0x00000000L);
+	reg R_LDT (D.from_concrete_32 0x00000000L);
 
     method make_x86_regs_symbolic =
       let reg r v =
@@ -4905,16 +4912,27 @@ struct
 	  | None -> addr
 	  | Some r_num -> raise SymbolicJump
 
-    method get_word_var_concretize reg do_influence : int64 =
+    method get_word_var_concretize reg do_influence name : int64 =
       let v = self#get_int_var (Hashtbl.find reg_to_var reg) in
       try (D.to_concrete_32 v)
       with NotConcrete _ ->
 	let e = D.to_symbolic_32 v in
 	  if do_influence then (
-	    Printf.printf "Measuring Symbolic syscall arg influence...";
+	    Printf.printf "Measuring symbolic %s influence..." name;
 	    let i = self#measure_influence e in ignore(i)
 	  );
-	  self#choose_conc_offset_uniform e
+	  self#choose_conc_offset_cached e
+
+    method load_word_concretize addr do_influence name =
+      let v = self#load_word addr in
+      try (D.to_concrete_32 v)
+      with NotConcrete _ ->
+	let e = D.to_symbolic_32 v in
+	  if do_influence then (
+	    Printf.printf "Measuring symbolic %s influence..." name;
+	    let i = self#measure_influence e in ignore(i)
+	  );
+	  self#choose_conc_offset_cached e
 
     method private store_byte_region  r addr b =
       (self#region r)#store_byte  addr b
@@ -5315,6 +5333,7 @@ let simplify_frag (orig_dl, orig_sl) =
     (dl', sl')
 
 exception UnhandledSysCall of string;;
+exception SymbolicSyscall
 
 let opt_trace_stopping = ref false
 
@@ -5369,7 +5388,10 @@ let current_pid =  ref (-1)
 
 class linux_special_handler fm =
   let put_reg = fm#set_word_var in
-  let load_word addr = fm#load_word_conc addr in
+  let load_word addr =
+    fm#load_word_concretize addr !opt_measure_influence_syscall_args
+      "syscall arg"
+  in
   let lea base i step off =
     Int64.add base (Int64.add (Int64.mul (Int64.of_int i) (Int64.of_int step))
 		      (Int64.of_int off)) in
@@ -6002,7 +6024,7 @@ object(self)
 
   method handle_linux_syscall () =
     let get_reg r = fm#get_word_var_concretize r
-      !opt_measure_influence_syscall_args in
+      !opt_measure_influence_syscall_args "syscall arg" in
     (let syscall_num = Int64.to_int (get_reg R_EAX) and
 	 read_1_reg () = get_reg R_EBX in
      let read_2_regs () =
@@ -6905,18 +6927,21 @@ object(self)
 	flush stdout
 
   method handle_special str =
-    match str with
-      | "int 0x80" ->
-	  self#handle_linux_syscall ();
-	  Some []
-      | "sysenter" ->
-	  let sysenter_eip = fm#get_word_var R_EIP in
-	  let sysexit_eip = (Int64.logor 0x430L
-			       (Int64.logand 0xfffff000L sysenter_eip)) in
-	  let label = "pc_0x" ^ (Printf.sprintf "%08Lx" sysexit_eip) in
+    try
+      match str with
+	| "int 0x80" ->
 	    self#handle_linux_syscall ();
-	    Some [V.Jmp(V.Name(label))]
-      | _ -> None
+	    Some []
+	| "sysenter" ->
+	    let sysenter_eip = fm#get_word_var R_EIP in
+	    let sysexit_eip = (Int64.logor 0x430L
+				 (Int64.logand 0xfffff000L sysenter_eip)) in
+	    let label = "pc_0x" ^ (Printf.sprintf "%08Lx" sysexit_eip) in
+	      self#handle_linux_syscall ();
+	      Some [V.Jmp(V.Name(label))]
+	| _ -> None
+    with
+	NotConcrete(_) -> raise SymbolicSyscall
 
 end
 
@@ -7736,6 +7761,7 @@ let fuzz start_eip fuzz_start_eip end_eips fm asmir_gamma =
 		  | UnhandledSysCall(s) ->
 		      Printf.printf "[trans_eval WARNING]: %s\n%!" s;
 		      stop "at unhandled system call"
+		  | SymbolicSyscall -> stop "at symbolic system call"
 		  | ReachedMeasurePoint -> stop "at measurement point"
 		  | ReachedInfluenceBound -> stop "at influence bound"
 		  | DisqualifiedPath -> stop "on disqualified path"
