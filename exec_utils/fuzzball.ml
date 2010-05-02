@@ -796,6 +796,27 @@ and constant_fold_rec_lv lv =
     | V.Mem(v, e, ty) -> V.Mem(v, constant_fold_rec e, ty)
     | _ -> lv
 
+let rec simplify_rec e =
+  match e with
+    | V.BinOp(V.EQ, V.BinOp(V.PLUS, e1, (V.Constant(_) as c)),
+	      V.Constant(V.Int(ty, 0L))) ->
+	V.BinOp(V.EQ, (simplify_rec e1), (simplify_rec (V.UnOp(V.NEG, c))))
+    | V.BinOp(op, e1, e2) ->
+	Vine_opt.constant_fold_more (fun _ -> None)
+	  (V.BinOp(op, simplify_rec e1, simplify_rec e2))
+    | V.UnOp(op, e) ->
+	Vine_opt.constant_fold_more (fun _ -> None)
+	  (V.UnOp(op, simplify_rec e))
+    | V.Cast(op, ty, e) ->
+	Vine_opt.constant_fold_more (fun _ -> None)
+	  (V.Cast(op, ty, simplify_rec e))
+    | V.Lval(lv) -> V.Lval(simplify_rec_lv lv)
+    | _ -> e
+and simplify_rec_lv lv =
+  match lv with
+    | V.Mem(v, e, ty) -> V.Mem(v, simplify_rec e, ty)
+    | _ -> lv
+
 let rec expr_size e =
   match e with
     | V.BinOp(_, e1, e2) -> 1 + (expr_size e1) + (expr_size e2)
@@ -1009,7 +1030,7 @@ struct
     method simplify (v:D.t) ty =
       D.inside_symbolic
 	(fun e ->
-	   let e' = constant_fold_rec e in
+	   let e' = simplify_rec e in
 	     if expr_size e' < 10 then
 	       e'
 	     else
@@ -1477,6 +1498,14 @@ class virtual query_engine = object(self)
   method virtual unprepare : unit
 end
 
+let print_ce ce =
+  List.iter
+    (fun (var_s, value) ->
+       if value <> 0L then
+	 Printf.printf "%s=0x%Lx " var_s value)
+    ce;
+  Printf.printf "\n";
+
 class stpvc_engine = object(self)
   inherit query_engine
 
@@ -1525,8 +1554,7 @@ class stpvc_engine = object(self)
 		   let var_e = V.Lval(V.Temp(var)) in
 		   let var_s = Vine_stpvc.vine_to_stp vc self#ctx var_e
 		   in
-		     (s ^ "_" ^ (string_of_int n), 
-		      (Stpvc.get_term_from_counterexample vc var_s wce)))
+		     (s, (Stpvc.get_term_from_counterexample vc var_s wce)))
 		free_vars))
     in
       ((Some result), ce)
@@ -1594,8 +1622,6 @@ let parse_counterex line =
 	 else
 	   failwith "Failed to parse hex string in counterexample"
        in
-	 (* Printf.printf "%s = %Lx\n" varname
-	    (Int64.of_string ("0x" ^ hex_val)); *)
 	 Some (varname, (Int64.of_string ("0x" ^ hex_val))))
 
 exception Signal of string
@@ -1608,7 +1634,7 @@ class stp_external_engine fname = object(self)
   val mutable filenum = 0
   val mutable curr_fname = fname
 
-  method get_fresh_fname = 
+  method private get_fresh_fname = 
     filenum <- filenum + 1;
     curr_fname <- (Printf.sprintf "%s-%d" fname filenum);
     if !opt_trace_solver then
@@ -1691,6 +1717,58 @@ class stp_external_engine fname = object(self)
   method unprepare =
     visitor <- None
 end
+
+class parallel_check_engine e1 e2 = object(self)
+  inherit query_engine
+
+  val mutable eqns = []
+
+  method prepare free_vars temp_vars =
+    e1#prepare free_vars temp_vars;
+    e2#prepare free_vars temp_vars;
+    eqns <- []
+
+  method assert_eq var rhs =
+    e1#assert_eq var rhs;
+    e2#assert_eq var rhs;
+    eqns <- (var, rhs) :: eqns
+
+  method query e =
+    let string_of_result r = match r with
+      | None -> "failure"
+      | Some true -> "unsat"
+      | Some false -> "sat" in
+    let (r1, ce1) = e1#query e and
+	(r2, ce2) = e2#query e in
+      if r1 <> r2 then
+	(Printf.printf "Solver result mismatch:\n";
+	 List.iter
+	   (fun (var, rhs) ->
+	      Printf.printf "%s := %s\n" (V.var_to_string var)
+		(V.exp_to_string rhs)) eqns;
+	 Printf.printf "in query %s\n" (V.exp_to_string e);
+	 Printf.printf "Solver 1 says %s, solver 2 says %s\n"
+	   (string_of_result r1) (string_of_result r2);
+	 (match r1 with
+	    | Some false ->
+		Printf.printf "Solver 1's assignment is:\n";
+		print_ce ce1;
+	    | _ -> ());
+	 (match r2 with
+	    | Some false ->
+		Printf.printf "Solver 2's assignment is:\n";
+		print_ce ce2;
+	    | _ -> ());
+	 (None, []))	  
+      else
+	(r1, ce1)
+
+  method unprepare =
+    e1#unprepare;
+    e2#unprepare;
+    eqns <- []
+end
+
 
 class virtual concrete_memory = object(self)
   method virtual store_byte : Int64.t -> int -> unit
@@ -4088,19 +4166,15 @@ struct
 	self#take_measure str e
 
     (* val query_engine = new stpvc_engine *)
+    (* val query_engine = new parallel_check_engine
+       (new stpvc_engine) (new stp_external_engine "fuzz") *)
     val query_engine = new stp_external_engine "fuzz"
 
     method match_input_var s =
       try
 	if (String.sub s 0 7) = "input0_" then
 	  let wo_input = String.sub s 7 ((String.length s) - 7) in
-	    try
-	      let uscore_loc = String.index wo_input '_' in
-	      let n_str = String.sub wo_input 0 uscore_loc in
-		Some (int_of_string n_str)
-	    with
-	      | Not_found ->
-		  Some (int_of_string wo_input)
+	    Some (int_of_string wo_input)
 	else
 	  None
       with
@@ -4137,17 +4211,8 @@ struct
 	   with Not_found -> ());
 	  !str'
 
-    method print_ce ce =
-      List.iter
-	(fun (var_s, value) ->
-	   let nice_name = (try String.sub var_s 0 (String.rindex var_s '_') 
-			    with Not_found -> var_s) in
-	     if value <> 0L then
-	       Printf.printf "%s=0x%Lx " nice_name value)
-	ce;
-      Printf.printf "\n";
+    method print_ce ce = print_ce ce
 
-      
     method measure_influence_common free_decls assigns cond_e target_e =
       let assigns_sl =
 	List.fold_left
