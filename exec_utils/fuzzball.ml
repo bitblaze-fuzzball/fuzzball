@@ -2155,7 +2155,7 @@ struct
       | Gran16s(g1, g2) ->
 	  let (s1, g1') = gran16_get_short g1 missing addr and
 	      (s2, g2') = gran16_get_short g2 missing (Int64.add addr 2L) in
-	    (D.assemble32 s1 s2, Gran16s(g1', g2'))
+	    (D.reassemble32 s1 s2, Gran16s(g1', g2'))
       | Absent32 ->
 	  let l = missing 32 addr in
 	    (l, Word l)
@@ -2179,7 +2179,7 @@ struct
       | Gran32s(g1, g2) ->
 	  let (w1, g1') = gran32_get_word g1 missing addr and
 	      (w2, g2') = gran32_get_word g2 missing (Int64.add addr 4L) in
-	    (D.assemble64 w1 w2, Gran32s(g1', g2'))
+	    (D.reassemble64 w1 w2, Gran32s(g1', g2'))
       | Absent64 -> 
 	  let l = missing 64 addr in
 	    (l, Long l)
