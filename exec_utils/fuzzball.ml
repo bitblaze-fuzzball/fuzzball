@@ -4277,7 +4277,7 @@ struct
       let assign_vars = List.map (fun (v, exp) -> v) assigns in
       let prog = (free_decls @ assign_vars,
 		  assigns_sl @ [V.Assert(cond_e)]) in
-	V.pp_program (fun x -> Printf.printf "%s" x) prog; 
+	(* V.pp_program (fun x -> Printf.printf "%s" x) prog; *)
 	let () = ignore(prog) in
 	  0.0
 
@@ -4847,16 +4847,6 @@ struct
 	  if !opt_trace_regions then
 	    Printf.printf "Address %s is region %d\n"
 	      (V.exp_to_string e) new_region;
-	  if !opt_check_for_null then
-	    (let can_be_null = ref false in
-	       dt#start_new_query;
-	       self#restore_path_cond
-		 (fun () ->
-		    can_be_null := self#extend_pc_random
-		      (V.BinOp(V.EQ, e, V.Constant(V.Int(V.REG_32, 0L)))) false
-		 );
-	       dt#count_query;
-	       Printf.printf "Can be null? %b\n" !can_be_null);
 	  new_region
 
     method private is_region_base e =
@@ -4927,6 +4917,19 @@ struct
 	    if !opt_trace_sym_addrs then
 	      Printf.printf "Symbolic address %s @ (0x%Lx)\n"
 		(V.exp_to_string e) eip;
+	    if !opt_check_for_null then
+	      (let sat_dir = ref false in
+		 dt#start_new_query;
+		 self#restore_path_cond
+		   (fun () ->
+		      sat_dir := self#extend_pc_random
+			(V.BinOp(V.EQ, e, V.Constant(V.Int(V.REG_32, 0L))))
+			false);
+		 dt#count_query;
+		 if !sat_dir = true then
+		   Printf.printf "Can be null.\n"
+		 else
+		   Printf.printf "Can be non-null.\n");
 	    self#maybe_measure_influence_deref e;
 	    dt#start_new_query;
 	    let (cbases, coffs, eoffs, syms) = classify_terms e form_man in
