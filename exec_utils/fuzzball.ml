@@ -4907,6 +4907,12 @@ struct
 	self#add_to_path_cond (V.BinOp(V.EQ, e, (const bits)));
 	bits
 
+    method private concretize ty e =
+      dt#start_new_query;
+      let v = self#choose_conc_offset_cached ty e in
+	dt#count_query;
+	v
+
     method eval_addr_exp_region exp =
       let v = self#eval_int_exp_simplify exp in
 	try
@@ -4993,7 +4999,7 @@ struct
 	  if do_influence then 
 	    (Printf.printf "Measuring symbolic %s influence..." name;
 	     self#measure_point_influence name e);
-	  self#choose_conc_offset_cached V.REG_32 e
+	  self#concretize V.REG_32 e
 
     method load_word_concretize addr do_influence name =
       let v = self#load_word addr in
@@ -5003,7 +5009,7 @@ struct
 	  if do_influence then 
 	    (Printf.printf "Measuring symbolic %s influence..." name;
 	     self#measure_point_influence name e);
-	  self#choose_conc_offset_cached V.REG_32 e
+	  self#concretize V.REG_32 e
 
     method private maybe_concretize_binop op v1 v2 ty1 ty2 =
       let conc t v =
@@ -5013,32 +5019,29 @@ struct
 	       with NotConcrete _ ->
 		 (D.from_concrete_1
 		    (Int64.to_int
-		       (self#choose_conc_offset_cached t
-			  (D.to_symbolic_1 v)))))
+		       (self#concretize t (D.to_symbolic_1 v)))))
 	  | V.REG_8 ->
 	      (try ignore(D.to_concrete_8 v); v
 	       with NotConcrete _ ->
 		 (D.from_concrete_8
 		    (Int64.to_int
-		       (self#choose_conc_offset_cached t
-			  (D.to_symbolic_8 v)))))
+		       (self#concretize t (D.to_symbolic_8 v)))))
 	  | V.REG_16 ->
 	      (try ignore(D.to_concrete_16 v); v
 	       with NotConcrete _ ->
 		 (D.from_concrete_16
 		    (Int64.to_int
-		       (self#choose_conc_offset_cached t
-			  (D.to_symbolic_16 v)))))
+		       (self#concretize t (D.to_symbolic_16 v)))))
 	  | V.REG_32 ->
 	      (try ignore(D.to_concrete_32 v); v
 	       with NotConcrete _ ->
 		 (D.from_concrete_32
-		    (self#choose_conc_offset_cached t (D.to_symbolic_32 v))))
+		    (self#concretize t (D.to_symbolic_32 v))))
 	  | V.REG_64 ->
 	      (try ignore(D.to_concrete_64 v); v
 	       with NotConcrete _ ->
 		 (D.from_concrete_64
-		    (self#choose_conc_offset_cached t (D.to_symbolic_64 v))))
+		    (self#concretize t (D.to_symbolic_64 v))))
 	  | _ -> failwith "Bad type in maybe_concretize_binop"
       in
 	match op with
@@ -5112,7 +5115,7 @@ struct
 	    if e <> V.Unknown("uninit") then
 	      self#set_int_var var
 		(D.from_concrete_32 
-		   (self#choose_conc_offset_cached V.REG_32 e))
+		   (self#concretize V.REG_32 e))
 
     method reset () =
       spfm#reset ();
