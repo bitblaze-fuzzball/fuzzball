@@ -1490,12 +1490,14 @@ module SymbolicDomain : DOMAIN = struct
 end
 
 let opt_solver_timeout = ref None
+let opt_solver_slow_time = ref 1.0
+let opt_save_solver_files = ref false
 
 class virtual query_engine = object(self)
   method virtual prepare : V.var list -> V.var list -> unit
   method virtual assert_eq : V.var -> V.exp -> unit
   method virtual query : V.exp -> (bool option) * ((string * int64) list)
-  method virtual unprepare : unit
+  method virtual unprepare : bool -> unit
 end
 
 let print_ce ce =
@@ -1513,6 +1515,9 @@ class stpvc_engine = object(self)
   val mutable ctx = None
   val mutable free_vars = []
 
+  val mutable asserts = []
+  val mutable the_query = None
+
   method private ctx =
     match ctx with
       | Some c -> c
@@ -1525,10 +1530,11 @@ class stpvc_engine = object(self)
 
   method assert_eq var rhs =
     let form = V.BinOp(V.EQ, V.Lval(V.Temp(var)), rhs) in
-      (* Printf.printf "Asserting %s\n" (V.exp_to_string form); *)
-      Stpvc.do_assert vc
-	(Stpvc.e_bvbitextract vc
-	   (Vine_stpvc.vine_to_stp vc self#ctx form) 0)
+    (* Printf.printf "Asserting %s\n" (V.exp_to_string form); *)
+    let f = Stpvc.e_bvbitextract vc (Vine_stpvc.vine_to_stp vc self#ctx form) 0
+    in
+      Stpvc.do_assert vc f;
+      asserts <- f :: asserts
 
   method query e =
     let s = (Stpvc.e_simplify vc
@@ -1536,8 +1542,8 @@ class stpvc_engine = object(self)
 		  (Stpvc.e_bvbitextract vc
 		     (Vine_stpvc.vine_to_stp vc self#ctx e) 0)))
     in
-      (* Printf.printf "STP formula is %s\n" (Stpvc.to_string s);
-	 flush stdout; *)
+    (* Printf.printf "STP formula is %s\n" (Stpvc.to_string s);
+       flush stdout; *)
     let result = Stpvc.query vc s in
     let ce = if result then [] else
       (*
@@ -1557,9 +1563,26 @@ class stpvc_engine = object(self)
 		     (s, (Stpvc.get_term_from_counterexample vc var_s wce)))
 		free_vars))
     in
+      the_query <- Some s;
       ((Some result), ce)
 
-  method unprepare =
+  val mutable filenum = 0
+
+  method unprepare save_results =
+    if save_results || !opt_save_solver_files then
+      (filenum <- filenum + 1;
+       let fname = "fuzz-stpvc-" ^ (string_of_int filenum) ^ ".stp" in
+       let oc = open_out fname in
+	 List.iter (fun a -> Printf.fprintf oc "ASSERT(%s);\n"
+		      (Stpvc.to_string a)) asserts;
+	 (match the_query with
+	   | None -> ()
+	   | Some q -> Printf.fprintf oc "QUERY(%s);\n"
+	       (Stpvc.to_string q));
+	 close_out oc;
+	 Printf.printf "Saved STP commands in %s\n%!" fname);
+    asserts <- [];
+    the_query <- None;
     Libstp.vc_clearDecls vc;
     Libstp.vc_pop vc;
     ctx <- None;
@@ -1588,7 +1611,6 @@ let get_influence (prog: Vine.program) (args: argparams_t) (q: V.exp) =
 ;;
 
 let opt_stp_path = ref "stp"
-let opt_save_solver_files = ref false
 let opt_follow_path  = ref ""
 
 let map_lines f chan =
@@ -1709,12 +1731,15 @@ class stp_external_engine fname = object(self)
 	    [] in
 	  let ce = map_lines parse_counterex results in
 	    close_in results;
-	    if not !opt_save_solver_files && result <> None then
-	      (Sys.remove (curr_fname ^ ".stp");
-	       Sys.remove (curr_fname ^ ".stp.out"));
 	    (result, first_assign @ ce)
 
-  method unprepare =
+  method unprepare save_results =
+    if save_results then
+      Printf.printf "STP query and results are in %s.stp and %s.stp.out\n"
+	curr_fname curr_fname
+    else if not !opt_save_solver_files then
+      (Sys.remove (curr_fname ^ ".stp");
+       Sys.remove (curr_fname ^ ".stp.out"));
     visitor <- None
 end
 
@@ -1763,9 +1788,9 @@ class parallel_check_engine e1 e2 = object(self)
       else
 	(r1, ce1)
 
-  method unprepare =
-    e1#unprepare;
-    e2#unprepare;
+  method unprepare save_results =
+    e1#unprepare save_results;
+    e2#unprepare save_results;
     eqns <- []
 end
 
@@ -4183,10 +4208,9 @@ struct
       let str = Printf.sprintf "expr %s" (V.exp_to_string key_expr) in
 	self#take_measure str e
 
-    (* val query_engine = new stpvc_engine *)
-    (* val query_engine = new parallel_check_engine
-       (new stpvc_engine) (new stp_external_engine "fuzz") *)
-    val query_engine = new stp_external_engine "fuzz"
+    val mutable query_engine = new stp_external_engine "fuzz"
+
+    method set_query_engine qe = query_engine <- qe
 
     method match_input_var s =
       try
@@ -4338,6 +4362,7 @@ struct
 	      true
 	  | None ->
 	      solver_fails := Int64.succ !solver_fails;
+	      query_engine#unprepare true;
 	      raise SolverFailure
 	in
 	  if verbose then
@@ -4352,13 +4377,15 @@ struct
 		   self#print_ce ce))
 	     else
 	       if !opt_trace_decisions then Printf.printf "Unsatisfiable.\n");
-	  if ((get_time ()) -. time_before) > 1.0 then
-	    Printf.printf "Slow query (%f sec)\n"
-	      ((get_time ()) -. time_before);
-	  flush stdout;
-	  query_engine#unprepare;
-	  self#maybe_periodic_influence;
-	  is_sat
+	  let time = (get_time ()) -. time_before in
+	  let is_slow = time > !opt_solver_slow_time in
+	    if is_slow then
+	      Printf.printf "Slow query (%f sec)\n"
+		((get_time ()) -. time_before);
+	    flush stdout;
+	    query_engine#unprepare is_slow;
+	    self#maybe_periodic_influence;
+	    is_sat
 
     method private try_extend trans_func try_func non_try_func =
       (* let unbiased_rand_gen () = (dt#random_bit) in *)
@@ -7864,6 +7891,8 @@ let opt_random_memory = ref false
 let opt_zero_memory = ref false
 let opt_store_words = ref []
 let opt_state_file = ref None
+let opt_solver = ref "stp-external"
+let opt_solver_check_against = ref "none"
 let opt_symbolic_regs = ref false
 let opt_symbolic_cstrings = ref []
 let opt_symbolic_string16s = ref []
@@ -8010,13 +8039,19 @@ let main argv =
        ("-store-word", Arg.String
 	  (add_delimited_pair opt_store_words '='),
 	"addr=val Fix an address to a concrete value");
+       ("-solver", Arg.Set_string(opt_solver),
+	"solver stpvc (internal) or stp-external (cf. -stp-path)");
+       ("-solver-check-against", Arg.Set_string(opt_solver_check_against),
+	"solver Compare solver results with the given one");
        ("-stp-path", Arg.Set_string(opt_stp_path),
 	"path Location of external STP binary");
        ("-save-solver-files", Arg.Set(opt_save_solver_files),
 	" Retain STP input and output files");
+       ("-solver-slow-time", Arg.Set_float(opt_solver_slow_time),
+	"secs Save queries that take longer than SECS");
        ("-solver-timeout", Arg.String
 	  (fun s -> opt_solver_timeout := Some (int_of_string s)),
-	"secs Run each query for at most N seconds");
+	"secs Run each query for at most SECS seconds");
        ("-tls-base", Arg.String
 	  (fun s -> opt_tls_base := Some (Int64.of_string s)),
 	"addr Use a Linux TLS (%gs) segment at the given address");
@@ -8155,6 +8190,21 @@ in
 	 | Some name -> 
 	     state_start_addr := Some (LinuxLoader.load_core fm name)
 	 | None -> ());
+      (let checking_solver = match !opt_solver_check_against with
+	 | "none" -> None
+	 | "stpvc" -> Some (new stpvc_engine :> query_engine)
+	 | "stp-external" -> Some (new stp_external_engine "fuzz-check")
+	 | _ -> failwith "Unknown solver for -solver-check-against" in
+       let main_solver = match !opt_solver with
+	 | "stpvc" -> ((new stpvc_engine) :> query_engine)
+	 | "stp-external" -> new stp_external_engine "fuzz"
+	 | _ -> failwith "Unknown -solver" in
+       let qe =
+	 match checking_solver with
+	   | None -> main_solver
+	   | Some cs -> new parallel_check_engine main_solver cs
+       in
+	 fm#set_query_engine qe);
       if !opt_linux_syscalls then
 	let lsh = new linux_special_handler fm in
 	  if !opt_use_ids_from_core then
