@@ -1636,15 +1636,19 @@ let parse_counterex line =
 		  ((String.length trimmed) - eq_loc - 1)) in
        assert((String.sub lhs ((String.length lhs) - 2) 2) = "  ");
        let varname = String.sub lhs 0 ((String.length lhs) - 2) in
-       let hex_val =
-	 if String.length rhs >= 6 && (String.sub rhs 0 5) = " 0hex" then
-	   String.sub rhs 5 ((String.length rhs) - 5)
-	 else if String.length rhs >= 4 && (String.sub rhs 0 3) = " 0x" then
-	   String.sub rhs 3 ((String.length rhs) - 3)
-	 else
-	   failwith "Failed to parse hex string in counterexample"
+       let value =
+	 let len = String.length rhs in
+	   (Int64.of_string
+	      (if len >= 6 && (String.sub rhs 0 5) = " 0hex" then
+		 ("0x" ^ (String.sub rhs 5 (len - 5)))
+	       else if len >= 4 && (String.sub rhs 0 3) = " 0x" then
+		 ("0x" ^ (String.sub rhs 3 (len - 3)))
+	       else if len >= 4 && (String.sub rhs 0 3) = " 0b" then
+		 ("0b" ^ (String.sub rhs 3 (len - 3)))
+	       else
+		 failwith "Failed to parse value in counterexample"))
        in
-	 Some (varname, (Int64.of_string ("0x" ^ hex_val))))
+	 Some (varname, value))
 
 exception Signal of string
 
@@ -3317,6 +3321,9 @@ struct
 	  | V.REG_64 -> self#store_long addr value
 	  | _ -> failwith "Unsupported type in memory move"
 
+    method private maybe_concretize_binop op v1 v2 ty1 ty2 =
+      (v1, v2)
+
     method private eval_int_exp_ty exp =
       match exp with
 	| V.BinOp(op, e1, e2) ->
@@ -3431,7 +3438,8 @@ struct
 		 | (V.SLE, V.REG_64) -> D.sle64
 		 | _ -> failwith "unexpected binop/type in eval_int_exp_ty")
 	    in
-	      (func v1 v2), ty
+	    let (v1', v2') = self#maybe_concretize_binop op v1 v2 ty1 ty2 in
+	      (func v1' v2'), ty
 	| V.UnOp(op, e1) ->
 	    let (v1, ty1) = self#eval_int_exp_ty e1 in
 	    let result = 
@@ -4596,6 +4604,7 @@ let offset_strategy_of_string s =
     | _ -> failwith "Unknown offset strategy"
 
 let opt_offset_strategy = ref UniformStrat
+let opt_concretize_divisors = ref false
 
 module SymRegionFragMachineFunctor =
   functor (D : DOMAIN) ->
@@ -4853,29 +4862,29 @@ struct
     method private is_region_base e =
       Hashtbl.mem region_vals e
 
-    method private choose_conc_offset_uniform e =
-      let c32 x = V.Constant(V.Int(V.REG_32, x)) in
+    method private choose_conc_offset_uniform ty e =
+      let byte x = V.Constant(V.Int(V.REG_8, (Int64.of_int x))) in
       let bits = ref 0L in
 	self#restore_path_cond
 	  (fun () ->
-	     for b = 31 downto 0 do
+	     for b = (V.bits_of_width ty) - 1 downto 0 do
 	       let bit = self#extend_pc_random
 		 (V.Cast(V.CAST_LOW, V.REG_1,
 			 (V.BinOp(V.ARSHIFT, e,
-				  (c32 (Int64.of_int b)))))) false
+				  (byte b))))) false
 	       in
 		 bits := (Int64.logor (Int64.shift_left !bits 1)
 			    (if bit then 1L else 0L));
 	     done);
 	!bits
 
-    method private choose_conc_offset_biased e =
-      let c32 x = V.Constant(V.Int(V.REG_32, x)) in
+    method private choose_conc_offset_biased ty e =
+      let const x = V.Constant(V.Int(ty, x)) in
       let rec try_list l =
 	match l with
-	  | [] -> self#choose_conc_offset_uniform e
+	  | [] -> self#choose_conc_offset_uniform ty e
 	  | v :: r ->
-	      if self#extend_pc_random (V.BinOp(V.EQ, e, (c32 v))) false then
+	      if self#extend_pc_random (V.BinOp(V.EQ, e, (const v))) false then
 		v
 	      else
 		try_list r
@@ -4884,29 +4893,28 @@ struct
 	self#restore_path_cond
 	  (fun () ->
 	     bits := try_list
-	       [0L; 1L; 2L; 4L; 8L; 16L; 32L; 64L;
-		0xffffffffL; 0xfffffffeL; 0xfffffffcL; 0xfffffff8L]);
+	       [0L; 1L; 2L; 4L; 8L; 16L; 32L; 64L; -1L; -2L; -4L; -8L]);
 	!bits
 
     val mutable concrete_cache = Hashtbl.create 101
 
-    method private choose_conc_offset_cached e =
-      let c32 x = V.Constant(V.Int(V.REG_32, x)) in
+    method private choose_conc_offset_cached ty e =
+      let const x = V.Constant(V.Int(ty, x)) in
       let (bits, verb) = 
 	if Hashtbl.mem concrete_cache e then
 	  (Hashtbl.find concrete_cache e, "Reused")
 	else
 	  let bits = 
 	    match !opt_offset_strategy with
-	      | UniformStrat -> self#choose_conc_offset_uniform e
-	      | BiasedSmallStrat -> self#choose_conc_offset_biased e
+	      | UniformStrat -> self#choose_conc_offset_uniform ty e
+	      | BiasedSmallStrat -> self#choose_conc_offset_biased ty e
 	  in
 	    Hashtbl.replace concrete_cache e bits;
 	    (bits, "Picked") in
 	if !opt_trace_sym_addrs then
-	  Printf.printf "%s concrete offset value 0x%Lx for %s\n"
+	  Printf.printf "%s concrete value 0x%Lx for %s\n"
 	    verb bits (V.exp_to_string e);
-	self#add_to_path_cond (V.BinOp(V.EQ, e, (c32 bits)));
+	self#add_to_path_cond (V.BinOp(V.EQ, e, (const bits)));
 	bits
 
     method eval_addr_exp_region exp =
@@ -4962,7 +4970,8 @@ struct
 	      (match (eoffs, off_syms) with
 		 | ([], []) -> 0L
 		 | (el, vel) -> 
-		     (self#choose_conc_offset_cached (sum_list (el @ vel))))
+		     (self#choose_conc_offset_cached V.REG_32
+			(sum_list (el @ vel))))
 	    in
 	      dt#count_query;
 	      (base, (fix_u32 offset))
@@ -4981,7 +4990,7 @@ struct
 	  if do_influence then 
 	    (Printf.printf "Measuring symbolic %s influence..." name;
 	     self#measure_point_influence name e);
-	  self#choose_conc_offset_cached e
+	  self#choose_conc_offset_cached V.REG_32 e
 
     method load_word_concretize addr do_influence name =
       let v = self#load_word addr in
@@ -4991,7 +5000,49 @@ struct
 	  if do_influence then 
 	    (Printf.printf "Measuring symbolic %s influence..." name;
 	     self#measure_point_influence name e);
-	  self#choose_conc_offset_cached e
+	  self#choose_conc_offset_cached V.REG_32 e
+
+    method private maybe_concretize_binop op v1 v2 ty1 ty2 =
+      let conc t v =
+	match t with
+	  | V.REG_1 ->
+	      (try ignore(D.to_concrete_1 v); v
+	       with NotConcrete _ ->
+		 (D.from_concrete_1
+		    (Int64.to_int
+		       (self#choose_conc_offset_cached t
+			  (D.to_symbolic_1 v)))))
+	  | V.REG_8 ->
+	      (try ignore(D.to_concrete_8 v); v
+	       with NotConcrete _ ->
+		 (D.from_concrete_8
+		    (Int64.to_int
+		       (self#choose_conc_offset_cached t
+			  (D.to_symbolic_8 v)))))
+	  | V.REG_16 ->
+	      (try ignore(D.to_concrete_16 v); v
+	       with NotConcrete _ ->
+		 (D.from_concrete_16
+		    (Int64.to_int
+		       (self#choose_conc_offset_cached t
+			  (D.to_symbolic_16 v)))))
+	  | V.REG_32 ->
+	      (try ignore(D.to_concrete_32 v); v
+	       with NotConcrete _ ->
+		 (D.from_concrete_32
+		    (self#choose_conc_offset_cached t (D.to_symbolic_32 v))))
+	  | V.REG_64 ->
+	      (try ignore(D.to_concrete_64 v); v
+	       with NotConcrete _ ->
+		 (D.from_concrete_64
+		    (self#choose_conc_offset_cached t (D.to_symbolic_64 v))))
+	  | _ -> failwith "Bad type in maybe_concretize_binop"
+      in
+	match op with
+	  | V.DIVIDE | V.SDIVIDE | V.MOD | V.SMOD 
+		when !opt_concretize_divisors
+	      -> (v1, (conc ty2 v2))
+	  | _ -> (v1, v2)
 
     method private store_byte_region  r addr b =
       (self#region r)#store_byte  addr b
@@ -5058,7 +5109,7 @@ struct
 	    if e <> V.Unknown("uninit") then
 	      self#set_int_var var
 		(D.from_concrete_32 
-		   (self#choose_conc_offset_cached e))
+		   (self#choose_conc_offset_cached V.REG_32 e))
 
     method reset () =
       spfm#reset ();
@@ -8033,6 +8084,8 @@ let main argv =
 	"k Check influence every K bits of branching");
        ("-influence-bound", Arg.Set_float(opt_influence_bound),
 	"float Stop path when influence is <= this value");
+       ("-concretize-divisors", Arg.Set(opt_concretize_divisors),
+	" Choose concrete values for divisors in /, %");
        ("-state", Arg.String
 	  (fun s -> opt_state_file := Some s),
 	"file Load memory state from TEMU state file");
