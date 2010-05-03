@@ -3663,8 +3663,17 @@ struct
 	self#store_byte_idx base (2*len) 0;
 	self#store_byte_idx base (2*len + 1) 0
 
+    method store_symbolic_byte addr varname =
+      self#store_byte addr (form_man#fresh_symbolic_8 varname)
+
+    method store_symbolic_short addr varname =
+      self#store_short addr (form_man#fresh_symbolic_16 varname)
+
     method store_symbolic_word addr varname =
       self#store_word addr (form_man#fresh_symbolic_32 varname)
+
+    method store_symbolic_long addr varname =
+      self#store_long addr (form_man#fresh_symbolic_64 varname)
 
     method store_cstr base idx str =
       self#store_str base idx str;
@@ -4367,11 +4376,29 @@ struct
 
     val mutable periodic_influence_exprs = []
 
+    method store_symbolic_byte_influence addr varname =
+      let v = form_man#fresh_symbolic_8 varname in
+	self#store_byte addr v;
+	periodic_influence_exprs <-
+	  (D.to_symbolic_8 v) :: periodic_influence_exprs
+
+    method store_symbolic_short_influence addr varname =
+      let v = form_man#fresh_symbolic_16 varname in
+	self#store_short addr v;
+	periodic_influence_exprs <-
+	  (D.to_symbolic_16 v) :: periodic_influence_exprs
+
     method store_symbolic_word_influence addr varname =
       let v = form_man#fresh_symbolic_32 varname in
 	self#store_word addr v;
 	periodic_influence_exprs <-
 	  (D.to_symbolic_32 v) :: periodic_influence_exprs
+
+    method store_symbolic_long_influence addr varname =
+      let v = form_man#fresh_symbolic_64 varname in
+	self#store_long addr v;
+	periodic_influence_exprs <-
+	  (D.to_symbolic_64 v) :: periodic_influence_exprs
 
     method maybe_periodic_influence =
       match !opt_periodic_influence with
@@ -7358,6 +7385,7 @@ module LinuxLoader = struct
 	 Printf.printf "Loading     extra region from %08Lx to %08Lx\n"
 	   vbase (Int64.add vbase size);
        assert(size <= 4096L);
+       assert((Int64.add file_base size) <= phr.filesz);
        seek_in ic (Int64.to_int (Int64.add phr.offset file_base));
        let data = IO.really_nread i (Int64.to_int size) in
 	 store_page fm vbase data;
@@ -8029,15 +8057,24 @@ let opt_use_ids_from_core = ref false
 let opt_load_data = ref true
 let opt_random_memory = ref false
 let opt_zero_memory = ref false
+let opt_store_bytes = ref []
+let opt_store_shorts = ref []
 let opt_store_words = ref []
+let opt_store_longs = ref []
 let opt_state_file = ref None
 let opt_solver = ref "stp-external"
 let opt_solver_check_against = ref "none"
 let opt_symbolic_regs = ref false
 let opt_symbolic_cstrings = ref []
 let opt_symbolic_string16s = ref []
+let opt_symbolic_bytes = ref []
+let opt_symbolic_shorts = ref []
 let opt_symbolic_words = ref []
+let opt_symbolic_longs = ref []
+let opt_symbolic_bytes_influence = ref []
+let opt_symbolic_shorts_influence = ref []
 let opt_symbolic_words_influence = ref []
+let opt_symbolic_longs_influence = ref []
 let opt_symbolic_regions = ref []
 let opt_argv = ref []
 
@@ -8143,11 +8180,30 @@ let main argv =
 	"base+16s As above, but with 16-bit characters");
        ("-symbolic-regs", Arg.Set(opt_symbolic_regs),
 	" Give symbolic values to registers");
+
+       ("-symbolic-byte", Arg.String
+	  (add_delimited_num_str_pair opt_symbolic_bytes '='),
+	"addr=var Make a memory byte symbolic");
+       ("-symbolic-byte-influence", Arg.String
+	  (add_delimited_num_str_pair opt_symbolic_bytes_influence '='),
+	"addr=var As above, but also use for -periodic-influence");
+       ("-symbolic-short", Arg.String
+	  (add_delimited_num_str_pair opt_symbolic_shorts '='),
+	"addr=var Make a 16-bit memory valule symbolic");
+       ("-symbolic-short-influence", Arg.String
+	  (add_delimited_num_str_pair opt_symbolic_shorts_influence '='),
+	"addr=var As above, but also use for -periodic-influence");
        ("-symbolic-word", Arg.String
 	  (add_delimited_num_str_pair opt_symbolic_words '='),
 	"addr=var Make a memory word symbolic");
        ("-symbolic-word-influence", Arg.String
 	  (add_delimited_num_str_pair opt_symbolic_words_influence '='),
+	"addr=var As above, but also use for -periodic-influence");
+       ("-symbolic-long", Arg.String
+	  (add_delimited_num_str_pair opt_symbolic_longs '='),
+	"addr=var Make a 64-bit memory valule symbolic");
+       ("-symbolic-long-influence", Arg.String
+	  (add_delimited_num_str_pair opt_symbolic_longs_influence '='),
 	"addr=var As above, but also use for -periodic-influence");
        ("-random-memory", Arg.Set(opt_random_memory),
         " Use random values for uninit. memory reads");
@@ -8178,9 +8234,18 @@ let main argv =
        ("-state", Arg.String
 	  (fun s -> opt_state_file := Some s),
 	"file Load memory state from TEMU state file");
+       ("-store-byte", Arg.String
+	  (add_delimited_pair opt_store_bytes '='),
+	"addr=val Set the byte at address to a concrete value");
+       ("-store-short", Arg.String
+	  (add_delimited_pair opt_store_shorts '='),
+	"addr=val Set 16-bit location to a concrete value");
        ("-store-word", Arg.String
 	  (add_delimited_pair opt_store_words '='),
-	"addr=val Fix an address to a concrete value");
+	"addr=val Set a memory word to a concrete value");
+       ("-store-word", Arg.String
+	  (add_delimited_pair opt_store_longs '='),
+	"addr=val Set 64-bit location to a concrete value");
        ("-solver", Arg.Set_string(opt_solver),
 	"solver stpvc (internal) or stp-external (cf. -stp-path)");
        ("-solver-check-against", Arg.Set_string(opt_solver_check_against),
@@ -8262,7 +8327,7 @@ let main argv =
 	" Print memory usage statistics");
        ("-solver-stats", Arg.Set(opt_solver_stats),
 	" Print solver statistics");
-       ("-time-stats", Arg.Set(opt_gc_stats),
+       ("-time-stats", Arg.Set(opt_time_stats),
 	" Print running time statistics");
        ("-print-callrets", Arg.Set(opt_print_callrets),
 	" Print call and ret instructions executed. Can be used with ./getbacktrace.pl to generate the backtrace at any point.");
@@ -8396,7 +8461,12 @@ in
       (match !opt_initial_eflagsrest with
 	 | Some v -> fm#set_word_var EFLAGSREST v
 	 | None -> ());
+      List.iter (fun (addr,v) -> fm#store_byte_conc addr 
+		   (Int64.to_int v)) !opt_store_bytes;
+      List.iter (fun (addr,v) -> fm#store_short_conc addr
+		   (Int64.to_int v)) !opt_store_shorts;
       List.iter (fun (addr,v) -> fm#store_word_conc addr v) !opt_store_words;
+      List.iter (fun (addr,v) -> fm#store_long_conc addr v) !opt_store_longs;
       symbolic_init :=
 	(fun () ->
 	   let new_max i =
@@ -8416,11 +8486,29 @@ in
 			  fm#store_symbolic_wcstr base (Int64.to_int len))
 	       !opt_symbolic_string16s;
 	     List.iter (fun (addr, varname) ->
+			  fm#store_symbolic_byte addr varname)
+	       !opt_symbolic_bytes;
+	     List.iter (fun (addr, varname) ->
+			  fm#store_symbolic_byte_influence addr varname)
+	       !opt_symbolic_bytes_influence;
+	     List.iter (fun (addr, varname) ->
+			  fm#store_symbolic_short addr varname)
+	       !opt_symbolic_shorts;
+	     List.iter (fun (addr, varname) ->
+			  fm#store_symbolic_short_influence addr varname)
+	       !opt_symbolic_shorts_influence;
+	     List.iter (fun (addr, varname) ->
 			  fm#store_symbolic_word addr varname)
 	       !opt_symbolic_words;
 	     List.iter (fun (addr, varname) ->
 			  fm#store_symbolic_word_influence addr varname)
-	       !opt_symbolic_words_influence
+	       !opt_symbolic_words_influence;
+	     List.iter (fun (addr, varname) ->
+			  fm#store_symbolic_long addr varname)
+	       !opt_symbolic_longs;
+	     List.iter (fun (addr, varname) ->
+			  fm#store_symbolic_long_influence addr varname)
+	       !opt_symbolic_longs_influence;
 	);
       
       let (start_addr, fuzz_start) = match
