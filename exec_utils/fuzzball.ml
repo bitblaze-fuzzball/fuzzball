@@ -3801,6 +3801,45 @@ class decision_tree = object(self)
     String.concat ""
       (List.map (fun b -> if b then "1" else "0") (List.rev self#get_hist));
 
+  method get_hist_queries =
+    let kid n b =
+      match (n.f_child, n.t_child, b) with
+	| (Some(Some k), _, false) -> k
+	| (_, Some(Some k), true) -> k
+	| _ -> failwith "missing kid in get_hist_queries"
+    in
+    let get_query n h =
+      let rec loop q n h =
+	if n.query_children <> None then
+	  (q, h, n)
+	else
+	  match h with
+	    | [] -> (q, h, n)
+	    | first :: rest -> loop (first :: q) (kid n first) rest
+      in
+      assert(n.query_children <> None);
+	match h with
+	  | [] -> ([], [], n)
+	  | first :: rest -> 
+	      let (l, h', n') = loop [first] (kid n first) rest in
+		((List.rev l), h', n')
+    in
+    let rec outer_loop l n h =
+      match h with
+	| [] -> l
+	| _ -> let (ql, h', n') = get_query n h in
+	    outer_loop (ql :: l) n' h'
+    in
+    let hist = List.rev self#get_hist in
+    List.rev (outer_loop [] root hist)
+
+  method get_hist_str_queries = 
+    String.concat "-"
+      (List.map
+	 (fun q -> String.concat ""
+	    (List.map (fun b -> if b then "1" else "0") q))
+	 self#get_hist_queries);
+
   method get_depth = depth
 
   method add_kid b =
@@ -4166,6 +4205,7 @@ let opt_trace_assigns = ref false
 let opt_trace_assigns_string = ref false
 let opt_trace_decisions = ref false
 let opt_trace_binary_paths = ref false
+let opt_trace_binary_paths_delimited = ref false
 let opt_trace_sym_addrs = ref false
 let opt_trace_sym_addr_details = ref false
 
@@ -4423,6 +4463,8 @@ struct
 	let r = self#try_extend trans_func try_func non_try_func in
 	  if !opt_trace_binary_paths then
 	    Printf.printf "Current Path String: %s\n" dt#get_hist_str;
+	  if !opt_trace_binary_paths_delimited then
+	    Printf.printf "Current path: %s\n" dt#get_hist_str_queries;
 	  r
 
     method extend_pc_random cond verbose =
@@ -4571,6 +4613,8 @@ struct
 	self#path_end_influence;
       if !opt_trace_binary_paths then
 	Printf.printf "Path: %s\n" dt#get_hist_str;
+      if !opt_trace_binary_paths_delimited then
+	Printf.printf "Final path: %s\n" dt#get_hist_str_queries;
       dt#try_again_p
 
     method print_tree chan = dt#print_tree chan
@@ -4907,9 +4951,30 @@ struct
 	self#add_to_path_cond (V.BinOp(V.EQ, e, (const bits)));
 	bits
 
+    method private concretize_inner ty e =
+      match e with 
+	| V.Cast((V.CAST_UNSIGNED|V.CAST_SIGNED) as ckind, cty, e2) ->
+	    assert(cty = ty);
+	    let ty2 = Vine_typecheck.infer_type None e2 in
+	    let bits = self#choose_conc_offset_cached ty2 e2 in
+	    let expand =
+	      match (ckind, ty2) with
+		| (V.CAST_UNSIGNED, V.REG_32) -> fix_u32
+		| (V.CAST_UNSIGNED, V.REG_16) -> fix_u16
+		| (V.CAST_UNSIGNED, V.REG_8)  -> fix_u8
+		| (V.CAST_UNSIGNED, V.REG_1)  -> fix_u1
+		| (V.CAST_SIGNED,   V.REG_32) -> fix_s32
+		| (V.CAST_SIGNED,   V.REG_16) -> fix_s16
+		| (V.CAST_SIGNED,   V.REG_8)  -> fix_s8
+		| (V.CAST_SIGNED,   V.REG_1)  -> fix_s1
+		| _ -> failwith "unhandled cast kind in concretize_inner"
+	    in
+	      expand bits
+	| _ -> self#choose_conc_offset_cached ty e
+
     method private concretize ty e =
       dt#start_new_query;
-      let v = self#choose_conc_offset_cached ty e in
+      let v = self#concretize_inner ty e in
 	dt#count_query;
 	v
 
@@ -4979,7 +5044,7 @@ struct
 	      (match (eoffs, off_syms) with
 		 | ([], []) -> 0L
 		 | (el, vel) -> 
-		     (self#choose_conc_offset_cached V.REG_32
+		     (self#concretize_inner V.REG_32
 			(sum_list (el @ vel))))
 	    in
 	      dt#count_query;
@@ -8134,6 +8199,9 @@ let main argv =
 	" Enable several common trace and stats options");
        ("-trace-binary-paths", Arg.Set(opt_trace_binary_paths),
 	" Print decision paths as bit strings");
+       ("-trace-binary-paths-delimited",
+	Arg.Set(opt_trace_binary_paths_delimited),
+	" As above, but with '-'s separating queries");
        ("-trace-decisions", Arg.Set(opt_trace_decisions),
 	" Print symbolic branch choices");
        ("-trace-decision-tree", Arg.Set(opt_trace_decision_tree),
