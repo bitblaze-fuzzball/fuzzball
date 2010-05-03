@@ -2515,6 +2515,15 @@ struct
 	     (fun n g64 -> n+ gran64_size g64) 0 page) mem
   end
 
+  class granular_sink_memory = object(self)
+    inherit granular_memory
+
+    method private store_common_fast addr fn = ()
+    method private with_chunk addr fn = None
+    method clear () = ()
+    method measure_size = 1
+  end
+
   class granular_hash_memory = object(self)
     inherit granular_memory
 
@@ -4900,13 +4909,16 @@ struct
       location_id <- i;
       spfm#set_eip i
 
+    val sink_mem = new GM.granular_sink_memory
+
     method private region r =
       match r with
-	| None -> (mem :> (GM.granular_memory))
-	| Some r_num -> List.nth regions r_num
+	| None -> (sink_mem :> (GM.granular_memory))
+	| Some 0 -> (mem :> (GM.granular_memory))
+	| Some r_num -> List.nth regions (r_num - 1)
 
     method private fresh_region =
-      let new_idx = List.length regions in
+      let new_idx = 1 + List.length regions in
       let region = (new GM.granular_hash_memory)  and
 	  name = "region_" ^ (string_of_int new_idx) in
 	regions <- regions @ [region];
@@ -4926,6 +4938,11 @@ struct
 
     method private is_region_base e =
       Hashtbl.mem region_vals e
+
+    val mutable sink_regions = []
+
+    method add_sink_region (e:Vine.exp) (size:int64) =
+      sink_regions <- ((self#region_for e), size) :: sink_regions
 
     method private choose_conc_offset_uniform ty e =
       let byte x = V.Constant(V.Int(V.REG_8, (Int64.of_int x))) in
@@ -5009,10 +5026,10 @@ struct
 	dt#count_query;
 	v
 
-    method eval_addr_exp_region exp =
+    method eval_addr_exp_region exp is_store =
       let v = self#eval_int_exp_simplify exp in
 	try
-	  (None, D.to_concrete_32 v)
+	  (Some 0, D.to_concrete_32 v)
 	with NotConcrete _ ->
 	  let e = D.to_symbolic_32 v in
 	  let eip = self#get_word_var R_EIP in
@@ -5068,24 +5085,48 @@ struct
 			(V.exp_to_string bvar);
 		    (Some(self#region_for bvar), rest_vars)
 	      | (off, vl) ->
-		  (None, vl)
+		  (Some 0, vl)
 	    in
-	    let coff = List.fold_left Int64.add 0L coffs in
-	    let offset = Int64.add (Int64.add cbase coff)
-	      (match (eoffs, off_syms) with
-		 | ([], []) -> 0L
-		 | (el, vel) -> 
-		     (self#concretize_inner V.REG_32
-			(sum_list (el @ vel))))
+	    let (region, offset) =
+	      (match (base, is_store) with
+		 | (Some r, true)
+		     when List.exists (fun (r', _) -> r = r') sink_regions ->
+		     let (r', size) =
+		       List.find (fun (r', _) -> r = r') sink_regions in
+		       Printf.printf "Ignoring store to sink region\n";
+		       (let sat_dir = ref false in
+			  self#restore_path_cond
+			    (fun () ->
+			       sat_dir := self#extend_pc_random
+				 (V.BinOp(V.LT, e,
+					  V.Constant(V.Int(V.REG_32, size))))
+				 false);
+			  if !sat_dir = true then
+			    Printf.printf "Can be in bounds.\n"
+			  else
+			    Printf.printf "Can be out of bounds.\n");
+		       (None, 0L)
+		 | _ ->
+		     let coff = List.fold_left Int64.add 0L coffs in
+		     let offset = Int64.add (Int64.add cbase coff)
+		       (match (eoffs, off_syms) with
+			  | ([], []) -> 0L
+			  | (el, vel) -> 
+			      (self#concretize_inner V.REG_32
+				 (sum_list (el @ vel)))) in
+		       (base, (fix_u32 offset)))
 	    in
 	      dt#count_query;
-	      (base, (fix_u32 offset))
+	      (region, offset)
 		  
+    (* Because we override handle_{load,store}, this should only be
+       called for jumps. *)
     method eval_addr_exp exp =
-      let (r, addr) = self#eval_addr_exp_region exp in
+      let (r, addr) = self#eval_addr_exp_region exp false in
 	match r with
-	  | None -> addr
+	  | Some 0 -> addr
 	  | Some r_num -> raise SymbolicJump
+	  | None -> raise SymbolicJump
 
     method get_word_var_concretize reg do_influence name : int64 =
       let v = self#get_int_var (Hashtbl.find reg_to_var reg) in
@@ -5161,7 +5202,7 @@ struct
     method private load_long_region  r addr = (self#region r)#load_long  addr
 
     method private handle_load addr_e ty =
-      let (r, addr) = self#eval_addr_exp_region addr_e in
+      let (r, addr) = self#eval_addr_exp_region addr_e false in
       let v =
 	(match ty with
 	   | V.REG_8 -> self#load_byte_region r addr
@@ -5171,25 +5212,29 @@ struct
 	   | _ -> failwith "Unsupported memory type") in
 	(if !opt_trace_loads then
 	  (Printf.printf "Load from %s "
-	     (match r with | None -> "conc. mem"
+	     (match r with
+		| None -> "sink"
+		| Some 0 -> "conc. mem"
 		| Some r_num -> "region " ^ (string_of_int r_num));
 	   Printf.printf "%08Lx = %s" addr (D.to_string_32 v);
 	   (if !opt_use_tags then
 	      Printf.printf " (%Ld @ %08Lx)" (D.get_tag v) location_id);
 	   Printf.printf "\n"));
-	if r = None && (Int64.abs (fix_s32 addr)) < 4096L then
+	if r = Some 0 && (Int64.abs (fix_s32 addr)) < 4096L then
 	  raise NullDereference;
 	(v, ty)
 
     method private handle_store addr_e ty rhs_e =
-      let (r, addr) = self#eval_addr_exp_region addr_e and
+      let (r, addr) = self#eval_addr_exp_region addr_e true and
 	  value = self#eval_int_exp_simplify rhs_e in
-	if r = None && (Int64.abs (fix_s32 addr)) < 4096L then
+	if r = Some 0 && (Int64.abs (fix_s32 addr)) < 4096L then
 	  raise NullDereference;
 	if !opt_trace_stores then
 	  if not (ty = V.REG_8 && r = None) then
 	    (Printf.printf "Store to %s "
-	       (match r with | None -> "conc. mem"
+	       (match r with
+		  | None -> "sink"
+		  | Some 0 -> "conc. mem"
 		  | Some r_num -> "region " ^ (string_of_int r_num));
 	     Printf.printf "%08Lx = %s" addr (D.to_string_32 value);
 	     (if !opt_use_tags then
@@ -5212,6 +5257,10 @@ struct
 	      self#set_int_var var
 		(D.from_concrete_32 
 		   (self#concretize V.REG_32 e))
+
+    method make_sink_region varname size =
+      self#add_sink_region
+	(D.to_symbolic_32 (form_man#fresh_symbolic_32 varname)) size
 
     method reset () =
       spfm#reset ();
@@ -8076,6 +8125,7 @@ let opt_symbolic_shorts_influence = ref []
 let opt_symbolic_words_influence = ref []
 let opt_symbolic_longs_influence = ref []
 let opt_symbolic_regions = ref []
+let opt_sink_regions = ref []
 let opt_argv = ref []
 
 let split_string char s =
@@ -8092,6 +8142,10 @@ let add_delimited_pair opt char s =
 let add_delimited_num_str_pair opt char s =
   let (s1, s2) = split_string char s in
     opt := ((Int64.of_string s1), s2) :: !opt
+
+let add_delimited_str_num_pair opt char s =
+  let (s1, s2) = split_string char s in
+    opt := (s1, (Int64.of_string s2)) :: !opt
 
 let main argv = 
   Arg.parse
@@ -8180,7 +8234,6 @@ let main argv =
 	"base+16s As above, but with 16-bit characters");
        ("-symbolic-regs", Arg.Set(opt_symbolic_regs),
 	" Give symbolic values to registers");
-
        ("-symbolic-byte", Arg.String
 	  (add_delimited_num_str_pair opt_symbolic_bytes '='),
 	"addr=var Make a memory byte symbolic");
@@ -8205,6 +8258,9 @@ let main argv =
        ("-symbolic-long-influence", Arg.String
 	  (add_delimited_num_str_pair opt_symbolic_longs_influence '='),
 	"addr=var As above, but also use for -periodic-influence");
+       ("-sink-region", Arg.String
+	  (add_delimited_str_num_pair opt_sink_regions '+'),
+	"var+size Range-check but ignore writes to a region");
        ("-random-memory", Arg.Set(opt_random_memory),
         " Use random values for uninit. memory reads");
        ("-zero-memory", Arg.Set(opt_zero_memory),
@@ -8509,6 +8565,9 @@ in
 	     List.iter (fun (addr, varname) ->
 			  fm#store_symbolic_long_influence addr varname)
 	       !opt_symbolic_longs_influence;
+	     List.iter (fun (varname, size) ->
+			  fm#make_sink_region varname size)
+	       !opt_sink_regions;
 	);
       
       let (start_addr, fuzz_start) = match
