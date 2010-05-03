@@ -1137,9 +1137,10 @@ struct
       let m_axioms = self#get_mem_axioms in
       let m_vars = List.map (fun (v, _) -> v) m_axioms in
       let assigns = m_axioms @ temps in
-      let decls = Vine_util.list_difference i_vars m_vars
+      let decls = Vine_util.list_difference i_vars m_vars in
+      let inputs_in_val_expr = i_vars 
       in
-	(decls, assigns, cond_expr, val_expr)
+	(decls, assigns, cond_expr, val_expr, inputs_in_val_expr)
 
   end
 end
@@ -4322,12 +4323,13 @@ struct
 	  0.0
 
     method measure_influence (target_expr : V.exp) =
-      let (free_decls, assigns, cond_e, target_e) =
+      let (free_decls, assigns, cond_e, target_e, inputs_influencing) =
 	form_man#collect_for_solving [] path_cond target_expr in
       let i =
 	self#measure_influence_common free_decls assigns cond_e target_e in
-	Printf.printf "Estimated influence on %s is %f\n"
-	  (V.exp_to_string target_expr) i;
+	Printf.printf "Estimated influence on %s is %f\n" (V.exp_to_string target_expr) i;
+	Printf.printf "Inputs contributing to this target expression: %s\n" 
+	  (List.fold_left (fun a varble -> a ^ ", " ^ (V.var_to_string varble)) "" inputs_influencing);
 	i
 
     method compute_multipath_influence loc =
@@ -4350,12 +4352,14 @@ struct
 	(fun e (cond_v, _, v_e) ->
 	   V.exp_ite (V.Lval(V.Temp(cond_v))) V.REG_32 v_e e)
 	(V.Constant(V.Int(V.REG_32, 0L))) conjoined in
-      let (free_decls, t_assigns, cond_e, target_e) =
+      let (free_decls, t_assigns, cond_e, target_e, inputs_influencing) =
 	form_man#collect_for_solving cond_assigns [cond] expr in
       let i =
 	self#measure_influence_common free_decls t_assigns cond_e target_e in
 	Printf.printf "Estimated multipath influence at %s is %f\n"
 	  loc i;
+	Printf.printf "Inputs contributing to this target expression: %s\n"
+          (List.fold_left (fun a varble -> a ^ ", " ^ (V.var_to_string varble)) "" inputs_influencing);
 
     method compute_all_multipath_influence =
       Hashtbl.iter (fun eip _ -> self#compute_multipath_influence eip)
@@ -4393,7 +4397,7 @@ struct
       let get_time () = Unix.gettimeofday () in
       let pc = cond :: path_cond and
 	  expr = V.Unknown("") in
-      let (decls, assigns, cond_e, _) =
+      let (decls, assigns, cond_e, _, _) =
 	form_man#collect_for_solving [] pc expr
       in
       let assign_vars = List.map (fun (v, exp) -> v) assigns in
@@ -5864,6 +5868,13 @@ object(self)
       with
 	| Unix.Unix_error(err, _, _) -> self#put_errno err
 
+  method sys_mkdir path mode =
+    try
+      Unix.mkdir path mode;
+      put_reg R_EAX 0L
+    with
+      | Unix.Unix_error(err, _, _) -> self#put_errno err
+	  
   method sys_brk addr =
     let cur_break = match !the_break with
       | Some b -> b
@@ -5974,10 +5985,11 @@ object(self)
 
   method sys_ioctl fd req argp =
     match req with
-      | 0x5401L -> 
-	  (* let attrs = Unix.tcgetattr (get_fd fd) in *)
-	  failwith "Unhandled TCGETS ioctl"
-      | _ -> failwith "Unknown ioctl"
+      | 0x5401L -> (* put_reg R_EAX 0L *)
+	  (*	  let attrs = Unix.tcgetattr (self#get_fd fd) in *)
+	  raise (UnhandledSysCall ("Unhandled TCGETS ioctl"))
+      | _ -> 	  raise (UnhandledSysCall ("Unhandled ioct syscall"))
+
 
   method sys_lseek (fd: int) (offset: Int64.t) (whence: int) =
     try
@@ -6355,7 +6367,13 @@ object(self)
 	 | 38 -> (* rename *)
 	     raise (UnhandledSysCall( "Unhandled Linux system call rename (38)"))
 	 | 39 -> (* mkdir *)
-	     raise (UnhandledSysCall( "Unhandled Linux system call mkdir (39)"))
+	     let (ebx, ecx) = read_2_regs () in
+	     let path_buf = ebx and
+		 mode     = Int64.to_int ecx in
+	     let path = fm#read_cstr path_buf in
+	       if !opt_trace_syscalls then
+		 Printf.printf "mkdir(\"%s\", 0x%x)" path mode;
+	       self#sys_mkdir path mode
 	 | 40 -> (* rmdir *)
 	     raise (UnhandledSysCall( "Unhandled Linux system call rmdir (40)"))
 	 | 41 -> (* dup *)
@@ -7679,7 +7697,7 @@ let rec runloop fm eip asmir_gamma until =
 	  | V.Move((V.Temp(_,_,ty) as lhs),
 		   V.Unknown("Unknown: GetI"|"Floating point binop"|
 				 "Floating point triop"|"floatcast"|
-				     "CCall: x86g_create_fpucw"|
+				     "CCall: x86g_create_fpucw"|"CCall: x86g_calculate_FXAM"|
 					 "CCall: x86g_check_fldcw"))
 	    -> V.Move(lhs, V.Constant(V.Int(ty, 0L)))
 	  | V.ExpStmt(V.Unknown("Unknown: PutI")) 
