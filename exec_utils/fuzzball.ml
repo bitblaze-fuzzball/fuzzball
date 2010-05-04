@@ -4381,6 +4381,9 @@ struct
 	 reversals odd we reverse it one more time here. *)
       let measurements = List.rev (try Hashtbl.find measured_values loc
 				   with Not_found -> []) in
+      let vtype = match measurements with
+	| (_, e) :: rest  -> Vine_typecheck.infer_type None e
+	| _ -> V.REG_32 in
       let conjoined = List.map
 	(fun (pc, e) -> (fresh_cond_var (), form_man#conjoin pc, e))
 	measurements in
@@ -4391,8 +4394,8 @@ struct
       let cond = form_man#disjoin cond_var_exps in
       let expr = List.fold_left
 	(fun e (cond_v, _, v_e) ->
-	   V.exp_ite (V.Lval(V.Temp(cond_v))) V.REG_32 v_e e)
-	(V.Constant(V.Int(V.REG_32, 0L))) conjoined in
+	   V.exp_ite (V.Lval(V.Temp(cond_v))) vtype v_e e)
+	(V.Constant(V.Int(vtype, 0L))) conjoined in
       let (free_decls, t_assigns, cond_e, target_e, inputs_influencing) =
 	form_man#collect_for_solving cond_assigns [cond] expr in
       let i =
