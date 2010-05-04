@@ -3857,7 +3857,15 @@ class decision_tree = object(self)
       (List.map
 	 (fun q -> String.concat ""
 	    (List.map (fun b -> if b then "1" else "0") q))
-	 self#get_hist_queries);
+	 self#get_hist_queries)
+
+  method get_hist_str_bracketed = 
+    String.concat ""
+      (List.map
+	 (fun q -> let s = String.concat ""
+	    (List.map (fun b -> if b then "1" else "0") q) in
+	    if String.length s = 1 then s else "[" ^ s ^ "]")
+	 self#get_hist_queries)
 
   method get_depth = depth
 
@@ -4215,17 +4223,21 @@ end
 
 let opt_measure_influence_derefs = ref false
 let opt_measure_influence_reploops = ref false
+let opt_measure_deref_influence_at = ref None
+let opt_measure_expr_influence_at = ref None
+let opt_multipath_influence_only = ref false
+let opt_stop_at_measurement = ref false
 let opt_periodic_influence = ref None
 let next_periodic_influence : int ref = ref (-1)
 let opt_influence_bound = ref (-2.0)
 let opt_disqualify_addrs = ref []
-let opt_measure_deref_influence_at = ref None
-let opt_measure_expr_influence_at = ref None
+let opt_check_condition_at = ref None
 let opt_trace_assigns = ref false
 let opt_trace_assigns_string = ref false
 let opt_trace_decisions = ref false
 let opt_trace_binary_paths = ref false
 let opt_trace_binary_paths_delimited = ref false
+let opt_trace_binary_paths_bracketed = ref false
 let opt_trace_sym_addrs = ref false
 let opt_trace_sym_addr_details = ref false
 
@@ -4357,8 +4369,18 @@ struct
 	  fun () -> counter := !counter + 1;
 	  V.newvar ("cond_" ^ (string_of_int !counter)) V.REG_1
       in
-      let measurements = (try Hashtbl.find measured_values loc
-			  with Not_found -> []) in
+      (* A note about the List.rev here: in the nested if-then-else we
+	 construct below, it's important to check more specific
+	 conditions before more general ones, otherwise the more specific
+	 ones will be shadowed. As we collect path conditions along a
+	 single path, later PCs will be more specific than earlier
+	 ones. So we're OK if we put them first, i.e. check the PCs in
+	 the reverse order that they are collected. The list is reversed
+	 once because it's collected by pushing elements onto a list, and
+	 once in the fold_left below, so to make the total number of
+	 reversals odd we reverse it one more time here. *)
+      let measurements = List.rev (try Hashtbl.find measured_values loc
+				   with Not_found -> []) in
       let conjoined = List.map
 	(fun (pc, e) -> (fresh_cond_var (), form_man#conjoin pc, e))
 	measurements in
@@ -4506,6 +4528,8 @@ struct
 	    Printf.printf "Current Path String: %s\n" dt#get_hist_str;
 	  if !opt_trace_binary_paths_delimited then
 	    Printf.printf "Current path: %s\n" dt#get_hist_str_queries;
+	  if !opt_trace_binary_paths_bracketed then
+	    Printf.printf "Current path: %s\n" dt#get_hist_str_bracketed;
 	  r
 
     method extend_pc_random cond verbose =
@@ -4551,14 +4575,18 @@ struct
 	else
 	  (Hashtbl.replace unique_measurements loc ();
 	   self#take_measure_eip e;
-	   ignore(self#measure_influence e))
+	   if not !opt_multipath_influence_only then
+	     ignore(self#measure_influence e))
 
     method maybe_measure_influence_deref e =
       let eip = self#get_word_var R_EIP in
 	match !opt_measure_deref_influence_at with
 	  | Some addr when addr = eip ->
 	      self#take_measure_eip e;
-	      raise ReachedMeasurePoint
+	      if not !opt_multipath_influence_only then
+		ignore(self#measure_influence e);
+	      if !opt_stop_at_measurement then
+		raise ReachedMeasurePoint
 	  | _ -> if !opt_measure_influence_derefs then
 	      self#measure_point_influence "deref" e
 
@@ -4656,7 +4684,14 @@ struct
       (match !opt_measure_expr_influence_at with
 	 | Some (eip', expr) when eip' = eip ->
 	     self#measure_influence_expr expr;
-	     raise ReachedMeasurePoint
+	      if !opt_stop_at_measurement then
+		raise ReachedMeasurePoint
+	 | _ -> ());
+      (match !opt_check_condition_at with
+	 | Some (eip', expr) when eip' = eip ->
+	     let b = self#eval_bool_exp expr in
+	       Printf.printf "At 0x%08Lx, condition %s can be %b\n"
+		 eip (V.exp_to_string expr) b
 	 | _ -> ())
 	  
     method finish_path =
@@ -4667,6 +4702,8 @@ struct
 	Printf.printf "Path: %s\n" dt#get_hist_str;
       if !opt_trace_binary_paths_delimited then
 	Printf.printf "Final path: %s\n" dt#get_hist_str_queries;
+      if !opt_trace_binary_paths_bracketed then
+	Printf.printf "Final path: %s\n" dt#get_hist_str_bracketed;
       dt#try_again_p
 
     method print_tree chan = dt#print_tree chan
@@ -4724,25 +4761,31 @@ struct
     in
       is_power_of_2_or_zero (Int64.succ (Int64.lognot mask64))
 
-  let rec ulog2 i =
-    match i with
+  let floor_log2 i =
+    let rec loop = function
       | 0L -> -1
       | 1L -> 0
       | 2L|3L -> 1
       | 4L|5L|6L|7L -> 2
-      | i when i < 16L -> 2 + ulog2(Int64.shift_right i 2)
-      | i when i < 256L -> 4 + ulog2(Int64.shift_right i 4)
-      | i when i < 65536L -> 8 + ulog2(Int64.shift_right i 8)
-      | i when i < 0x100000000L -> 16 + ulog2(Int64.shift_right i 16)
-      | _ -> 32 + ulog2(Int64.shift_right i 32)
+      | i when i < 16L -> 2 + loop(Int64.shift_right i 2)
+      | i when i < 256L -> 4 + loop(Int64.shift_right i 4)
+      | i when i < 65536L -> 8 + loop(Int64.shift_right i 8)
+      | i when i < 0x100000000L -> 16 + loop(Int64.shift_right i 16)
+      | _ -> 32 + loop(Int64.shift_right i 32)
+    in
+      loop i
 
   let rec narrow_bitwidth e =
     match e with
-      | V.Constant(V.Int(ty, v)) -> ulog2 v
+      | V.Constant(V.Int(ty, v)) -> 1 + floor_log2 v
       | V.BinOp(V.BITAND, e1, e2) ->
 	  min (narrow_bitwidth e1) (narrow_bitwidth e2)
       | V.BinOp(V.BITOR, e1, e2) ->
 	  max (narrow_bitwidth e1) (narrow_bitwidth e2)
+      | V.Cast(_, V.REG_32, e1) -> min 32 (narrow_bitwidth e1)
+      | V.Cast(_, V.REG_16, e1) -> min 16 (narrow_bitwidth e1)
+      | V.Cast(_, V.REG_8, e1)  -> min 8  (narrow_bitwidth e1)
+      | V.Cast(_, V.REG_1, e1)  -> min 1  (narrow_bitwidth e1)
       | _ -> 64
 
   let split_terms e form_man =
@@ -8194,6 +8237,7 @@ let opt_symbolic_longs_influence = ref []
 let opt_symbolic_regions = ref []
 let opt_sink_regions = ref []
 let opt_measure_expr_influence_at_strings = ref None
+let opt_check_condition_at_strings = ref None
 let opt_argv = ref []
 
 let split_string char s =
@@ -8345,6 +8389,10 @@ let main argv =
 	  (fun s -> opt_measure_deref_influence_at :=
 	     Some (Int64.of_string s)),
 	"eip Measure influence of pointer at given code address");
+       ("-multipath-influence-only", Arg.Set(opt_multipath_influence_only),
+	" Skip single-path influence measurements");
+       ("-stop-at-measurement", Arg.Set(opt_stop_at_measurement),
+	" Stop paths after an '-at' influence measurement");
        ("-measure-expr-influence-at", Arg.String
 	  (fun s -> let (eip_s, expr_s) = split_string ':' s in
 	     opt_measure_expr_influence_at_strings :=
@@ -8414,6 +8462,9 @@ let main argv =
        ("-trace-binary-paths-delimited",
 	Arg.Set(opt_trace_binary_paths_delimited),
 	" As above, but with '-'s separating queries");
+       ("-trace-binary-paths-bracketed",
+	Arg.Set(opt_trace_binary_paths_bracketed),
+	" As above, but with []s around multibit queries");
        ("-trace-decisions", Arg.Set(opt_trace_decisions),
 	" Print symbolic branch choices");
        ("-trace-decision-tree", Arg.Set(opt_trace_decision_tree),
@@ -8473,6 +8524,11 @@ let main argv =
        ("-watch-expr", Arg.String
 	  (fun s -> opt_watch_expr_str := Some s),
 	"expr Print Vine expression on each instruction");
+       ("-check-condition-at", Arg.String
+	  (fun s -> let (eip_s, expr_s) = split_string ':' s in
+	     opt_check_condition_at_strings :=
+	       Some (eip_s, expr_s)),
+	"eip:expr Check boolean assertion at address");
        ("--", Arg.Rest(fun s -> opt_argv := !opt_argv @ [s]),
 	" Pass any remaining arguments to the program");
      ])
@@ -8506,6 +8562,12 @@ in
       (match !opt_measure_expr_influence_at_strings with
 	 | Some (eip_s, expr_s) ->
 	     opt_measure_expr_influence_at :=
+	       Some ((Int64.of_string eip_s),
+		     (Vine_parser.parse_exp_from_string dl expr_s))
+	 | None -> ());
+      (match !opt_check_condition_at_strings with
+	 | Some (eip_s, expr_s) ->
+	     opt_check_condition_at :=
 	       Some ((Int64.of_string eip_s),
 		     (Vine_parser.parse_exp_from_string dl expr_s))
 	 | None -> ());
