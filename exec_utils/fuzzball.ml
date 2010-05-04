@@ -5563,6 +5563,57 @@ let peephole_patterns (dl, sl) =
   in
     (dl, loop sl)
 
+let split_divmod (dl, sl) =
+  let new_dl = ref [] in
+  let vars = V.VarHash.create 5 in
+  let rec walk = function
+    | V.Cast(V.CAST_HIGH, V.REG_32, V.Lval(V.Temp(t1)))
+	when V.VarHash.mem vars t1 ->
+	let (_, mod_var) = V.VarHash.find vars t1 in
+	  V.Lval(V.Temp(mod_var))
+    | V.Cast(V.CAST_LOW, V.REG_32, V.Lval(V.Temp(t1)))
+	when V.VarHash.mem vars t1 ->
+	let (div_var, _) = V.VarHash.find vars t1 in
+	  V.Lval(V.Temp(div_var))
+    | V.BinOp(op, e1, e2) -> V.BinOp(op, (walk e1), (walk e2))
+    | V.UnOp(op, e1) -> V.UnOp(op, (walk e1))
+    | V.Let(lv, e1, e2) -> V.Let(lv, (walk e1), (walk e2))
+    | other -> other
+  in
+  let rec stmt_loop sl =
+      match sl with
+	| V.Move(V.Temp((_, t1_str, V.REG_64) as t1),
+		 V.BinOp(V.BITOR,
+			 V.BinOp(V.LSHIFT,
+				 V.Cast(V.CAST_UNSIGNED, V.REG_64,
+					V.Cast(V.CAST_LOW, V.REG_32,
+					       V.BinOp(V.SMOD, num1, den1))),
+				 V.Constant(V.Int(V.REG_32, 32L))),
+			 V.Cast(V.CAST_UNSIGNED, V.REG_64,
+				V.Cast(V.CAST_LOW, V.REG_32,
+				       V.BinOp(V.SDIVIDE, num2, den2)))))
+	  :: rest
+	    when num1 = num2 && den1 = den2 ->
+	    let div_var = V.newvar (t1_str ^ "_div") V.REG_32 and
+		mod_var = V.newvar (t1_str ^ "_mod") V.REG_32 in
+	      V.VarHash.replace vars t1 (div_var, mod_var);
+	      new_dl := div_var :: mod_var :: !new_dl;
+	      (V.Move(V.Temp(div_var),
+		      V.Cast(V.CAST_LOW, V.REG_32,
+			     V.BinOp(V.SDIVIDE, num2, den2)))) ::
+		(V.Move(V.Temp(mod_var),
+			V.Cast(V.CAST_LOW, V.REG_32,
+			       V.BinOp(V.SMOD, num1, den1)))) ::
+		(stmt_loop rest)
+	| V.Move(lv, rhs) :: rest ->
+	    V.Move(lv, (walk rhs)) :: (stmt_loop rest)
+	| V.ExpStmt(e) :: rest ->  V.ExpStmt(walk e) :: (stmt_loop rest)
+	| V.Assert(e) :: rest -> V.Assert(walk e) :: (stmt_loop rest)
+	| st :: rest -> st :: stmt_loop rest
+	| [] -> []
+  in
+    (dl @ !new_dl, stmt_loop sl)
+
 let simplify_frag (orig_dl, orig_sl) =
   (* V.pp_program print_string (orig_dl, orig_sl); *)
   let (dl, sl) = (orig_dl, orig_sl) in
@@ -5570,6 +5621,7 @@ let simplify_frag (orig_dl, orig_sl) =
   let sl = uncond_jmps sl in
   let sl = rm_sequential_jmps sl in
   let sl = rm_unused_labels sl in
+  let (dl, sl) = split_divmod (dl, sl) in
   let (dl, sl) = cfold_exprs (dl, sl) in
   let (dl, sl) = rm_unused_vars (dl, sl) in
   let (dl, sl) = copy_const_prop (dl, sl) in
