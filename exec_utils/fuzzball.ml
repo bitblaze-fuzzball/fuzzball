@@ -4220,6 +4220,7 @@ let next_periodic_influence : int ref = ref (-1)
 let opt_influence_bound = ref (-2.0)
 let opt_disqualify_addrs = ref []
 let opt_measure_deref_influence_at = ref None
+let opt_measure_expr_influence_at = ref None
 let opt_trace_assigns = ref false
 let opt_trace_assigns_string = ref false
 let opt_trace_decisions = ref false
@@ -4567,6 +4568,12 @@ struct
 	with NotConcrete _ ->	    
 	  self#measure_point_influence "reploop" (D.to_symbolic_32 count)
 
+    method measure_influence_expr expr =
+      let (v, _) = self#eval_int_exp_ty expr in
+	try ignore(D.to_concrete_32 v)
+	with NotConcrete _ ->	    
+	  self#measure_point_influence "expr" (D.to_symbolic_32 v)
+
     method eval_addr_exp exp =
       let c32 x = V.Constant(V.Int(V.REG_32, x)) in
       let v = self#eval_int_exp_simplify exp in
@@ -4640,12 +4647,17 @@ struct
       if List.mem eip !opt_disqualify_addrs then
 	(self#disqualify_path;
 	 raise DisqualifiedPath);
-      if !opt_measure_influence_reploops then
-	let prefix = self#load_byte_conc eip in
-	  match prefix with
-	    | 0xf2 | 0xf3 ->
-		self#measure_influence_rep
-	    | _ -> ()
+      (if !opt_measure_influence_reploops then
+	 let prefix = self#load_byte_conc eip in
+	   match prefix with
+	     | 0xf2 | 0xf3 ->
+		 self#measure_influence_rep
+	     | _ -> ());
+      (match !opt_measure_expr_influence_at with
+	 | Some (eip', expr) when eip' = eip ->
+	     self#measure_influence_expr expr;
+	     raise ReachedMeasurePoint
+	 | _ -> ())
 	  
     method finish_path =
       dt#mark_all_seen;
@@ -8112,8 +8124,11 @@ let fuzz start_eip fuzz_start_eip end_eips fm asmir_gamma =
       with
 	| LastIteration -> ()
 	| Signal("QUIT") -> Printf.printf "Caught SIGQUIT\n");
-     (match !opt_measure_deref_influence_at with
-	| Some eip -> fm#compute_multipath_influence 
+     (match (!opt_measure_deref_influence_at,
+	     !opt_measure_expr_influence_at) with
+	| (Some eip, _) -> fm#compute_multipath_influence 
+	    (Printf.sprintf "eip 0x%08Lx" eip)
+	| (_, Some (eip, expr)) -> fm#compute_multipath_influence 
 	    (Printf.sprintf "eip 0x%08Lx" eip)
 	| _ -> fm#compute_all_multipath_influence)
    with
@@ -8178,6 +8193,7 @@ let opt_symbolic_words_influence = ref []
 let opt_symbolic_longs_influence = ref []
 let opt_symbolic_regions = ref []
 let opt_sink_regions = ref []
+let opt_measure_expr_influence_at_strings = ref None
 let opt_argv = ref []
 
 let split_string char s =
@@ -8328,7 +8344,12 @@ let main argv =
        ("-measure-deref-influence-at", Arg.String
 	  (fun s -> opt_measure_deref_influence_at :=
 	     Some (Int64.of_string s)),
-	"eip Measure influence of value at given code address");
+	"eip Measure influence of pointer at given code address");
+       ("-measure-expr-influence-at", Arg.String
+	  (fun s -> let (eip_s, expr_s) = split_string ':' s in
+	     opt_measure_expr_influence_at_strings :=
+	       Some (eip_s, expr_s)),
+	"eip:expr Measure influence of value at given code address");
        ("-periodic-influence", Arg.String
 	  (fun s ->
 	     let k = int_of_string s in
@@ -8481,6 +8502,12 @@ in
       (match !opt_watch_expr_str with
 	 | Some s -> opt_watch_expr :=
 	     Some (Vine_parser.parse_exp_from_string dl s)
+	 | None -> ());
+      (match !opt_measure_expr_influence_at_strings with
+	 | Some (eip_s, expr_s) ->
+	     opt_measure_expr_influence_at :=
+	       Some ((Int64.of_string eip_s),
+		     (Vine_parser.parse_exp_from_string dl expr_s))
 	 | None -> ());
       if !opt_symbolic_regs then
 	fm#make_x86_regs_symbolic
