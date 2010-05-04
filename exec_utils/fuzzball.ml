@@ -4575,6 +4575,8 @@ struct
 	else
 	  (Hashtbl.replace unique_measurements loc ();
 	   self#take_measure_eip e;
+	   if !opt_trace_sym_addrs then
+	     Printf.printf "Took influence measurement at %s\n" loc;
 	   if not !opt_multipath_influence_only then
 	     ignore(self#measure_influence e))
 
@@ -4583,6 +4585,8 @@ struct
 	match !opt_measure_deref_influence_at with
 	  | Some addr when addr = eip ->
 	      self#take_measure_eip e;
+	      if !opt_trace_sym_addrs then
+		Printf.printf "Took influence measurement at eip %08Lx\n" eip;
 	      if not !opt_multipath_influence_only then
 		ignore(self#measure_influence e);
 	      if !opt_stop_at_measurement then
@@ -4997,6 +5001,7 @@ struct
     val mutable sink_regions = []
 
     method add_sink_region (e:Vine.exp) (size:int64) =
+      self#on_missing_symbol_m sink_mem "sink";
       sink_regions <- ((self#region_for e), size) :: sink_regions
 
     method private choose_conc_offset_uniform ty e =
@@ -5081,7 +5086,9 @@ struct
 	dt#count_query;
 	v
 
-    method eval_addr_exp_region exp is_store =
+    val mutable sink_read_count = 0L
+
+    method eval_addr_exp_region exp =
       let v = self#eval_int_exp_simplify exp in
 	try
 	  (Some 0, D.to_concrete_32 v)
@@ -5143,12 +5150,12 @@ struct
 		  (Some 0, vl)
 	    in
 	    let (region, offset) =
-	      (match (base, is_store) with
-		 | (Some r, true)
+	      (match base with
+		 | Some r
 		     when List.exists (fun (r', _) -> r = r') sink_regions ->
 		     let (r', size) =
 		       List.find (fun (r', _) -> r = r') sink_regions in
-		       Printf.printf "Ignoring store to sink region\n";
+		       Printf.printf "Ignoring access to sink region\n";
 		       (let sat_dir = ref false in
 			  self#restore_path_cond
 			    (fun () ->
@@ -5160,7 +5167,8 @@ struct
 			    Printf.printf "Can be in bounds.\n"
 			  else
 			    Printf.printf "Can be out of bounds.\n");
-		       (None, 0L)
+		       sink_read_count <- Int64.add sink_read_count 0x10L;
+		       (None, sink_read_count)
 		 | _ ->
 		     let coff = List.fold_left Int64.add 0L coffs in
 		     let offset = Int64.add (Int64.add cbase coff)
@@ -5177,7 +5185,7 @@ struct
     (* Because we override handle_{load,store}, this should only be
        called for jumps. *)
     method eval_addr_exp exp =
-      let (r, addr) = self#eval_addr_exp_region exp false in
+      let (r, addr) = self#eval_addr_exp_region exp in
 	match r with
 	  | Some 0 -> addr
 	  | Some r_num -> raise SymbolicJump
@@ -5257,7 +5265,7 @@ struct
     method private load_long_region  r addr = (self#region r)#load_long  addr
 
     method private handle_load addr_e ty =
-      let (r, addr) = self#eval_addr_exp_region addr_e false in
+      let (r, addr) = self#eval_addr_exp_region addr_e in
       let v =
 	(match ty with
 	   | V.REG_8 -> self#load_byte_region r addr
@@ -5280,7 +5288,7 @@ struct
 	(v, ty)
 
     method private handle_store addr_e ty rhs_e =
-      let (r, addr) = self#eval_addr_exp_region addr_e true and
+      let (r, addr) = self#eval_addr_exp_region addr_e and
 	  value = self#eval_int_exp_simplify rhs_e in
 	if r = Some 0 && (Int64.abs (fix_s32 addr)) < 4096L then
 	  raise NullDereference;
