@@ -3871,7 +3871,7 @@ class decision_tree = object(self)
 
   method add_kid b =
     if !opt_trace_decision_tree then
-      Printf.printf "DT: Adding %b child to %d\n" b cur.ident;
+      Printf.printf "DT: Adding %B child to %d\n" b cur.ident;
     assert(not cur.all_seen);
     match (b, cur.f_child, cur.t_child) with
       | (false, Some(Some kid), _)
@@ -3899,7 +3899,7 @@ class decision_tree = object(self)
   method count_query =
     let rec finish_internal_nodes n top =
       if !opt_trace_decision_tree then
-	Printf.printf "DT: Finish internal nodes at %d (%b)\n" n.ident top;
+	Printf.printf "DT: Finish internal nodes at %d (%B)\n" n.ident top;
       if n.query_children = None || top then
 	((match n.f_child with
 	    | Some(Some kid) -> finish_internal_nodes kid false
@@ -3937,7 +3937,7 @@ class decision_tree = object(self)
 
   method extend b =
     if !opt_trace_decision_tree then
-      Printf.printf "DT: Extending with %b at %d\n" b cur.ident;
+      Printf.printf "DT: Extending with %B at %d\n" b cur.ident;
     self#add_kid b;
     path_hash <- hash_round path_hash (if b then 49 else 48);
     Random.init (Int32.to_int path_hash);
@@ -4605,9 +4605,9 @@ struct
 
     method measure_influence_expr expr =
       let (v, _) = self#eval_int_exp_ty expr in
-	try ignore(D.to_concrete_32 v)
+	try ignore(D.to_concrete_64 v)
 	with NotConcrete _ ->	    
-	  self#measure_point_influence "expr" (D.to_symbolic_32 v)
+	  self#measure_point_influence "expr" (D.to_symbolic_64 v)
 
     method eval_addr_exp exp =
       let c32 x = V.Constant(V.Int(V.REG_32, x)) in
