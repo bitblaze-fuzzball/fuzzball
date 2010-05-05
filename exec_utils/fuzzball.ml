@@ -892,6 +892,9 @@ struct
 	  Printf.printf "Symbolic %s is %Ld\n" str (D.get_tag v);
 	v
 
+    method input_dl =
+      Hashtbl.fold (fun k v l -> v :: l) input_vars []
+
     method fresh_symbolic_1  s = self#fresh_symbolic s V.REG_1
     method fresh_symbolic_8  s = self#fresh_symbolic s V.REG_8
     method fresh_symbolic_16 s = self#fresh_symbolic s V.REG_16
@@ -3684,6 +3687,9 @@ struct
     method store_symbolic_long addr varname =
       self#store_long addr (form_man#fresh_symbolic_64 varname)
 
+    method parse_symbolic_expr str =
+      Vine_parser.parse_exp_from_string (form_man#input_dl) str
+
     method store_cstr base idx str =
       self#store_str base idx str;
       self#store_byte_idx (Int64.add base idx) (String.length str) 0
@@ -4240,6 +4246,7 @@ let opt_trace_binary_paths_delimited = ref false
 let opt_trace_binary_paths_bracketed = ref false
 let opt_trace_sym_addrs = ref false
 let opt_trace_sym_addr_details = ref false
+let opt_extra_conditions = ref []
 
 exception ReachedMeasurePoint
 exception ReachedInfluenceBound
@@ -4264,6 +4271,8 @@ struct
     val dt = (new decision_tree)#init
 
     method add_to_path_cond cond =
+      if path_cond = [] then
+	path_cond <- !opt_extra_conditions;
       path_cond <- cond :: path_cond
       
     method restore_path_cond f =
@@ -8249,6 +8258,7 @@ let opt_symbolic_regions = ref []
 let opt_sink_regions = ref []
 let opt_measure_expr_influence_at_strings = ref None
 let opt_check_condition_at_strings = ref None
+let opt_extra_condition_strings = ref []
 let opt_argv = ref []
 
 let split_string char s =
@@ -8540,6 +8550,10 @@ let main argv =
 	     opt_check_condition_at_strings :=
 	       Some (eip_s, expr_s)),
 	"eip:expr Check boolean assertion at address");
+       ("-extra-condition", Arg.String
+	  (fun s -> opt_extra_condition_strings :=
+	     s :: !opt_extra_condition_strings),
+	"cond Add an extra constraint for solving");
        ("--", Arg.Rest(fun s -> opt_argv := !opt_argv @ [s]),
 	" Pass any remaining arguments to the program");
      ])
@@ -8720,6 +8734,9 @@ in
 	     List.iter (fun (varname, size) ->
 			  fm#make_sink_region varname size)
 	       !opt_sink_regions;
+	     opt_extra_conditions :=
+	       List.map (fun s -> fm#parse_symbolic_expr s)
+		 !opt_extra_condition_strings
 	);
       
       let (start_addr, fuzz_start) = match
