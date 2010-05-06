@@ -3781,6 +3781,7 @@ exception BranchLimit
 let opt_path_depth_limit = ref 1000000000000L
 let opt_query_branch_limit = ref 999999999
 let opt_trace_decision_tree = ref false
+let opt_trace_randomness = ref false
 
 class decision_tree = object(self)
   val root = new_dt_node None
@@ -3788,6 +3789,8 @@ class decision_tree = object(self)
   val mutable cur_query = new_dt_node None (* garbage *)
   val mutable depth = 0
   val mutable path_hash = Int64.to_int32 0x811c9dc5L
+  val mutable iteration_count = 0
+  val mutable randomness = Random.State.make [|0|]
 
   method init =
     root.query_children <- Some 0;
@@ -3799,7 +3802,11 @@ class decision_tree = object(self)
     cur <- root;
     cur_query <- root;
     depth <- 0;
-    path_hash <- Int64.to_int32 0x811c9dc5L
+    path_hash <- Int64.to_int32 0x811c9dc5L;
+    iteration_count <- iteration_count + 1;
+    if !opt_trace_randomness then
+      Printf.printf "Initializing random state as %08x\n" iteration_count;
+    randomness <- Random.State.make [|iteration_count|]
 
   method get_hist =
     let child_is kid n =
@@ -3946,7 +3953,10 @@ class decision_tree = object(self)
       Printf.printf "DT: Extending with %B at %d\n" b cur.ident;
     self#add_kid b;
     path_hash <- hash_round path_hash (if b then 49 else 48);
-    Random.init (Int32.to_int path_hash);
+    (let h = Int32.to_int path_hash in
+      (if !opt_trace_randomness then
+	 Printf.printf "Setting random state to %08x\n" h;
+       randomness <- Random.State.make [|h|]));
     (match (b, cur.f_child, cur.t_child) with
        | (false, Some(Some kid), _) -> cur <- kid
        | (true,  _, Some(Some kid)) -> cur <- kid
@@ -3963,7 +3973,10 @@ class decision_tree = object(self)
     path_hash <- hash_round path_hash i
 
   method random_bit =
-    Random.bool ()
+    let b = Random.State.bool randomness in
+      if !opt_trace_randomness then
+	Printf.printf "Flipping a coin to get %B\n" b;
+      b
 
   method record_unsat b =
     match (b, cur.f_child, cur.t_child) with
@@ -4613,8 +4626,14 @@ struct
 	  self#measure_point_influence "reploop" (D.to_symbolic_32 count)
 
     method measure_influence_expr expr =
-      let (v, _) = self#eval_int_exp_ty expr in
-	try ignore(D.to_concrete_64 v)
+      let (v, ty) = self#eval_int_exp_ty expr in
+	try (match ty with
+	       | V.REG_1  -> ignore(D.to_concrete_1 v)
+	       | V.REG_8  -> ignore(D.to_concrete_8 v)
+	       | V.REG_16 -> ignore(D.to_concrete_16 v)
+	       | V.REG_32 -> ignore(D.to_concrete_32 v)
+	       | V.REG_64 -> ignore(D.to_concrete_64 v)
+	       | _ -> failwith "Bad type in measure_influence_expr")
 	with NotConcrete _ ->	    
 	  self#measure_point_influence "expr" (D.to_symbolic_64 v)
 
@@ -7999,42 +8018,6 @@ let rec runloop fm eip asmir_gamma until =
     Hashtbl.clear loop_detect;
     loop eip
 
-let random_regex maxlen =
-  let len = Random.int maxlen in
-  let str = String.create len in
-    for i = 0 to len - 1 do
-      let c = match (Random.int 25) with
-	| 0 -> 'a'
-	| 1 -> 'b'
-	| 2 -> 'c'
-	| 3 -> '|'
-	| 4 -> '+'
-	| 5 -> '*'
-	| 6 -> '('
-	| 7 -> ')'
-	| 8 -> '['
-	| 9 -> ']'
-	| 10 -> '{'
-	| 11 -> '}'
-	| 12 -> ','
-	| 13 -> '0'
-	| 14 -> '1'
-	| 15 -> '2'
-	| 16 -> '4'
-	| 17 -> '^'
-	| 18 -> '$'
-	| 19 -> '?'
-	| 20 -> '.'
-	| 21 -> '\\'
-	| 22 -> 'w'
-	| 23 -> 'd'
-	| 24 -> 's'
-	| _ -> failwith "random integer too big"
-      in
-	str.[i] <- c
-    done;
-    str
-
 let check_memory_size () =
   let chan = open_in "/proc/self/status" in
     for i = 1 to 11 do ignore(input_line chan) done;
@@ -8504,6 +8487,8 @@ let main argv =
 	" Print each memory load");
        ("-trace-stores", Arg.Set(opt_trace_stores),
 	" Print each memory store");
+       ("-trace-randomness", Arg.Set(opt_trace_randomness),
+	" Print operation of PRNG 'random' choices");
        ("-trace-regions", Arg.Set(opt_trace_regions),
 	" Print symbolic memory regions");
        ("-trace-setup", Arg.Set(opt_trace_setup),
