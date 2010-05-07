@@ -2449,8 +2449,31 @@ struct
 	  self#store_word addr w0;
 	  self#store_word (Int64.add addr 4L) w1
 	    
-    method store_page (addr:int64) (p:string) : unit
-      = failwith "store_page not supported"
+    method store_page addr p =
+      (* We choose to store the page as longs here with the aim of
+	 minimizing memory usage. *)
+      for i = 0 to 511 do
+	let bytes = String.sub p (8 * i) 8 in
+	let c0 = Char.code bytes.[0] and
+	    c1 = Char.code bytes.[1] and
+	    c2 = Char.code bytes.[2] and
+	    c3 = Char.code bytes.[3] and
+	    c4 = Char.code bytes.[4] and
+	    c5 = Char.code bytes.[5] and
+	    c6 = Char.code bytes.[6] and
+	    c7 = Char.code bytes.[7] in
+	let s0 = c0 lor (c1 lsl 8) and
+	    s1 = c2 lor (c3 lsl 8) and
+	    s2 = c4 lor (c5 lsl 8) and
+	    s3 = c6 lor (c7 lsl 8) in
+	let w0 = Int64.logor (Int64.of_int s0)
+	  (Int64.shift_left (Int64.of_int s1) 16) and
+	    w1 = Int64.logor (Int64.of_int s2)
+	  (Int64.shift_left (Int64.of_int s3) 16) in
+	let long = Int64.logor w0 (Int64.shift_left w1 32) in
+	  self#store_long (Int64.add addr (Int64.of_int (8 * i)))
+	    (D.from_concrete_64 long);
+      done
 	    
     method virtual clear : unit -> unit
 
@@ -2609,8 +2632,10 @@ struct
 	main#store_long addr l
 
     method store_page addr p =
-      assert(not have_snap);
-      main#store_page addr p
+      if have_snap then
+	diff#store_page addr p
+      else
+	main#store_page addr p
 
     method maybe_load_byte addr =
       if have_snap then
@@ -4257,9 +4282,16 @@ let opt_trace_decisions = ref false
 let opt_trace_binary_paths = ref false
 let opt_trace_binary_paths_delimited = ref false
 let opt_trace_binary_paths_bracketed = ref false
+let opt_trace_insns = ref false
+let opt_trace_loads = ref false
+let opt_trace_stores = ref false
 let opt_trace_sym_addrs = ref false
 let opt_trace_sym_addr_details = ref false
+let opt_trace_syscalls = ref false
+let opt_trace_detailed_ranges = ref []
 let opt_extra_conditions = ref []
+let opt_tracepoints = ref []
+let opt_string_tracepoints = ref []
 
 exception ReachedMeasurePoint
 exception ReachedInfluenceBound
@@ -4705,8 +4737,40 @@ struct
 
     method disqualify_path = qualified <- false
 
+    val mutable saved_details_flags = (false, false, false, false, false)
+
     method eip_hook eip = 
       fm#eip_hook eip;
+      List.iter
+	(fun (f_eip, _) -> 
+	   if f_eip = eip then
+	     (saved_details_flags <- 
+		(!opt_trace_insns, !opt_trace_loads, !opt_trace_stores,
+		 !opt_trace_temps, !opt_trace_syscalls);	      
+	      opt_trace_insns := true;
+	      opt_trace_loads := true;
+	      opt_trace_stores := true;
+	      opt_trace_temps := true;
+	      opt_trace_syscalls := true))
+	!opt_trace_detailed_ranges;
+      List.iter
+	(fun (eip', e_str, expr) ->
+	   if eip = eip' then
+	     let str = self#eval_expr_to_string expr in
+	       Printf.printf "At %08Lx, %s is %s\n"
+		 eip e_str str)
+	!opt_tracepoints;
+      List.iter
+	(fun (eip', e_str, expr) ->
+	   if eip = eip' then
+	     let str_addr = self#eval_addr_exp expr in
+	     let str = if str_addr = 0L then
+	       "(null)" else try 
+		 "\"" ^ (self#read_cstr str_addr) ^ "\"" with
+		     NotConcrete _ -> "<not concrete>" in
+	       Printf.printf "At %08Lx, %s (%08Lx) is %s\n"
+		 eip e_str str_addr str)
+	!opt_string_tracepoints;
       if List.mem eip !opt_disqualify_addrs then
 	(self#disqualify_path;
 	 raise DisqualifiedPath);
@@ -4727,7 +4791,17 @@ struct
 	     let b = self#eval_bool_exp expr in
 	       Printf.printf "At 0x%08Lx, condition %s can be %b\n"
 		 eip (V.exp_to_string expr) b
-	 | _ -> ())
+	 | _ -> ());
+      List.iter
+	(fun (_, t_eip) -> 
+	   if t_eip = eip then
+	     let (i, l, s, t, sc) = saved_details_flags in
+	      opt_trace_insns := i;
+	      opt_trace_loads := l;
+	      opt_trace_stores := s;
+	      opt_trace_temps := t;
+	      opt_trace_syscalls := sc)
+	!opt_trace_detailed_ranges
 	  
     method finish_path =
       dt#mark_all_seen;
@@ -4758,8 +4832,6 @@ exception SymbolicJump
 exception NullDereference
 exception JumpToNull
 
-let opt_trace_loads = ref false
-let opt_trace_stores = ref false
 let opt_trace_regions = ref false
 let opt_check_for_null = ref false
 
@@ -5761,8 +5833,6 @@ end
 
 exception SimulatedExit of int64
 
-let opt_trace_syscalls = ref false
-
 let linux_initial_break = ref None
 
 let linux_setup_tcb_seg fm new_ent new_gdt base limit =
@@ -5943,10 +6013,13 @@ object(self)
   method do_unix_read fd addr count =
     let rec loop left a =
       if (left <= 0) then 0 else
-	let chunk = if (left < 16384) then left else 16384 in
+	let chunk = if (left < 4096) then left else 4096 in
 	let str = self#string_create chunk in
 	let num_read = Unix.read fd str 0 chunk in
-	  fm#store_str a 0L (String.sub str 0 num_read);
+	  if num_read = 4096 && (Int64.logand a 0xfffL) = 0L then
+	    fm#store_page_conc a str
+	  else
+	    fm#store_str a 0L (String.sub str 0 num_read);
 	  num_read +
 	    (loop (left - chunk) (Int64.add a (Int64.of_int chunk)))
     in
@@ -6001,6 +6074,7 @@ object(self)
       store_word addr 48 0L;      (* high bits of size *)
       store_word addr 52 blksize;
       store_word addr 56 blocks;
+      store_word addr 60 0L;      (* high bits of blocks *)
       store_word addr 64 atime;
       store_word addr 68 0L;      (* atime nanosecs *)
       store_word addr 72 mtime;
@@ -6328,7 +6402,7 @@ object(self)
 	base  = load_word (lea uinfo 0 0 4) and
 	limit = load_word (lea uinfo 0 0 8) in
       if !opt_trace_syscalls then
-	Printf.printf "set_thread_area({entry: %d, base: %Lx, limit: %Ld})\n"
+	Printf.printf " set_thread_area({entry: %d, base: %Lx, limit: %Ld})\n"
 	  old_ent base limit;
       (match (old_ent, base, limit) with
 	 | (-1, _, _) ->
@@ -7401,6 +7475,7 @@ object(self)
 end
   
 let opt_trace_setup = ref false
+let opt_extra_env = Hashtbl.create 10
 
 module LinuxLoader = struct
   type elf_header = {
@@ -7611,17 +7686,31 @@ module LinuxLoader = struct
       esp := Int64.sub !esp 4L;
       fm#store_word_conc !esp i
     in
+    let env_keys = Vine_util.list_unique
+      (Hashtbl.fold (fun k v l -> k :: l) opt_extra_env []) @
+      ["DISPLAY"; "EDITOR"; "HOME"; "LANG"; "LOGNAME"; "PAGER"; "PATH";
+       "PWD"; "SHELL"; "TERM"; "USER"; "USERNAME"; "XAUTHORITY"] in
     let env = List.concat
       (List.map
 	 (fun key -> 
-	    try
-	      let v = Sys.getenv key in
-		[key ^ "=" ^ v]
-	    with
-		Not_found -> []
-	 )
-	 ["DISPLAY"; "EDITOR"; "HOME"; "LANG"; "LOGNAME"; "PAGER"; "PATH";
-	  "PWD"; "SHELL"; "TERM"; "USER"; "USERNAME"; "XAUTHORITY"])
+	    if Hashtbl.mem opt_extra_env key then
+	      (if !opt_trace_setup then
+		 Printf.printf "From command line, setting env. var %s to %s\n"
+		   key (Hashtbl.find opt_extra_env key);
+	       [key ^ "=" ^ (Hashtbl.find opt_extra_env key)])
+	    else
+	      try
+		let v = Sys.getenv key in
+		  if !opt_trace_setup then
+		    Printf.printf "From real env., setting env. var %s to %s\n"
+		      key v;
+		  [key ^ "=" ^ v]
+	      with
+		  Not_found -> 
+		    if !opt_trace_setup then
+		      Printf.printf "Skipping missing env. var %s\n" key;
+		    [])
+	 env_keys)
     in
     let env_locs = List.map push_cstr env in
     let argv_locs = List.map push_cstr argv in
@@ -7847,7 +7936,6 @@ let loop_detect = Hashtbl.create 1000
 
 let opt_trace_eip = ref false
 let opt_trace_ir = ref false
-let opt_trace_insns = ref false
 let opt_trace_orig_ir = ref false
 let opt_trace_iterations = ref false
 let opt_coverage_stats = ref false
@@ -8242,6 +8330,8 @@ let opt_sink_regions = ref []
 let opt_measure_expr_influence_at_strings = ref None
 let opt_check_condition_at_strings = ref None
 let opt_extra_condition_strings = ref []
+let opt_tracepoint_strings = ref []
+let opt_string_tracepoint_strings = ref []
 let opt_argv = ref []
 
 let split_string char s =
@@ -8333,6 +8423,11 @@ let main argv =
        ("-setup-initial-proc-state",
 	Arg.Bool(fun b -> opt_setup_initial_proc_state := Some b),
         "bool Setup initial process state (argv, etc.)?"); 
+       ("-env", Arg.String
+	  (fun s ->
+	     let (k, v) = split_string '=' s in
+	       Hashtbl.replace opt_extra_env k v),
+	"name=val Set environment variable for program");
        ("-symbolic-region", Arg.String
 	  (add_delimited_pair opt_symbolic_regions '+'),
 	"base+size Memory region of unknown structure");
@@ -8473,6 +8568,18 @@ let main argv =
 	" Print symbolic branch choices");
        ("-trace-decision-tree", Arg.Set(opt_trace_decision_tree),
 	" Print internal decision tree operations");
+       ("-trace-detailed",
+	(Arg.Unit
+	   (fun () ->
+	      opt_trace_insns := true;
+	      opt_trace_loads := true;
+	      opt_trace_stores := true;
+	      opt_trace_temps := true;
+	      opt_trace_syscalls := true)),
+	" Enable several verbose tracing options");
+       ("-trace-detailed-range", Arg.String
+	  (add_delimited_pair opt_trace_detailed_ranges '-'),
+	"eip1-eip2 As above, but only for an eip range");
        ("-trace-eip", Arg.Set(opt_trace_eip),
 	" Print PC of each insn executed");
        ("-trace-insns", Arg.Set(opt_trace_insns),
@@ -8530,6 +8637,14 @@ let main argv =
        ("-watch-expr", Arg.String
 	  (fun s -> opt_watch_expr_str := Some s),
 	"expr Print Vine expression on each instruction");
+       ("-tracepoint", Arg.String
+	  (fun s -> add_delimited_num_str_pair opt_tracepoint_strings
+	     ':' s),
+	"eip:expr Print scalar expression on given EIP");
+       ("-tracepoint-string", Arg.String
+	  (fun s -> add_delimited_num_str_pair opt_string_tracepoint_strings
+	     ':' s),
+	"eip:expr Print string expression on given EIP");
        ("-check-condition-at", Arg.String
 	  (fun s -> let (eip_s, expr_s) = split_string ':' s in
 	     opt_check_condition_at_strings :=
@@ -8581,6 +8696,14 @@ in
 	       Some ((Int64.of_string eip_s),
 		     (Vine_parser.parse_exp_from_string dl expr_s))
 	 | None -> ());
+      opt_tracepoints := List.map
+	(fun (eip, s) ->
+	   (eip, s, (Vine_parser.parse_exp_from_string dl s)))
+	!opt_tracepoint_strings;
+      opt_string_tracepoints := List.map
+	(fun (eip, s) ->
+	   (eip, s, (Vine_parser.parse_exp_from_string dl s)))
+	!opt_string_tracepoint_strings;
       if !opt_symbolic_regs then
 	fm#make_x86_regs_symbolic
       else
