@@ -6436,6 +6436,29 @@ object(self)
        failwith "Can't report old mask");
     put_reg R_EAX 0L (* success *)
 
+  method sys_socket dom_i typ_i prot_i =
+    try
+      let domain = match dom_i with
+	| 1 -> Unix.PF_UNIX
+	| 2 -> Unix.PF_INET
+	| 10 -> Unix.PF_INET6
+	| _ -> raise (Unix.Unix_error(Unix.EINVAL, "Bad protocol family", ""))
+      in
+      let typ = match typ_i land 0o777 with
+	| 1 -> Unix.SOCK_STREAM
+	| 2 -> Unix.SOCK_DGRAM
+	| 3 -> Unix.SOCK_RAW
+	| 5 -> Unix.SOCK_SEQPACKET
+	| _ -> raise (Unix.Unix_error(Unix.EINVAL, "Bad socket type", ""))
+      in
+      let oc_fd = Unix.socket domain typ prot_i and
+	  vt_fd = self#fresh_fd () in
+	Array.set unix_fds vt_fd (Some oc_fd);
+	put_reg R_EAX (Int64.of_int vt_fd)
+    with 
+      | Unix.Unix_error(err, _, _) -> self#put_errno err
+
+
   method sys_stat64 path buf_addr =
     try
       let oc_buf = Unix.stat path in
@@ -6831,7 +6854,34 @@ object(self)
 	 | 101 -> (* ioperm *)
 	     raise (UnhandledSysCall( "Unhandled Linux system call ioperm (101)"))
 	 | 102 -> (* socketcall *)
-	     raise (UnhandledSysCall( "Unhandled Linux system call socketcall (102)"))
+	     let (ebx, ecx) = read_2_regs () in
+	     let call = Int64.to_int ebx and
+		 args = ecx in
+	       (match call with
+		  | 1 -> 
+		      let dom_i = Int64.to_int (load_word args) and
+			  typ_i = Int64.to_int (load_word (lea args 0 0 4)) and
+			  prot_i = Int64.to_int (load_word (lea args 0 0 8)) in
+			Printf.printf "socket(%d, %d, %d)" dom_i typ_i prot_i;
+			self#sys_socket dom_i typ_i prot_i
+		  | 2 -> raise (UnhandledSysCall("Unhandled Linux system call bind (102:2)"))
+		  | 3 -> raise (UnhandledSysCall("Unhandled Linux system call connect (102:3)"))
+		  | 4 -> raise (UnhandledSysCall("Unhandled Linux system call listen (102:4)"))
+		  | 5 -> raise (UnhandledSysCall("Unhandled Linux system call accept (102:5)"))
+		  | 6 -> raise (UnhandledSysCall("Unhandled Linux system call getsockname (102:6)"))
+		  | 7 -> raise (UnhandledSysCall("Unhandled Linux system call getpeername (102:7)"))
+		  | 8 -> raise (UnhandledSysCall("Unhandled Linux system call socketpair (102:8)"))
+		  | 9 -> raise (UnhandledSysCall("Unhandled Linux system call send (102:9)"))
+		  | 10 -> raise (UnhandledSysCall("Unhandled Linux system call recv (102:10)"))
+		  | 11 -> raise (UnhandledSysCall("Unhandled Linux system call sendto (102:11)"))
+		  | 12 -> raise (UnhandledSysCall("Unhandled Linux system call recvfrom (102:12)"))
+		  | 13 -> raise (UnhandledSysCall("Unhandled Linux system call shutdown (102:13)"))
+		  | 14 -> raise (UnhandledSysCall("Unhandled Linux system call setsockopt (102:14)"))
+		  | 15 -> raise (UnhandledSysCall("Unhandled Linux system call getsockopt (102:15)"))
+		  | 16 -> raise (UnhandledSysCall("Unhandled Linux system call sendmsg (102:16)"))
+		  | 17 -> raise (UnhandledSysCall("Unhandled Linux system call recvmsg (102:17)"))
+		  | 18 -> raise (UnhandledSysCall("Unhandled Linux system call accept4 (102:18)"))
+		  | _ -> self#put_errno Unix.EINVAL)
 	 | 103 -> (* syslog *)
 	     raise (UnhandledSysCall( "Unhandled Linux system call syslog (103)"))
 	 | 104 -> (* setitimer *)
