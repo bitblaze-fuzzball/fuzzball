@@ -3805,6 +3805,7 @@ exception BranchLimit
 
 let opt_path_depth_limit = ref 1000000000000L
 let opt_query_branch_limit = ref 999999999
+let opt_random_seed = ref 0
 let opt_trace_decision_tree = ref false
 let opt_trace_randomness = ref false
 
@@ -3815,7 +3816,7 @@ class decision_tree = object(self)
   val mutable depth = 0
   val mutable path_hash = Int64.to_int32 0x811c9dc5L
   val mutable iteration_count = 0
-  val mutable randomness = Random.State.make [|0|]
+  val mutable randomness = Random.State.make [|!opt_random_seed; 0|]
 
   method init =
     root.query_children <- Some 0;
@@ -3831,7 +3832,7 @@ class decision_tree = object(self)
     iteration_count <- iteration_count + 1;
     if !opt_trace_randomness then
       Printf.printf "Initializing random state as %08x\n" iteration_count;
-    randomness <- Random.State.make [|iteration_count|]
+    randomness <- Random.State.make [|!opt_random_seed; iteration_count|]
 
   method get_hist =
     let child_is kid n =
@@ -3981,7 +3982,7 @@ class decision_tree = object(self)
     (let h = Int32.to_int path_hash in
       (if !opt_trace_randomness then
 	 Printf.printf "Setting random state to %08x\n" h;
-       randomness <- Random.State.make [|h|]));
+       randomness <- Random.State.make [|!opt_random_seed; h|]));
     (match (b, cur.f_child, cur.t_child) with
        | (false, Some(Some kid), _) -> cur <- kid
        | (true,  _, Some(Some kid)) -> cur <- kid
@@ -8183,7 +8184,7 @@ let loop_w_stats count fn =
     (try
        while (match count with
 		| None -> true
-		| Some i -> (Int64.to_int !iter) < i)
+		| Some i -> !iter < i)
        do
 	 iter := Int64.add !iter 1L;
 	 let old_wtime = Unix.gettimeofday () and
@@ -8217,6 +8218,7 @@ let print_tree fm =
 let symbolic_init = ref (fun () -> ())
 
 let opt_nonfatal_solver = ref false
+let opt_num_paths = ref None
 
 let periodic_stats fm at_end force = 
   if true || force then
@@ -8247,21 +8249,21 @@ let fuzz start_eip fuzz_start_eip end_eips fm asmir_gamma =
   fm#make_snap ();
   if !opt_trace_setup then
     (Printf.printf "Took snapshot\n"; flush stdout);
-     Sys.set_signal  Sys.sighup
-       (Sys.Signal_handle(fun _ -> raise (Signal "HUP")));
-     Sys.set_signal  Sys.sigint
-       (Sys.Signal_handle(fun _ -> raise (Signal "INT")));
-     Sys.set_signal Sys.sigterm
-       (Sys.Signal_handle(fun _ -> raise (Signal "TERM")));
-     Sys.set_signal Sys.sigquit
-       (Sys.Signal_handle(fun _ -> raise (Signal "QUIT")));
-     Sys.set_signal Sys.sigusr1
-       (Sys.Signal_handle(fun _ -> raise (Signal "USR1")));
-     Sys.set_signal Sys.sigusr2
-       (Sys.Signal_handle(fun _ -> periodic_stats fm false true));
+  Sys.set_signal  Sys.sighup
+    (Sys.Signal_handle(fun _ -> raise (Signal "HUP")));
+  Sys.set_signal  Sys.sigint
+    (Sys.Signal_handle(fun _ -> raise (Signal "INT")));
+  Sys.set_signal Sys.sigterm
+    (Sys.Signal_handle(fun _ -> raise (Signal "TERM")));
+  Sys.set_signal Sys.sigquit
+    (Sys.Signal_handle(fun _ -> raise (Signal "QUIT")));
+  Sys.set_signal Sys.sigusr1
+    (Sys.Signal_handle(fun _ -> raise (Signal "USR1")));
+  Sys.set_signal Sys.sigusr2
+    (Sys.Signal_handle(fun _ -> periodic_stats fm false true));
   (try
      (try
-	loop_w_stats None
+	loop_w_stats !opt_num_paths
 	  (fun iter ->
 	     let old_tcs = Hashtbl.length trans_cache in
 	     let stop str = if !opt_trace_stopping then
@@ -8462,6 +8464,9 @@ let main argv =
 	"N Stop path after N bits of symbolic branching");
        ("-query-branch-limit", Arg.Set_int opt_query_branch_limit,
 	"N Try at most N possibilities per branch");
+       ("-num-paths", Arg.String
+	  (fun s -> opt_num_paths := Some (Int64.of_string s)),
+	"N Stop after N different paths");
        ("-load-base", Arg.String
 	  (fun s -> opt_load_base := Int64.of_string s),
 	"addr Base address for program image");
@@ -8704,6 +8709,8 @@ let main argv =
 	  (fun s -> opt_extra_condition_strings :=
 	     s :: !opt_extra_condition_strings),
 	"cond Add an extra constraint for solving");
+       ("-random-seed", Arg.Set_int opt_random_seed,
+	"N Use given seed for path choice");
        ("--", Arg.Rest(fun s -> opt_argv := !opt_argv @ [s]),
 	" Pass any remaining arguments to the program");
      ])
