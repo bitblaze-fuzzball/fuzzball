@@ -5315,6 +5315,26 @@ struct
 	     self#measure_point_influence name e);
 	  self#concretize V.REG_32 e
 
+    method load_short_concretize addr do_influence name =
+      let v = self#load_short addr in
+      try (D.to_concrete_16 v)
+      with NotConcrete _ ->
+	let e = D.to_symbolic_16 v in
+	  if do_influence then 
+	    (Printf.printf "Measuring symbolic %s influence..." name;
+	     self#measure_point_influence name e);
+	  Int64.to_int (self#concretize V.REG_16 e)
+
+    method load_byte_concretize addr do_influence name =
+      let v = self#load_byte addr in
+      try (D.to_concrete_8 v)
+      with NotConcrete _ ->
+	let e = D.to_symbolic_8 v in
+	  if do_influence then 
+	    (Printf.printf "Measuring symbolic %s influence..." name;
+	     self#measure_point_influence name e);
+	  Int64.to_int (self#concretize V.REG_8 e)
+
     method private maybe_concretize_binop op v1 v2 ty1 ty2 =
       let conc t v =
 	match t with
@@ -5870,6 +5890,14 @@ class linux_special_handler fm =
     fm#load_word_concretize addr !opt_measure_influence_syscall_args
       "syscall arg"
   in
+  let load_short addr =
+    fm#load_short_concretize addr !opt_measure_influence_syscall_args
+      "syscall arg"
+  in
+  let load_byte addr =
+    fm#load_byte_concretize addr !opt_measure_influence_syscall_args
+      "syscall arg"
+  in
   let lea base i step off =
     Int64.add base (Int64.add (Int64.mul (Int64.of_int i) (Int64.of_int step))
 		      (Int64.of_int off)) in
@@ -6026,6 +6054,38 @@ object(self)
     in
       loop count addr
 	
+  method read_sockaddr addr addrlen =
+    let family = load_short addr and
+	buf = Int64.add 2L addr and
+	len = addrlen - 2 in
+      match family with
+	| 1 -> let path = fm#read_cstr buf in
+	    if path = "" then
+	      (* I don't think OCaml can handle the Linux
+		 "abstract namespace" extension. But sometimes (e.g.,
+		 as used by the X libraries) the abstract name is
+		 the same as a pathname that will also work, so try that.
+	      *)
+	      let path' = fm#read_cstr (Int64.add buf 1L)
+	      in
+		Unix.ADDR_UNIX(path')
+	    else
+	      Unix.ADDR_UNIX(path)
+	| 2 -> 
+	    assert(len = 6);
+	    let port_be = load_short buf and
+		addr_h  = load_byte (lea buf 0 0 2) and
+		addr_mh = load_byte (lea buf 0 0 3) and
+		addr_ml = load_byte (lea buf 0 0 4) and
+		addr_l  = load_byte (lea buf 0 0 5) in
+	    let port = ((port_be land 0xff) lsl 8) lor (port_be lsr 8) and
+		addr = (Unix.inet_addr_of_string
+			  (Printf.sprintf "%d.%d.%d.%d" addr_h addr_mh
+			     addr_ml addr_l))
+	    in
+	      Unix.ADDR_INET(addr, port)
+	| _ -> failwith "Unexpected sockaddr family"
+
   method oc_kind_to_mode kind = match kind with
     | Unix.S_REG  -> 0o0100000
     | Unix.S_DIR  -> 0o0040000
@@ -6165,13 +6225,6 @@ object(self)
       with
 	| Unix.Unix_error(err, _, _) -> self#put_errno err
 
-  method sys_mkdir path mode =
-    try
-      Unix.mkdir path mode;
-      put_reg R_EAX 0L
-    with
-      | Unix.Unix_error(err, _, _) -> self#put_errno err
-	  
   method sys_brk addr =
     let cur_break = match !the_break with
       | Some b -> b
@@ -6214,6 +6267,12 @@ object(self)
 	Unix.close (self#get_fd fd);
       Array.set unix_fds fd None;
       put_reg R_EAX 0L (* success *)
+    with
+      | Unix.Unix_error(err, _, _) -> self#put_errno err
+
+  method sys_connect sockfd addr addrlen =
+    try
+      Unix.connect (self#get_fd sockfd) (self#read_sockaddr addr addrlen)
     with
       | Unix.Unix_error(err, _, _) -> self#put_errno err
 
@@ -6317,6 +6376,13 @@ object(self)
     with
       | Unix.Unix_error(err, _, _) -> self#put_errno err
 
+  method sys_mkdir path mode =
+    try
+      Unix.mkdir path mode;
+      put_reg R_EAX 0L
+    with
+      | Unix.Unix_error(err, _, _) -> self#put_errno err
+	  
   method sys_mmap2 addr length prot flags fd pgoffset =
     let do_read addr = 
       let len = Int64.to_int length in
@@ -6458,7 +6524,6 @@ object(self)
 	put_reg R_EAX (Int64.of_int vt_fd)
     with 
       | Unix.Unix_error(err, _, _) -> self#put_errno err
-
 
   method sys_stat64 path buf_addr =
     try
@@ -6866,7 +6931,14 @@ object(self)
 			Printf.printf "socket(%d, %d, %d)" dom_i typ_i prot_i;
 			self#sys_socket dom_i typ_i prot_i
 		  | 2 -> raise (UnhandledSysCall("Unhandled Linux system call bind (102:2)"))
-		  | 3 -> raise (UnhandledSysCall("Unhandled Linux system call connect (102:3)"))
+		  | 3 -> 
+		      let sockfd = Int64.to_int (load_word args) and
+			  addr = load_word (lea args 0 0 4) and
+			  addrlen = Int64.to_int (load_word (lea args 0 0 8))
+		      in
+			Printf.printf "connect(%d, 0x%08Lx, %d)"
+			  sockfd addr addrlen;
+			self#sys_connect sockfd addr addrlen
 		  | 4 -> raise (UnhandledSysCall("Unhandled Linux system call listen (102:4)"))
 		  | 5 -> raise (UnhandledSysCall("Unhandled Linux system call accept (102:5)"))
 		  | 6 -> raise (UnhandledSysCall("Unhandled Linux system call getsockname (102:6)"))
