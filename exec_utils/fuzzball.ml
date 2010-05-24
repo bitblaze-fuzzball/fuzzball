@@ -6086,6 +6086,38 @@ object(self)
 	      Unix.ADDR_INET(addr, port)
 	| _ -> failwith "Unexpected sockaddr family"
 
+  method write_sockaddr sockaddr_oc addr addrlen_ptr =
+    let dotted_addr_to_dat str =
+      let dot1 = String.index str '.' in
+      let dot2 = String.index_from str dot1 '.' in
+      let dot3 = String.index_from str dot2 '.' in
+      let b1 = int_of_string (String.sub str 0 dot1) and
+	  b2 = int_of_string (String.sub str (dot1 + 1) (dot2 - dot1 - 1)) and
+	  b3 = int_of_string (String.sub str (dot2 + 1) (dot3 - dot2 - 1)) and
+	  b4 = int_of_string (String.sub str (dot3 + 1)
+				((String.length str) - dot3 - 1))
+      in
+	Printf.sprintf "%c%c%c%c" (Char.chr b1) (Char.chr b2)
+	  (Char.chr b3) (Char.chr b4)
+    in
+    let (family, data) = 
+      match sockaddr_oc with
+	| Unix.ADDR_UNIX(path) ->
+	    ("\001\000", path)
+	| Unix.ADDR_INET(addr, port) ->
+	    let port_dat = Printf.sprintf "%c%c"
+	      (Char.chr (port lsr 8)) (Char.chr (port land 0xff)) and
+		addr_str = Unix.string_of_inet_addr addr in
+	    let addr_dat = dotted_addr_to_dat addr_str in
+	      ("\002\000", port_dat ^ addr_dat)
+    in
+    let sa_data = family ^ data in
+    let real_len = String.length sa_data in
+    let buf_len = Int64.to_int (load_word addrlen_ptr) in
+    let write_len = min real_len buf_len in
+      fm#store_str addr 0L (String.sub sa_data 0 write_len);
+      store_word addrlen_ptr 0 (Int64.of_int real_len);
+
   method oc_kind_to_mode kind = match kind with
     | Unix.S_REG  -> 0o0100000
     | Unix.S_DIR  -> 0o0040000
@@ -6328,6 +6360,22 @@ object(self)
   method sys_getsid () =
     let sid = self#get_sid in
       put_reg R_EAX (Int64.of_int sid)
+
+  method sys_getpeername sockfd addr addrlen_ptr =
+    try
+      let socka_oc = Unix.getpeername (self#get_fd sockfd) in
+	self#write_sockaddr socka_oc addr addrlen_ptr;
+	put_reg R_EAX 0L (* success *)
+    with
+      | Unix.Unix_error(err, _, _) -> self#put_errno err
+
+  method sys_getsockname sockfd addr addrlen_ptr =
+    try
+      let socka_oc = Unix.getsockname (self#get_fd sockfd) in
+	self#write_sockaddr socka_oc addr addrlen_ptr;
+	put_reg R_EAX 0L (* success *)
+    with
+      | Unix.Unix_error(err, _, _) -> self#put_errno err
 
   method sys_gettimeofday timep zonep =
     if timep <> 0L then
@@ -6941,8 +6989,22 @@ object(self)
 			self#sys_connect sockfd addr addrlen
 		  | 4 -> raise (UnhandledSysCall("Unhandled Linux system call listen (102:4)"))
 		  | 5 -> raise (UnhandledSysCall("Unhandled Linux system call accept (102:5)"))
-		  | 6 -> raise (UnhandledSysCall("Unhandled Linux system call getsockname (102:6)"))
-		  | 7 -> raise (UnhandledSysCall("Unhandled Linux system call getpeername (102:7)"))
+		  | 6 ->
+		      let sockfd = Int64.to_int (load_word args) and
+			  addr = load_word (lea args 0 0 4) and
+			  addrlen_ptr = load_word (lea args 0 0 8)
+		      in
+			Printf.printf "getsockname(%d, 0x%08Lx, 0x%08Lx)"
+			  sockfd addr addrlen_ptr;
+			self#sys_getsockname sockfd addr addrlen_ptr
+		  | 7 -> 
+		      let sockfd = Int64.to_int (load_word args) and
+			  addr = load_word (lea args 0 0 4) and
+			  addrlen_ptr = load_word (lea args 0 0 8)
+		      in
+			Printf.printf "getpeername(%d, 0x%08Lx, 0x%08Lx)"
+			  sockfd addr addrlen_ptr;
+			self#sys_getpeername sockfd addr addrlen_ptr
 		  | 8 -> raise (UnhandledSysCall("Unhandled Linux system call socketpair (102:8)"))
 		  | 9 -> raise (UnhandledSysCall("Unhandled Linux system call send (102:9)"))
 		  | 10 -> raise (UnhandledSysCall("Unhandled Linux system call recv (102:10)"))
