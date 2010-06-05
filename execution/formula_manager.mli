@@ -28,7 +28,7 @@ sig
     method fresh_symbolic_mem_32 : string -> int64 -> D.t
     method fresh_symbolic_mem_64 : string -> int64 -> D.t
 
-    method fresh_concolic_mem_8 : string -> int64 -> int -> D.t
+    method make_concolic_mem_8 : string -> int64 -> int -> D.t
 
     method rewrite_for_solver : Vine.exp -> Vine.exp
 

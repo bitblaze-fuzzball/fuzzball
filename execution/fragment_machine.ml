@@ -843,7 +843,7 @@ struct
       let v_array = Array.map
 	(function 
 	   | (None, v) -> D.from_concrete_8 v
-	   | (Some (s, i), v) -> form_man#fresh_concolic_mem_8 s i v)
+	   | (Some (s, i), v) -> form_man#make_concolic_mem_8 s i v)
 	byte_array in
 	match Array.length v_array with
 	  | 1 -> self#store_byte addr v_array.(0)

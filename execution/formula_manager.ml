@@ -84,11 +84,24 @@ struct
     method fresh_symbolic_mem_32 = self#fresh_symbolic_mem V.REG_32
     method fresh_symbolic_mem_64 = self#fresh_symbolic_mem V.REG_64
 
+    val seen_concolic = Hashtbl.create 30
     val byte_valuation = Hashtbl.create 30
 
-    method fresh_concolic_mem_8 str addr v =
-      let var = self#fresh_symbolic_mem V.REG_8 str addr in
-	assert(not (Hashtbl.mem byte_valuation var));
+    method make_concolic_mem_8 str addr v =
+      let var =
+	(if Hashtbl.mem seen_concolic (str, addr) then
+	   let var = Hashtbl.find seen_concolic (str, addr) in
+	   let old_val = Hashtbl.find byte_valuation var in
+	     if v <> old_val then
+	       Printf.printf
+		 "Value mismatch: %s:0x%Lx was 0x%x and then later 0x%x\n"
+		 str addr old_val v;
+	     var
+	 else 
+	   (let new_var = self#fresh_symbolic_mem V.REG_8 str addr in
+	      Hashtbl.replace seen_concolic (str, addr) new_var;
+	      new_var))
+      in
 	if !opt_trace_taint then
 	  Printf.printf "Byte valuation %s:0x%Lx = 0x%x\n"
 	    str addr v;
