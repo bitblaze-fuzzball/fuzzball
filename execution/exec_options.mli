@@ -83,5 +83,6 @@ val opt_pid : int ref
 
 val opt_fuzz_end_addrs : int64 list ref
 
+val opt_trace_registers : bool ref
 val opt_trace_segments : bool ref
 val opt_trace_taint : bool ref

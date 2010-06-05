@@ -394,6 +394,8 @@ let trace_replay_cmdline_opts =
      " Solve conditions along -concrete path");
     ("-check-write-operands", Arg.Set(opt_check_write_operands),
      " Compare insn outputs against trace");
+    ("-trace-registers", Arg.Set(opt_trace_registers),
+     " Print register contents");
     ("-trace-segments", Arg.Set(opt_trace_segments),
      " Print messages about non-default segments");
     ("-trace-taint", Arg.Set(opt_trace_taint),

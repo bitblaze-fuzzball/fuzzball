@@ -87,5 +87,6 @@ let opt_pid = ref (-1)
 
 let opt_fuzz_end_addrs = ref []
 
+let opt_trace_registers = ref false
 let opt_trace_segments = ref false
 let opt_trace_taint = ref false
