@@ -306,14 +306,15 @@ struct
 	     if expr_size e' < 10 then
 	       e'
 	     else
+	       let e'_str = V.exp_to_string e' in
 	       let var =
 		 (try
-		    Hashtbl.find subexpr_to_temp_var e'
+		    Hashtbl.find subexpr_to_temp_var e'_str
 		  with Not_found ->
 		    let s = "t" ^ (string_of_int temp_var_num) in
 		      temp_var_num <- temp_var_num + 1;
 		      let var = V.newvar s ty in
- 			Hashtbl.replace subexpr_to_temp_var e' var;
+ 			Hashtbl.replace subexpr_to_temp_var e'_str var;
  			V.VarHash.replace temp_var_to_subexpr var e';
 			if !opt_trace_temps then
 			  Printf.printf "%s = %s\n" s (V.exp_to_string e');
