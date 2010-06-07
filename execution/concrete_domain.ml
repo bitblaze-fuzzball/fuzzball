@@ -41,7 +41,7 @@ module ConcreteDomain : Exec_domain.DOMAIN = struct
 
   let from_symbolic e = failwith "from_symbolic in concrete"
 
-  let inside_symbolic fn v = failwith "inside_symbolic in concrete"
+  let inside_symbolic fn v = v
 
   let measure_size v = 1
 

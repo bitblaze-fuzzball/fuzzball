@@ -5,9 +5,9 @@
 *)
 
 module FMM = Fragment_machine.FragmentMachineFunctor
-  (Symbolic_domain.SymbolicDomain)
+  (Concrete_domain.ConcreteDomain)
 module FMTM = Fragment_machine.FragmentMachineFunctor
-  (Tagged_domain.TaggedDomainFunctor(Symbolic_domain.SymbolicDomain))
+  (Tagged_domain.TaggedDomainFunctor(Concrete_domain.ConcreteDomain))
 
 let main argv = 
   Exec_set_options.set_defaults_for_concrete ();
