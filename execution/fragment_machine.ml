@@ -927,5 +927,155 @@ struct
 	| V.REG_32 -> D.to_string_32 (self#load_byte addr)
 	| V.REG_64 -> D.to_string_64 (self#load_byte addr)
 	| _ -> failwith "Unexpected type in mem_val_as_string"
+
+    method on_missing_random : unit =
+      failwith "FM.on_missing_random: unimplemented"
+    method set_query_engine (qe:Query_engine.query_engine) = ()
+    method print_tree (oc:out_channel) = ()
+    method set_iter_seed (i:int) = ()
+    method finish_path = false
+    method compute_multipath_influence (s:string) = ()
+    method compute_all_multipath_influence = ()
+    method make_x86_segtables_symbolic = ()
+    method store_word_special_region (r:register_name) (i1:int64) (i2:int64)
+      : unit =
+      failwith "store_word_special_region needs a symbolic region machine"
+    method get_word_var_concretize r (b:bool) (s:string) = self#get_word_var r
+    method load_byte_concretize  addr (b:bool) (s:string)
+      = self#load_byte_conc addr
+    method load_short_concretize addr (b:bool) (s:string)
+      = self#load_short_conc addr
+    method load_word_concretize  addr (b:bool) (s:string)
+      = self#load_word_conc addr
+    method make_sink_region (s:string) (i:int64) = ()
+    method store_symbolic_byte_influence  a s = self#store_symbolic_byte a s
+    method store_symbolic_short_influence a s = self#store_symbolic_short a s
+    method store_symbolic_word_influence  a s = self#store_symbolic_word a s
+    method store_symbolic_long_influence  a s = self#store_symbolic_long a s
   end
+end
+
+class virtual fragment_machine = object
+  method virtual init_prog : Vine.program -> unit
+  method virtual set_frag : Vine.program -> unit
+  method virtual concretize_misc : unit
+  method virtual eip_hook : int64 -> unit
+  method virtual set_eip : int64 -> unit
+  method virtual run_eip_hooks : unit
+  
+  method virtual on_missing_zero : unit
+  method virtual on_missing_random : unit
+  method virtual on_missing_symbol : unit
+
+  method virtual make_x86_regs_zero : unit
+  method virtual make_x86_regs_symbolic : unit
+  method virtual load_x86_user_regs : Temu_state.userRegs -> unit
+  method virtual print_x86_regs : unit
+
+  method virtual store_byte_conc  : int64 -> int   -> unit
+  method virtual store_short_conc : int64 -> int   -> unit
+  method virtual store_word_conc  : int64 -> int64 -> unit
+  method virtual store_long_conc  : int64 -> int64 -> unit
+
+  method virtual store_page_conc  : int64 -> string -> unit
+
+  method virtual load_byte_conc  : int64 -> int
+  method virtual load_short_conc : int64 -> int
+  method virtual load_word_conc  : int64 -> int64
+  method virtual load_long_conc  : int64 -> int64
+
+  method virtual start_symbolic : unit
+
+  method virtual make_snap : unit -> unit
+  method virtual reset : unit -> unit
+
+  method virtual add_special_handler : special_handler -> unit
+
+  method virtual get_bit_var   : register_name -> int
+  method virtual get_byte_var  : register_name -> int
+  method virtual get_short_var : register_name -> int
+  method virtual get_word_var  : register_name -> int64
+  method virtual get_long_var  : register_name -> int64
+
+  method virtual set_bit_var   : register_name -> int   -> unit
+  method virtual set_byte_var  : register_name -> int   -> unit
+  method virtual set_short_var : register_name -> int   -> unit
+  method virtual set_word_var  : register_name -> int64 -> unit
+  method virtual set_long_var  : register_name -> int64 -> unit
+
+  method virtual set_word_var_low_short   : register_name -> int -> unit
+  method virtual set_word_var_low_byte    : register_name -> int -> unit
+  method virtual set_word_var_second_byte : register_name -> int -> unit
+
+  method virtual set_word_reg_symbolic : register_name -> string -> unit
+
+  method virtual run_sl : (string -> bool) -> Vine.stmt list -> string
+		  
+  method virtual run : unit -> string
+  method virtual run_to_jump : unit -> string
+
+  method virtual measure_size : int
+
+  method virtual store_byte_idx : int64 -> int -> int -> unit
+
+  method virtual store_str : int64 -> int64 -> string -> unit
+
+  method virtual make_symbolic_region : int64 -> int -> unit
+
+  method virtual store_symbolic_cstr : int64 -> int -> unit
+
+  method virtual store_symbolic_wcstr : int64 -> int -> unit
+
+  method virtual store_symbolic_byte  : int64 -> string -> unit
+  method virtual store_symbolic_short : int64 -> string -> unit
+  method virtual store_symbolic_word  : int64 -> string -> unit
+  method virtual store_symbolic_long  : int64 -> string -> unit
+
+  method virtual store_mixed_bytes : int64 ->
+    ((string * int64) option * int) array -> unit
+
+  method virtual parse_symbolic_expr : string -> Vine.exp
+
+  method virtual store_cstr : int64 -> int64 -> string -> unit
+
+  method virtual read_buf : int64 -> int -> char array
+
+  method virtual read_cstr : int64 -> string
+
+  method virtual zero_fill : int64 -> int -> unit
+
+  method virtual print_backtrace : unit
+
+  method virtual watchpoint : unit
+
+  method virtual mem_val_as_string : int64 -> Vine.typ -> string
+
+  method virtual set_query_engine : Query_engine.query_engine -> unit
+
+  method virtual print_tree : out_channel -> unit
+
+  method virtual set_iter_seed : int -> unit
+
+  method virtual finish_path : bool
+
+  method virtual compute_multipath_influence : string -> unit
+  method virtual compute_all_multipath_influence : unit
+
+  method virtual make_x86_segtables_symbolic : unit
+  method virtual store_word_special_region :
+    register_name -> int64 -> int64 -> unit
+
+  method virtual get_word_var_concretize :
+    register_name -> bool -> string -> int64
+
+  method virtual load_byte_concretize  : int64 -> bool -> string -> int
+  method virtual load_short_concretize : int64 -> bool -> string -> int
+  method virtual load_word_concretize  : int64 -> bool -> string -> int64
+
+  method virtual make_sink_region : string -> int64 -> unit
+
+  method virtual store_symbolic_byte_influence  : int64 -> string -> unit
+  method virtual store_symbolic_short_influence : int64 -> string -> unit
+  method virtual store_symbolic_word_influence  : int64 -> string -> unit
+  method virtual store_symbolic_long_influence  : int64 -> string -> unit
 end

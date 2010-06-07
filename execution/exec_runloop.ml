@@ -32,16 +32,7 @@ let trans_cache = Hashtbl.create 100000
 
 let loop_detect = Hashtbl.create 1000
 
-let rec runloop
-    (fm : 
-     < load_byte_conc : int64 -> int; run : unit -> string;
-       run_eip_hooks : unit; set_eip : int64 -> unit;
-       set_frag : V.decl list * V.stmt list -> unit;
-       set_word_reg_symbolic : Fragment_machine.register_name ->
-						     string -> unit;
-       set_word_var : Fragment_machine.register_name -> int64 -> unit;
-       watchpoint : unit; .. >)
-    eip asmir_gamma until =
+let rec runloop (fm : fragment_machine) eip asmir_gamma until =
   let load_byte addr = fm#load_byte_conc addr in
   let decode_insn eip insn_bytes =
     (* It's important to flush buffers here because VEX will also

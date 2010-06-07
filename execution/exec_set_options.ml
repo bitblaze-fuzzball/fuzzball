@@ -55,6 +55,10 @@ let opt_tracepoint_strings = ref []
 let opt_string_tracepoint_strings = ref []
 let opt_argv = ref []
 
+let set_defaults_for_concrete () =
+  opt_zero_memory := true;
+  opt_linux_syscalls := true
+
 let split_string char s =
   let delim_loc = String.index s char in
   let s1 = String.sub s 0 delim_loc in
@@ -409,40 +413,7 @@ let set_program_name s =
 
 let state_start_addr = ref None
 
-let apply_cmdline_opts
-    (fm :
-     < add_special_handler : Fragment_machine.special_handler -> 'a;
-       get_short_var : Fragment_machine.register_name -> int;
-       get_word_var : Fragment_machine.register_name -> int64;
-       get_word_var_concretize : (Fragment_machine.register_name
-				  -> bool -> string -> int64);
-       load_byte_concretize : int64 -> bool -> string -> int;
-       load_short_concretize : int64 -> bool -> string -> int;
-       load_word_conc : int64 -> int64;
-       load_word_concretize : int64 -> bool -> string -> int64;
-       load_x86_user_regs : Temu_state.userRegs -> unit;
-       make_x86_regs_symbolic : unit;
-       make_x86_regs_zero : unit;
-       on_missing_random : unit;
-       on_missing_symbol : unit;
-       on_missing_zero : unit;
-       print_x86_regs : unit;
-       read_buf : int64 -> int -> char array;
-       read_cstr : int64 -> string;
-       set_query_engine : Query_engine.query_engine -> unit;
-       set_short_var : Fragment_machine.register_name -> int -> unit;
-       set_word_var : Fragment_machine.register_name -> int64 -> unit;
-       store_byte_conc : int64 -> int -> unit;
-       store_byte_idx : int64 -> int -> int -> unit;
-       store_cstr : int64 -> int64 -> string -> unit;
-       store_long_conc : int64 -> int64 -> unit;
-       store_page_conc : int64 -> string -> unit;
-       store_short_conc : int64 -> int -> unit;
-       store_str : int64 -> int64 -> string -> unit;
-       store_word_conc : int64 -> int64 -> unit;
-       watchpoint : unit;
-       zero_fill : int64 -> int -> unit; .. >)
-    dl =
+let apply_cmdline_opts (fm : Fragment_machine.fragment_machine) dl =
   if !opt_random_memory then
     fm#on_missing_random
   else if !opt_zero_memory then
@@ -491,16 +462,14 @@ let apply_cmdline_opts
 			     "-setup-initial-proc-state")
 	 in
 	   state_start_addr := Some
-	     (Linux_loader.load_dynamic_program
-		(fm :> Linux_loader.needed_fm) name
+	     (Linux_loader.load_dynamic_program fm name
 		!opt_load_base !opt_load_data do_setup
 		!opt_load_extra_regions !opt_argv)
      | _ -> ());
   (match !opt_core_file_name with
      | Some name -> 
 	 state_start_addr :=
-	   Some (Linux_loader.load_core
-		   (fm :> Linux_loader.needed_fm) name)
+	   Some (Linux_loader.load_core fm name)
      | None -> ());
   (let checking_solver = match !opt_solver_check_against with
      | "none" -> None
@@ -540,8 +509,7 @@ let apply_cmdline_opts
 	 (State_loader.load_mem_state fm s)
      | None -> ());
   (match !opt_tls_base with
-     | Some base -> Linux_loader.setup_tls_segment
-	 (fm :> Linux_loader.needed_fm) 0x60000000L base
+     | Some base -> Linux_loader.setup_tls_segment fm 0x60000000L base
      | None -> ());
   (match !opt_initial_eax with
      | Some v -> fm#set_word_var Fragment_machine.R_EAX v
@@ -578,22 +546,7 @@ let apply_cmdline_opts
   List.iter (fun (addr,v) -> fm#store_long_conc addr v) !opt_store_longs;
   ()
 
-let make_symbolic_init 
-    (fm:
-     < make_sink_region : string -> int64 -> unit;
-       make_symbolic_region : int64 -> int -> unit;
-       parse_symbolic_expr : string -> Vine.exp;
-       store_symbolic_byte : int64 -> string -> unit;
-       store_symbolic_byte_influence : int64 -> string -> unit;
-       store_symbolic_cstr : int64 -> int -> unit;
-       store_symbolic_long : int64 -> string -> unit;
-       store_symbolic_long_influence : int64 -> string -> unit;
-       store_symbolic_short : int64 -> string -> unit;
-       store_symbolic_short_influence : int64 -> string -> unit;
-       store_symbolic_wcstr : int64 -> int -> unit;
-       store_symbolic_word : int64 -> string -> unit;
-       store_symbolic_word_influence : int64 -> string -> unit; .. >)
-     =
+let make_symbolic_init (fm:Fragment_machine.fragment_machine) =
   (fun () ->
      let new_max i =
        max_input_string_length :=

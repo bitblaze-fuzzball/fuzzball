@@ -10,7 +10,7 @@ open Exec_options;;
 open Exec_exceptions;;
 open Fragment_machine;;
 
-class linux_special_nonhandler fm =
+class linux_special_nonhandler (fm : fragment_machine) =
 object(self)
   method private unhandle_syscall str =
     if !opt_trace_stopping then
@@ -25,7 +25,7 @@ object(self)
       | _ -> None
 end
 
-class trap_special_nonhandler fm =
+class trap_special_nonhandler (fm : fragment_machine) =
 object(self)
   method handle_special str : V.stmt list option =
     match str with
@@ -33,10 +33,7 @@ object(self)
       | _ -> None
 end
 
-class cpuid_special_handler
-  (fm :
-   < get_word_var : Fragment_machine.register_name -> int64;
-     set_word_var : Fragment_machine.register_name -> int64 -> unit; .. >)
+class cpuid_special_handler (fm : fragment_machine)
 =
 object(self)
   method handle_special str : V.stmt list option =

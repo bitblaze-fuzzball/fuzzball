@@ -9,21 +9,6 @@ open Exec_options;;
 open Fragment_machine;;
 open Linux_syscalls;;
 
-type needed_fm =
-    < 
-      get_short_var : Fragment_machine.register_name -> int;
-      load_word_conc : int64 -> int64;
-      load_x86_user_regs : Temu_state.userRegs -> unit;
-      set_short_var : Fragment_machine.register_name -> int -> unit;
-      set_word_var : Fragment_machine.register_name -> int64 -> unit;
-      store_byte_conc : int64 -> int -> unit;
-      store_cstr : int64 -> int64 -> string -> unit;
-      store_page_conc : int64 -> string -> unit;
-      store_str : int64 -> int64 -> string -> unit;
-      store_word_conc : int64 -> int64 -> unit; watchpoint : unit;
-      zero_fill : int64 -> int -> unit
-      >
-
 type elf_header = {
   eh_type : int;
   machine : int;
@@ -293,7 +278,7 @@ let build_startup_state fm eh load_base ldso argv =
       Printf.printf "Initial ESP is 0x%08Lx\n" !esp;
     fm#set_word_var R_ESP !esp      
 
-let load_dynamic_program (fm : needed_fm) fname load_base
+let load_dynamic_program (fm : fragment_machine) fname load_base
     data_too do_setup extras argv =
   let ic = open_in fname in
   let i = IO.input_channel ic in
@@ -395,7 +380,7 @@ let read_core_note fm ic =
       );
     seek_in ic endpos
   
-let load_core (fm:needed_fm) fname =
+let load_core (fm:fragment_machine) fname =
   let ic = open_in fname in
   let eh = read_elf_header ic in
     assert(eh.eh_type = 4);
@@ -413,7 +398,7 @@ let load_core (fm:needed_fm) fname =
     close_in ic;
     !start_eip
 
-let setup_tls_segment (fm:needed_fm) gdt tls_base =
+let setup_tls_segment (fm:fragment_machine) gdt tls_base =
   let gs_sel = fm#get_short_var R_GS in
     assert(gs_sel land 7 = 3); (* global, ring 3 *)
     linux_setup_tcb_seg fm (gs_sel asr 3) gdt tls_base 0xfffffL;

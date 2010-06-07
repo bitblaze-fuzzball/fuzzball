@@ -16,12 +16,7 @@ let load_mem_ranges fm fname areas =
       areas;
     Temu_state.close_state si
 
-let load_mem_state 
-    (fm :
-     < load_x86_user_regs : Temu_state.userRegs -> unit;
-       store_byte_conc : int64 -> int -> unit;
-       store_page_conc : int64 -> string -> unit; .. >)
-    fname =
+let load_mem_state (fm : Fragment_machine.fragment_machine) fname =
   let ic = open_in fname in
   let i = IO.input_channel ic in
   let si = Temu_state.open_state fname in

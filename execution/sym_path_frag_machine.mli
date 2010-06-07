@@ -183,5 +183,18 @@ sig
     val reg_to_var :(Fragment_machine.register_name, Vine.var) Hashtbl.t
     val mem :
       Granular_memory.GranularMemoryFunctor(D).granular_second_snapshot_memory
+    method make_x86_segtables_symbolic : unit
+    method store_word_special_region :
+      Fragment_machine.register_name -> int64 -> int64 -> unit
+    method get_word_var_concretize :
+      Fragment_machine.register_name -> bool -> string -> int64
+    method load_byte_concretize  : int64 -> bool -> string -> int
+    method load_short_concretize : int64 -> bool -> string -> int
+    method load_word_concretize  : int64 -> bool -> string -> int64
+    method make_sink_region : string -> int64 -> unit
+    method store_symbolic_byte_influence  : int64 -> string -> unit
+    method store_symbolic_short_influence : int64 -> string -> unit
+    method store_symbolic_word_influence  : int64 -> string -> unit
+    method store_symbolic_long_influence  : int64 -> string -> unit
   end
 end

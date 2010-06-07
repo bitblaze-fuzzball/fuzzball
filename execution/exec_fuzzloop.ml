@@ -82,28 +82,7 @@ let periodic_stats fm at_end force =
      Printf.printf "Solver failed %Ld time(s)\n" !solver_fails)
 
 let fuzz start_eip fuzz_start_eip end_eips
-    (fm : 
-     <
-     compute_all_multipath_influence : unit;
-     compute_multipath_influence : string -> unit;
-     finish_path : bool;
-     load_byte_conc : int64 -> int;
-     make_snap : unit -> unit;
-     measure_size : int;
-     print_tree : out_channel -> unit;
-     print_x86_regs : unit;
-     reset : unit -> unit;
-     run : unit -> string;
-     run_eip_hooks : unit;
-     set_eip : int64 -> unit;
-     set_frag : Vine.decl list * Vine.stmt list -> unit;
-     set_iter_seed : int -> unit;
-     set_word_reg_symbolic : Fragment_machine.register_name -> string -> unit;
-     set_word_var : Fragment_machine.register_name -> int64 -> unit;
-     start_symbolic : unit;
-     watchpoint : unit;
-     .. >)
-    asmir_gamma symbolic_init =
+    (fm : fragment_machine) asmir_gamma symbolic_init =
   if !opt_trace_setup then
     (Printf.printf "Initial registers:\n";
      fm#print_x86_regs);

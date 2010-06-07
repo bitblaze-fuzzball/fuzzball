@@ -4,19 +4,14 @@
  permission.
 *)
 
-class linux_special_nonhandler : < print_x86_regs : unit; .. >
-  -> object
+class linux_special_nonhandler : Fragment_machine.fragment_machine -> object
   method handle_special : string -> Vine.stmt list option
 end
 
-class trap_special_nonhandler : _ -> object
+class trap_special_nonhandler : Fragment_machine.fragment_machine -> object
   method handle_special : string -> Vine.stmt list option
 end
 
-class cpuid_special_handler :
-  < get_word_var : Fragment_machine.register_name -> int64;
-    set_word_var : Fragment_machine.register_name -> int64 -> unit; .. >
-      ->
-object
+class cpuid_special_handler : Fragment_machine.fragment_machine -> object
   method handle_special : string -> Vine.stmt list option
 end

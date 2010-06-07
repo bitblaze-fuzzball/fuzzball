@@ -6,32 +6,10 @@
 
 val linux_initial_break : int64 option ref
 
-val linux_setup_tcb_seg :
-  < set_short_var : Fragment_machine.register_name -> int -> unit;
-    set_word_var : Fragment_machine.register_name -> int64 -> unit;
-    store_byte_conc : int64 -> int -> unit; .. >
+val linux_setup_tcb_seg : Fragment_machine.fragment_machine
     -> int -> int64 -> int64 -> int64 -> unit
 
-class linux_special_handler :
-  < get_word_var : Fragment_machine.register_name -> int64;
-    get_word_var_concretize :
-      Fragment_machine.register_name -> bool -> string -> Int64.t;
-    load_byte_concretize : int64 -> bool -> string -> int;
-    load_short_concretize : Int64.t -> bool -> string -> int;
-    load_word_concretize : Int64.t -> bool -> string -> Int64.t;
-    read_buf : Int64.t -> int -> char array;
-    read_cstr : Int64.t -> string;
-    set_short_var : Fragment_machine.register_name -> int -> unit;
-    set_word_var : Fragment_machine.register_name -> Int64.t -> unit;
-    store_byte_conc : int64 -> int -> unit;
-    store_byte_idx : Int64.t -> int -> int -> unit;
-    store_cstr : Int64.t -> int64 -> string -> unit;
-    store_long_conc : Int64.t -> int64 -> unit;
-    store_page_conc : Int64.t -> string -> unit;
-    store_str : Int64.t -> int64 -> string -> unit;
-    store_word_conc : int64 -> int64 -> unit;
-    zero_fill : Int64.t -> int -> unit; .. >
-      ->
+class linux_special_handler : Fragment_machine.fragment_machine ->
 object
   method handle_special : string -> Vine.stmt list option
 
