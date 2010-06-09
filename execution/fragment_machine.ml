@@ -445,11 +445,18 @@ struct
       in
 	self#set_int_var var newv
 
-    val mutable symbol_uniq = 0
-      
     method set_word_reg_symbolic reg s =
       self#set_int_var (Hashtbl.find reg_to_var reg)
-	(form_man#fresh_symbolic_32 (s ^ "_" ^ (string_of_int symbol_uniq)));
+	(form_man#fresh_symbolic_32 s);
+
+    method set_word_reg_concolic reg s i64 =
+      self#set_int_var (Hashtbl.find reg_to_var reg)
+	(form_man#make_concolic_32 s i64)
+
+    val mutable symbol_uniq = 0
+      
+    method set_word_reg_fresh_symbolic reg s =
+      self#set_word_reg_symbolic reg (s ^ "_" ^ (string_of_int symbol_uniq)); 
       symbol_uniq <- symbol_uniq + 1
 
     method private handle_load addr_e ty =
@@ -841,6 +848,18 @@ struct
     method store_symbolic_long addr varname =
       self#store_long addr (form_man#fresh_symbolic_64 varname)
 
+    method store_concolic_byte addr varname i =
+      self#store_byte addr (form_man#make_concolic_8 varname i)
+
+    method store_concolic_short addr varname i =
+      self#store_short addr (form_man#make_concolic_16 varname i)
+
+    method store_concolic_word addr varname i64 =
+      self#store_word addr (form_man#make_concolic_32 varname i64)
+
+    method store_concolic_long addr varname i64 =
+      self#store_long addr (form_man#make_concolic_64 varname i64)
+
     method store_mixed_bytes addr byte_array =
       let v_array = Array.map
 	(function 
@@ -1010,6 +1029,9 @@ class virtual fragment_machine = object
   method virtual set_word_var_second_byte : register_name -> int -> unit
 
   method virtual set_word_reg_symbolic : register_name -> string -> unit
+  method virtual set_word_reg_concolic :
+    register_name -> string -> int64 -> unit
+  method virtual set_word_reg_fresh_symbolic : register_name -> string -> unit
 
   method virtual run_sl : (string -> bool) -> Vine.stmt list -> string
 		  
@@ -1034,6 +1056,11 @@ class virtual fragment_machine = object
   method virtual store_symbolic_short : int64 -> string -> unit
   method virtual store_symbolic_word  : int64 -> string -> unit
   method virtual store_symbolic_long  : int64 -> string -> unit
+
+  method virtual store_concolic_byte  : int64 -> string -> int   -> unit
+  method virtual store_concolic_short : int64 -> string -> int   -> unit
+  method virtual store_concolic_word  : int64 -> string -> int64 -> unit
+  method virtual store_concolic_long  : int64 -> string -> int64 -> unit
 
   method virtual store_mixed_bytes : int64 ->
     ((string * int64) option * int) array -> unit

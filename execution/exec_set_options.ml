@@ -395,7 +395,7 @@ let trace_replay_cmdline_opts =
     ("-concrete-path", Arg.Set(opt_concrete_path),
      " Execute only according to concrete values"); *)
     ("-solve-path-conditions", Arg.Set(opt_solve_path_conditions),
-     " Solve conditions along -concrete path");
+     " Solve conditions along a concrete path");
     ("-check-write-operands", Arg.Set(opt_check_write_operands),
      " Compare insn outputs against trace");
     ("-trace-registers", Arg.Set(opt_trace_registers),
@@ -409,6 +409,8 @@ let trace_replay_cmdline_opts =
     ("-progress-interval", Arg.String
        (fun s -> opt_progress_interval := Some (Int64.of_string s)),
      "insns Print every INSNsth instruction");
+    ("-final-pc", Arg.Set(opt_final_pc),
+     " Print final path condition at end of trace");
   ]
 
 let set_program_name s =

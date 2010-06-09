@@ -25,7 +25,7 @@ let call_replacements fm eip =
 	    None !opt_skip_call_addr_symbol in
 	    match eax_sym with 
 	      | Some symname ->
-		  Some (fun () -> fm#set_word_reg_symbolic R_EAX symname)
+		  Some (fun () -> fm#set_word_reg_fresh_symbolic R_EAX symname)
 	      | _ -> None
 
 let trans_cache = Hashtbl.create 100000 

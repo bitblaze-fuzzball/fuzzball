@@ -96,6 +96,8 @@ sig
     method set_word_var_second_byte : register_name -> int -> unit
 
     method set_word_reg_symbolic : register_name -> string -> unit
+    method set_word_reg_concolic : register_name -> string -> int64 -> unit
+    method set_word_reg_fresh_symbolic : register_name -> string -> unit
 
     method private handle_load : Vine.exp -> Vine.typ -> (D.t * Vine.typ)
     method private handle_store : Vine.exp -> Vine.typ -> Vine.exp -> unit
@@ -139,6 +141,11 @@ sig
     method store_symbolic_short : int64 -> string -> unit
     method store_symbolic_word  : int64 -> string -> unit
     method store_symbolic_long  : int64 -> string -> unit
+
+    method store_concolic_byte  : int64 -> string -> int   -> unit
+    method store_concolic_short : int64 -> string -> int   -> unit
+    method store_concolic_word  : int64 -> string -> int64 -> unit
+    method store_concolic_long  : int64 -> string -> int64 -> unit
 
     method store_mixed_bytes : int64 ->
       ((string * int64) option * int) array -> unit
@@ -245,6 +252,9 @@ class virtual fragment_machine : object
   method virtual set_word_var_second_byte : register_name -> int -> unit
 
   method virtual set_word_reg_symbolic : register_name -> string -> unit
+  method virtual set_word_reg_concolic :
+    register_name -> string -> int64 -> unit
+  method virtual set_word_reg_fresh_symbolic : register_name -> string -> unit
 
   method virtual run_sl : (string -> bool) -> Vine.stmt list -> string
 		  
@@ -269,6 +279,11 @@ class virtual fragment_machine : object
   method virtual store_symbolic_short : int64 -> string -> unit
   method virtual store_symbolic_word  : int64 -> string -> unit
   method virtual store_symbolic_long  : int64 -> string -> unit
+
+  method virtual store_concolic_byte  : int64 -> string -> int   -> unit
+  method virtual store_concolic_short : int64 -> string -> int   -> unit
+  method virtual store_concolic_word  : int64 -> string -> int64 -> unit
+  method virtual store_concolic_long  : int64 -> string -> int64 -> unit
 
   method virtual store_mixed_bytes : int64 ->
     ((string * int64) option * int) array -> unit

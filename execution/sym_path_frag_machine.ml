@@ -68,8 +68,13 @@ struct
     method match_input_var s =
       try
 	let len = String.length s in
-	  if len > 12 && (String.sub s 0 12) = "input0_byte_" then
-	    let wo_input = String.sub s 12 (len - 12) in
+	let ismp = match !input_string_mem_prefix with
+	  | None -> "input0_byte_"
+	  | Some s -> s in
+	let plen = String.length ismp in
+	  if len > plen && (String.sub s 0 plen) = ismp
+	  then
+	    let wo_input = String.sub s plen (len - plen) in
 	      Some (int_of_string wo_input)
 	  else if (String.sub s 0 7) = "input0_" then
 	    let wo_input = String.sub s 7 (len - 7) in
@@ -287,7 +292,7 @@ struct
 	  else
 	    dt#random_bit
 
-    method query_with_pc cond verbose choice =
+    method query_with_pc_choice cond verbose choice =
       let trans_func b =
 	if b then cond else V.UnOp(V.NOT, cond)
       in
@@ -312,13 +317,14 @@ struct
 	  r
 
     method extend_pc_random cond verbose =
-      let (result, cond') = (self#query_with_pc cond verbose
+      let (result, cond') = (self#query_with_pc_choice cond verbose
 			       (fun () -> self#follow_or_random)) in
 	self#add_to_path_cond cond';
 	result
 
     method extend_pc_known cond verbose b =
-      let (result, cond') = (self#query_with_pc cond verbose (fun () -> b)) in
+      let (result, cond') = (self#query_with_pc_choice cond verbose
+			       (fun () -> b)) in
 	self#add_to_path_cond cond';
 	result
 
@@ -351,7 +357,10 @@ struct
 		      Printf.printf "Computed concrete value %b\n" b;
 		    if !opt_solve_path_conditions then
 		      (let b' = self#extend_pc_known e true b in
-			assert(b = b'));
+			assert(b = b'))
+		    else
+		      self#add_to_path_cond
+			(if b then e else V.UnOp(V.NOT, e));
 		    b
 		else 
 		  (dt#start_new_query_binary;
@@ -553,6 +562,10 @@ struct
 	Printf.printf "Final path: %s\n" dt#get_hist_str_queries;
       if !opt_trace_binary_paths_bracketed then
 	Printf.printf "Final path: %s\n" dt#get_hist_str_bracketed;
+      if !opt_final_pc then
+	(Printf.printf "Path condition: true\n";
+	 List.iter (fun e -> Printf.printf "& (%s)\n" (V.exp_to_string e))
+	   (List.rev path_cond));
       dt#try_again_p
 
     method print_tree chan = dt#print_tree chan

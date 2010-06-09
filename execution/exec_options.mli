@@ -9,6 +9,8 @@ type offset_strategy = UniformStrat | BiasedSmallStrat
 val offset_strategy_of_string : string -> offset_strategy
 
 val max_input_string_length : int ref
+val input_string_mem_prefix : string option ref
+
 val next_periodic_influence : int ref
 
 val opt_trace_temps : bool ref
@@ -88,3 +90,4 @@ val opt_trace_segments : bool ref
 val opt_trace_taint : bool ref
 val opt_trace_unexpected : bool ref
 val opt_progress_interval : int64 option ref
+val opt_final_pc : bool ref

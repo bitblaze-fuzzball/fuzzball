@@ -85,28 +85,61 @@ struct
     method fresh_symbolic_mem_64 = self#fresh_symbolic_mem V.REG_64
 
     val seen_concolic = Hashtbl.create 30
-    val byte_valuation = Hashtbl.create 30
+    val valuation = Hashtbl.create 30
 
-    method make_concolic_mem_8 str addr v =
+    method private make_concolic ty str v =
       let var =
-	(if Hashtbl.mem seen_concolic (str, addr) then
-	   let var = Hashtbl.find seen_concolic (str, addr) in
-	   let old_val = Hashtbl.find byte_valuation var in
+	(if Hashtbl.mem seen_concolic (str, 0L, ty) then
+	   let var = Hashtbl.find seen_concolic (str, 0L, ty) in
+	   let old_val = Hashtbl.find valuation var in
 	     if v <> old_val then
 	       if !opt_trace_unexpected then
 		 Printf.printf
-		   "Value mismatch: %s:0x%Lx was 0x%x and then later 0x%x\n"
+		   "Value mismatch: %s was 0x%Lx and then later 0x%Lx\n"
+		   str old_val v;
+	     var
+	 else 
+	   (let new_var = self#fresh_symbolic str ty in
+	      Hashtbl.replace seen_concolic (str, 0L, ty) new_var;
+	      new_var))
+      in
+	if !opt_trace_taint then
+	  Printf.printf "Valuation %s = 0x%Lx:%s\n"
+	    str v (V.type_to_string ty);
+	Hashtbl.replace valuation var v;
+	var
+
+    method make_concolic_8  s v = self#make_concolic V.REG_8  s(Int64.of_int v)
+    method make_concolic_16 s v = self#make_concolic V.REG_16 s(Int64.of_int v)
+    method make_concolic_32 s v = self#make_concolic V.REG_32 s v
+    method make_concolic_64 s v = self#make_concolic V.REG_64 s v
+
+    method make_concolic_mem_8 str addr v_int =
+      let v = Int64.of_int v_int in
+      let var =
+	(if Hashtbl.mem seen_concolic (str, addr, V.REG_8) then
+	   let var = Hashtbl.find seen_concolic (str, addr, V.REG_8) in
+	   let old_val = Hashtbl.find valuation var in
+	     if v <> old_val then
+	       if !opt_trace_unexpected then
+		 Printf.printf
+		   "Value mismatch: %s:0x%Lx was 0x%Lx and then later 0x%Lx\n"
 		   str addr old_val v;
 	     var
 	 else 
 	   (let new_var = self#fresh_symbolic_mem V.REG_8 str addr in
-	      Hashtbl.replace seen_concolic (str, addr) new_var;
+	      Hashtbl.replace seen_concolic (str, addr, V.REG_8) new_var;
 	      new_var))
       in
 	if !opt_trace_taint then
-	  Printf.printf "Byte valuation %s:0x%Lx = 0x%x\n"
+	  Printf.printf "Byte valuation %s:0x%Lx = 0x%Lx\n"
 	    str addr v;
-	Hashtbl.replace byte_valuation var v;
+	Hashtbl.replace valuation var v;
+	(match !input_string_mem_prefix with
+	   | None -> input_string_mem_prefix := Some (str ^ "_byte_")
+	   | _ -> ());
+	max_input_string_length :=
+	  max !max_input_string_length (1 + Int64.to_int addr);
 	var
 
     method private mem_var region_str ty addr =
@@ -214,40 +247,49 @@ struct
       V.VarHash.clear mem_axioms
 
     method private eval_mem_var lv =
-      match lv with
-	| V.Mem(mem_var, V.Constant(V.Int(_, addr)), V.REG_8) ->
-	    let d = D.from_symbolic (V.Lval lv) in
-	      assert(Hashtbl.mem byte_valuation d);
-	      D.from_concrete_8 (Hashtbl.find byte_valuation d)
-	| V.Mem(mem_var, V.Constant(V.Int(_, addr)), V.REG_16) ->
-	    D.assemble16
-	      (self#eval_mem_var
-		 (V.Mem(mem_var, V.Constant(V.Int(V.REG_32, addr)),
-			V.REG_8)))
-	      (self#eval_mem_var
-		 (V.Mem(mem_var,
-			V.Constant(V.Int(V.REG_32, 
-					 (Int64.add 1L addr))),
-			V.REG_8)))
-	| V.Mem(mem_var, V.Constant(V.Int(_, addr)), V.REG_32) ->
-	    D.assemble32
-	      (self#eval_mem_var
-		 (V.Mem(mem_var, V.Constant(V.Int(V.REG_32, addr)),
-			V.REG_16)))
-	      (self#eval_mem_var
-		 (V.Mem(mem_var, V.Constant(V.Int(V.REG_32, 
-						  (Int64.add 2L addr))),
-			V.REG_16)))
-	| V.Mem(mem_var, V.Constant(V.Int(_, addr)), V.REG_64) ->
-	    D.assemble64
-	      (self#eval_mem_var
-		 (V.Mem(mem_var, V.Constant(V.Int(V.REG_32, addr)),
-			V.REG_32)))
-	      (self#eval_mem_var
-		 (V.Mem(mem_var, V.Constant(V.Int(V.REG_32, 
-						  (Int64.add 4L addr))),
-			V.REG_32)))
-	| _ -> failwith "unexpected lval expr in eval_mem_var"
+      let d = D.from_symbolic (V.Lval lv) in
+	match lv with
+	  | V.Mem(mem_var, V.Constant(V.Int(_, addr)), V.REG_8) ->
+	      assert(Hashtbl.mem valuation d);
+	      D.from_concrete_8 (Int64.to_int (Hashtbl.find valuation d))
+	  | V.Mem(mem_var, V.Constant(V.Int(_, addr)), V.REG_16) ->
+	      if Hashtbl.mem valuation d then
+		D.from_concrete_16 (Int64.to_int (Hashtbl.find valuation d))
+	      else
+		D.assemble16
+		  (self#eval_mem_var
+		     (V.Mem(mem_var, V.Constant(V.Int(V.REG_32, addr)),
+			    V.REG_8)))
+		  (self#eval_mem_var
+		     (V.Mem(mem_var,
+			    V.Constant(V.Int(V.REG_32, 
+					     (Int64.add 1L addr))),
+			    V.REG_8)))
+	  | V.Mem(mem_var, V.Constant(V.Int(_, addr)), V.REG_32) ->
+	      if Hashtbl.mem valuation d then
+		D.from_concrete_32 (Hashtbl.find valuation d)
+	      else
+		D.assemble32
+		  (self#eval_mem_var
+		     (V.Mem(mem_var, V.Constant(V.Int(V.REG_32, addr)),
+			    V.REG_16)))
+		  (self#eval_mem_var
+		     (V.Mem(mem_var, V.Constant(V.Int(V.REG_32, 
+						      (Int64.add 2L addr))),
+			    V.REG_16)))
+	  | V.Mem(mem_var, V.Constant(V.Int(_, addr)), V.REG_64) ->
+	      if Hashtbl.mem valuation d then
+		D.from_concrete_64 (Hashtbl.find valuation d)
+	      else
+		D.assemble64
+		  (self#eval_mem_var
+		     (V.Mem(mem_var, V.Constant(V.Int(V.REG_32, addr)),
+			    V.REG_32)))
+		  (self#eval_mem_var
+		     (V.Mem(mem_var, V.Constant(V.Int(V.REG_32, 
+						      (Int64.add 4L addr))),
+			    V.REG_32)))
+	  | _ -> failwith "unexpected lval expr in eval_mem_var"
 
     (* subexpression cache *)
     val subexpr_to_temp_var = Hashtbl.create 1001
@@ -425,7 +467,7 @@ struct
 	(Hashtbl.length region_vars, Hashtbl.length region_vars) in
       let sc_ents = Hashtbl.length seen_concolic in
       let (bv_ents, bv_nodes) =
-	(Hashtbl.length byte_valuation, Hashtbl.length byte_valuation) in
+	(Hashtbl.length valuation, Hashtbl.length valuation) in
       let (se2t_ents, se2t_nodes) = 
 	(Hashtbl.length subexpr_to_temp_var,
 	 Hashtbl.length subexpr_to_temp_var) in
@@ -442,7 +484,7 @@ struct
 	Printf.printf "region_base_vars has %d entries\n" rb_ents;
 	Printf.printf "region_vars has %d entries\n" rg_ents;
 	Printf.printf "seen_concolic has %d entries\n" sc_ents;
-	Printf.printf "byte_valuation has %d entries\n" bv_ents;
+	Printf.printf "valuation has %d entries\n" bv_ents;
 	Printf.printf "subexpr_to_temp_var has %d entries\n" se2t_ents;
 	Printf.printf "mem_byte_vars has %d entries\n" mbv_ents;
 	Printf.printf "mem_axioms has %d entries and %d nodes\n"

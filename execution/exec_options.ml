@@ -13,6 +13,8 @@ let offset_strategy_of_string s =
     | _ -> failwith "Unknown offset strategy"
 
 let max_input_string_length = ref 0
+let input_string_mem_prefix = ref None
+
 let next_periodic_influence : int ref = ref (-1)
 
 let opt_trace_temps = ref false
@@ -92,3 +94,4 @@ let opt_trace_segments = ref false
 let opt_trace_taint = ref false
 let opt_trace_unexpected = ref false
 let opt_progress_interval = ref None
+let opt_final_pc = ref false

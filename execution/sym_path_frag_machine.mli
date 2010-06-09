@@ -50,7 +50,7 @@ sig
 
     method follow_or_random : bool 
 
-    method query_with_pc : Vine.exp -> bool -> (unit -> bool)
+    method query_with_pc_choice : Vine.exp -> bool -> (unit -> bool)
       -> (bool * Vine.exp)
 
     method extend_pc_random : Vine.exp -> bool -> bool
@@ -144,6 +144,10 @@ sig
       Fragment_machine.register_name -> int -> unit
     method set_word_reg_symbolic :
       Fragment_machine.register_name -> string -> unit
+    method set_word_reg_concolic :
+      Fragment_machine.register_name -> string -> int64 -> unit
+    method set_word_reg_fresh_symbolic :
+      Fragment_machine.register_name -> string -> unit
     method private handle_load : Vine.exp -> Vine.typ -> (D.t * Vine.typ)
     method private handle_store : Vine.exp -> Vine.typ -> Vine.exp -> unit
     method private maybe_concretize_binop :
@@ -169,6 +173,10 @@ sig
     method store_symbolic_short : int64 -> string -> unit
     method store_symbolic_word  : int64 -> string -> unit
     method store_symbolic_long  : int64 -> string -> unit
+    method store_concolic_byte  : int64 -> string -> int   -> unit
+    method store_concolic_short : int64 -> string -> int   -> unit
+    method store_concolic_word  : int64 -> string -> int64 -> unit
+    method store_concolic_long  : int64 -> string -> int64 -> unit
     method store_mixed_bytes : int64 ->
       ((string * int64) option * int) array -> unit
     method parse_symbolic_expr : string -> Vine.exp
