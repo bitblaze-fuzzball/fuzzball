@@ -157,7 +157,9 @@ sig
     method run_sl : (string -> bool) -> Vine.stmt list -> string
     method run : unit -> string
     method run_to_jump : unit -> string
-    method measure_size : int
+    method measure_mem_size : int * int * int
+    method measure_form_man_size : int * int
+    method measure_size : int * int
     method store_byte_idx : int64 -> int -> int -> unit
     method store_str : int64 -> int64 -> string -> unit
     method make_symbolic_region : int64 -> int -> unit

@@ -404,6 +404,11 @@ let trace_replay_cmdline_opts =
      " Print messages about non-default segments");
     ("-trace-taint", Arg.Set(opt_trace_taint),
      " Print messages about tainted values");
+    ("-trace-unexpected", Arg.Set(opt_trace_unexpected),
+     " Print when our execution doesn't match the trace");
+    ("-progress-interval", Arg.String
+       (fun s -> opt_progress_interval := Some (Int64.of_string s)),
+     "insns Print every INSNsth instruction");
   ]
 
 let set_program_name s =

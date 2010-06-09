@@ -15,24 +15,7 @@ open Fragment_machine;;
 open Sym_path_frag_machine;;
 open Sym_region_frag_machine;;
 open Exec_runloop;;
-
-let check_memory_size () =
-  let chan = open_in "/proc/self/status" in
-    for i = 1 to 11 do ignore(input_line chan) done;
-    let line = input_line chan in 
-      close_in chan;
-      assert((String.sub line 0 7) = "VmSize:");
-      String.sub line 7 ((String.length line) - 7)
-
-let check_memory_usage fm =
-  Printf.printf "Counted size is %d\n"
-    (fm#measure_size +
-       (Hashtbl.fold
-	  (fun k (dl, sl) s -> s + (stmt_size (V.Block(dl,sl))))
-	  trans_cache 0));
-  Printf.printf "/proc size is %s\n" (check_memory_size ());
-  flush stdout;
-  Gc.print_stat stdout
+open Exec_stats;;
 
 let loop_w_stats count fn =
   let iter = ref 0L and
@@ -72,7 +55,7 @@ let periodic_stats fm at_end force =
   if true || force then
     print_tree fm;
   if !opt_gc_stats || force then
-    check_memory_usage fm;
+    check_memory_usage fm trans_cache;
   if !opt_gc_stats || force then
     Gc.print_stat stdout;
   if (!opt_solver_stats && at_end) || force then

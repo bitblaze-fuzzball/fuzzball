@@ -783,11 +783,13 @@ struct
     method run_to_jump () =
       self#run_sl (fun lab -> (String.sub lab 0 3) <> "pc_") insns
 
+    method measure_mem_size = mem#measure_size
+    method measure_form_man_size = form_man#measure_size
+
     method measure_size =
       let measure_add k v n = n + (D.measure_size v) in
-	mem#measure_size
-	+ (V.VarHash.fold measure_add reg_store 0)
-	+ (V.VarHash.fold measure_add temps 0)
+	((V.VarHash.fold measure_add reg_store 0),
+	 (V.VarHash.fold measure_add temps 0))
 
     method store_byte_idx base idx b =
       self#store_byte (Int64.add base (Int64.of_int idx)) 
@@ -1014,7 +1016,9 @@ class virtual fragment_machine = object
   method virtual run : unit -> string
   method virtual run_to_jump : unit -> string
 
-  method virtual measure_size : int
+  method virtual measure_mem_size : int * int * int
+  method virtual measure_form_man_size : int * int
+  method virtual measure_size : int * int
 
   method virtual store_byte_idx : int64 -> int -> int -> unit
 

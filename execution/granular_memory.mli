@@ -90,7 +90,7 @@ sig
 	    
     method virtual clear : unit -> unit
 
-    method virtual measure_size : int
+    method virtual measure_size : int * int * int
   end
     
   class granular_page_memory : object
@@ -117,7 +117,7 @@ sig
     method store_long  : int64 -> D.t -> unit
     method store_page : int64 -> string -> unit
     method clear : unit -> unit
-    method measure_size : int
+    method measure_size : int * int * int
   end
 
   class granular_sink_memory : object
@@ -144,7 +144,7 @@ sig
     method store_long  : int64 -> D.t -> unit
     method store_page : int64 -> string -> unit
     method clear : unit -> unit
-    method measure_size : int
+    method measure_size : int * int * int
   end
 
   class granular_hash_memory : object
@@ -171,7 +171,7 @@ sig
     method store_long  : int64 -> D.t -> unit
     method store_page : int64 -> string -> unit
     method clear : unit -> unit
-    method measure_size : int
+    method measure_size : int * int * int
   end
 
   class granular_snapshot_memory : granular_memory -> granular_memory ->
@@ -191,7 +191,7 @@ sig
     method store_long  : int64 -> D.t -> unit
     method store_page : int64 -> string -> unit
     method clear : unit -> unit
-    method measure_size : int
+    method measure_size : int * int * int
 
     method make_snap : unit -> unit
     method reset : unit -> unit
@@ -215,7 +215,7 @@ sig
     method store_long  : int64 -> D.t -> unit
     method store_page : int64 -> string -> unit
     method clear : unit -> unit
-    method measure_size : int
+    method measure_size : int * int * int
 
     method make_snap : unit -> unit
     method reset : unit -> unit
@@ -238,7 +238,7 @@ sig
     method store_word  : int64 -> D.t -> unit
     method store_long  : int64 -> D.t -> unit
     method clear : unit -> unit
-    method measure_size : int
+    method measure_size : int * int * int
   end
 
   class concrete_maybe_adaptor_memory :
@@ -259,6 +259,6 @@ sig
     method store_long  : int64 -> D.t -> unit
     method store_page : int64 -> string -> unit
     method clear : unit -> unit
-    method measure_size : int
+    method measure_size : int * int * int
   end
 end

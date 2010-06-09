@@ -90,3 +90,5 @@ let opt_fuzz_end_addrs = ref []
 let opt_trace_registers = ref false
 let opt_trace_segments = ref false
 let opt_trace_taint = ref false
+let opt_trace_unexpected = ref false
+let opt_progress_interval = ref None

@@ -121,7 +121,9 @@ sig
     method run : unit -> string
     method run_to_jump : unit -> string
 
-    method measure_size : int
+    method measure_mem_size : int * int * int
+    method measure_form_man_size : int * int
+    method measure_size : int * int
 
     method store_byte_idx : int64 -> int -> int -> unit
 
@@ -249,7 +251,9 @@ class virtual fragment_machine : object
   method virtual run : unit -> string
   method virtual run_to_jump : unit -> string
 
-  method virtual measure_size : int
+  method virtual measure_mem_size : int * int * int
+  method virtual measure_form_man_size : int * int
+  method virtual measure_size : int * int
 
   method virtual store_byte_idx : int64 -> int -> int -> unit
 

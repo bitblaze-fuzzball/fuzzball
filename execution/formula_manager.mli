@@ -58,6 +58,8 @@ sig
       Vine.exp list -> Vine.exp ->
       (Vine.var list * (Vine.var * Vine.exp) list * Vine.exp * 
 	 Vine.exp * Vine.var list)
+
+    method measure_size : (int * int)
   end
 
   val if_expr_temp : formula_manager -> Vine.var ->

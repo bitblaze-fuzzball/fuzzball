@@ -14,7 +14,8 @@ export LIBS += stpvc vine trace
 export OCAMLDEP = ocamldep -I $(VINE_OCAMLDIR) -I $(STP_OCAMLDIR) \
 	                   -I $(VINE_TRACEDIR)
 
-# common sources
+# Source files. In a dependency-respecting order (OCaml doesn't allow
+# circular dependencies).
 export SOURCES = \
 	exec_domain.mli \
 	tagged_domain.mli tagged_domain.ml \
@@ -39,6 +40,7 @@ export SOURCES = \
 	linux_loader.mli linux_loader.ml \
 	state_loader.mli state_loader.ml \
 	exec_runloop.mli exec_runloop.ml \
+	exec_stats.mli exec_stats.ml \
 	exec_fuzzloop.mli exec_fuzzloop.ml \
 	exec_set_options.mli exec_set_options.ml
 

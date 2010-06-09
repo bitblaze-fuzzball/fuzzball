@@ -93,9 +93,10 @@ struct
 	   let var = Hashtbl.find seen_concolic (str, addr) in
 	   let old_val = Hashtbl.find byte_valuation var in
 	     if v <> old_val then
-	       Printf.printf
-		 "Value mismatch: %s:0x%Lx was 0x%x and then later 0x%x\n"
-		 str addr old_val v;
+	       if !opt_trace_unexpected then
+		 Printf.printf
+		   "Value mismatch: %s:0x%Lx was 0x%x and then later 0x%x\n"
+		   str addr old_val v;
 	     var
 	 else 
 	   (let new_var = self#fresh_symbolic_mem V.REG_8 str addr in
@@ -415,5 +416,42 @@ struct
       in
 	(decls, assigns, cond_expr, val_expr, inputs_in_val_expr)
 
+    method measure_size =
+      let (input_ents, input_nodes) =
+	(Hashtbl.length input_vars, Hashtbl.length input_vars) in
+      let (rb_ents, rb_nodes) =
+	(Hashtbl.length region_base_vars, Hashtbl.length region_base_vars) in
+      let (rg_ents, rg_nodes) =
+	(Hashtbl.length region_vars, Hashtbl.length region_vars) in
+      let sc_ents = Hashtbl.length seen_concolic in
+      let (bv_ents, bv_nodes) =
+	(Hashtbl.length byte_valuation, Hashtbl.length byte_valuation) in
+      let (se2t_ents, se2t_nodes) = 
+	(Hashtbl.length subexpr_to_temp_var,
+	 Hashtbl.length subexpr_to_temp_var) in
+      let mbv_ents = V.VarHash.length mem_byte_vars in
+      let sum_expr_sizes k v sum = sum + expr_size v in
+      let (ma_ents, ma_nodes) =
+	(V.VarHash.length mem_axioms,
+	 V.VarHash.fold sum_expr_sizes mem_axioms 0) in
+      let (t2se_ents, t2se_nodes) =
+	(V.VarHash.length temp_var_to_subexpr,
+	 V.VarHash.fold sum_expr_sizes temp_var_to_subexpr 0) in
+      let te_ents = V.VarHash.length temp_var_evaled in
+	Printf.printf "input_vars has %d entries\n" input_ents;
+	Printf.printf "region_base_vars has %d entries\n" rb_ents;
+	Printf.printf "region_vars has %d entries\n" rg_ents;
+	Printf.printf "seen_concolic has %d entries\n" sc_ents;
+	Printf.printf "byte_valuation has %d entries\n" bv_ents;
+	Printf.printf "subexpr_to_temp_var has %d entries\n" se2t_ents;
+	Printf.printf "mem_byte_vars has %d entries\n" mbv_ents;
+	Printf.printf "mem_axioms has %d entries and %d nodes\n"
+	  ma_ents ma_nodes;
+	Printf.printf "temp_var_to_subexpr has %d entries and %d nodes\n"
+	  t2se_ents t2se_nodes;
+	(input_ents + rb_ents + rg_ents + sc_ents + bv_ents + se2t_ents +
+	   mbv_ents + ma_ents + t2se_ents + te_ents,
+	 input_nodes + rb_nodes + rg_nodes + bv_nodes + se2t_nodes +
+	   ma_nodes + t2se_nodes)
   end
 end

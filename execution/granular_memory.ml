@@ -426,7 +426,7 @@ struct
 	    
     method virtual clear : unit -> unit
 
-    method virtual measure_size : int
+    method virtual measure_size : int * int * int
 
   (* method make_snap () = failwith "make_snap unsupported"; ()
      method reset () = failwith "reset unsupported"; () *)
@@ -485,9 +485,13 @@ struct
 	Array.fold_left
 	  (fun n x -> n + match x with None -> 0 | Some(x') -> f x') 0 ary
       in
+      let num_nodes =
 	sum_some
 	  (fun page -> Array.fold_left 
 	     (fun n g64 -> n+ gran64_size g64) 0 page) mem
+      in
+      let num_entries = sum_some (fun page -> 512) mem in
+	(num_entries, num_nodes, 0)
   end
 
   class granular_sink_memory = object(self)
@@ -496,7 +500,7 @@ struct
     method private store_common_fast addr fn = ()
     method private with_chunk addr fn = None
     method clear () = ()
-    method measure_size = 1
+    method measure_size = (1, 0, 0)
   end
 
   class granular_hash_memory = object(self)
@@ -537,7 +541,10 @@ struct
       Hashtbl.clear mem
 
     method measure_size =
-      Hashtbl.fold (fun k v sum -> sum + gran64_size v) mem 0
+      let num_nodes = Hashtbl.fold (fun k v sum -> sum + gran64_size v) mem 0
+      in
+      let num_entries = Hashtbl.length mem in
+	(num_nodes, num_entries, 0)
   end
 
   class granular_snapshot_memory
@@ -650,7 +657,10 @@ struct
       else
 	main#load_long addr
 
-    method measure_size = diff#measure_size + main#measure_size + 1
+    method measure_size =
+      let (ents_d, nodes_d, conc_d) = diff#measure_size in
+      let (ents_m, nodes_m, conc_m) = main#measure_size in
+	(ents_d + ents_m, nodes_d + nodes_m, conc_d + conc_m)
 
     method clear () = 
       diff#clear ();
@@ -694,7 +704,7 @@ struct
     method maybe_load_long  addr = match mem#maybe_load_long addr with
       | None -> None | Some l -> Some(D.from_concrete_64 l)
   
-    method measure_size = mem#measure_size
+    method measure_size = (0, 0, mem#measure_size)
 
     method clear () = mem#clear ()
   end
@@ -793,7 +803,7 @@ struct
 	  | Some l -> l
 	  | None -> missing 64 addr
 
-      method measure_size = mem#measure_size
+      method measure_size = (0, 0, mem#measure_size)
 
       method clear () = mem#clear ()
     end
