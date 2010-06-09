@@ -11,6 +11,21 @@ open Exec_exceptions;;
 open Exec_options;;
 open Frag_simplify;;
 
+module VarByInt =
+struct
+  type t = V.var
+  let hash (i,_,_) = i
+  let equal x y =
+    x == y ||
+      match (x,y) with
+	| ((x,_,_), (y,_,_)) when x == y ->
+	    true
+	| _ -> false
+  let compare (x,_,_) (y,_,_) = compare x y
+end
+
+module VarWeak = Weak.Make(VarByInt)
+
 module FormulaManagerFunctor =
   functor (D : Exec_domain.DOMAIN) ->
 struct
@@ -292,11 +307,11 @@ struct
 	  | _ -> failwith "unexpected lval expr in eval_mem_var"
 
     (* subexpression cache *)
-    val subexpr_to_temp_var = Hashtbl.create 1001
-    val temp_var_to_subexpr = V.VarHash.create 1001
+    val subexpr_to_temp_var_info = Hashtbl.create 1001
+    val temp_var_num_to_subexpr = Hashtbl.create 1001
     val mutable temp_var_num = 0
 
-    val temp_var_evaled = V.VarHash.create 1001
+    val temp_var_num_evaled = Hashtbl.create 1001
 
     method eval_expr e =
       let cf_eval e =
@@ -322,14 +337,14 @@ struct
 	      in
 		V.Constant(V.Int(ty, v))
 	  | V.Constant(V.Int(_, _)) -> e
-	  | V.Lval(V.Temp(var))
-	      when V.VarHash.mem temp_var_to_subexpr var ->
-	      (try V.VarHash.find temp_var_evaled var
+	  | V.Lval(V.Temp(n,s,t))
+	      when Hashtbl.mem temp_var_num_to_subexpr n ->
+	      (try Hashtbl.find temp_var_num_evaled n
 	       with
 		 | Not_found ->
-		     let e' = loop (V.VarHash.find temp_var_to_subexpr var)
+		     let e' = loop (Hashtbl.find temp_var_num_to_subexpr n)
 		     in
-		       V.VarHash.replace temp_var_evaled var e';
+		       Hashtbl.replace temp_var_num_evaled n e';
 		       e')
 	  | _ ->
 	      Printf.printf "Can't evaluate %s\n" (V.exp_to_string e);
@@ -341,6 +356,37 @@ struct
 	      Printf.printf "Left with %s\n" (V.exp_to_string e);
 	      failwith "Constant invariant failed in eval_expr"
 
+    val temp_vars_weak = VarWeak.create 1001
+
+    method private lookup_temp_var (temp_num, var_num, ty) =
+      let var = (var_num, "t" ^ (string_of_int temp_num), ty) in
+	VarWeak.find temp_vars_weak var
+
+    method private make_temp_var e ty =
+      let cleanup_temp_var (n, s, t) =
+	let e = Hashtbl.find temp_var_num_to_subexpr n in
+	  Hashtbl.remove temp_var_num_to_subexpr n;
+	  Hashtbl.remove subexpr_to_temp_var_info (V.exp_to_string e)
+      in
+      let e_str = V.exp_to_string e in
+	try
+	  self#lookup_temp_var
+	    (Hashtbl.find subexpr_to_temp_var_info e_str)
+	with Not_found ->
+	  let temp_num = temp_var_num in
+	  let s = "t" ^ (string_of_int temp_num) in
+	    temp_var_num <- temp_var_num + 1;
+	    let var = V.newvar s ty in
+	    let (var_num,_,_) = var in
+	    let var_info = (temp_num, var_num, ty) in
+	      Gc.finalise cleanup_temp_var var;
+ 	      Hashtbl.replace subexpr_to_temp_var_info e_str
+		var_info;
+ 	      Hashtbl.replace temp_var_num_to_subexpr var_num e;
+	      VarWeak.add temp_vars_weak var;
+	      if !opt_trace_temps then
+		Printf.printf "%s = %s\n" s (V.exp_to_string e);
+	      var
 
     method private simplify (v:D.t) ty =
       D.inside_symbolic
@@ -349,20 +395,8 @@ struct
 	     if expr_size e' < 10 then
 	       e'
 	     else
-	       let e'_str = V.exp_to_string e' in
-	       let var =
-		 (try
-		    Hashtbl.find subexpr_to_temp_var e'_str
-		  with Not_found ->
-		    let s = "t" ^ (string_of_int temp_var_num) in
-		      temp_var_num <- temp_var_num + 1;
-		      let var = V.newvar s ty in
- 			Hashtbl.replace subexpr_to_temp_var e'_str var;
- 			V.VarHash.replace temp_var_to_subexpr var e';
-			if !opt_trace_temps then
-			  Printf.printf "%s = %s\n" s (V.exp_to_string e');
-			var) in
-		 V.Lval(V.Temp(var))) v
+	       V.Lval(V.Temp(self#make_temp_var e' ty))
+	) v
 	      
     method simplify1  e = self#simplify e V.REG_1
     method simplify8  e = self#simplify e V.REG_8
@@ -370,9 +404,9 @@ struct
     method simplify32 e = self#simplify e V.REG_32
     method simplify64 e = self#simplify e V.REG_64
 
-    method if_expr_temp_unit var (fn_t: V.exp option  -> unit) =
+    method if_expr_temp_unit (n,_,_) (fn_t: V.exp option  -> unit) =
       try
-	let e = V.VarHash.find temp_var_to_subexpr var in
+	let e = Hashtbl.find temp_var_num_to_subexpr n in
 	  (fn_t (Some(e)) )
       with Not_found -> (fn_t None)
 	
@@ -469,17 +503,18 @@ struct
       let (bv_ents, bv_nodes) =
 	(Hashtbl.length valuation, Hashtbl.length valuation) in
       let (se2t_ents, se2t_nodes) = 
-	(Hashtbl.length subexpr_to_temp_var,
-	 Hashtbl.length subexpr_to_temp_var) in
+	(Hashtbl.length subexpr_to_temp_var_info,
+	 Hashtbl.length subexpr_to_temp_var_info) in
       let mbv_ents = V.VarHash.length mem_byte_vars in
       let sum_expr_sizes k v sum = sum + expr_size v in
       let (ma_ents, ma_nodes) =
 	(V.VarHash.length mem_axioms,
 	 V.VarHash.fold sum_expr_sizes mem_axioms 0) in
       let (t2se_ents, t2se_nodes) =
-	(V.VarHash.length temp_var_to_subexpr,
-	 V.VarHash.fold sum_expr_sizes temp_var_to_subexpr 0) in
-      let te_ents = V.VarHash.length temp_var_evaled in
+	(Hashtbl.length temp_var_num_to_subexpr,
+	 Hashtbl.fold sum_expr_sizes temp_var_num_to_subexpr 0) in
+      let te_ents = Hashtbl.length temp_var_num_evaled in
+      let tw_ents = VarWeak.count temp_vars_weak in
 	Printf.printf "input_vars has %d entries\n" input_ents;
 	Printf.printf "region_base_vars has %d entries\n" rb_ents;
 	Printf.printf "region_vars has %d entries\n" rg_ents;
@@ -489,8 +524,9 @@ struct
 	Printf.printf "mem_byte_vars has %d entries\n" mbv_ents;
 	Printf.printf "mem_axioms has %d entries and %d nodes\n"
 	  ma_ents ma_nodes;
-	Printf.printf "temp_var_to_subexpr has %d entries and %d nodes\n"
+	Printf.printf "temp_var_num_to_subexpr has %d entries and %d nodes\n"
 	  t2se_ents t2se_nodes;
+	Printf.printf "temp_vars_weak has %d entries\n" tw_ents;
 	(input_ents + rb_ents + rg_ents + sc_ents + bv_ents + se2t_ents +
 	   mbv_ents + ma_ents + t2se_ents + te_ents,
 	 input_nodes + rb_nodes + rg_nodes + bv_nodes + se2t_nodes +
