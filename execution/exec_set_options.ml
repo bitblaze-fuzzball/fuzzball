@@ -139,6 +139,9 @@ let cmdline_opts =
     ("-num-paths", Arg.String
        (fun s -> opt_num_paths := Some (Int64.of_string s)),
      "N Stop after N different paths");
+    ("-translation-cache-size", Arg.String
+       (fun s -> opt_translation_cache_size := Some (int_of_string s)),
+     "N Save translations of at most N instructions");
     ("-load-base", Arg.String
        (fun s -> opt_load_base := Int64.of_string s),
      "addr Base address for program image");

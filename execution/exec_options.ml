@@ -86,6 +86,7 @@ let opt_nonfatal_solver = ref false
 let opt_num_paths = ref None
 let opt_check_write_operands = ref false
 let opt_pid = ref (-1)
+let opt_translation_cache_size = ref None
 
 let opt_fuzz_end_addrs = ref []
 

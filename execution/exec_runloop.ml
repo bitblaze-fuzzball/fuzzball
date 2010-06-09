@@ -152,6 +152,11 @@ let rec runloop (fm : fragment_machine) eip asmir_gamma until =
       (* Libasmir.print_disasm_rawbytes Libasmir.Bfd_arch_i386 eip insn_bytes;
 	 print_string "\n"; *)
       (* fm#print_x86_regs; *)
+      (match !opt_translation_cache_size with
+	 | Some limit ->
+	     if Hashtbl.length trans_cache > limit then
+	       Hashtbl.clear trans_cache
+	 | None -> ());
       if !opt_trace_eip then
 	Printf.printf "EIP is 0x%08Lx\n" eip;
       fm#set_eip eip;
