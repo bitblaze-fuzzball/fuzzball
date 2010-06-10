@@ -414,6 +414,8 @@ let trace_replay_cmdline_opts =
      "insns Print every INSNsth instruction");
     ("-final-pc", Arg.Set(opt_final_pc),
      " Print final path condition at end of trace");
+    ("-solve-final-pc", Arg.Set(opt_solve_final_pc),
+     " Solve final path condition");
   ]
 
 let set_program_name s =

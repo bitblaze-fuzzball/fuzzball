@@ -14,6 +14,6 @@ end
 
 val free_var : Vine.var -> unit
 
-val encode_exp : Vine.exp -> string
+val encode_exp : Vine.exp -> (string * Vine.var list)
 val decode_exp : string -> Vine.exp
 

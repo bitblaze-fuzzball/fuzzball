@@ -96,3 +96,4 @@ let opt_trace_taint = ref false
 let opt_trace_unexpected = ref false
 let opt_progress_interval = ref None
 let opt_final_pc = ref false
+let opt_solve_final_pc = ref false

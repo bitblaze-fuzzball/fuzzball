@@ -330,8 +330,8 @@ struct
 	      (try Hashtbl.find temp_var_num_evaled n
 	       with
 		 | Not_found ->
-		     let e' = loop
-		       (decode_exp (Hashtbl.find temp_var_num_to_subexpr n))
+		     let (e_enc, _) = Hashtbl.find temp_var_num_to_subexpr n in
+		     let e' = loop (decode_exp e_enc)
 		     in
 		       Hashtbl.replace temp_var_num_evaled n e';
 		       e')
@@ -353,12 +353,12 @@ struct
 
     method private make_temp_var e ty =
       let cleanup_temp_var (n, s, t) =
-	let e_enc = Hashtbl.find temp_var_num_to_subexpr n in
+	let (e_enc, _) = Hashtbl.find temp_var_num_to_subexpr n in
 	  Hashtbl.remove temp_var_num_to_subexpr n;
 	  Hashtbl.remove subexpr_to_temp_var_info e_enc;
 	  Frag_marshal.free_var (n,s,t)
       in
-      let e_enc = encode_exp e in
+      let (e_enc, used_vars) = encode_exp e in
 	try
 	  self#lookup_temp_var
 	    (Hashtbl.find subexpr_to_temp_var_info e_enc)
@@ -372,7 +372,8 @@ struct
 	      Gc.finalise cleanup_temp_var var;
  	      Hashtbl.replace subexpr_to_temp_var_info e_enc
 		var_info;
- 	      Hashtbl.replace temp_var_num_to_subexpr var_num e_enc;
+ 	      Hashtbl.replace temp_var_num_to_subexpr var_num
+		(e_enc, used_vars);
 	      VarWeak.add temp_vars_weak var;
 	      if !opt_trace_temps then
 		Printf.printf "%s = %s\n" s (V.exp_to_string e);
@@ -395,10 +396,16 @@ struct
     method simplify64 e = self#simplify e V.REG_64
 
     method if_expr_temp_unit (n,_,_) (fn_t: V.exp option  -> unit) =
-      try
-	let e = decode_exp (Hashtbl.find temp_var_num_to_subexpr n) in
-	  (fn_t (Some(e)) )
-      with Not_found -> (fn_t None)
+      (* The slightly weird structure here is because we *don't*
+	 want to catch a Not_found thrown by decode_exp. *)
+      match
+	(try
+	   let (e_enc, _) = Hashtbl.find temp_var_num_to_subexpr n in
+	     Some e_enc
+	 with Not_found -> None)
+      with
+	| Some e_enc -> (fn_t (Some(decode_exp e_enc)))
+	| None -> (fn_t None)
 	
     (* This was originally designed to be polymorphic in the return
        type of f, and could be made so again as with if_expr_temp *)
@@ -422,7 +429,7 @@ struct
 		    if not (V.VarHash.mem nontemps_h var) then
 		      (V.VarHash.replace nontemps_h var ();
 		       nontemps := var :: !nontemps)) in
-		 if_expr_temp self var fn_t () else_fn)	   
+		 if_expr_temp self var fn_t () else_fn)
 	| V.Lval(V.Mem(_, e1, _)) -> walk e1
 	| V.Name(_) -> ()
 	| V.Cast(_, _, e1) -> walk e1
@@ -500,7 +507,7 @@ struct
       let (ma_ents, ma_nodes) =
 	(V.VarHash.length mem_axioms,
 	 V.VarHash.fold sum_expr_sizes mem_axioms 0) in
-      let sum_lengths k v sum = sum + String.length v in
+      let sum_lengths k (v,_) sum = sum + String.length v in
       let (t2se_ents, t2se_bytes) =
 	(Hashtbl.length temp_var_num_to_subexpr,
 	 Hashtbl.fold sum_lengths temp_var_num_to_subexpr 0) in

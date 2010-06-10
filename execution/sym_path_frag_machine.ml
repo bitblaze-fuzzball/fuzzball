@@ -566,6 +566,8 @@ struct
 	(Printf.printf "Path condition: true\n";
 	 List.iter (fun e -> Printf.printf "& (%s)\n" (V.exp_to_string e))
 	   (List.rev path_cond));
+      if !opt_solve_final_pc then
+	assert(self#query_with_path_cond V.exp_true true);
       dt#try_again_p
 
     method print_tree chan = dt#print_tree chan

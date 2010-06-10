@@ -30,6 +30,7 @@ let canon_vars = VarWeak.create 1001
 
 let encode_exp e =
   let chars = ref [] in
+  let vars = ref [] in
   let push c = chars := c :: !chars in
   let push_int64 i =
     let push_short s =
@@ -97,6 +98,7 @@ let encode_exp e =
       push_int64 (Int64.of_int n);
       Hashtbl.replace var_num_to_name n s;
       ignore(VarWeak.merge canon_vars var);
+      vars := var :: !vars
   in
   let rec loop e = match e with
     | V.BinOp(V.LT, V.BinOp(V.PLUS, e1, V.Constant(V.Int(V.REG_32, 1L))), e2)
@@ -207,7 +209,7 @@ let encode_exp e =
 	str.[i] <- (List.hd !l);
 	l := List.tl !l
       done;
-      str
+      (str, !vars)
 
 let decode_exp s =
   let parse_short i =
@@ -272,7 +274,12 @@ let decode_exp s =
 	 | _ -> failwith "Bad type in parse_var") in
     let (i2, n64) = parse_int64 (i + 1) in
     let n = Int64.to_int n64 in
-      (i2, VarWeak.find canon_vars (n, (Hashtbl.find var_num_to_name n), ty))
+    let var = (n, (Hashtbl.find var_num_to_name n), ty) in
+    let cvar = try
+      VarWeak.find canon_vars var
+    with Not_found -> var
+    in
+      (i2, cvar)
   in
   let rec parse_binop op i =
     let (i2, e1) = parse i in
