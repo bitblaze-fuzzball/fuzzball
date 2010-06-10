@@ -12,19 +12,6 @@ open Exec_options
 open Frag_simplify
 open Frag_marshal
 
-module VarByInt =
-struct
-  type t = V.var
-  let hash (i,_,_) = i
-  let equal x y =
-    x == y ||
-      match (x,y) with
-	| ((x,_,_), (y,_,_)) when x == y ->
-	    true
-	| _ -> false
-  let compare (x,_,_) (y,_,_) = compare x y
-end
-
 module VarWeak = Weak.Make(VarByInt)
 
 module FormulaManagerFunctor =
@@ -368,7 +355,8 @@ struct
       let cleanup_temp_var (n, s, t) =
 	let e_enc = Hashtbl.find temp_var_num_to_subexpr n in
 	  Hashtbl.remove temp_var_num_to_subexpr n;
-	  Hashtbl.remove subexpr_to_temp_var_info e_enc
+	  Hashtbl.remove subexpr_to_temp_var_info e_enc;
+	  Frag_marshal.free_var (n,s,t)
       in
       let e_enc = encode_exp e in
 	try

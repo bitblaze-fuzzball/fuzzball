@@ -6,7 +6,27 @@
 
 module V = Vine;;
 
+module VarByInt =
+struct
+  type t = V.var
+  let hash (i,_,_) = i
+  let equal x y =
+    x == y ||
+      match (x,y) with
+	| ((x,_,_), (y,_,_)) when x == y ->
+	    true
+	| _ -> false
+  let compare (x,_,_) (y,_,_) = compare x y
+end
+
+module VarWeak = Weak.Make(VarByInt)
+
 let var_num_to_name = Hashtbl.create 1001
+
+let free_var (n,s,t) =
+  Hashtbl.remove var_num_to_name n
+
+let canon_vars = VarWeak.create 1001
 
 let encode_exp e =
   let chars = ref [] in
@@ -61,7 +81,7 @@ let encode_exp e =
       push s.[i]
     done
   in
-  let push_var (n,s,t) =
+  let push_var ((n,s,t) as var) =
     let c =
       (match t with
 	 | V.REG_1  -> 'b'
@@ -75,7 +95,8 @@ let encode_exp e =
 	     failwith "Unexpected variable type in encode_exp") in
       push c;
       push_int64 (Int64.of_int n);
-      Hashtbl.replace var_num_to_name n s
+      Hashtbl.replace var_num_to_name n s;
+      ignore(VarWeak.merge canon_vars var);
   in
   let rec loop e = match e with
     | V.BinOp(V.LT, V.BinOp(V.PLUS, e1, V.Constant(V.Int(V.REG_32, 1L))), e2)
@@ -251,7 +272,7 @@ let decode_exp s =
 	 | _ -> failwith "Bad type in parse_var") in
     let (i2, n64) = parse_int64 (i + 1) in
     let n = Int64.to_int n64 in
-      (i2, (n, (Hashtbl.find var_num_to_name n), ty))
+      (i2, VarWeak.find canon_vars (n, (Hashtbl.find var_num_to_name n), ty))
   in
   let rec parse_binop op i =
     let (i2, e1) = parse i in
