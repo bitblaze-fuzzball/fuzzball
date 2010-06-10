@@ -4,12 +4,13 @@
  permission.
 *)
 
-module V = Vine;;
+module V = Vine
 
-open Exec_domain;;
-open Exec_exceptions;;
-open Exec_options;;
-open Frag_simplify;;
+open Exec_domain
+open Exec_exceptions
+open Exec_options
+open Frag_simplify
+open Frag_marshal
 
 module VarByInt =
 struct
@@ -342,7 +343,8 @@ struct
 	      (try Hashtbl.find temp_var_num_evaled n
 	       with
 		 | Not_found ->
-		     let e' = loop (Hashtbl.find temp_var_num_to_subexpr n)
+		     let e' = loop
+		       (decode_exp (Hashtbl.find temp_var_num_to_subexpr n))
 		     in
 		       Hashtbl.replace temp_var_num_evaled n e';
 		       e')
@@ -364,14 +366,14 @@ struct
 
     method private make_temp_var e ty =
       let cleanup_temp_var (n, s, t) =
-	let e = Hashtbl.find temp_var_num_to_subexpr n in
+	let e_enc = Hashtbl.find temp_var_num_to_subexpr n in
 	  Hashtbl.remove temp_var_num_to_subexpr n;
-	  Hashtbl.remove subexpr_to_temp_var_info (V.exp_to_string e)
+	  Hashtbl.remove subexpr_to_temp_var_info e_enc
       in
-      let e_str = V.exp_to_string e in
+      let e_enc = encode_exp e in
 	try
 	  self#lookup_temp_var
-	    (Hashtbl.find subexpr_to_temp_var_info e_str)
+	    (Hashtbl.find subexpr_to_temp_var_info e_enc)
 	with Not_found ->
 	  let temp_num = temp_var_num in
 	  let s = "t" ^ (string_of_int temp_num) in
@@ -380,9 +382,9 @@ struct
 	    let (var_num,_,_) = var in
 	    let var_info = (temp_num, var_num, ty) in
 	      Gc.finalise cleanup_temp_var var;
- 	      Hashtbl.replace subexpr_to_temp_var_info e_str
+ 	      Hashtbl.replace subexpr_to_temp_var_info e_enc
 		var_info;
- 	      Hashtbl.replace temp_var_num_to_subexpr var_num e;
+ 	      Hashtbl.replace temp_var_num_to_subexpr var_num e_enc;
 	      VarWeak.add temp_vars_weak var;
 	      if !opt_trace_temps then
 		Printf.printf "%s = %s\n" s (V.exp_to_string e);
@@ -406,7 +408,7 @@ struct
 
     method if_expr_temp_unit (n,_,_) (fn_t: V.exp option  -> unit) =
       try
-	let e = Hashtbl.find temp_var_num_to_subexpr n in
+	let e = decode_exp (Hashtbl.find temp_var_num_to_subexpr n) in
 	  (fn_t (Some(e)) )
       with Not_found -> (fn_t None)
 	
@@ -510,9 +512,10 @@ struct
       let (ma_ents, ma_nodes) =
 	(V.VarHash.length mem_axioms,
 	 V.VarHash.fold sum_expr_sizes mem_axioms 0) in
-      let (t2se_ents, t2se_nodes) =
+      let sum_lengths k v sum = sum + String.length v in
+      let (t2se_ents, t2se_bytes) =
 	(Hashtbl.length temp_var_num_to_subexpr,
-	 Hashtbl.fold sum_expr_sizes temp_var_num_to_subexpr 0) in
+	 Hashtbl.fold sum_lengths temp_var_num_to_subexpr 0) in
       let te_ents = Hashtbl.length temp_var_num_evaled in
       let tw_ents = VarWeak.count temp_vars_weak in
 	Printf.printf "input_vars has %d entries\n" input_ents;
@@ -524,12 +527,12 @@ struct
 	Printf.printf "mem_byte_vars has %d entries\n" mbv_ents;
 	Printf.printf "mem_axioms has %d entries and %d nodes\n"
 	  ma_ents ma_nodes;
-	Printf.printf "temp_var_num_to_subexpr has %d entries and %d nodes\n"
-	  t2se_ents t2se_nodes;
+	Printf.printf "temp_var_num_to_subexpr has %d entries and %d bytes\n"
+	  t2se_ents t2se_bytes;
 	Printf.printf "temp_vars_weak has %d entries\n" tw_ents;
 	(input_ents + rb_ents + rg_ents + sc_ents + bv_ents + se2t_ents +
 	   mbv_ents + ma_ents + t2se_ents + te_ents,
 	 input_nodes + rb_nodes + rg_nodes + bv_nodes + se2t_nodes +
-	   ma_nodes + t2se_nodes)
+	   ma_nodes)
   end
 end

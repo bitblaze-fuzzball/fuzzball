@@ -23,6 +23,7 @@ export SOURCES = \
 	concrete_domain.mli concrete_domain.ml \
 	exec_options.mli exec_options.ml \
 	frag_simplify.mli frag_simplify.ml \
+	frag_marshal.mli frag_marshal.ml \
 	formula_manager.mli formula_manager.ml \
 	symbolic_domain.mli symbolic_domain.ml \
 	query_engine.mli query_engine.ml \
