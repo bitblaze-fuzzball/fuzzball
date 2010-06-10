@@ -149,6 +149,8 @@ sig
 
     method store_mixed_bytes : int64 ->
       ((string * int64) option * int) array -> unit
+    method set_word_reg_mixed_bytes :
+      register_name -> ((string * int64) option * int) array -> unit
 
     method parse_symbolic_expr : string -> Vine.exp
 
@@ -287,6 +289,8 @@ class virtual fragment_machine : object
 
   method virtual store_mixed_bytes : int64 ->
     ((string * int64) option * int) array -> unit
+  method virtual set_word_reg_mixed_bytes :
+    register_name -> ((string * int64) option * int) array -> unit
 
   method virtual parse_symbolic_expr : string -> Vine.exp
 

@@ -189,6 +189,9 @@ sig
     method store_concolic_long  : int64 -> string -> int64 -> unit
     method store_mixed_bytes : int64 ->
       ((string * int64) option * int) array -> unit
+    method set_word_reg_mixed_bytes :
+      Fragment_machine.register_name
+      -> ((string * int64) option * int) array -> unit
     method parse_symbolic_expr : string -> Vine.exp
     method store_cstr : int64 -> int64 -> string -> unit
     method read_buf : int64 -> int -> char array

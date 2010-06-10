@@ -860,26 +860,37 @@ struct
     method store_concolic_long addr varname i64 =
       self#store_long addr (form_man#make_concolic_64 varname i64)
 
-    method store_mixed_bytes addr byte_array =
+    method private assemble_mixed_bytes byte_array =
       let v_array = Array.map
 	(function 
 	   | (None, v) -> D.from_concrete_8 v
 	   | (Some (s, i), v) -> form_man#make_concolic_mem_8 s i v)
-	byte_array in
+	byte_array
+      in
 	match Array.length v_array with
-	  | 1 -> self#store_byte addr v_array.(0)
-	  | 2 -> self#store_short addr
-	      (D.reassemble16 v_array.(0) v_array.(1))
-	  | 4 -> self#store_word addr
+	  | 1 -> v_array.(0)
+	  | 2 -> D.reassemble16 v_array.(0) v_array.(1)
+	  | 4 -> D.reassemble32 (D.reassemble16 v_array.(0) v_array.(1))
+	      (D.reassemble16 v_array.(2) v_array.(3))
+	  | 8 -> D.reassemble64
 	      (D.reassemble32 (D.reassemble16 v_array.(0) v_array.(1))
 		 (D.reassemble16 v_array.(2) v_array.(3)))
-	  | 8 -> self#store_long addr
-	      (D.reassemble64
-		 (D.reassemble32 (D.reassemble16 v_array.(0) v_array.(1))
-		    (D.reassemble16 v_array.(2) v_array.(3)))
-		 (D.reassemble32 (D.reassemble16 v_array.(4) v_array.(5))
-		    (D.reassemble16 v_array.(6) v_array.(7))))
+		(D.reassemble32 (D.reassemble16 v_array.(4) v_array.(5))
+		   (D.reassemble16 v_array.(6) v_array.(7)))
+	  | _ -> failwith "Unsupported length in assemble_mixed_bytes"
+
+    method store_mixed_bytes addr byte_array =
+      let d = self#assemble_mixed_bytes byte_array in
+	match Array.length byte_array with
+	  | 1 -> self#store_byte  addr d
+	  | 2 -> self#store_short addr d
+	  | 4 -> self#store_word  addr d
+	  | 8 -> self#store_long  addr d
 	  | _ -> failwith "Unsupported length in store_mixed_bytes"
+
+    method set_word_reg_mixed_bytes reg byte_array =
+      self#set_int_var (Hashtbl.find reg_to_var reg)
+	(self#assemble_mixed_bytes byte_array)
 
     method parse_symbolic_expr str =
       Vine_parser.parse_exp_from_string (form_man#input_dl) str
@@ -1064,6 +1075,8 @@ class virtual fragment_machine = object
 
   method virtual store_mixed_bytes : int64 ->
     ((string * int64) option * int) array -> unit
+  method virtual set_word_reg_mixed_bytes :
+    register_name -> ((string * int64) option * int) array -> unit
 
   method virtual parse_symbolic_expr : string -> Vine.exp
 
