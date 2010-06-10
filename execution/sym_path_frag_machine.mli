@@ -182,6 +182,12 @@ sig
     method set_word_reg_mixed_bytes :
       Fragment_machine.register_name
       -> ((string * int64) option * int) array -> unit
+    method store_concolic_exp : int64 -> Vine.exp ->
+      (string * int) list -> (string * int) list ->
+      (string * int64) list -> (string * int64) list -> unit
+    method set_word_reg_concolic_exp : Fragment_machine.register_name ->
+      Vine.exp -> (string * int) list -> (string * int) list ->
+      (string * int64) list -> (string * int64) list -> unit
     method parse_symbolic_expr : string -> Vine.exp
     method store_cstr : int64 -> int64 -> string -> unit
     method read_buf : int64 -> int -> char array

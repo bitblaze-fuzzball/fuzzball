@@ -249,7 +249,7 @@ struct
       V.VarHash.clear mem_byte_vars;
       V.VarHash.clear mem_axioms
 
-    method private eval_mem_var lv =
+    method private eval_var lv =
       let d = D.from_symbolic (V.Lval lv) in
 	match lv with
 	  | V.Mem(mem_var, V.Constant(V.Int(_, addr)), V.REG_8) ->
@@ -260,10 +260,10 @@ struct
 		D.from_concrete_16 (Int64.to_int (Hashtbl.find valuation d))
 	      else
 		D.assemble16
-		  (self#eval_mem_var
+		  (self#eval_var
 		     (V.Mem(mem_var, V.Constant(V.Int(V.REG_32, addr)),
 			    V.REG_8)))
-		  (self#eval_mem_var
+		  (self#eval_var
 		     (V.Mem(mem_var,
 			    V.Constant(V.Int(V.REG_32, 
 					     (Int64.add 1L addr))),
@@ -273,10 +273,10 @@ struct
 		D.from_concrete_32 (Hashtbl.find valuation d)
 	      else
 		D.assemble32
-		  (self#eval_mem_var
+		  (self#eval_var
 		     (V.Mem(mem_var, V.Constant(V.Int(V.REG_32, addr)),
 			    V.REG_16)))
-		  (self#eval_mem_var
+		  (self#eval_var
 		     (V.Mem(mem_var, V.Constant(V.Int(V.REG_32, 
 						      (Int64.add 2L addr))),
 			    V.REG_16)))
@@ -285,14 +285,27 @@ struct
 		D.from_concrete_64 (Hashtbl.find valuation d)
 	      else
 		D.assemble64
-		  (self#eval_mem_var
+		  (self#eval_var
 		     (V.Mem(mem_var, V.Constant(V.Int(V.REG_32, addr)),
 			    V.REG_32)))
-		  (self#eval_mem_var
+		  (self#eval_var
 		     (V.Mem(mem_var, V.Constant(V.Int(V.REG_32, 
 						      (Int64.add 4L addr))),
 			    V.REG_32)))
-	  | _ -> failwith "unexpected lval expr in eval_mem_var"
+	  | V.Temp(_, _, V.REG_8) ->
+	      assert(Hashtbl.mem valuation d);
+	      D.from_concrete_8 (Int64.to_int (Hashtbl.find valuation d))
+	  | V.Temp(_, _, V.REG_16) ->
+	      assert(Hashtbl.mem valuation d);
+	      D.from_concrete_16 (Int64.to_int (Hashtbl.find valuation d))
+	  | V.Temp(_, _, V.REG_32) ->
+	      assert(Hashtbl.mem valuation d);
+	      D.from_concrete_32 (Hashtbl.find valuation d)
+	  | V.Temp(_, _, V.REG_64) ->
+	      assert(Hashtbl.mem valuation d);
+	      D.from_concrete_64 (Hashtbl.find valuation d)
+
+	  | _ -> failwith "unexpected lval expr in eval_var"
 
     (* subexpression cache *)
     val subexpr_to_temp_var_info = Hashtbl.create 1001
@@ -315,7 +328,7 @@ struct
 	  | V.UnOp(op, e1) -> cf_eval (V.UnOp(op, loop e1))
 	  | V.Cast(op, ty, e1) -> cf_eval (V.Cast(op, ty, loop e1))
 	  | V.Lval(V.Mem(_, _, ty) as lv) ->
-	      let d = self#eval_mem_var lv in
+	      let d = self#eval_var lv in
 	      let v = match ty with
 		| V.REG_8  -> Int64.of_int (D.to_concrete_8  d)
 		| V.REG_16 -> Int64.of_int (D.to_concrete_16 d)
@@ -335,6 +348,16 @@ struct
 		     in
 		       Hashtbl.replace temp_var_num_evaled n e';
 		       e')
+	  | V.Lval(V.Temp(n,s,ty) as lv) ->
+	      let d = self#eval_var lv in
+	      let v = match ty with
+		| V.REG_8  -> Int64.of_int (D.to_concrete_8  d)
+		| V.REG_16 -> Int64.of_int (D.to_concrete_16 d)
+		| V.REG_32 -> D.to_concrete_32 d
+		| V.REG_64 -> D.to_concrete_64 d
+		| _ -> failwith "Unexpected type in eval_expr"
+	      in
+		V.Constant(V.Int(ty, v))	      
 	  | _ ->
 	      Printf.printf "Can't evaluate %s\n" (V.exp_to_string e);
 	      failwith "Unexpected expr in eval_expr"

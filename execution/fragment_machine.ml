@@ -483,139 +483,192 @@ struct
     method private maybe_concretize_binop op v1 v2 ty1 ty2 =
       (v1, v2)
 
+    method private eval_binop op v1 ty1 v2 ty2 =
+      let ty = 
+	(match op with
+	   | V.PLUS | V.MINUS | V.TIMES
+	   | V.DIVIDE | V.SDIVIDE | V.MOD | V.SMOD
+	   | V.BITAND | V.BITOR | V.XOR
+	       -> assert(ty1 = ty2); ty1
+	   | V.LSHIFT | V.RSHIFT | V.ARSHIFT
+	       -> ty1
+	   | V.EQ | V.NEQ | V.LT | V.LE | V.SLT | V.SLE
+	       -> assert(ty1 = ty2); V.REG_1) in
+      let func =
+	(match (op, ty1) with
+	   | (V.PLUS, V.REG_1)  -> D.plus1 
+	   | (V.PLUS, V.REG_8)  -> D.plus8 
+	   | (V.PLUS, V.REG_16) -> D.plus16
+	   | (V.PLUS, V.REG_32) -> D.plus32
+	   | (V.PLUS, V.REG_64) -> D.plus64
+	   | (V.MINUS, V.REG_1)  -> D.minus1 
+	   | (V.MINUS, V.REG_8)  -> D.minus8 
+	   | (V.MINUS, V.REG_16) -> D.minus16
+	   | (V.MINUS, V.REG_32) -> D.minus32
+	   | (V.MINUS, V.REG_64) -> D.minus64
+	   | (V.TIMES, V.REG_1)  -> D.times1 
+	   | (V.TIMES, V.REG_8)  -> D.times8 
+	   | (V.TIMES, V.REG_16) -> D.times16
+	   | (V.TIMES, V.REG_32) -> D.times32
+	   | (V.TIMES, V.REG_64) -> D.times64
+	   | (V.DIVIDE, V.REG_1)  -> D.divide1 
+	   | (V.DIVIDE, V.REG_8)  -> D.divide8 
+	   | (V.DIVIDE, V.REG_16) -> D.divide16
+	   | (V.DIVIDE, V.REG_32) -> D.divide32
+	   | (V.DIVIDE, V.REG_64) -> D.divide64
+	   | (V.SDIVIDE, V.REG_1)  -> D.sdivide1 
+	   | (V.SDIVIDE, V.REG_8)  -> D.sdivide8 
+	   | (V.SDIVIDE, V.REG_16) -> D.sdivide16
+	   | (V.SDIVIDE, V.REG_32) -> D.sdivide32
+	   | (V.SDIVIDE, V.REG_64) -> D.sdivide64
+	   | (V.MOD, V.REG_1)  -> D.mod1 
+	   | (V.MOD, V.REG_8)  -> D.mod8 
+	   | (V.MOD, V.REG_16) -> D.mod16
+	   | (V.MOD, V.REG_32) -> D.mod32
+	   | (V.MOD, V.REG_64) -> D.mod64
+	   | (V.SMOD, V.REG_1)  -> D.smod1 
+	   | (V.SMOD, V.REG_8)  -> D.smod8 
+	   | (V.SMOD, V.REG_16) -> D.smod16
+	   | (V.SMOD, V.REG_32) -> D.smod32
+	   | (V.SMOD, V.REG_64) -> D.smod64
+	   | (V.LSHIFT, V.REG_1)  -> D.lshift1 
+	   | (V.LSHIFT, V.REG_8)  -> D.lshift8 
+	   | (V.LSHIFT, V.REG_16) -> D.lshift16
+	   | (V.LSHIFT, V.REG_32) -> D.lshift32
+	   | (V.LSHIFT, V.REG_64) -> D.lshift64
+	   | (V.RSHIFT, V.REG_1)  -> D.rshift1 
+	   | (V.RSHIFT, V.REG_8)  -> D.rshift8 
+	   | (V.RSHIFT, V.REG_16) -> D.rshift16
+	   | (V.RSHIFT, V.REG_32) -> D.rshift32
+	   | (V.RSHIFT, V.REG_64) -> D.rshift64
+	   | (V.ARSHIFT, V.REG_1)  -> D.arshift1 
+	   | (V.ARSHIFT, V.REG_8)  -> D.arshift8 
+	   | (V.ARSHIFT, V.REG_16) -> D.arshift16
+	   | (V.ARSHIFT, V.REG_32) -> D.arshift32
+	   | (V.ARSHIFT, V.REG_64) -> D.arshift64
+	   | (V.BITAND, V.REG_1)  -> D.bitand1 
+	   | (V.BITAND, V.REG_8)  -> D.bitand8 
+	   | (V.BITAND, V.REG_16) -> D.bitand16
+	   | (V.BITAND, V.REG_32) -> D.bitand32
+	   | (V.BITAND, V.REG_64) -> D.bitand64
+	   | (V.BITOR, V.REG_1)  -> D.bitor1 
+	   | (V.BITOR, V.REG_8)  -> D.bitor8 
+	   | (V.BITOR, V.REG_16) -> D.bitor16
+	   | (V.BITOR, V.REG_32) -> D.bitor32
+	   | (V.BITOR, V.REG_64) -> D.bitor64
+	   | (V.XOR, V.REG_1)  -> D.xor1 
+	   | (V.XOR, V.REG_8)  -> D.xor8 
+	   | (V.XOR, V.REG_16) -> D.xor16
+	   | (V.XOR, V.REG_32) -> D.xor32
+	   | (V.XOR, V.REG_64) -> D.xor64
+	   | (V.EQ, V.REG_1)  -> D.eq1 
+	   | (V.EQ, V.REG_8)  -> D.eq8 
+	   | (V.EQ, V.REG_16) -> D.eq16
+	   | (V.EQ, V.REG_32) -> D.eq32
+	   | (V.EQ, V.REG_64) -> D.eq64
+	   | (V.NEQ, V.REG_1)  -> D.neq1 
+	   | (V.NEQ, V.REG_8)  -> D.neq8 
+	   | (V.NEQ, V.REG_16) -> D.neq16
+	   | (V.NEQ, V.REG_32) -> D.neq32
+	   | (V.NEQ, V.REG_64) -> D.neq64
+	   | (V.LT, V.REG_1)  -> D.lt1 
+	   | (V.LT, V.REG_8)  -> D.lt8 
+	   | (V.LT, V.REG_16) -> D.lt16
+	   | (V.LT, V.REG_32) -> D.lt32
+	   | (V.LT, V.REG_64) -> D.lt64
+	   | (V.LE, V.REG_1)  -> D.le1 
+	   | (V.LE, V.REG_8)  -> D.le8 
+	   | (V.LE, V.REG_16) -> D.le16
+	   | (V.LE, V.REG_32) -> D.le32
+	   | (V.LE, V.REG_64) -> D.le64
+	   | (V.SLT, V.REG_1)  -> D.slt1 
+	   | (V.SLT, V.REG_8)  -> D.slt8 
+	   | (V.SLT, V.REG_16) -> D.slt16
+	   | (V.SLT, V.REG_32) -> D.slt32
+	   | (V.SLT, V.REG_64) -> D.slt64
+	   | (V.SLE, V.REG_1)  -> D.sle1 
+	   | (V.SLE, V.REG_8)  -> D.sle8 
+	   | (V.SLE, V.REG_16) -> D.sle16
+	   | (V.SLE, V.REG_32) -> D.sle32
+	   | (V.SLE, V.REG_64) -> D.sle64
+	   | _ -> failwith "unexpected binop/type in eval_int_exp_ty")
+      in
+      let (v1', v2') = self#maybe_concretize_binop op v1 v2 ty1 ty2 in
+	(func v1' v2'), ty
+
+    method private eval_unop op v1 ty1 =
+      let result = 
+	(match (op, ty1) with
+	   | (V.NEG, V.REG_1)  -> D.neg1 v1
+	   | (V.NEG, V.REG_8)  -> D.neg8 v1
+	   | (V.NEG, V.REG_16) -> D.neg16 v1
+	   | (V.NEG, V.REG_32) -> D.neg32 v1
+	   | (V.NEG, V.REG_64) -> D.neg64 v1
+	   | (V.NOT, V.REG_1)  -> D.not1 v1
+	   | (V.NOT, V.REG_8)  -> D.not8 v1
+	   | (V.NOT, V.REG_16) -> D.not16 v1
+	   | (V.NOT, V.REG_32) -> D.not32 v1
+	   | (V.NOT, V.REG_64) -> D.not64 v1
+	   | _ -> failwith "unexpected unop/type in eval_int_exp_ty")
+      in
+	result, ty1
+
+    method private eval_cast kind ty v1 ty1 =
+      let func =
+	match (kind, ty1, ty) with
+	  | (V.CAST_UNSIGNED, V.REG_1,  V.REG_8)  -> D.cast1u8
+	  | (V.CAST_UNSIGNED, V.REG_1,  V.REG_16) -> D.cast1u16
+	  | (V.CAST_UNSIGNED, V.REG_1,  V.REG_32) -> D.cast1u32
+	  | (V.CAST_UNSIGNED, V.REG_1,  V.REG_64) -> D.cast1u64
+	  | (V.CAST_UNSIGNED, V.REG_8,  V.REG_16) -> D.cast8u16
+	  | (V.CAST_UNSIGNED, V.REG_8,  V.REG_32) -> D.cast8u32
+	  | (V.CAST_UNSIGNED, V.REG_8,  V.REG_64) -> D.cast8u64
+	  | (V.CAST_UNSIGNED, V.REG_16, V.REG_32) -> D.cast16u32
+	  | (V.CAST_UNSIGNED, V.REG_16, V.REG_64) -> D.cast16u64
+	  | (V.CAST_UNSIGNED, V.REG_32, V.REG_64) -> D.cast32u64
+	  | (V.CAST_SIGNED, V.REG_1,  V.REG_8)  -> D.cast1s8
+	  | (V.CAST_SIGNED, V.REG_1,  V.REG_16) -> D.cast1s16
+	  | (V.CAST_SIGNED, V.REG_1,  V.REG_32) -> D.cast1s32
+	  | (V.CAST_SIGNED, V.REG_1,  V.REG_64) -> D.cast1s64
+	  | (V.CAST_SIGNED, V.REG_8,  V.REG_16) -> D.cast8s16
+	  | (V.CAST_SIGNED, V.REG_8,  V.REG_32) -> D.cast8s32
+	  | (V.CAST_SIGNED, V.REG_8,  V.REG_64) -> D.cast8s64
+	  | (V.CAST_SIGNED, V.REG_16, V.REG_32) -> D.cast16s32
+	  | (V.CAST_SIGNED, V.REG_16, V.REG_64) -> D.cast16s64
+	  | (V.CAST_SIGNED, V.REG_32, V.REG_64) -> D.cast32s64
+	  | (V.CAST_LOW, V.REG_64, V.REG_1)  -> D.cast64l1
+	  | (V.CAST_LOW, V.REG_64, V.REG_8)  -> D.cast64l8
+	  | (V.CAST_LOW, V.REG_64, V.REG_16) -> D.cast64l16
+	  | (V.CAST_LOW, V.REG_64, V.REG_32) -> D.cast64l32
+	  | (V.CAST_LOW, V.REG_32, V.REG_1)  -> D.cast32l1
+	  | (V.CAST_LOW, V.REG_32, V.REG_8)  -> D.cast32l8
+	  | (V.CAST_LOW, V.REG_32, V.REG_16) -> D.cast32l16
+	  | (V.CAST_LOW, V.REG_16, V.REG_8)  -> D.cast16l8
+	  | (V.CAST_LOW, V.REG_16, V.REG_1)  -> D.cast16l1
+	  | (V.CAST_LOW, V.REG_8,  V.REG_1)  -> D.cast8l1
+	  | (V.CAST_HIGH, V.REG_64, V.REG_1)  -> D.cast64h1
+	  | (V.CAST_HIGH, V.REG_64, V.REG_8)  -> D.cast64h8
+	  | (V.CAST_HIGH, V.REG_64, V.REG_16) -> D.cast64h16
+	  | (V.CAST_HIGH, V.REG_64, V.REG_32) -> D.cast64h32
+	  | (V.CAST_HIGH, V.REG_32, V.REG_1)  -> D.cast32h1
+	  | (V.CAST_HIGH, V.REG_32, V.REG_8)  -> D.cast32h8
+	  | (V.CAST_HIGH, V.REG_32, V.REG_16) -> D.cast32h16
+	  | (V.CAST_HIGH, V.REG_16, V.REG_8)  -> D.cast16h8
+	  | (V.CAST_HIGH, V.REG_16, V.REG_1)  -> D.cast16h1
+	  | (V.CAST_HIGH, V.REG_8,  V.REG_1)  -> D.cast8h1
+	  | _ -> failwith "bad cast kind in eval_int_exp_ty"
+      in
+	((func v1), ty)
+
     method private eval_int_exp_ty exp =
       match exp with
 	| V.BinOp(op, e1, e2) ->
 	    let (v1, ty1) = self#eval_int_exp_ty e1 and
 		(v2, ty2) = self#eval_int_exp_ty e2 in
-	    let ty = 
-	      (match op with
-		 | V.PLUS | V.MINUS | V.TIMES
-		 | V.DIVIDE | V.SDIVIDE | V.MOD | V.SMOD
-		 | V.BITAND | V.BITOR | V.XOR
-		     -> assert(ty1 = ty2); ty1
-		 | V.LSHIFT | V.RSHIFT | V.ARSHIFT
-		     -> ty1
-		 | V.EQ | V.NEQ | V.LT | V.LE | V.SLT | V.SLE
-		     -> assert(ty1 = ty2); V.REG_1) in
-	    let func =
-	      (match (op, ty1) with
-		 | (V.PLUS, V.REG_1)  -> D.plus1 
-		 | (V.PLUS, V.REG_8)  -> D.plus8 
-		 | (V.PLUS, V.REG_16) -> D.plus16
-		 | (V.PLUS, V.REG_32) -> D.plus32
-		 | (V.PLUS, V.REG_64) -> D.plus64
-		 | (V.MINUS, V.REG_1)  -> D.minus1 
-		 | (V.MINUS, V.REG_8)  -> D.minus8 
-		 | (V.MINUS, V.REG_16) -> D.minus16
-		 | (V.MINUS, V.REG_32) -> D.minus32
-		 | (V.MINUS, V.REG_64) -> D.minus64
-		 | (V.TIMES, V.REG_1)  -> D.times1 
-		 | (V.TIMES, V.REG_8)  -> D.times8 
-		 | (V.TIMES, V.REG_16) -> D.times16
-		 | (V.TIMES, V.REG_32) -> D.times32
-		 | (V.TIMES, V.REG_64) -> D.times64
-		 | (V.DIVIDE, V.REG_1)  -> D.divide1 
-		 | (V.DIVIDE, V.REG_8)  -> D.divide8 
-		 | (V.DIVIDE, V.REG_16) -> D.divide16
-		 | (V.DIVIDE, V.REG_32) -> D.divide32
-		 | (V.DIVIDE, V.REG_64) -> D.divide64
-		 | (V.SDIVIDE, V.REG_1)  -> D.sdivide1 
-		 | (V.SDIVIDE, V.REG_8)  -> D.sdivide8 
-		 | (V.SDIVIDE, V.REG_16) -> D.sdivide16
-		 | (V.SDIVIDE, V.REG_32) -> D.sdivide32
-		 | (V.SDIVIDE, V.REG_64) -> D.sdivide64
-		 | (V.MOD, V.REG_1)  -> D.mod1 
-		 | (V.MOD, V.REG_8)  -> D.mod8 
-		 | (V.MOD, V.REG_16) -> D.mod16
-		 | (V.MOD, V.REG_32) -> D.mod32
-		 | (V.MOD, V.REG_64) -> D.mod64
-		 | (V.SMOD, V.REG_1)  -> D.smod1 
-		 | (V.SMOD, V.REG_8)  -> D.smod8 
-		 | (V.SMOD, V.REG_16) -> D.smod16
-		 | (V.SMOD, V.REG_32) -> D.smod32
-		 | (V.SMOD, V.REG_64) -> D.smod64
-		 | (V.LSHIFT, V.REG_1)  -> D.lshift1 
-		 | (V.LSHIFT, V.REG_8)  -> D.lshift8 
-		 | (V.LSHIFT, V.REG_16) -> D.lshift16
-		 | (V.LSHIFT, V.REG_32) -> D.lshift32
-		 | (V.LSHIFT, V.REG_64) -> D.lshift64
-		 | (V.RSHIFT, V.REG_1)  -> D.rshift1 
-		 | (V.RSHIFT, V.REG_8)  -> D.rshift8 
-		 | (V.RSHIFT, V.REG_16) -> D.rshift16
-		 | (V.RSHIFT, V.REG_32) -> D.rshift32
-		 | (V.RSHIFT, V.REG_64) -> D.rshift64
-		 | (V.ARSHIFT, V.REG_1)  -> D.arshift1 
-		 | (V.ARSHIFT, V.REG_8)  -> D.arshift8 
-		 | (V.ARSHIFT, V.REG_16) -> D.arshift16
-		 | (V.ARSHIFT, V.REG_32) -> D.arshift32
-		 | (V.ARSHIFT, V.REG_64) -> D.arshift64
-		 | (V.BITAND, V.REG_1)  -> D.bitand1 
-		 | (V.BITAND, V.REG_8)  -> D.bitand8 
-		 | (V.BITAND, V.REG_16) -> D.bitand16
-		 | (V.BITAND, V.REG_32) -> D.bitand32
-		 | (V.BITAND, V.REG_64) -> D.bitand64
-		 | (V.BITOR, V.REG_1)  -> D.bitor1 
-		 | (V.BITOR, V.REG_8)  -> D.bitor8 
-		 | (V.BITOR, V.REG_16) -> D.bitor16
-		 | (V.BITOR, V.REG_32) -> D.bitor32
-		 | (V.BITOR, V.REG_64) -> D.bitor64
-		 | (V.XOR, V.REG_1)  -> D.xor1 
-		 | (V.XOR, V.REG_8)  -> D.xor8 
-		 | (V.XOR, V.REG_16) -> D.xor16
-		 | (V.XOR, V.REG_32) -> D.xor32
-		 | (V.XOR, V.REG_64) -> D.xor64
-		 | (V.EQ, V.REG_1)  -> D.eq1 
-		 | (V.EQ, V.REG_8)  -> D.eq8 
-		 | (V.EQ, V.REG_16) -> D.eq16
-		 | (V.EQ, V.REG_32) -> D.eq32
-		 | (V.EQ, V.REG_64) -> D.eq64
-		 | (V.NEQ, V.REG_1)  -> D.neq1 
-		 | (V.NEQ, V.REG_8)  -> D.neq8 
-		 | (V.NEQ, V.REG_16) -> D.neq16
-		 | (V.NEQ, V.REG_32) -> D.neq32
-		 | (V.NEQ, V.REG_64) -> D.neq64
-		 | (V.LT, V.REG_1)  -> D.lt1 
-		 | (V.LT, V.REG_8)  -> D.lt8 
-		 | (V.LT, V.REG_16) -> D.lt16
-		 | (V.LT, V.REG_32) -> D.lt32
-		 | (V.LT, V.REG_64) -> D.lt64
-		 | (V.LE, V.REG_1)  -> D.le1 
-		 | (V.LE, V.REG_8)  -> D.le8 
-		 | (V.LE, V.REG_16) -> D.le16
-		 | (V.LE, V.REG_32) -> D.le32
-		 | (V.LE, V.REG_64) -> D.le64
-		 | (V.SLT, V.REG_1)  -> D.slt1 
-		 | (V.SLT, V.REG_8)  -> D.slt8 
-		 | (V.SLT, V.REG_16) -> D.slt16
-		 | (V.SLT, V.REG_32) -> D.slt32
-		 | (V.SLT, V.REG_64) -> D.slt64
-		 | (V.SLE, V.REG_1)  -> D.sle1 
-		 | (V.SLE, V.REG_8)  -> D.sle8 
-		 | (V.SLE, V.REG_16) -> D.sle16
-		 | (V.SLE, V.REG_32) -> D.sle32
-		 | (V.SLE, V.REG_64) -> D.sle64
-		 | _ -> failwith "unexpected binop/type in eval_int_exp_ty")
-	    in
-	    let (v1', v2') = self#maybe_concretize_binop op v1 v2 ty1 ty2 in
-	      (func v1' v2'), ty
+	      self#eval_binop op v1 ty1 v2 ty2
 	| V.UnOp(op, e1) ->
 	    let (v1, ty1) = self#eval_int_exp_ty e1 in
-	    let result = 
-	      (match (op, ty1) with
-		 | (V.NEG, V.REG_1)  -> D.neg1 v1
-		 | (V.NEG, V.REG_8)  -> D.neg8 v1
-		 | (V.NEG, V.REG_16) -> D.neg16 v1
-		 | (V.NEG, V.REG_32) -> D.neg32 v1
-		 | (V.NEG, V.REG_64) -> D.neg64 v1
-		 | (V.NOT, V.REG_1)  -> D.not1 v1
-		 | (V.NOT, V.REG_8)  -> D.not8 v1
-		 | (V.NOT, V.REG_16) -> D.not16 v1
-		 | (V.NOT, V.REG_32) -> D.not32 v1
-		 | (V.NOT, V.REG_64) -> D.not64 v1
-		 | _ -> failwith "unexpected unop/type in eval_int_exp_ty")
-	  in
-	    result, ty1
+	      self#eval_unop op v1 ty1
 	| V.Constant(V.Int(V.REG_1, i)) ->
 	    (D.from_concrete_1 (Int64.to_int i)), V.REG_1
 	| V.Constant(V.Int(V.REG_8, i)) ->
@@ -630,51 +683,7 @@ struct
 	    self#handle_load idx ty
 	| V.Cast(kind, ty, e) ->
 	    let (v1, ty1) = self#eval_int_exp_ty e in
-	    let func =
-	      match (kind, ty1, ty) with
-		| (V.CAST_UNSIGNED, V.REG_1,  V.REG_8)  -> D.cast1u8
-		| (V.CAST_UNSIGNED, V.REG_1,  V.REG_16) -> D.cast1u16
-		| (V.CAST_UNSIGNED, V.REG_1,  V.REG_32) -> D.cast1u32
-		| (V.CAST_UNSIGNED, V.REG_1,  V.REG_64) -> D.cast1u64
-		| (V.CAST_UNSIGNED, V.REG_8,  V.REG_16) -> D.cast8u16
-		| (V.CAST_UNSIGNED, V.REG_8,  V.REG_32) -> D.cast8u32
-		| (V.CAST_UNSIGNED, V.REG_8,  V.REG_64) -> D.cast8u64
-		| (V.CAST_UNSIGNED, V.REG_16, V.REG_32) -> D.cast16u32
-		| (V.CAST_UNSIGNED, V.REG_16, V.REG_64) -> D.cast16u64
-		| (V.CAST_UNSIGNED, V.REG_32, V.REG_64) -> D.cast32u64
-		| (V.CAST_SIGNED, V.REG_1,  V.REG_8)  -> D.cast1s8
-		| (V.CAST_SIGNED, V.REG_1,  V.REG_16) -> D.cast1s16
-		| (V.CAST_SIGNED, V.REG_1,  V.REG_32) -> D.cast1s32
-		| (V.CAST_SIGNED, V.REG_1,  V.REG_64) -> D.cast1s64
-		| (V.CAST_SIGNED, V.REG_8,  V.REG_16) -> D.cast8s16
-		| (V.CAST_SIGNED, V.REG_8,  V.REG_32) -> D.cast8s32
-		| (V.CAST_SIGNED, V.REG_8,  V.REG_64) -> D.cast8s64
-		| (V.CAST_SIGNED, V.REG_16, V.REG_32) -> D.cast16s32
-		| (V.CAST_SIGNED, V.REG_16, V.REG_64) -> D.cast16s64
-		| (V.CAST_SIGNED, V.REG_32, V.REG_64) -> D.cast32s64
-		| (V.CAST_LOW, V.REG_64, V.REG_1)  -> D.cast64l1
-		| (V.CAST_LOW, V.REG_64, V.REG_8)  -> D.cast64l8
-		| (V.CAST_LOW, V.REG_64, V.REG_16) -> D.cast64l16
-		| (V.CAST_LOW, V.REG_64, V.REG_32) -> D.cast64l32
-		| (V.CAST_LOW, V.REG_32, V.REG_1)  -> D.cast32l1
-		| (V.CAST_LOW, V.REG_32, V.REG_8)  -> D.cast32l8
-		| (V.CAST_LOW, V.REG_32, V.REG_16) -> D.cast32l16
-		| (V.CAST_LOW, V.REG_16, V.REG_8)  -> D.cast16l8
-		| (V.CAST_LOW, V.REG_16, V.REG_1)  -> D.cast16l1
-		| (V.CAST_LOW, V.REG_8,  V.REG_1)  -> D.cast8l1
-		| (V.CAST_HIGH, V.REG_64, V.REG_1)  -> D.cast64h1
-		| (V.CAST_HIGH, V.REG_64, V.REG_8)  -> D.cast64h8
-		| (V.CAST_HIGH, V.REG_64, V.REG_16) -> D.cast64h16
-		| (V.CAST_HIGH, V.REG_64, V.REG_32) -> D.cast64h32
-		| (V.CAST_HIGH, V.REG_32, V.REG_1)  -> D.cast32h1
-		| (V.CAST_HIGH, V.REG_32, V.REG_8)  -> D.cast32h8
-		| (V.CAST_HIGH, V.REG_32, V.REG_16) -> D.cast32h16
-		| (V.CAST_HIGH, V.REG_16, V.REG_8)  -> D.cast16h8
-		| (V.CAST_HIGH, V.REG_16, V.REG_1)  -> D.cast16h1
-		| (V.CAST_HIGH, V.REG_8,  V.REG_1)  -> D.cast8h1
-		| _ -> failwith "bad cast kind in eval_int_exp_ty"
-	    in
-	      ((func v1), ty)
+	      self#eval_cast kind ty v1 ty1
 	(* XXX move this to something like a special handler: *)
 	| V.Unknown("rdtsc") -> ((D.from_concrete_64 1L), V.REG_64) 
 	| _ -> failwith "Unsupported (or non-int) expr type in eval_int_exp_ty"
@@ -892,6 +901,66 @@ struct
       self#set_int_var (Hashtbl.find reg_to_var reg)
 	(self#assemble_mixed_bytes byte_array)
 
+    method private assemble_concolic_exp exp 
+      byte_vars short_vars word_vars long_vars =
+      let byte_ds =
+	List.map (fun (s, v) -> (s, form_man#make_concolic_8 s v))
+	  byte_vars in
+      let short_ds =
+	List.map (fun (s, v) -> (s, form_man#make_concolic_16 s v))
+	  short_vars in
+      let word_ds =
+	List.map (fun (s, v) -> (s, form_man#make_concolic_32 s v))
+	  word_vars in
+      let long_ds =
+	List.map (fun (s, v) -> (s, form_man#make_concolic_64 s v))
+	  long_vars in
+      let rec rw_loop e =
+	match e with
+	  | V.Unknown(s) ->
+	      (try
+		(List.assoc s byte_ds, V.REG_8)
+ 	      with Not_found -> try
+		(List.assoc s short_ds, V.REG_16)
+ 	      with Not_found -> try
+		(List.assoc s word_ds, V.REG_32)
+ 	      with Not_found ->
+		(List.assoc s long_ds, V.REG_16))
+	  | V.Constant(V.Int(V.REG_1, i)) ->
+	      (D.from_concrete_1 (Int64.to_int i)), V.REG_1
+	  | V.Constant(V.Int(V.REG_8, i)) ->
+	      (D.from_concrete_8 (Int64.to_int i)), V.REG_8
+	  | V.Constant(V.Int(V.REG_16,i)) -> 
+	      (D.from_concrete_16 (Int64.to_int i)),V.REG_16
+	  | V.Constant(V.Int(V.REG_32,i)) -> (D.from_concrete_32 i),V.REG_32
+	  | V.Constant(V.Int(V.REG_64,i)) -> (D.from_concrete_64 i),V.REG_64
+	  | V.BinOp(op, e1, e2) ->
+	      let (v1, ty1) = rw_loop e1 and
+		  (v2, ty2) = rw_loop e2 in
+		self#eval_binop op v1 ty1 v2 ty2
+	  | V.UnOp(op, e1) ->
+	      let (v1, ty1) = rw_loop e1 in
+		self#eval_unop op v1 ty1
+	  | V.Cast(kind, ty, e1) ->
+	      let (v1, ty1) = rw_loop e1 in
+		self#eval_cast kind ty v1 ty1
+	  | _ -> failwith "Unhandled expression type in concolic_exp"
+      in
+	rw_loop exp
+
+    method store_concolic_exp addr exp bv sv wv lv =
+      let (d, ty) = self#assemble_concolic_exp exp bv sv wv lv in
+	match ty with
+	  | V.REG_8  -> self#store_byte  addr d
+	  | V.REG_16 -> self#store_short addr d
+	  | V.REG_32 -> self#store_word  addr d
+	  | V.REG_64 -> self#store_long  addr d
+	  | _ -> failwith "Unsupported type in store_conolic_exp"
+
+    method set_word_reg_concolic_exp reg exp bv sv wv lv =
+      let (d, _) = self#assemble_concolic_exp exp bv sv wv lv in
+	self#set_int_var (Hashtbl.find reg_to_var reg) d
+
     method parse_symbolic_expr str =
       Vine_parser.parse_exp_from_string (form_man#input_dl) str
 
@@ -1077,6 +1146,13 @@ class virtual fragment_machine = object
     ((string * int64) option * int) array -> unit
   method virtual set_word_reg_mixed_bytes :
     register_name -> ((string * int64) option * int) array -> unit
+
+  method virtual store_concolic_exp : int64 -> V.exp ->
+    (string * int) list -> (string * int) list ->
+    (string * int64) list -> (string * int64) list -> unit
+  method virtual set_word_reg_concolic_exp : register_name -> V.exp ->
+    (string * int) list -> (string * int) list ->
+    (string * int64) list -> (string * int64) list -> unit
 
   method virtual parse_symbolic_expr : string -> Vine.exp
 
