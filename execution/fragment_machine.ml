@@ -1088,6 +1088,11 @@ struct
 	| V.REG_64 -> D.to_string_64 (self#load_byte addr)
 	| _ -> failwith "Unexpected type in mem_val_as_string"
 
+    method query_with_path_cond (pc:Vine.exp list) (e:Vine.exp) (v:bool)
+      : (bool * (string * int64) list) =
+      (false, [])
+    method match_input_var (s:string) : int option = None
+    method get_path_cond : Vine.exp list = []
     method on_missing_random : unit =
       failwith "FM.on_missing_random: unimplemented"
     method set_query_engine (qe:Query_engine.query_engine) = ()
@@ -1248,7 +1253,14 @@ class virtual fragment_machine = object
 
   method virtual mem_val_as_string : int64 -> Vine.typ -> string
 
+  method virtual get_path_cond : Vine.exp list
+
   method virtual set_query_engine : Query_engine.query_engine -> unit
+
+  method virtual query_with_path_cond : Vine.exp list -> Vine.exp -> bool
+    -> (bool * (string * int64) list)
+
+  method virtual match_input_var : string -> int option
 
   method virtual print_tree : out_channel -> unit
 

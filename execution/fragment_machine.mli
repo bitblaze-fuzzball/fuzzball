@@ -201,7 +201,11 @@ sig
     val mem :
       Granular_memory.GranularMemoryFunctor(D).granular_second_snapshot_memory
 
+    method get_path_cond : Vine.exp list
     method set_query_engine : Query_engine.query_engine -> unit
+    method query_with_path_cond : Vine.exp list -> Vine.exp -> bool
+      -> (bool * (string * int64) list)
+    method match_input_var : string -> int option
     method print_tree : out_channel -> unit
     method set_iter_seed : int -> unit
     method finish_path : bool
@@ -358,7 +362,14 @@ class virtual fragment_machine : object
 
   method virtual mem_val_as_string : int64 -> Vine.typ -> string
 
+  method virtual get_path_cond : Vine.exp list
+
   method virtual set_query_engine : Query_engine.query_engine -> unit
+
+  method virtual query_with_path_cond : Vine.exp list -> Vine.exp -> bool
+    -> (bool * (string * int64) list)
+
+  method virtual match_input_var : string -> int option
 
   method virtual print_tree : out_channel -> unit
 
