@@ -153,6 +153,7 @@ struct
 	reg R_FTOP (D.from_concrete_32 0L);	
 	reg EFLAGSREST (D.from_concrete_32 0L);
 	reg R_LDT (D.from_concrete_32 0x00000000L);
+	reg R_GDT (D.from_concrete_32 0x00000000L);
 	reg R_DFLAG (D.from_concrete_32 1L);
 	reg R_IDFLAG (D.from_concrete_32 0L);
 	reg R_ACFLAG (D.from_concrete_32 0L);
@@ -169,8 +170,12 @@ struct
 	reg R_ES (D.from_concrete_16 0);
 	reg R_FS (D.from_concrete_16 0);
 	reg R_GS (D.from_concrete_16 0);
-	reg R_GDT (D.from_concrete_32 0x00000000L);
-	reg R_LDT (D.from_concrete_32 0x00000000L);
+	reg R_PF (D.from_concrete_1 0);
+	reg R_CF (D.from_concrete_1 0);
+	reg R_AF (D.from_concrete_1 0);
+	reg R_SF (D.from_concrete_1 0);
+	reg R_OF (D.from_concrete_1 0);
+	reg R_ZF (D.from_concrete_1 0);
 
     method make_x86_regs_symbolic =
       let reg r v =
@@ -340,6 +345,15 @@ struct
     method load_word_conc  addr = D.to_concrete_32 (mem#load_word  addr)
     method load_long_conc  addr = D.to_concrete_64 (mem#load_long  addr)
 
+    method load_byte_concolic  addr =
+      form_man#concolic_eval_8  (mem#load_byte  addr)
+    method load_short_concolic addr =
+      form_man#concolic_eval_16 (mem#load_short addr)
+    method load_word_concolic  addr =
+      form_man#concolic_eval_32 (mem#load_word  addr)
+    method load_long_concolic  addr =
+      form_man#concolic_eval_64 (mem#load_long  addr)
+
     method start_symbolic = mem#inner_make_snap ()
 
     method make_snap () =
@@ -399,6 +413,24 @@ struct
 
     method get_long_var reg =
       D.to_concrete_64 (self#get_int_var (Hashtbl.find reg_to_var reg))
+
+    method get_bit_var_concolic reg =
+      form_man#concolic_eval_1 (self#get_int_var (Hashtbl.find reg_to_var reg))
+
+    method get_byte_var_concolic reg =
+      form_man#concolic_eval_8 (self#get_int_var (Hashtbl.find reg_to_var reg))
+
+    method get_short_var_concolic reg =
+      form_man#concolic_eval_16
+	(self#get_int_var (Hashtbl.find reg_to_var reg))
+
+    method get_word_var_concolic reg =
+      form_man#concolic_eval_32
+	(self#get_int_var (Hashtbl.find reg_to_var reg))
+
+    method get_long_var_concolic reg =
+      form_man#concolic_eval_64
+	(self#get_int_var (Hashtbl.find reg_to_var reg))
 
     method private set_int_var ((_,_,ty) as var) value =
       try
@@ -1032,6 +1064,15 @@ struct
 	| (v, V.REG_64) -> D.to_string_64 v
 	| _ -> failwith "Unexpected type in eval_expr_to_string"
 
+    method eval_expr_to_symbolic_expr e =
+      match self#eval_int_exp_ty e with
+	| (v, V.REG_1) -> D.to_symbolic_1 v
+	| (v, V.REG_8) -> D.to_symbolic_8 v
+	| (v, V.REG_16) -> D.to_symbolic_16 v
+	| (v, V.REG_32) -> D.to_symbolic_32 v
+	| (v, V.REG_64) -> D.to_symbolic_64 v
+	| _ -> failwith "Unexpected type in eval_expr_to_symbolic_expr"
+
     method watchpoint =
       match !opt_watch_expr with
 	| Some e -> Printf.printf "Watched expression %s = %s\n"
@@ -1103,6 +1144,11 @@ class virtual fragment_machine = object
   method virtual load_word_conc  : int64 -> int64
   method virtual load_long_conc  : int64 -> int64
 
+  method virtual load_byte_concolic  : int64 -> int
+  method virtual load_short_concolic : int64 -> int
+  method virtual load_word_concolic  : int64 -> int64
+  method virtual load_long_concolic  : int64 -> int64
+
   method virtual start_symbolic : unit
 
   method virtual make_snap : unit -> unit
@@ -1115,6 +1161,12 @@ class virtual fragment_machine = object
   method virtual get_short_var : register_name -> int
   method virtual get_word_var  : register_name -> int64
   method virtual get_long_var  : register_name -> int64
+
+  method virtual get_bit_var_concolic   : register_name -> int
+  method virtual get_byte_var_concolic  : register_name -> int
+  method virtual get_short_var_concolic : register_name -> int
+  method virtual get_word_var_concolic  : register_name -> int64
+  method virtual get_long_var_concolic  : register_name -> int64
 
   method virtual set_bit_var   : register_name -> int   -> unit
   method virtual set_byte_var  : register_name -> int   -> unit
@@ -1189,6 +1241,8 @@ class virtual fragment_machine = object
   method virtual zero_fill : int64 -> int -> unit
 
   method virtual print_backtrace : unit
+
+  method virtual eval_expr_to_symbolic_expr : Vine.exp -> Vine.exp
 
   method virtual watchpoint : unit
 

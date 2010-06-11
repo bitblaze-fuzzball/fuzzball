@@ -66,6 +66,11 @@ sig
     method load_word_conc  : int64 -> int64
     method load_long_conc  : int64 -> int64
 
+    method load_byte_concolic  : int64 -> int
+    method load_short_concolic : int64 -> int
+    method load_word_concolic  : int64 -> int64
+    method load_long_concolic  : int64 -> int64
+
     method start_symbolic : unit
 
     method make_snap : unit -> unit
@@ -82,6 +87,12 @@ sig
     method get_short_var : register_name -> int
     method get_word_var  : register_name -> int64
     method get_long_var  : register_name -> int64
+
+    method get_bit_var_concolic   : register_name -> int
+    method get_byte_var_concolic  : register_name -> int
+    method get_short_var_concolic : register_name -> int
+    method get_word_var_concolic  : register_name -> int64
+    method get_long_var_concolic  : register_name -> int64
 
     method private set_int_var : Vine.var -> D.t -> unit
 
@@ -178,6 +189,8 @@ sig
 
     method private eval_expr_to_string : Vine.exp -> string
 
+    method eval_expr_to_symbolic_expr : Vine.exp -> Vine.exp
+
     method watchpoint : unit
 
     method mem_val_as_string : int64 -> Vine.typ -> string
@@ -242,6 +255,11 @@ class virtual fragment_machine : object
   method virtual load_word_conc  : int64 -> int64
   method virtual load_long_conc  : int64 -> int64
 
+  method virtual load_byte_concolic  : int64 -> int
+  method virtual load_short_concolic : int64 -> int
+  method virtual load_word_concolic  : int64 -> int64
+  method virtual load_long_concolic  : int64 -> int64
+
   method virtual start_symbolic : unit
 
   method virtual make_snap : unit -> unit
@@ -254,6 +272,12 @@ class virtual fragment_machine : object
   method virtual get_short_var : register_name -> int
   method virtual get_word_var  : register_name -> int64
   method virtual get_long_var  : register_name -> int64
+
+  method virtual get_bit_var_concolic   : register_name -> int
+  method virtual get_byte_var_concolic  : register_name -> int
+  method virtual get_short_var_concolic : register_name -> int
+  method virtual get_word_var_concolic  : register_name -> int64
+  method virtual get_long_var_concolic  : register_name -> int64
 
   method virtual set_bit_var   : register_name -> int   -> unit
   method virtual set_byte_var  : register_name -> int   -> unit
@@ -327,6 +351,8 @@ class virtual fragment_machine : object
   method virtual zero_fill : int64 -> int -> unit
 
   method virtual print_backtrace : unit
+
+  method virtual eval_expr_to_symbolic_expr : Vine.exp -> Vine.exp
 
   method virtual watchpoint : unit
 

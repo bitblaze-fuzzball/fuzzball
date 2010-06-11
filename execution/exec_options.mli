@@ -86,6 +86,7 @@ val opt_zero_memory : bool ref
 
 val opt_fuzz_end_addrs : int64 list ref
 
+val opt_check_read_operands : bool ref
 val opt_check_write_operands : bool ref
 val opt_fix_write_operands : bool ref
 val opt_trace_registers : bool ref
@@ -95,3 +96,4 @@ val opt_trace_unexpected : bool ref
 val opt_progress_interval : int64 option ref
 val opt_final_pc : bool ref
 val opt_solve_final_pc : bool ref
+val opt_skip_untainted : bool ref

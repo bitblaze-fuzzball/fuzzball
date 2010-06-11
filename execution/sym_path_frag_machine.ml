@@ -34,6 +34,8 @@ struct
     val mutable path_cond = []
     val dt = (new decision_tree)#init
 
+    method get_path_cond = path_cond
+
     method add_to_path_cond cond =
       if path_cond = [] then
 	path_cond <- !opt_extra_conditions;
@@ -233,9 +235,9 @@ struct
 	(fun e -> self#take_measure_expr e e)
 	periodic_influence_exprs
 
-    method query_with_path_cond cond verbose =
+    method query_with_path_cond path_cond_a cond verbose =
       let get_time () = Unix.gettimeofday () in
-      let pc = cond :: path_cond and
+      let pc = cond :: path_cond_a and
 	  expr = V.Unknown("") in
       let (decls, assigns, cond_e, _, _) =
 	form_man#collect_for_solving [] pc expr
@@ -277,7 +279,7 @@ struct
 	    flush stdout;
 	    query_engine#unprepare is_slow;
 	    self#maybe_periodic_influence;
-	    is_sat
+	    (is_sat, ce)
 
     method follow_or_random =
 	let currpath_str = dt#get_hist_str in
@@ -299,7 +301,8 @@ struct
       let try_func b cond' =
 	if verbose && !opt_trace_decisions then
 	  Printf.printf "Trying %B: " b;
-	self#query_with_path_cond cond' verbose
+	let (is_sat, _) = self#query_with_path_cond path_cond cond' verbose in
+	  is_sat
       in
       let non_try_func b =
 	if verbose && !opt_trace_decisions then
@@ -567,7 +570,8 @@ struct
 	 List.iter (fun e -> Printf.printf "& (%s)\n" (V.exp_to_string e))
 	   (List.rev path_cond));
       if !opt_solve_final_pc then
-	assert(self#query_with_path_cond V.exp_true true);
+	assert(let (b,_) = self#query_with_path_cond path_cond V.exp_true true
+	       in b);
       dt#try_again_p
 
     method print_tree chan = dt#print_tree chan

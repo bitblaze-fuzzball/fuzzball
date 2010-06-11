@@ -253,6 +253,9 @@ struct
       let d = D.from_symbolic (V.Lval lv) in
 	match lv with
 	  | V.Mem(mem_var, V.Constant(V.Int(_, addr)), V.REG_8) ->
+	      if not (Hashtbl.mem valuation d) then
+		Printf.printf "Unexpected symbolic byte %s\n"
+		  (V.lval_to_string lv);
 	      assert(Hashtbl.mem valuation d);
 	      D.from_concrete_8 (Int64.to_int (Hashtbl.find valuation d))
 	  | V.Mem(mem_var, V.Constant(V.Int(_, addr)), V.REG_16) ->
@@ -367,6 +370,21 @@ struct
 	  | e ->
 	      Printf.printf "Left with %s\n" (V.exp_to_string e);
 	      failwith "Constant invariant failed in eval_expr"
+
+    method concolic_eval_1 d =
+      Int64.to_int (self#eval_expr (D.to_symbolic_1 d))
+
+    method concolic_eval_8 d =
+      Int64.to_int (self#eval_expr (D.to_symbolic_8 d))
+
+    method concolic_eval_16 d =
+      Int64.to_int (self#eval_expr (D.to_symbolic_16 d))
+
+    method concolic_eval_32 d =
+      self#eval_expr (D.to_symbolic_32 d)
+
+    method concolic_eval_64 d =
+      self#eval_expr (D.to_symbolic_64 d)
 
     val temp_var_num_has_loop_var = Hashtbl.create 1001
 

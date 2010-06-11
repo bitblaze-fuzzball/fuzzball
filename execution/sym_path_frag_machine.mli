@@ -14,6 +14,8 @@ sig
   class sym_path_frag_machine : object
     val dt : Decision_tree.decision_tree
 
+    method get_path_cond : Vine.exp list
+
     method add_to_path_cond : Vine.exp -> unit
       
     method restore_path_cond : (unit -> unit) -> unit
@@ -46,7 +48,8 @@ sig
 
     method path_end_influence : unit
 
-    method query_with_path_cond : Vine.exp -> bool -> bool
+    method query_with_path_cond : Vine.exp list -> Vine.exp -> bool
+      -> (bool * (string * int64) list)
 
     method follow_or_random : bool 
 
@@ -120,6 +123,10 @@ sig
     method load_short_conc : int64 -> int
     method load_word_conc  : int64 -> int64
     method load_long_conc  : int64 -> int64
+    method load_byte_concolic  : int64 -> int
+    method load_short_concolic : int64 -> int
+    method load_word_concolic  : int64 -> int64
+    method load_long_concolic  : int64 -> int64
     method start_symbolic : unit
     method make_snap : unit -> unit
     method add_special_handler : Fragment_machine.special_handler -> unit
@@ -130,6 +137,11 @@ sig
     method get_short_var : Fragment_machine.register_name -> int
     method get_word_var  : Fragment_machine.register_name -> int64
     method get_long_var  : Fragment_machine.register_name -> int64
+    method get_bit_var_concolic   : Fragment_machine.register_name -> int
+    method get_byte_var_concolic  : Fragment_machine.register_name -> int
+    method get_short_var_concolic : Fragment_machine.register_name -> int
+    method get_word_var_concolic  : Fragment_machine.register_name -> int64
+    method get_long_var_concolic  : Fragment_machine.register_name -> int64
     method private set_int_var : Vine.var -> D.t -> unit
     method set_bit_var   : Fragment_machine.register_name -> int   -> unit
     method set_byte_var  : Fragment_machine.register_name -> int   -> unit
@@ -200,6 +212,7 @@ sig
     method zero_fill : int64 -> int -> unit
     method print_backtrace : unit
     method private eval_expr_to_string : Vine.exp -> string
+    method eval_expr_to_symbolic_expr : Vine.exp -> Vine.exp
     method watchpoint : unit
     method mem_val_as_string : int64 -> Vine.typ -> string
     val form_man : Formula_manager.FormulaManagerFunctor(D).formula_manager

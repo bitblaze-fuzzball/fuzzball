@@ -45,6 +45,12 @@ sig
 
     method eval_expr : Vine.exp -> int64
 
+    method concolic_eval_1  : D.t -> int
+    method concolic_eval_8  : D.t -> int
+    method concolic_eval_16 : D.t -> int
+    method concolic_eval_32 : D.t -> int64
+    method concolic_eval_64 : D.t -> int64
+
     method has_loop_var : D.t -> bool
 
     method simplify1  : D.t -> D.t

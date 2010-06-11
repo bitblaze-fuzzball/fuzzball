@@ -398,6 +398,8 @@ let trace_replay_cmdline_opts =
      " Execute only according to concrete values"); *)
     ("-solve-path-conditions", Arg.Set(opt_solve_path_conditions),
      " Solve conditions along a concrete path");
+    ("-check-read-operands", Arg.Set(opt_check_write_operands),
+     " Compare insn inputs against trace");
     ("-check-write-operands", Arg.Set(opt_check_write_operands),
      " Compare insn outputs against trace");
     ("-fix-write-operands", Arg.Set(opt_fix_write_operands),
@@ -417,6 +419,8 @@ let trace_replay_cmdline_opts =
      " Print final path condition at end of trace");
     ("-solve-final-pc", Arg.Set(opt_solve_final_pc),
      " Solve final path condition");
+    ("-skip-untainted", Arg.Set(opt_skip_untainted),
+     " Skip replaying instructions that are not tainted");
   ]
 
 let set_program_name s =

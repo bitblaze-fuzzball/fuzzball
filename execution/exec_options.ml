@@ -90,6 +90,7 @@ let opt_zero_memory = ref false
 
 let opt_fuzz_end_addrs = ref []
 
+let opt_check_read_operands = ref false
 let opt_check_write_operands = ref false
 let opt_fix_write_operands = ref false
 let opt_trace_registers = ref false
@@ -99,3 +100,4 @@ let opt_trace_unexpected = ref false
 let opt_progress_interval = ref None
 let opt_final_pc = ref false
 let opt_solve_final_pc = ref false
+let opt_skip_untainted = ref false
