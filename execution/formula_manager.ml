@@ -368,6 +368,33 @@ struct
 	      Printf.printf "Left with %s\n" (V.exp_to_string e);
 	      failwith "Constant invariant failed in eval_expr"
 
+    val temp_var_num_has_loop_var = Hashtbl.create 1001
+
+    method has_loop_var d = 
+      let rec loop e =
+	match e with
+	  | V.BinOp(op, e1, e2) -> (loop e1) || (loop e2)
+	  | V.UnOp(op, e1) -> loop e1
+	  | V.Cast(op, ty, e1) -> loop e1
+	  | V.Lval(V.Mem(_, _, _)) -> false
+	  | V.Constant(V.Int(_, _)) -> false
+	  | V.Lval(V.Temp(n,s,t))
+	      when Hashtbl.mem temp_var_num_to_subexpr n ->
+	      (try Hashtbl.find temp_var_num_has_loop_var n
+	       with
+		 | Not_found ->
+		     let (e_enc, _) = Hashtbl.find temp_var_num_to_subexpr n in
+		     let b = loop (decode_exp e_enc)
+		     in
+		       Hashtbl.replace temp_var_num_has_loop_var n b;
+		       b)
+	  | V.Lval(V.Temp(_,s,_)) ->
+	      String.length s >= 3 && String.sub s 0 3 = "LTC"
+	  | _ ->
+	      failwith "Unexpected expr in has_loop_var"
+      in
+	loop (D.to_symbolic_32 d)
+
     val temp_vars_weak = VarWeak.create 1001
 
     method private lookup_temp_var (temp_num, var_num, ty) =

@@ -961,6 +961,22 @@ struct
       let (d, _) = self#assemble_concolic_exp exp bv sv wv lv in
 	self#set_int_var (Hashtbl.find reg_to_var reg) d
 
+    method mem_byte_has_loop_var addr =
+      form_man#has_loop_var (self#load_byte addr)
+
+    method mem_short_has_loop_var addr =
+      form_man#has_loop_var (self#load_short addr)
+
+    method mem_word_has_loop_var addr =
+      form_man#has_loop_var (self#load_word addr)
+
+    method mem_long_has_loop_var addr =
+      form_man#has_loop_var (self#load_long addr)
+
+    method word_reg_has_loop_var reg =
+      form_man#has_loop_var
+	(self#get_int_var (Hashtbl.find reg_to_var reg))      
+
     method parse_symbolic_expr str =
       Vine_parser.parse_exp_from_string (form_man#input_dl) str
 
@@ -1153,6 +1169,12 @@ class virtual fragment_machine = object
   method virtual set_word_reg_concolic_exp : register_name -> V.exp ->
     (string * int) list -> (string * int) list ->
     (string * int64) list -> (string * int64) list -> unit
+
+  method virtual mem_byte_has_loop_var  : int64 -> bool
+  method virtual mem_short_has_loop_var : int64 -> bool
+  method virtual mem_word_has_loop_var  : int64 -> bool
+  method virtual mem_long_has_loop_var  : int64 -> bool
+  method virtual word_reg_has_loop_var : register_name -> bool
 
   method virtual parse_symbolic_expr : string -> Vine.exp
 

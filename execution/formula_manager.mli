@@ -45,6 +45,8 @@ sig
 
     method eval_expr : Vine.exp -> int64
 
+    method has_loop_var : D.t -> bool
+
     method simplify1  : D.t -> D.t
     method simplify8  : D.t -> D.t
     method simplify16 : D.t -> D.t

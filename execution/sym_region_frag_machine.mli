@@ -198,6 +198,11 @@ sig
     method set_word_reg_concolic_exp : Fragment_machine.register_name ->
       Vine.exp -> (string * int) list -> (string * int) list ->
       (string * int64) list -> (string * int64) list -> unit
+    method mem_byte_has_loop_var  : int64 -> bool
+    method mem_short_has_loop_var : int64 -> bool
+    method mem_word_has_loop_var  : int64 -> bool
+    method mem_long_has_loop_var  : int64 -> bool
+    method word_reg_has_loop_var : Fragment_machine.register_name -> bool
     method parse_symbolic_expr : string -> Vine.exp
     method store_cstr : int64 -> int64 -> string -> unit
     method read_buf : int64 -> int -> char array
