@@ -305,7 +305,9 @@ struct
       let reg str r =
 	Printf.printf "%s: " str;
 	Printf.printf "%s\n"
-	  (D.to_string_32 (self#get_int_var (Hashtbl.find reg_to_var r)))
+	  (D.to_string_32 
+	     (form_man#simplify32
+		(self#get_int_var (Hashtbl.find reg_to_var r))))
       in
 	reg "%eax" R_EAX;
 	reg "%ebx" R_EBX;
