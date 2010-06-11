@@ -257,7 +257,10 @@ struct
       let region = (new GM.granular_hash_memory)  and
 	  name = "region_" ^ (string_of_int new_idx) in
 	regions <- regions @ [region];
-	spfm#on_missing_symbol_m region name;
+	if !opt_zero_memory then
+	  spfm#on_missing_zero_m region
+	else
+	  spfm#on_missing_symbol_m region name;
 	new_idx
 
     method private region_for e =

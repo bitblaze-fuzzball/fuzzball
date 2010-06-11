@@ -80,12 +80,14 @@ val opt_solver_stats : bool ref
 val opt_time_stats : bool ref
 val opt_nonfatal_solver : bool ref
 val opt_num_paths : int64 option ref
-val opt_check_write_operands : bool ref
 val opt_pid : int ref
 val opt_translation_cache_size : int option ref
+val opt_zero_memory : bool ref
 
 val opt_fuzz_end_addrs : int64 list ref
 
+val opt_check_write_operands : bool ref
+val opt_fix_write_operands : bool ref
 val opt_trace_registers : bool ref
 val opt_trace_segments : bool ref
 val opt_trace_taint : bool ref

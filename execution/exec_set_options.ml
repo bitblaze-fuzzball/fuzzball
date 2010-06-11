@@ -27,7 +27,6 @@ let opt_core_file_name = ref None
 let opt_use_ids_from_core = ref false
 let opt_load_data = ref true
 let opt_random_memory = ref false
-let opt_zero_memory = ref false
 let opt_store_bytes = ref []
 let opt_store_shorts = ref []
 let opt_store_words = ref []
@@ -401,6 +400,8 @@ let trace_replay_cmdline_opts =
      " Solve conditions along a concrete path");
     ("-check-write-operands", Arg.Set(opt_check_write_operands),
      " Compare insn outputs against trace");
+    ("-fix-write-operands", Arg.Set(opt_fix_write_operands),
+     " Modify outputs to match trace");
     ("-trace-registers", Arg.Set(opt_trace_registers),
      " Print register contents");
     ("-trace-segments", Arg.Set(opt_trace_segments),
