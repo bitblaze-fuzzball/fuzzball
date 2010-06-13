@@ -90,9 +90,18 @@ class stp_external_engine fname = object(self)
 	  failwith "Typecheck failure in assert_eq"
 
   method query e =
-    output_string self#chan "QUERY(NOT ";
-    ignore(V.exp_accept (self#visitor :> V.vine_visitor) e);
-    output_string self#chan ");\n";
+    output_string self#chan "QUERY(NOT (";
+    (let visitor = (self#visitor :> V.vine_visitor) in
+     let rec loop = function
+       | V.BinOp(V.BITAND, e1, e2) ->
+	   loop e1;
+	   output_string self#chan "\n  AND ";
+	   loop e2
+       | e ->
+	   ignore(V.exp_accept visitor e)
+     in
+       loop e);
+    output_string self#chan "));\n";
     output_string self#chan "COUNTEREXAMPLE;\n";
     close_out self#chan;
     chan <- None;
