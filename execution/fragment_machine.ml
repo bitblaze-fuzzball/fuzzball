@@ -73,6 +73,60 @@ struct
   module GM = GranularMemoryFunctor(D)
   module FormMan = FormulaManagerFunctor(D)
 
+  let change_some_short_bytes d bytes construct =
+    assert(Array.length bytes = 2);
+    let select old = function
+      | None -> old
+      | Some x -> construct x
+    in
+    let o0 = D.extract_8_from_16 d 0 and
+	o1 = D.extract_8_from_16 d 1in
+    let b0 = select o0 bytes.(0) and
+	b1 = select o1 bytes.(1) in
+      D.reassemble16 b0 b1
+
+  let change_some_word_bytes d bytes construct =
+    assert(Array.length bytes = 4);
+    let select old = function
+      | None -> old
+      | Some x -> construct x
+    in
+    let o0 = D.extract_8_from_32 d 0 and
+	o1 = D.extract_8_from_32 d 1 and
+	o2 = D.extract_8_from_32 d 2 and
+	o3 = D.extract_8_from_32 d 3 in
+    let b0 = select o0 bytes.(0) and
+	b1 = select o1 bytes.(1) and
+	b2 = select o2 bytes.(2) and
+	b3 = select o3 bytes.(3) in
+      D.reassemble32 (D.reassemble16 b0 b1) (D.reassemble16 b2 b3)
+
+  let change_some_long_bytes d bytes construct =
+    assert(Array.length bytes = 8);
+    let select old = function
+      | None -> old
+      | Some x -> construct x
+    in
+    let o0 = D.extract_8_from_32 d 0 and
+	o1 = D.extract_8_from_32 d 1 and
+	o2 = D.extract_8_from_32 d 2 and
+	o3 = D.extract_8_from_32 d 3 and
+	o4 = D.extract_8_from_32 d 4 and
+	o5 = D.extract_8_from_32 d 5 and
+	o6 = D.extract_8_from_32 d 6 and
+	o7 = D.extract_8_from_32 d 7 in
+    let b0 = select o0 bytes.(0) and
+	b1 = select o1 bytes.(1) and
+	b2 = select o2 bytes.(2) and
+	b3 = select o3 bytes.(3) and
+	b4 = select o4 bytes.(4) and
+	b5 = select o5 bytes.(5) and
+	b6 = select o6 bytes.(6) and
+	b7 = select o7 bytes.(7) in
+      D.reassemble64
+	(D.reassemble32 (D.reassemble16 b0 b1) (D.reassemble16 b2 b3))
+	(D.reassemble32 (D.reassemble16 b4 b5) (D.reassemble16 b6 b7))
+
   class frag_machine = object(self)
     val mem = (new GM.granular_second_snapshot_memory
 		 (new GM.granular_snapshot_memory
@@ -891,6 +945,9 @@ struct
     method store_symbolic_long addr varname =
       self#store_long addr (form_man#fresh_symbolic_64 varname)
 
+    method store_concolic_mem_byte addr varname idx b =
+      self#store_byte addr (form_man#make_concolic_mem_8 varname idx b)
+
     method store_concolic_byte addr varname i =
       self#store_byte addr (form_man#make_concolic_8 varname i)
 
@@ -903,37 +960,34 @@ struct
     method store_concolic_long addr varname i64 =
       self#store_long addr (form_man#make_concolic_64 varname i64)
 
-    method private assemble_mixed_bytes byte_array =
-      let v_array = Array.map
-	(function 
-	   | (None, v) -> D.from_concrete_8 v
-	   | (Some (s, i), v) -> form_man#make_concolic_mem_8 s i v)
-	byte_array
+    method set_reg_conc_bytes reg byte_array =
+      let change_func = match Array.length byte_array with
+	| 2 -> change_some_short_bytes
+	| 4 -> change_some_word_bytes
+	| 8 -> change_some_long_bytes
+	| _ -> failwith "Unsupported length in set_reg_conc_bytes"
       in
-	match Array.length v_array with
-	  | 1 -> v_array.(0)
-	  | 2 -> D.reassemble16 v_array.(0) v_array.(1)
-	  | 4 -> D.reassemble32 (D.reassemble16 v_array.(0) v_array.(1))
-	      (D.reassemble16 v_array.(2) v_array.(3))
-	  | 8 -> D.reassemble64
-	      (D.reassemble32 (D.reassemble16 v_array.(0) v_array.(1))
-		 (D.reassemble16 v_array.(2) v_array.(3)))
-		(D.reassemble32 (D.reassemble16 v_array.(4) v_array.(5))
-		   (D.reassemble16 v_array.(6) v_array.(7)))
-	  | _ -> failwith "Unsupported length in assemble_mixed_bytes"
+      let var = Hashtbl.find reg_to_var reg in
+      let old_d = self#get_int_var var in
+      let new_d =
+	change_func old_d byte_array (fun b -> D.from_concrete_8 b)
+      in
+	self#set_int_var var new_d
 
-    method store_mixed_bytes addr byte_array =
-      let d = self#assemble_mixed_bytes byte_array in
-	match Array.length byte_array with
-	  | 1 -> self#store_byte  addr d
-	  | 2 -> self#store_short addr d
-	  | 4 -> self#store_word  addr d
-	  | 8 -> self#store_long  addr d
-	  | _ -> failwith "Unsupported length in store_mixed_bytes"
-
-    method set_word_reg_mixed_bytes reg byte_array =
-      self#set_int_var (Hashtbl.find reg_to_var reg)
-	(self#assemble_mixed_bytes byte_array)
+    method set_reg_concolic_mem_bytes reg byte_array =
+      let change_func = match Array.length byte_array with
+	| 2 -> change_some_short_bytes
+	| 4 -> change_some_word_bytes
+	| 8 -> change_some_long_bytes
+	| _ -> failwith "Unsupported length in set_reg_concolic_mem_bytes"
+      in
+      let var = Hashtbl.find reg_to_var reg in
+      let old_d = self#get_int_var var in
+      let new_d =
+	change_func old_d byte_array
+	  (fun (s,i,v) -> form_man#make_concolic_mem_8 s i v)
+      in
+	self#set_int_var var new_d
 
     method private assemble_concolic_exp exp 
       byte_vars short_vars word_vars long_vars =
@@ -1212,15 +1266,18 @@ class virtual fragment_machine = object
   method virtual store_symbolic_word  : int64 -> string -> unit
   method virtual store_symbolic_long  : int64 -> string -> unit
 
+  method virtual store_concolic_mem_byte :
+    int64 -> string -> int64 -> int -> unit
+
   method virtual store_concolic_byte  : int64 -> string -> int   -> unit
   method virtual store_concolic_short : int64 -> string -> int   -> unit
   method virtual store_concolic_word  : int64 -> string -> int64 -> unit
   method virtual store_concolic_long  : int64 -> string -> int64 -> unit
 
-  method virtual store_mixed_bytes : int64 ->
-    ((string * int64) option * int) array -> unit
-  method virtual set_word_reg_mixed_bytes :
-    register_name -> ((string * int64) option * int) array -> unit
+  method virtual set_reg_conc_bytes : register_name 
+    -> (int option array) -> unit
+  method virtual set_reg_concolic_mem_bytes : register_name 
+    -> ((string * int64 * int) option array) -> unit
 
   method virtual store_concolic_exp : int64 -> V.exp ->
     (string * int) list -> (string * int) list ->

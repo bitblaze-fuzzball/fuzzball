@@ -194,15 +194,15 @@ sig
     method store_symbolic_short : int64 -> string -> unit
     method store_symbolic_word  : int64 -> string -> unit
     method store_symbolic_long  : int64 -> string -> unit
+    method store_concolic_mem_byte : int64 -> string -> int64 -> int -> unit
     method store_concolic_byte  : int64 -> string -> int   -> unit
     method store_concolic_short : int64 -> string -> int   -> unit
     method store_concolic_word  : int64 -> string -> int64 -> unit
     method store_concolic_long  : int64 -> string -> int64 -> unit
-    method store_mixed_bytes : int64 ->
-      ((string * int64) option * int) array -> unit
-    method set_word_reg_mixed_bytes :
-      Fragment_machine.register_name
-      -> ((string * int64) option * int) array -> unit
+    method set_reg_conc_bytes : Fragment_machine.register_name 
+      -> (int option array) -> unit
+    method set_reg_concolic_mem_bytes : Fragment_machine.register_name 
+      -> ((string * int64 * int) option array) -> unit
     method store_concolic_exp : int64 -> Vine.exp ->
       (string * int) list -> (string * int) list ->
       (string * int64) list -> (string * int64) list -> unit
