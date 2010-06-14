@@ -32,7 +32,7 @@ sig
 
   val sum_list : Vine.exp list -> Vine.exp 
 
-  class sym_region_frag_machine : object
+  class sym_region_frag_machine : Decision_tree.decision_tree -> object
     method set_eip : int64 -> unit
 
     method eval_addr_exp_region : Vine.exp -> (int option * int64)
@@ -69,7 +69,6 @@ sig
 
     method after_exploration : unit
 
-    val dt : Decision_tree.decision_tree
     method get_depth : int
     method get_hist_str : string
     method set_influence_manager : Exec_no_influence.influence_manager -> unit

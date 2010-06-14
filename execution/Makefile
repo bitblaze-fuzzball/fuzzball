@@ -34,6 +34,8 @@ export SOURCES = \
 	granular_memory.mli granular_memory.ml \
 	fragment_machine.mli fragment_machine.ml \
 	decision_tree.mli decision_tree.ml \
+	linear_decision_tree.mli linear_decision_tree.ml \
+	binary_decision_tree.mli binary_decision_tree.ml \
 	exec_no_influence.mli exec_no_influence.ml \
 	sym_path_frag_machine.mli sym_path_frag_machine.ml \
 	exec_influence.mli exec_influence.ml \

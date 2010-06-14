@@ -28,11 +28,10 @@ struct
   module GM = GranularMemoryFunctor(D)
   module FM = FragmentMachineFunctor(D)
 
-  class sym_path_frag_machine = object(self)
+  class sym_path_frag_machine (dt:decision_tree) = object(self)
     inherit FM.frag_machine as fm
 
     val mutable path_cond = []
-    val dt = (new decision_tree)#init
 
     method get_depth = dt#get_depth
     method get_hist_str = dt#get_hist_str

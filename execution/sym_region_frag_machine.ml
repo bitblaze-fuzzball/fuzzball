@@ -231,8 +231,8 @@ struct
       | e :: r -> List.fold_left (fun a b -> V.BinOp(V.PLUS, a, b))
 	  e r
 
-  class sym_region_frag_machine = object(self)
-    inherit SPFM.sym_path_frag_machine as spfm
+  class sym_region_frag_machine (dt:decision_tree) = object(self)
+    inherit SPFM.sym_path_frag_machine dt as spfm
 
     val mutable regions = []
     val region_vals = Hashtbl.create 101

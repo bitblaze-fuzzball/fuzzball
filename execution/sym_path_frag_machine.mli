@@ -11,9 +11,7 @@ val solver_fails : int64 ref
 module SymPathFragMachineFunctor :
   functor (D : Exec_domain.DOMAIN) ->
 sig
-  class sym_path_frag_machine : object
-    val dt : Decision_tree.decision_tree
-
+  class sym_path_frag_machine : Decision_tree.decision_tree -> object
     method get_depth : int
     method get_hist_str : string
 
