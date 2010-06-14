@@ -1,7 +1,6 @@
 (*
- Owned and copyright BitBlaze, 2009-2010. All rights reserved.
- Do not copy, disclose, or distribute without explicit written
- permission.
+  Copyright (C) BitBlaze, 2009-2010, and copyright (C) 2010 Ensighta
+  Security Inc.  All rights reserved.
 *)
 
 val fix_u1  : int64 -> int64

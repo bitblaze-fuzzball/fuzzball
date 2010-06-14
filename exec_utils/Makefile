@@ -1,3 +1,6 @@
+# Copyright (C) BitBlaze, 2009-2010, and copyright (C) 2010 Ensighta
+# Security Inc.  All rights reserved.
+
 export OCAMLMAKEFILE=../ocaml/OCamlMakefile
 export VINE_OCAMLDIR=../ocaml
 export VINE_TRACEDIR=../trace

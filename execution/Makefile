@@ -1,3 +1,6 @@
+# Copyright (C) BitBlaze, 2009-2010, and copyright (C) 2010 Ensighta
+# Security Inc.  All rights reserved.
+
 export OCAMLMAKEFILE=../ocaml/OCamlMakefile
 export VINE_OCAMLDIR=../ocaml
 export VINE_TRACEDIR=../trace
@@ -8,9 +11,6 @@ export INCDIRS += ../stp ../stp/ocaml $(VINE_OCAMLDIR) $(VINE_TRACEDIR)
 export EXTLIBDIRS += ../stp ../stp/ocaml
 export LIBS += stpvc vine trace
 
-# Include sources from ../ocaml, etc. in the automatically generated
-# dependencies.  It seems like there should be a more elegant way to
-# do this.
 export OCAMLDEP = ocamldep -I $(VINE_OCAMLDIR) -I $(STP_OCAMLDIR) \
 	                   -I $(VINE_TRACEDIR)
 

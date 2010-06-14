@@ -1,7 +1,5 @@
 (*
- Owned and copyright BitBlaze, 2009-2010. All rights reserved.
- Do not copy, disclose, or distribute without explicit written
- permission.
+  Copyright (C) BitBlaze, 2009-2010. All rights reserved.
 *)
 
 val fuzz : int64 -> int64 -> int64 list -> Fragment_machine.fragment_machine

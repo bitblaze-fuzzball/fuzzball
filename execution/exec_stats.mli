@@ -1,7 +1,6 @@
 (*
- Owned and copyright BitBlaze, 2009-2010. All rights reserved.
- Do not copy, disclose, or distribute without explicit written
- permission.
+  Copyright (C) BitBlaze, 2009-2010, and copyright (C) 2010 Ensighta
+  Security Inc.  All rights reserved.
 *)
 
 val check_memory_usage : Fragment_machine.fragment_machine ->
