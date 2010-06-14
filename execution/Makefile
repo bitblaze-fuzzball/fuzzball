@@ -47,6 +47,8 @@ export SOURCES = \
 	exec_runloop.mli exec_runloop.ml \
 	exec_stats.mli exec_stats.ml \
 	exec_fuzzloop.mli exec_fuzzloop.ml \
+	options_solver.mli options_solver.ml \
+	options_linux.mli options_linux.ml \
 	exec_set_options.mli exec_set_options.ml
 
 RESULT = execution

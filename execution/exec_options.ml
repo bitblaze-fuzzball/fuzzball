@@ -101,3 +101,27 @@ let opt_progress_interval = ref None
 let opt_final_pc = ref false
 let opt_solve_final_pc = ref false
 let opt_skip_untainted = ref false
+
+let split_string char s =
+  let delim_loc = String.index s char in
+  let s1 = String.sub s 0 delim_loc in
+  let s2 = String.sub s (delim_loc + 1) ((String.length s) - delim_loc - 1)
+  in
+    (s1, s2)
+
+let add_delimited_pair opt char s =
+  let (s1, s2) = split_string char s in
+    opt := ((Int64.of_string s1), (Int64.of_string s2)) :: !opt
+
+let add_delimited_num_str_pair opt char s =
+  let (s1, s2) = split_string char s in
+    opt := ((Int64.of_string s1), s2) :: !opt
+
+let add_delimited_str_num_pair opt char s =
+  let (s1, s2) = split_string char s in
+    opt := (s1, (Int64.of_string s2)) :: !opt
+
+let opt_program_name = ref None
+let opt_start_addr = ref None
+let opt_argv = ref []
+let state_start_addr = ref None

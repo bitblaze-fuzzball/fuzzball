@@ -23,7 +23,10 @@ module IMT = Exec_influence.InfluenceManagerFunctor
 
 let main argv = 
   Arg.parse
-    (Arg.align Exec_set_options.cmdline_opts)
+    (Arg.align (Exec_set_options.cmdline_opts
+		@ Options_linux.linux_cmdline_opts
+		@ State_loader.state_loader_cmdline_opts
+		@ Options_solver.solver_cmdline_opts))
     (fun arg -> Exec_set_options.set_program_name arg)
     "fuzzball [options]* program\n";
   let dt = ((new Binary_decision_tree.binary_decision_tree)
@@ -48,7 +51,11 @@ let main argv =
     (List.find (fun (i, s, t) -> s = "mem") dl) dl
   in
     fm#init_prog (dl, []);
-    Exec_set_options.apply_cmdline_opts fm dl;
+    Exec_set_options.apply_cmdline_opts_early fm dl;
+    Options_linux.apply_linux_cmdline_opts fm;
+    Options_solver.apply_solver_cmdline_opts fm;
+    State_loader.apply_state_loader_cmdline_opts fm;
+    Exec_set_options.apply_cmdline_opts_late fm;
     let symbolic_init = Exec_set_options.make_symbolic_init fm infl_man in
     let (start_addr, fuzz_start) = Exec_set_options.decide_start_addrs () in
       Exec_fuzzloop.fuzz start_addr fuzz_start

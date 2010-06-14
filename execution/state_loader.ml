@@ -32,3 +32,17 @@ let load_mem_state (fm : Fragment_machine.fragment_machine) fname =
     let eip = Int64.of_int32 si#regs.Temu_state.eip in
       Temu_state.close_state si;
       eip
+
+let opt_state_file = ref None
+
+let state_loader_cmdline_opts = 
+  [("-state", Arg.String
+      (fun s -> opt_state_file := Some s),
+    "file Load memory state from TEMU state file")]
+
+let apply_state_loader_cmdline_opts (fm:Fragment_machine.fragment_machine) =
+  (match !opt_state_file with
+     | Some s ->
+	 Exec_options.state_start_addr := Some (load_mem_state fm s)
+     | None -> ())
+

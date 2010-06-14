@@ -6,8 +6,6 @@
 
 open Exec_options;;
 
-let opt_load_base = ref 0x08048000L (* Linux user space default *)
-let opt_start_addr = ref None
 let opt_fuzz_start_addr = ref None
 let opt_initial_eax = ref None
 let opt_initial_ebx = ref None
@@ -18,22 +16,11 @@ let opt_initial_edi = ref None
 let opt_initial_esp = ref None
 let opt_initial_ebp = ref None
 let opt_initial_eflagsrest = ref None
-let opt_linux_syscalls = ref false
-let opt_setup_initial_proc_state = ref None
-let opt_tls_base = ref None
-let opt_load_extra_regions = ref []
-let opt_program_name = ref None
-let opt_core_file_name = ref None
-let opt_use_ids_from_core = ref false
-let opt_load_data = ref true
 let opt_random_memory = ref false
 let opt_store_bytes = ref []
 let opt_store_shorts = ref []
 let opt_store_words = ref []
 let opt_store_longs = ref []
-let opt_state_file = ref None
-let opt_solver = ref "stp-external"
-let opt_solver_check_against = ref "none"
 let opt_symbolic_regs = ref false
 let opt_symbolic_cstrings = ref []
 let opt_symbolic_string16s = ref []
@@ -52,30 +39,9 @@ let opt_check_condition_at_strings = ref None
 let opt_extra_condition_strings = ref []
 let opt_tracepoint_strings = ref []
 let opt_string_tracepoint_strings = ref []
-let opt_argv = ref []
 
 let set_defaults_for_concrete () =
-  opt_zero_memory := true;
-  opt_linux_syscalls := true
-
-let split_string char s =
-  let delim_loc = String.index s char in
-  let s1 = String.sub s 0 delim_loc in
-  let s2 = String.sub s (delim_loc + 1) ((String.length s) - delim_loc - 1)
-  in
-    (s1, s2)
-
-let add_delimited_pair opt char s =
-  let (s1, s2) = split_string char s in
-    opt := ((Int64.of_string s1), (Int64.of_string s2)) :: !opt
-
-let add_delimited_num_str_pair opt char s =
-  let (s1, s2) = split_string char s in
-    opt := ((Int64.of_string s1), s2) :: !opt
-
-let add_delimited_str_num_pair opt char s =
-  let (s1, s2) = split_string char s in
-    opt := (s1, (Int64.of_string s2)) :: !opt
+  opt_zero_memory := true
 
 let cmdline_opts =
   [
@@ -93,13 +59,6 @@ let cmdline_opts =
        (fun s -> opt_disqualify_addrs :=
 	  (Int64.of_string s) :: !opt_disqualify_addrs),
      "addr As above, but also remove from influence");
-    ("-core", Arg.String (fun s -> opt_core_file_name := Some s),
-     "corefile Load memory state from an ELF core dump");
-    ("-pid", Arg.String
-       (fun s -> opt_pid := (Int32.to_int (Int32.of_string s))),
-     "pid Use regs from specified LWP when loading from core");
-    ("-use-ids-from-core", Arg.Set(opt_use_ids_from_core),
-     " Simulate getpid(), etc., using values from core file");
     ("-initial-eax", Arg.String
        (fun s -> opt_initial_eax := Some(Int64.of_string s)),
      "word Concrete initial value for %eax register");
@@ -141,22 +100,6 @@ let cmdline_opts =
     ("-translation-cache-size", Arg.String
        (fun s -> opt_translation_cache_size := Some (int_of_string s)),
      "N Save translations of at most N instructions");
-    ("-load-base", Arg.String
-       (fun s -> opt_load_base := Int64.of_string s),
-     "addr Base address for program image");
-    ("-load-region", Arg.String
-       (add_delimited_pair opt_load_extra_regions '+'),
-     "base+size Load an additional region from program image");
-    ("-load-data", Arg.Bool(fun b -> opt_load_data := b),
-     "bool Load data segments from a binary?"); 
-    ("-setup-initial-proc-state",
-     Arg.Bool(fun b -> opt_setup_initial_proc_state := Some b),
-     "bool Setup initial process state (argv, etc.)?"); 
-    ("-env", Arg.String
-       (fun s ->
-	  let (k, v) = split_string '=' s in
-	    Hashtbl.replace opt_extra_env k v),
-     "name=val Set environment variable for program");
     ("-symbolic-region", Arg.String
        (add_delimited_pair opt_symbolic_regions '+'),
      "base+size Memory region of unknown structure");
@@ -236,9 +179,6 @@ let cmdline_opts =
      "float Stop path when influence is <= this value");
     ("-concretize-divisors", Arg.Set(opt_concretize_divisors),
      " Choose concrete values for divisors in /, %");
-    ("-state", Arg.String
-       (fun s -> opt_state_file := Some s),
-     "file Load memory state from TEMU state file");
     ("-store-byte", Arg.String
        (add_delimited_pair opt_store_bytes '='),
      "addr=val Set the byte at address to a concrete value");
@@ -251,24 +191,6 @@ let cmdline_opts =
     ("-store-word", Arg.String
        (add_delimited_pair opt_store_longs '='),
      "addr=val Set 64-bit location to a concrete value");
-    ("-solver", Arg.Set_string(opt_solver),
-     "solver stpvc (internal) or stp-external (cf. -stp-path)");
-    ("-solver-check-against", Arg.Set_string(opt_solver_check_against),
-     "solver Compare solver results with the given one");
-    ("-stp-path", Arg.Set_string(opt_stp_path),
-     "path Location of external STP binary");
-    ("-save-solver-files", Arg.Set(opt_save_solver_files),
-     " Retain STP input and output files");
-    ("-solver-slow-time", Arg.Set_float(opt_solver_slow_time),
-     "secs Save queries that take longer than SECS");
-    ("-solver-timeout", Arg.String
-       (fun s -> opt_solver_timeout := Some (int_of_string s)),
-     "secs Run each query for at most SECS seconds");
-    ("-tls-base", Arg.String
-       (fun s -> opt_tls_base := Some (Int64.of_string s)),
-     "addr Use a Linux TLS (%gs) segment at the given address");
-    ("-linux-syscalls", Arg.Set(opt_linux_syscalls),
-     " Simulate Linux system calls on the real system");
     ("-trace-assigns", Arg.Set(opt_trace_assigns),
      " Print satisfying assignments");
     ("-trace-assigns-string", Arg.Set(opt_trace_assigns_string),
@@ -331,16 +253,12 @@ let cmdline_opts =
      " Print symbolic memory regions");
     ("-trace-setup", Arg.Set(opt_trace_setup),
      " Print progress of program loading");
-    ("-trace-solver", Arg.Set(opt_trace_solver),
-     " Print calls to decision procedure");
     ("-trace-stopping", Arg.Set(opt_trace_stopping),
      " Print why paths terminate");
     ("-trace-sym-addrs", Arg.Set(opt_trace_sym_addrs),
      " Print symbolic address values");
     ("-trace-sym-addr-details", Arg.Set(opt_trace_sym_addr_details),
      " Print even more about symbolic address values");
-    ("-trace-syscalls", Arg.Set(opt_trace_syscalls),
-     " Print systems calls (like strace)");
     ("-trace-temps", Arg.Set(opt_trace_temps),
      " Print intermediate formulas");
     ("-use-tags", Arg.Set(opt_use_tags),
@@ -349,8 +267,6 @@ let cmdline_opts =
      " Print pseudo-BB coverage statistics");
     ("-gc-stats", Arg.Set(opt_gc_stats),
      " Print memory usage statistics");
-    ("-solver-stats", Arg.Set(opt_solver_stats),
-     " Print solver statistics");
     ("-time-stats", Arg.Set(opt_time_stats),
      " Print running time statistics");
     ("-print-callrets", Arg.Set(opt_print_callrets),
@@ -361,8 +277,6 @@ let cmdline_opts =
     ("-offset-strategy", Arg.String
        (fun s -> opt_offset_strategy := offset_strategy_of_string s),
      "strategy Strategy for offset concretization: uniform, biased-small");
-    ("-nonfatal-solver", Arg.Set(opt_nonfatal_solver),
-     " Keep going even if the solver fails/crashes");
     ("-follow-path", Arg.Set_string(opt_follow_path),
      "string String of 0's and 1's signifying the specific path decisions to make.");
     ("-watch-expr", Arg.String
@@ -428,9 +342,7 @@ let set_program_name s =
     | None -> opt_program_name := Some s
     | _ -> failwith "Multiple non-option args not allowed"
 
-let state_start_addr = ref None
-
-let apply_cmdline_opts (fm : Fragment_machine.fragment_machine) dl =
+let apply_cmdline_opts_early (fm : Fragment_machine.fragment_machine) dl =
   if !opt_random_memory then
     fm#on_missing_random
   else if !opt_zero_memory then
@@ -465,69 +377,14 @@ let apply_cmdline_opts (fm : Fragment_machine.fragment_machine) dl =
     fm#make_x86_regs_symbolic
   else
     fm#make_x86_regs_zero;
-  (match !opt_program_name with
-     | Some name ->
-	 let do_setup = match !opt_setup_initial_proc_state with
-	   | Some b -> b
-	   | None ->
-	       if !opt_start_addr <> None then
-		 false
-	       else if !opt_argv <> [] then
-		 true
-	       else
-		 failwith ("Can't decide whether to "^
-			     "-setup-initial-proc-state")
-	 in
-	   state_start_addr := Some
-	     (Linux_loader.load_dynamic_program fm name
-		!opt_load_base !opt_load_data do_setup
-		!opt_load_extra_regions !opt_argv)
-     | _ -> ());
-  (match !opt_core_file_name with
-     | Some name -> 
-	 state_start_addr :=
-	   Some (Linux_loader.load_core fm name)
-     | None -> ());
-  (let checking_solver = match !opt_solver_check_against with
-     | "none" -> None
-     | "stpvc" -> Some (new Stpvc_engine.stpvc_engine
-			:> Query_engine.query_engine)
-     | "stp-external" -> Some (new Stp_external_engine.stp_external_engine
-				 "fuzz-check")
-     | _ -> failwith "Unknown solver for -solver-check-against" in
-   let main_solver = match !opt_solver with
-     | "stpvc" -> ((new Stpvc_engine.stpvc_engine)
-		   :> Query_engine.query_engine)
-     | "stp-external" -> new Stp_external_engine.stp_external_engine "fuzz"
-     | _ -> failwith "Unknown -solver" in
-   let qe =
-     match checking_solver with
-       | None -> main_solver
-       | Some cs -> new Query_engine.parallel_check_engine main_solver cs
-   in
-     fm#set_query_engine qe);
-  if !opt_linux_syscalls then
-    let lsh = new Linux_syscalls.linux_special_handler fm in
-      if !opt_use_ids_from_core then
-	lsh#set_proc_identities !Linux_loader.proc_identities;
-      fm#add_special_handler (lsh :> Fragment_machine.special_handler)
-  else
-    fm#add_special_handler
-      ((new Special_handlers.linux_special_nonhandler fm)
-       :> Fragment_machine.special_handler);
   fm#add_special_handler
     ((new Special_handlers.trap_special_nonhandler fm)
      :> Fragment_machine.special_handler);
   fm#add_special_handler
     ((new Special_handlers.cpuid_special_handler fm)
-     :> Fragment_machine.special_handler);
-  (match !opt_state_file with
-     | Some s -> state_start_addr := Some
-	 (State_loader.load_mem_state fm s)
-     | None -> ());
-  (match !opt_tls_base with
-     | Some base -> Linux_loader.setup_tls_segment fm 0x60000000L base
-     | None -> ());
+     :> Fragment_machine.special_handler)
+
+let apply_cmdline_opts_late (fm : Fragment_machine.fragment_machine) =
   (match !opt_initial_eax with
      | Some v -> fm#set_word_var Fragment_machine.R_EAX v
 	 | None -> ());
@@ -560,8 +417,12 @@ let apply_cmdline_opts (fm : Fragment_machine.fragment_machine) dl =
   List.iter (fun (addr,v) -> fm#store_short_conc addr
 	       (Int64.to_int v)) !opt_store_shorts;
   List.iter (fun (addr,v) -> fm#store_word_conc addr v) !opt_store_words;
-  List.iter (fun (addr,v) -> fm#store_long_conc addr v) !opt_store_longs;
-  ()
+  List.iter (fun (addr,v) -> fm#store_long_conc addr v) !opt_store_longs
+
+let apply_cmdline_opts_nonlinux (fm : Fragment_machine.fragment_machine) =
+  fm#add_special_handler
+    ((new Special_handlers.linux_special_nonhandler fm)
+     :> Fragment_machine.special_handler)
 
 let make_symbolic_init (fm:Fragment_machine.fragment_machine) 
     (infl_man:Exec_no_influence.influence_manager) =
