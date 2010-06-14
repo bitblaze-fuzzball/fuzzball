@@ -14,6 +14,7 @@ let main argv =
   Options_linux.set_linux_defaults_for_concrete ();
   Arg.parse
     (Arg.align (Exec_set_options.cmdline_opts
+		@ Exec_set_options.tags_cmdline_opts
 		@ Options_linux.linux_cmdline_opts))
     (fun arg -> Exec_set_options.set_program_name arg)
     "vinegrind [options]* program\n";

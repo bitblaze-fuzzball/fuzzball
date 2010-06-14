@@ -82,7 +82,10 @@ val opt_nonfatal_solver : bool ref
 val opt_num_paths : int64 option ref
 val opt_pid : int ref
 val opt_translation_cache_size : int option ref
+
+val opt_symbolic_memory : bool ref
 val opt_zero_memory : bool ref
+val opt_random_memory : bool ref
 
 val opt_fuzz_end_addrs : int64 list ref
 

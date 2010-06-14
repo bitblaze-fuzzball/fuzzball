@@ -50,6 +50,8 @@ let linux_cmdline_opts =
      " Simulate Linux system calls on the real system");
     ("-trace-syscalls", Arg.Set(opt_trace_syscalls),
      " Print systems calls (like strace)");
+    ("--", Arg.Rest(fun s -> opt_argv := !opt_argv @ [s]),
+     " Pass any remaining arguments to the program");
   ]
 
 let apply_linux_cmdline_opts (fm : Fragment_machine.fragment_machine) =

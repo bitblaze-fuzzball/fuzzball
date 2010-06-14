@@ -311,7 +311,8 @@ struct
     method on_missing_zero =
       self#on_missing_zero_m (mem :> GM.granular_memory)
 
-    val mutable saved_details_flags = (false, false, false, false, false)
+    val mutable saved_details_flags =
+      (false, false, false, false, false, false, false, false)
 
     method eip_hook eip = 
       fm#eip_hook eip;
@@ -320,12 +321,16 @@ struct
 	   if f_eip = eip then
 	     (saved_details_flags <- 
 		(!opt_trace_insns, !opt_trace_loads, !opt_trace_stores,
-		 !opt_trace_temps, !opt_trace_syscalls);	      
+		 !opt_trace_temps, !opt_trace_syscalls, !opt_trace_registers,
+		 !opt_trace_segments, !opt_trace_taint);	      
 	      opt_trace_insns := true;
 	      opt_trace_loads := true;
 	      opt_trace_stores := true;
 	      opt_trace_temps := true;
-	      opt_trace_syscalls := true))
+	      opt_trace_syscalls := true;
+	      opt_trace_registers := true;
+	      opt_trace_segments := true;
+	      opt_trace_taint := true))
 	!opt_trace_detailed_ranges;
       List.iter
 	(fun (eip', e_str, expr) ->
@@ -355,12 +360,15 @@ struct
       List.iter
 	(fun (_, t_eip) -> 
 	   if t_eip = eip then
-	     let (i, l, s, t, sc) = saved_details_flags in
+	     let (i, l, s, t, sc, r, sg, ta) = saved_details_flags in
 	      opt_trace_insns := i;
 	      opt_trace_loads := l;
 	      opt_trace_stores := s;
 	      opt_trace_temps := t;
-	      opt_trace_syscalls := sc)
+	      opt_trace_syscalls := sc;
+	      opt_trace_registers := r;
+	      opt_trace_segments := sg;
+	      opt_trace_taint := ta)
 	!opt_trace_detailed_ranges
 	  
     method finish_path =

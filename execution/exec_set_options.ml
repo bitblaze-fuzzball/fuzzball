@@ -16,7 +16,6 @@ let opt_initial_edi = ref None
 let opt_initial_esp = ref None
 let opt_initial_ebp = ref None
 let opt_initial_eflagsrest = ref None
-let opt_random_memory = ref false
 let opt_store_bytes = ref []
 let opt_store_shorts = ref []
 let opt_store_words = ref []
@@ -43,113 +42,24 @@ let opt_string_tracepoint_strings = ref []
 let set_defaults_for_concrete () =
   opt_zero_memory := true
 
-let cmdline_opts =
-  [
-    ("-start-addr", Arg.String
-       (fun s -> opt_start_addr := Some(Int64.of_string s)),
-     "addr Code address to start executing");
-    ("-fuzz-start-addr", Arg.String
-       (fun s -> opt_fuzz_start_addr := Some(Int64.of_string s)),
-     "addr Code address to start fuzzing");
-    ("-fuzz-end-addr", Arg.String
-       (fun s -> opt_fuzz_end_addrs :=
-	  (Int64.of_string s) :: !opt_fuzz_end_addrs),
-     "addr Code address to finish fuzzing, may be repeated");
+let influence_cmdline_opts =
+  [  
     ("-disqualify-addr", Arg.String
        (fun s -> opt_disqualify_addrs :=
 	  (Int64.of_string s) :: !opt_disqualify_addrs),
-     "addr As above, but also remove from influence");
-    ("-initial-eax", Arg.String
-       (fun s -> opt_initial_eax := Some(Int64.of_string s)),
-     "word Concrete initial value for %eax register");
-    ("-initial-ebx", Arg.String
-       (fun s -> opt_initial_ebx := Some(Int64.of_string s)),
-     "word Concrete initial value for %ebx register");
-    ("-initial-ecx", Arg.String
-       (fun s -> opt_initial_ecx := Some(Int64.of_string s)),
-     "word Concrete initial value for %ecx register");
-    ("-initial-edx", Arg.String
-       (fun s -> opt_initial_edx := Some(Int64.of_string s)),
-     "word Concrete initial value for %edx register");
-    ("-initial-esi", Arg.String
-       (fun s -> opt_initial_esi := Some(Int64.of_string s)),
-     "word Concrete initial value for %esi register");
-    ("-initial-edi", Arg.String
-       (fun s -> opt_initial_edi := Some(Int64.of_string s)),
-     "word Concrete initial value for %edi register");
-    ("-initial-esp", Arg.String
-       (fun s -> opt_initial_esp := Some(Int64.of_string s)),
-     "word Concrete initial value for %esp (stack pointer)");
-    ("-initial-ebp", Arg.String
-       (fun s -> opt_initial_ebp := Some(Int64.of_string s)),
-     "word Concrete initial value for %ebp (frame pointer)");
-    ("-initial-eflagsrest", Arg.String
-       (fun s -> opt_initial_eflagsrest := Some(Int64.of_string s)),
-     "word Concrete value for %eflags, less [CPAZSO]F");
-    ("-iteration-limit", Arg.String
-       (fun s -> opt_iteration_limit := Int64.of_string s),
-     "N Stop path if a loop iterates more than N times");
-    ("-path-depth-limit", Arg.String
-       (fun s -> opt_path_depth_limit := Int64.of_string s),
-     "N Stop path after N bits of symbolic branching");
-    ("-query-branch-limit", Arg.Set_int opt_query_branch_limit,
-     "N Try at most N possibilities per branch");
-    ("-num-paths", Arg.String
-       (fun s -> opt_num_paths := Some (Int64.of_string s)),
-     "N Stop after N different paths");
-    ("-translation-cache-size", Arg.String
-       (fun s -> opt_translation_cache_size := Some (int_of_string s)),
-     "N Save translations of at most N instructions");
-    ("-symbolic-region", Arg.String
-       (add_delimited_pair opt_symbolic_regions '+'),
-     "base+size Memory region of unknown structure");
-    ("-symbolic-cstring", Arg.String
-       (add_delimited_pair opt_symbolic_cstrings '+'),
-     "base+size Make a C string with given size, concrete \\0");
-    ("-skip-call-addr", Arg.String
-       (add_delimited_pair opt_skip_call_addr '='),
-     "addr=retval Replace the call instruction at address 'addr' with a nop, and place 'retval' in EAX (return value)");
-    ("-skip-call-addr-symbol", Arg.String
-       (add_delimited_num_str_pair opt_skip_call_addr_symbol '='),
-     "addr=symname As above, but return a fresh symbol");
-    ("-symbolic-string16", Arg.String
-       (add_delimited_pair opt_symbolic_string16s '+'),
-     "base+16s As above, but with 16-bit characters");
-    ("-symbolic-regs", Arg.Set(opt_symbolic_regs),
-     " Give symbolic values to registers");
-    ("-symbolic-byte", Arg.String
-       (add_delimited_num_str_pair opt_symbolic_bytes '='),
-     "addr=var Make a memory byte symbolic");
+     "addr As -fuzz-end-addr, but also remove from influence");
     ("-symbolic-byte-influence", Arg.String
        (add_delimited_num_str_pair opt_symbolic_bytes_influence '='),
-     "addr=var As above, but also use for -periodic-influence");
-    ("-symbolic-short", Arg.String
-       (add_delimited_num_str_pair opt_symbolic_shorts '='),
-     "addr=var Make a 16-bit memory valule symbolic");
+     "addr=var Like -symbolic-byte, but also use for -periodic-influence");
     ("-symbolic-short-influence", Arg.String
        (add_delimited_num_str_pair opt_symbolic_shorts_influence '='),
-     "addr=var As above, but also use for -periodic-influence");
-    ("-symbolic-word", Arg.String
-       (add_delimited_num_str_pair opt_symbolic_words '='),
-     "addr=var Make a memory word symbolic");
+     "addr=var Like -symbolic-short,, but also use for -periodic-influence");
     ("-symbolic-word-influence", Arg.String
        (add_delimited_num_str_pair opt_symbolic_words_influence '='),
-     "addr=var As above, but also use for -periodic-influence");
-    ("-symbolic-long", Arg.String
-       (add_delimited_num_str_pair opt_symbolic_longs '='),
-     "addr=var Make a 64-bit memory valule symbolic");
+     "addr=var Like -symbolic-word, but also use for -periodic-influence");
     ("-symbolic-long-influence", Arg.String
        (add_delimited_num_str_pair opt_symbolic_longs_influence '='),
-     "addr=var As above, but also use for -periodic-influence");
-    ("-sink-region", Arg.String
-       (add_delimited_str_num_pair opt_sink_regions '+'),
-     "var+size Range-check but ignore writes to a region");
-    ("-random-memory", Arg.Set(opt_random_memory),
-     " Use random values for uninit. memory reads");
-    ("-zero-memory", Arg.Set(opt_zero_memory),
-     " Use zero values for uninit. memory reads");
-    ("-check-for-null", Arg.Set(opt_check_for_null),
-     " Check whether dereferenced values can be null");
+     "addr=var Like -symbolic-long, but also use for -periodic-influence");
     ("-measure-influence-derefs", Arg.Set(opt_measure_influence_derefs),
      " Measure influence on uses of sym. pointer values");
     ("-measure-influence-reploops", Arg.Set(opt_measure_influence_reploops),
@@ -177,8 +87,40 @@ let cmdline_opts =
      "k Check influence every K bits of branching");
     ("-influence-bound", Arg.Set_float(opt_influence_bound),
      "float Stop path when influence is <= this value");
-    ("-concretize-divisors", Arg.Set(opt_concretize_divisors),
-     " Choose concrete values for divisors in /, %");
+  ]
+
+let concrete_state_cmdline_opts =
+  [
+    ("-start-addr", Arg.String
+       (fun s -> opt_start_addr := Some(Int64.of_string s)),
+     "addr Code address to start executing");
+    ("-initial-eax", Arg.String
+       (fun s -> opt_initial_eax := Some(Int64.of_string s)),
+     "word Concrete initial value for %eax register");
+    ("-initial-ebx", Arg.String
+       (fun s -> opt_initial_ebx := Some(Int64.of_string s)),
+     "word Concrete initial value for %ebx register");
+    ("-initial-ecx", Arg.String
+       (fun s -> opt_initial_ecx := Some(Int64.of_string s)),
+     "word Concrete initial value for %ecx register");
+    ("-initial-edx", Arg.String
+       (fun s -> opt_initial_edx := Some(Int64.of_string s)),
+     "word Concrete initial value for %edx register");
+    ("-initial-esi", Arg.String
+       (fun s -> opt_initial_esi := Some(Int64.of_string s)),
+     "word Concrete initial value for %esi register");
+    ("-initial-edi", Arg.String
+       (fun s -> opt_initial_edi := Some(Int64.of_string s)),
+     "word Concrete initial value for %edi register");
+    ("-initial-esp", Arg.String
+       (fun s -> opt_initial_esp := Some(Int64.of_string s)),
+     "word Concrete initial value for %esp (stack pointer)");
+    ("-initial-ebp", Arg.String
+       (fun s -> opt_initial_ebp := Some(Int64.of_string s)),
+     "word Concrete initial value for %ebp (frame pointer)");
+    ("-initial-eflagsrest", Arg.String
+       (fun s -> opt_initial_eflagsrest := Some(Int64.of_string s)),
+     "word Concrete value for %eflags, less [CPAZSO]F");
     ("-store-byte", Arg.String
        (add_delimited_pair opt_store_bytes '='),
      "addr=val Set the byte at address to a concrete value");
@@ -191,36 +133,141 @@ let cmdline_opts =
     ("-store-word", Arg.String
        (add_delimited_pair opt_store_longs '='),
      "addr=val Set 64-bit location to a concrete value");
-    ("-trace-assigns", Arg.Set(opt_trace_assigns),
-     " Print satisfying assignments");
-    ("-trace-assigns-string", Arg.Set(opt_trace_assigns_string),
-     " Print satisfying assignments as a string");
-    ("-trace-basic",
-     (Arg.Unit
-	(fun () ->
-	   opt_trace_binary_paths := true;
-	   opt_trace_decisions := true;
-	   opt_trace_iterations := true;
-	   opt_trace_setup := true;
-	   opt_trace_stopping := true;
-	   opt_trace_sym_addrs := true;
-	   opt_coverage_stats := true;
-	   opt_time_stats := true)),
-     " Enable several common trace and stats options");
-    ("-trace-binary-paths", Arg.Set(opt_trace_binary_paths),
-     " Print decision paths as bit strings");
+    ("-skip-call-addr", Arg.String
+       (add_delimited_pair opt_skip_call_addr '='),
+     "addr=retval Replace the call instruction at address 'addr' with a nop, and place 'retval' in EAX (return value)");
+  ]
+
+let symbolic_state_cmdline_opts =
+  [
+    ("-symbolic-region", Arg.String
+       (add_delimited_pair opt_symbolic_regions '+'),
+     "base+size Memory region of unknown structure");
+    ("-symbolic-cstring", Arg.String
+       (add_delimited_pair opt_symbolic_cstrings '+'),
+     "base+size Make a C string with given size, concrete \\0");
+    ("-symbolic-string16", Arg.String
+       (add_delimited_pair opt_symbolic_string16s '+'),
+     "base+16s As above, but with 16-bit characters");
+    ("-symbolic-regs", Arg.Set(opt_symbolic_regs),
+     " Give symbolic values to registers");
+    ("-symbolic-byte", Arg.String
+       (add_delimited_num_str_pair opt_symbolic_bytes '='),
+     "addr=var Make a memory byte symbolic");
+    ("-symbolic-short", Arg.String
+       (add_delimited_num_str_pair opt_symbolic_shorts '='),
+     "addr=var Make a 16-bit memory valule symbolic");
+    ("-symbolic-word", Arg.String
+       (add_delimited_num_str_pair opt_symbolic_words '='),
+     "addr=var Make a memory word symbolic");
+    ("-symbolic-long", Arg.String
+       (add_delimited_num_str_pair opt_symbolic_longs '='),
+     "addr=var Make a 64-bit memory valule symbolic");
+    ("-sink-region", Arg.String
+       (add_delimited_str_num_pair opt_sink_regions '+'),
+     "var+size Range-check but ignore writes to a region");
+    ("-skip-call-addr-symbol", Arg.String
+       (add_delimited_num_str_pair opt_skip_call_addr_symbol '='),
+     "addr=symname As above, but return a fresh symbol");
+  ]
+
+let explore_cmdline_opts =
+  [
+    ("-fuzz-start-addr", Arg.String
+       (fun s -> opt_fuzz_start_addr := Some(Int64.of_string s)),
+     "addr Code address to start fuzzing");
+    ("-fuzz-end-addr", Arg.String
+       (fun s -> opt_fuzz_end_addrs :=
+	  (Int64.of_string s) :: !opt_fuzz_end_addrs),
+     "addr Code address to finish fuzzing, may be repeated");
+    ("-iteration-limit", Arg.String
+       (fun s -> opt_iteration_limit := Int64.of_string s),
+     "N Stop path if a loop iterates more than N times");
+    ("-path-depth-limit", Arg.String
+       (fun s -> opt_path_depth_limit := Int64.of_string s),
+     "N Stop path after N bits of symbolic branching");
+    ("-query-branch-limit", Arg.Set_int opt_query_branch_limit,
+     "N Try at most N possibilities per branch");
+    ("-num-paths", Arg.String
+       (fun s -> opt_num_paths := Some (Int64.of_string s)),
+     "N Stop after N different paths");
+    ("-concretize-divisors", Arg.Set(opt_concretize_divisors),
+     " Choose concrete values for divisors in /, %");
     ("-trace-binary-paths-delimited",
      Arg.Set(opt_trace_binary_paths_delimited),
      " As above, but with '-'s separating queries");
     ("-trace-binary-paths-bracketed",
      Arg.Set(opt_trace_binary_paths_bracketed),
      " As above, but with []s around multibit queries");
+    ("-trace-decision-tree", Arg.Set(opt_trace_decision_tree),
+     " Print internal decision tree operations");
+    ("-trace-randomness", Arg.Set(opt_trace_randomness),
+     " Print operation of PRNG 'random' choices");
+    ("-trace-sym-addr-details", Arg.Set(opt_trace_sym_addr_details),
+     " Print even more about symbolic address values");
+    ("-coverage-stats", Arg.Set(opt_coverage_stats),
+     " Print pseudo-BB coverage statistics");
+    ("-offset-strategy", Arg.String
+       (fun s -> opt_offset_strategy := offset_strategy_of_string s),
+     "strategy Strategy for offset concretization: uniform, biased-small");
+    ("-follow-path", Arg.Set_string(opt_follow_path),
+     "string String of 0's and 1's signifying the specific path decisions to make.");
+    ("-random-seed", Arg.Set_int opt_random_seed,
+     "N Use given seed for path choice");
+  ]
+
+
+let tags_cmdline_opts =
+  [
+    ("-use-tags", Arg.Set(opt_use_tags),
+     " Track data flow with numeric tags");
+  ]
+
+(* Conceptually, these could be applied to drivers other than
+   FuzzBALL, but don't yet because they would need more implementation,
+   are immature, etc. *)
+let fuzzball_cmdline_opts =
+  [
+    ("-check-for-null", Arg.Set(opt_check_for_null),
+     " Check whether dereferenced values can be null");
+    ("-print-callrets", Arg.Set(opt_print_callrets),
+     " Print call and ret instructions executed. Can be used with ./getbacktrace.pl to generate the backtrace at any point.");
+    (* This flag is misspelled, and will be renamed in the future. *)
+    ("-no-fail-on-huer", Arg.Clear(opt_fail_offset_heuristic),
+     " Do not fail when a heuristic (e.g. offset optimization) fails.");
+  ]
+
+let cmdline_opts =
+  [
+    ("-translation-cache-size", Arg.String
+       (fun s -> opt_translation_cache_size := Some (int_of_string s)),
+     "N Save translations of at most N instructions");
+    ("-random-memory", Arg.Set(opt_random_memory),
+     " Use random values for uninit. memory reads");
+    ("-symbolic-memory", Arg.Set(opt_symbolic_memory),
+     " Use symbolic values for uninit. memory reads");
+    ("-zero-memory", Arg.Set(opt_zero_memory),
+     " Use zero values for uninit. memory reads");
+    ("-trace-basic",
+     (Arg.Unit
+	(fun () ->
+	   opt_trace_binary_paths := true;
+	   opt_trace_conditions := true;
+	   opt_trace_decisions := true;
+	   opt_trace_iterations := true;
+	   opt_trace_setup := true;
+	   opt_trace_stopping := true;
+	   opt_trace_sym_addrs := true;
+	   opt_trace_unexpected := true;
+	   opt_coverage_stats := true;
+	   opt_time_stats := true)),
+     " Enable several common trace and stats options");
+    ("-trace-binary-paths", Arg.Set(opt_trace_binary_paths),
+     " Print decision paths as bit strings");
     ("-trace-conditions", Arg.Set(opt_trace_conditions),
      " Print branch conditions");
     ("-trace-decisions", Arg.Set(opt_trace_decisions),
      " Print symbolic branch choices");
-    ("-trace-decision-tree", Arg.Set(opt_trace_decision_tree),
-     " Print internal decision tree operations");
     ("-trace-detailed",
      (Arg.Unit
 	(fun () ->
@@ -228,11 +275,14 @@ let cmdline_opts =
 	   opt_trace_loads := true;
 	   opt_trace_stores := true;
 	   opt_trace_temps := true;
-	   opt_trace_syscalls := true)),
+	   opt_trace_syscalls := true;
+	   opt_trace_registers := true;
+	   opt_trace_segments := true;
+	   opt_trace_taint := true)),
      " Enable several verbose tracing options");
     ("-trace-detailed-range", Arg.String
        (add_delimited_pair opt_trace_detailed_ranges '-'),
-     "eip1-eip2 As above, but only for an eip range");
+     "N-M As above, but only for an eip range");
     ("-trace-eip", Arg.Set(opt_trace_eip),
      " Print PC of each insn executed");
     ("-trace-insns", Arg.Set(opt_trace_insns),
@@ -247,8 +297,6 @@ let cmdline_opts =
      " Print each memory load");
     ("-trace-stores", Arg.Set(opt_trace_stores),
      " Print each memory store");
-    ("-trace-randomness", Arg.Set(opt_trace_randomness),
-     " Print operation of PRNG 'random' choices");
     ("-trace-regions", Arg.Set(opt_trace_regions),
      " Print symbolic memory regions");
     ("-trace-setup", Arg.Set(opt_trace_setup),
@@ -257,28 +305,12 @@ let cmdline_opts =
      " Print why paths terminate");
     ("-trace-sym-addrs", Arg.Set(opt_trace_sym_addrs),
      " Print symbolic address values");
-    ("-trace-sym-addr-details", Arg.Set(opt_trace_sym_addr_details),
-     " Print even more about symbolic address values");
     ("-trace-temps", Arg.Set(opt_trace_temps),
      " Print intermediate formulas");
-    ("-use-tags", Arg.Set(opt_use_tags),
-     " Track data flow with numeric tags");
-    ("-coverage-stats", Arg.Set(opt_coverage_stats),
-     " Print pseudo-BB coverage statistics");
     ("-gc-stats", Arg.Set(opt_gc_stats),
      " Print memory usage statistics");
     ("-time-stats", Arg.Set(opt_time_stats),
      " Print running time statistics");
-    ("-print-callrets", Arg.Set(opt_print_callrets),
-     " Print call and ret instructions executed. Can be used with ./getbacktrace.pl to generate the backtrace at any point.");
-    (* This flag is misspelled, and will be renamed in the future. *)
-    ("-no-fail-on-huer", Arg.Clear(opt_fail_offset_heuristic),
-     " Do not fail when a heuristic (e.g. offset optimization) fails.");
-    ("-offset-strategy", Arg.String
-       (fun s -> opt_offset_strategy := offset_strategy_of_string s),
-     "strategy Strategy for offset concretization: uniform, biased-small");
-    ("-follow-path", Arg.Set_string(opt_follow_path),
-     "string String of 0's and 1's signifying the specific path decisions to make.");
     ("-watch-expr", Arg.String
        (fun s -> opt_watch_expr_str := Some s),
      "expr Print Vine expression on each instruction");
@@ -299,10 +331,6 @@ let cmdline_opts =
        (fun s -> opt_extra_condition_strings :=
 	  s :: !opt_extra_condition_strings),
      "cond Add an extra constraint for solving");
-    ("-random-seed", Arg.Set_int opt_random_seed,
-     "N Use given seed for path choice");
-    ("--", Arg.Rest(fun s -> opt_argv := !opt_argv @ [s]),
-     " Pass any remaining arguments to the program");
   ]
 
 let trace_replay_cmdline_opts =
@@ -342,13 +370,17 @@ let set_program_name s =
     | None -> opt_program_name := Some s
     | _ -> failwith "Multiple non-option args not allowed"
 
+let default_on_missing = ref (fun fm -> fm#on_missing_zero)
+
 let apply_cmdline_opts_early (fm : Fragment_machine.fragment_machine) dl =
   if !opt_random_memory then
     fm#on_missing_random
   else if !opt_zero_memory then
     fm#on_missing_zero
+  else if !opt_symbolic_memory then
+    fm#on_missing_symbol
   else
-    fm#on_missing_symbol;
+    (!default_on_missing fm);
   (match !opt_watch_expr_str with
      | Some s -> opt_watch_expr :=
 	 Some (Vine_parser.parse_exp_from_string dl s)
