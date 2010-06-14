@@ -35,8 +35,6 @@ sig
   class sym_region_frag_machine : object
     method set_eip : int64 -> unit
 
-    method add_sink_region : Vine.exp -> int64 -> unit
-	    
     method eval_addr_exp_region : Vine.exp -> (int option * int64)
 		  
     method eval_addr_exp : Vine.exp -> int64
@@ -47,6 +45,8 @@ sig
     method load_word_concretize  : int64 -> bool -> string -> int64
     method load_byte_concretize  : int64 -> bool -> string -> int
     method load_short_concretize : int64 -> bool -> string -> int
+
+    method make_sink_region : string -> int64 -> unit
 
     method private maybe_concretize_binop : 
       Vine.binop_type -> D.t -> D.t -> Vine.typ -> Vine.typ ->
@@ -67,26 +67,18 @@ sig
 
     method reset : unit -> unit
 
+    method after_exploration : unit
+
     val dt : Decision_tree.decision_tree
+    method get_depth : int
+    method get_hist_str : string
+    method set_influence_manager : Exec_no_influence.influence_manager -> unit
     method get_path_cond : Vine.exp list
     method add_to_path_cond : Vine.exp -> unit
     method restore_path_cond : (unit -> unit) -> unit
-    method take_measure_eip : Vine.exp -> unit
-    method take_measure_expr : Vine.exp -> Vine.exp -> unit
     method set_query_engine : Query_engine.query_engine -> unit
     method match_input_var : string -> int option
     method print_ce : (string * int64) list -> unit
-    method measure_influence_common : Vine.decl list
-      -> (Vine.var * Vine.exp) list -> Vine.exp -> Vine.exp -> float
-    method measure_influence : Vine.exp -> float
-    method compute_multipath_influence : string -> unit
-    method compute_all_multipath_influence : unit
-    method store_symbolic_byte_influence  : int64 -> string -> unit
-    method store_symbolic_short_influence : int64 -> string -> unit
-    method store_symbolic_word_influence  : int64 -> string -> unit
-    method store_symbolic_long_influence  : int64 -> string -> unit
-    method maybe_periodic_influence : unit
-    method path_end_influence : unit
     method query_with_path_cond : Vine.exp list -> Vine.exp -> bool
       -> (bool * (string * int64) list)
     method follow_or_random : bool 
@@ -96,13 +88,8 @@ sig
     method extend_pc_known : Vine.exp -> bool -> bool -> bool 
     method random_case_split : bool -> bool
     method eval_bool_exp : Vine.exp -> bool
-    method measure_point_influence : string -> Vine.exp -> unit
-    method maybe_measure_influence_deref : Vine.exp -> unit
-    method measure_influence_rep : unit
-    method measure_influence_expr : Vine.exp -> unit
     method on_missing_random : unit
     method on_missing_zero : unit
-    method disqualify_path : unit
     method eip_hook : int64 -> unit	  
     method finish_path : bool
     method print_tree : out_channel -> unit
@@ -120,10 +107,10 @@ sig
     method make_x86_regs_symbolic : unit
     method load_x86_user_regs : Temu_state.userRegs -> unit
     method print_x86_regs : unit
-    method private store_byte  : int64 -> D.t -> unit
-    method private store_short : int64 -> D.t -> unit
-    method private store_word  : int64 -> D.t -> unit
-    method private store_long  : int64 -> D.t -> unit
+    method store_byte  : int64 -> D.t -> unit
+    method store_short : int64 -> D.t -> unit
+    method store_word  : int64 -> D.t -> unit
+    method store_long  : int64 -> D.t -> unit
     method store_byte_conc  : int64 -> int   -> unit
     method store_short_conc : int64 -> int   -> unit
     method store_word_conc  : int64 -> int64 -> unit
@@ -146,6 +133,11 @@ sig
     method add_special_handler : Fragment_machine.special_handler -> unit
     method handle_special : string -> Vine.stmt list option
     method private get_int_var : Vine.var -> D.t
+    method get_bit_var_d   : Fragment_machine.register_name -> D.t
+    method get_byte_var_d  : Fragment_machine.register_name -> D.t
+    method get_short_var_d : Fragment_machine.register_name -> D.t
+    method get_word_var_d  : Fragment_machine.register_name -> D.t
+    method get_long_var_d  : Fragment_machine.register_name -> D.t
     method get_bit_var   : Fragment_machine.register_name -> int
     method get_byte_var  : Fragment_machine.register_name -> int
     method get_short_var : Fragment_machine.register_name -> int
@@ -174,7 +166,7 @@ sig
       Fragment_machine.register_name -> string -> int64 -> unit
     method set_word_reg_fresh_symbolic :
       Fragment_machine.register_name -> string -> unit
-    method private eval_int_exp_ty : Vine.exp -> (D.t * Vine.typ)	    
+    method eval_int_exp_ty : Vine.exp -> (D.t * Vine.typ)	    
     method private eval_int_exp : Vine.exp -> D.t
     method private eval_int_exp_simplify : Vine.exp -> D.t
     method eval_label_exp : Vine.exp -> string
@@ -224,8 +216,10 @@ sig
     method eval_expr_to_symbolic_expr : Vine.exp -> Vine.exp
     method watchpoint : unit
     method mem_val_as_string : int64 -> Vine.typ -> string
+    method get_loop_cnt : int64
     val form_man : Formula_manager.FormulaManagerFunctor(D).formula_manager
-    val mutable loop_cnt : int64
+    method get_form_man :
+      Formula_manager.FormulaManagerFunctor(D).formula_manager
     val reg_to_var :(Fragment_machine.register_name, Vine.var) Hashtbl.t
     val mem :
       Granular_memory.GranularMemoryFunctor(D).granular_second_snapshot_memory

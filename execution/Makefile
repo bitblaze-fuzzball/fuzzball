@@ -19,7 +19,8 @@ export OCAMLDEP = ocamldep -I $(VINE_OCAMLDIR) -I $(STP_OCAMLDIR) \
 export SOURCES = \
 	exec_domain.mli \
 	tagged_domain.mli tagged_domain.ml \
-        exec_exceptions.mli exec_exceptions.ml \
+	exec_exceptions.mli exec_exceptions.ml \
+	exec_utils.mli exec_utils.ml \
 	concrete_domain.mli concrete_domain.ml \
 	exec_options.mli exec_options.ml \
 	frag_simplify.mli frag_simplify.ml \
@@ -28,13 +29,14 @@ export SOURCES = \
 	symbolic_domain.mli symbolic_domain.ml \
 	query_engine.mli query_engine.ml \
 	stpvc_engine.mli stpvc_engine.ml \
-	exec_influence.mli exec_influence.ml \
 	stp_external_engine.mli stp_external_engine.ml \
 	concrete_memory.mli concrete_memory.ml \
 	granular_memory.mli granular_memory.ml \
 	fragment_machine.mli fragment_machine.ml \
 	decision_tree.mli decision_tree.ml \
+	exec_no_influence.mli exec_no_influence.ml \
 	sym_path_frag_machine.mli sym_path_frag_machine.ml \
+	exec_influence.mli exec_influence.ml \
 	sym_region_frag_machine.mli sym_region_frag_machine.ml \
 	special_handlers.mli special_handlers.ml \
 	linux_syscalls.mli linux_syscalls.ml \

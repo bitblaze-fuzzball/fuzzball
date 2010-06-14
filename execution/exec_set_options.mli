@@ -14,6 +14,7 @@ val set_program_name : string -> unit
 val apply_cmdline_opts : Fragment_machine.fragment_machine
   -> Vine.decl list -> unit
 
-val make_symbolic_init : Fragment_machine.fragment_machine -> (unit -> unit)
+val make_symbolic_init : Fragment_machine.fragment_machine 
+  -> Exec_no_influence.influence_manager -> (unit -> unit)
 
 val decide_start_addrs : unit -> (int64 * int64)

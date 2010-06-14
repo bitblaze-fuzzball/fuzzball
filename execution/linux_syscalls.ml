@@ -4,12 +4,12 @@
  permission.
 *)
 
-module V = Vine;;
+module V = Vine
 
-open Concrete_domain;;
-open Exec_exceptions;;
-open Exec_options;;
-open Fragment_machine;;
+open Exec_utils
+open Exec_exceptions
+open Exec_options
+open Fragment_machine
 
 let linux_initial_break = ref None
 

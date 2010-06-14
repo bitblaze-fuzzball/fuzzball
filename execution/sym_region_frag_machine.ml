@@ -7,13 +7,12 @@
 module V = Vine;;
 
 open Exec_domain;;
-open Concrete_domain;;
+open Exec_utils;;
 open Exec_exceptions;;
 open Exec_options;;
 open Frag_simplify;;
 open Formula_manager;;
 open Query_engine;;
-open Exec_influence;;
 open Granular_memory;;
 open Fragment_machine;;
 open Decision_tree;;
@@ -279,7 +278,7 @@ struct
 
     val mutable sink_regions = []
 
-    method add_sink_region (e:Vine.exp) (size:int64) =
+    method private add_sink_region (e:Vine.exp) (size:int64) =
       self#on_missing_symbol_m sink_mem "sink";
       sink_regions <- ((self#region_for e), size) :: sink_regions
 
@@ -381,7 +380,7 @@ struct
 	     Printf.printf "Can be null.\n"
 	   else
 	     Printf.printf "Can be non-null.\n");
-      self#maybe_measure_influence_deref e;
+      infl_man#maybe_measure_influence_deref e;
       dt#start_new_query;
       let (cbases, coffs, eoffs, syms) = classify_terms e form_man in
 	if !opt_trace_sym_addr_details then
@@ -504,7 +503,7 @@ struct
 	let e = D.to_symbolic_32 v in
 	  if do_influence then 
 	    (Printf.printf "Measuring symbolic %s influence..." name;
-	     self#measure_point_influence name e);
+	     infl_man#measure_point_influence name e);
 	  self#concretize V.REG_32 e
 
     method load_word_concretize addr do_influence name =
@@ -514,7 +513,7 @@ struct
 	let e = D.to_symbolic_32 v in
 	  if do_influence then 
 	    (Printf.printf "Measuring symbolic %s influence..." name;
-	     self#measure_point_influence name e);
+	     infl_man#measure_point_influence name e);
 	  self#concretize V.REG_32 e
 
     method load_short_concretize addr do_influence name =
@@ -524,7 +523,7 @@ struct
 	let e = D.to_symbolic_16 v in
 	  if do_influence then 
 	    (Printf.printf "Measuring symbolic %s influence..." name;
-	     self#measure_point_influence name e);
+	     infl_man#measure_point_influence name e);
 	  Int64.to_int (self#concretize V.REG_16 e)
 
     method load_byte_concretize addr do_influence name =
@@ -534,7 +533,7 @@ struct
 	let e = D.to_symbolic_8 v in
 	  if do_influence then 
 	    (Printf.printf "Measuring symbolic %s influence..." name;
-	     self#measure_point_influence name e);
+	     infl_man#measure_point_influence name e);
 	  Int64.to_int (self#concretize V.REG_8 e)
 
     method private maybe_concretize_binop op v1 v2 ty1 ty2 =

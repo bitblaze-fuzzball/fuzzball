@@ -8,12 +8,11 @@ module V = Vine;;
 
 open Exec_domain;;
 open Exec_exceptions;;
-open Concrete_domain;;
+open Exec_utils;;
 open Exec_options;;
 open Formula_manager;;
 open Query_engine;;
 open Stpvc_engine;;
-open Exec_influence;;
 open Stp_external_engine;;
 open Concrete_memory;;
 open Granular_memory;;
@@ -136,13 +135,13 @@ struct
 		 (new GM.granular_hash_memory))
 
     val form_man = new FormMan.formula_manager
+    method get_form_man = form_man
 
     val reg_store = V.VarHash.create 100
     val reg_to_var = Hashtbl.create 100
     val temps = V.VarHash.create 100
     val mutable frag = ([], [])
     val mutable insns = []
-    val mutable loop_cnt = 0L
 
     val mutable snap = (V.VarHash.create 1, V.VarHash.create 1)
 
@@ -157,6 +156,9 @@ struct
 	match result with
 	  | "fallthrough" -> ()
 	  | _ -> failwith "Initial program should fall through"
+
+    val mutable loop_cnt = 0L
+    method get_loop_cnt = loop_cnt
 
     method set_frag (dl, sl) =
       frag <- (dl, sl);
@@ -377,10 +379,10 @@ struct
 	reg "%esp" R_ESP;
 	reg "%ebp" R_EBP
 
-    method private store_byte  addr b = mem#store_byte  addr b
-    method private store_short addr s = mem#store_short addr s
-    method private store_word  addr w = mem#store_word  addr w
-    method private store_long  addr l = mem#store_long  addr l
+    method store_byte  addr b = mem#store_byte  addr b
+    method store_short addr s = mem#store_short addr s
+    method store_word  addr w = mem#store_word  addr w
+    method store_long  addr l = mem#store_long  addr l
 
     method store_byte_conc  addr b = mem#store_byte addr (D.from_concrete_8 b)
     method store_short_conc addr s = mem#store_short addr(D.from_concrete_16 s)
@@ -453,20 +455,17 @@ struct
 	       | Not_found -> V.pp_var print_string var; 
 		   failwith "Unknown variable")
 
-    method get_bit_var reg =
-      D.to_concrete_1 (self#get_int_var (Hashtbl.find reg_to_var reg))
+    method get_bit_var_d   reg = self#get_int_var (Hashtbl.find reg_to_var reg)
+    method get_byte_var_d  reg = self#get_int_var (Hashtbl.find reg_to_var reg)
+    method get_short_var_d reg = self#get_int_var (Hashtbl.find reg_to_var reg)
+    method get_word_var_d  reg = self#get_int_var (Hashtbl.find reg_to_var reg)
+    method get_long_var_d  reg = self#get_int_var (Hashtbl.find reg_to_var reg)
 
-    method get_byte_var reg =
-      D.to_concrete_8 (self#get_int_var (Hashtbl.find reg_to_var reg))
-
-    method get_short_var reg =
-      D.to_concrete_16 (self#get_int_var (Hashtbl.find reg_to_var reg))
-
-    method get_word_var reg =
-      D.to_concrete_32 (self#get_int_var (Hashtbl.find reg_to_var reg))
-
-    method get_long_var reg =
-      D.to_concrete_64 (self#get_int_var (Hashtbl.find reg_to_var reg))
+    method get_bit_var   reg = D.to_concrete_1  (self#get_bit_var_d   reg)
+    method get_byte_var  reg = D.to_concrete_8  (self#get_byte_var_d  reg)
+    method get_short_var reg = D.to_concrete_16 (self#get_short_var_d reg)
+    method get_word_var  reg = D.to_concrete_32 (self#get_word_var_d  reg)
+    method get_long_var  reg = D.to_concrete_64 (self#get_long_var_d  reg)
 
     method get_bit_var_concolic reg =
       form_man#concolic_eval_1 (self#get_int_var (Hashtbl.find reg_to_var reg))
@@ -748,7 +747,7 @@ struct
       in
 	((func v1), ty)
 
-    method private eval_int_exp_ty exp =
+    method eval_int_exp_ty exp =
       match exp with
 	| V.BinOp(op, e1, e2) ->
 	    let (v1, ty1) = self#eval_int_exp_ty e1 and
@@ -1153,8 +1152,7 @@ struct
     method print_tree (oc:out_channel) = ()
     method set_iter_seed (i:int) = ()
     method finish_path = false
-    method compute_multipath_influence (s:string) = ()
-    method compute_all_multipath_influence = ()
+    method after_exploration = ()
     method make_x86_segtables_symbolic = ()
     method store_word_special_region (r:register_name) (i1:int64) (i2:int64)
       : unit =
@@ -1167,10 +1165,6 @@ struct
     method load_word_concretize  addr (b:bool) (s:string)
       = self#load_word_conc addr
     method make_sink_region (s:string) (i:int64) = ()
-    method store_symbolic_byte_influence  a s = self#store_symbolic_byte a s
-    method store_symbolic_short_influence a s = self#store_symbolic_short a s
-    method store_symbolic_word_influence  a s = self#store_symbolic_word a s
-    method store_symbolic_long_influence  a s = self#store_symbolic_long a s
   end
 end
 
@@ -1325,8 +1319,7 @@ class virtual fragment_machine = object
 
   method virtual finish_path : bool
 
-  method virtual compute_multipath_influence : string -> unit
-  method virtual compute_all_multipath_influence : unit
+  method virtual after_exploration : unit
 
   method virtual make_x86_segtables_symbolic : unit
   method virtual store_word_special_region :
@@ -1340,9 +1333,4 @@ class virtual fragment_machine = object
   method virtual load_word_concretize  : int64 -> bool -> string -> int64
 
   method virtual make_sink_region : string -> int64 -> unit
-
-  method virtual store_symbolic_byte_influence  : int64 -> string -> unit
-  method virtual store_symbolic_short_influence : int64 -> string -> unit
-  method virtual store_symbolic_word_influence  : int64 -> string -> unit
-  method virtual store_symbolic_long_influence  : int64 -> string -> unit
 end

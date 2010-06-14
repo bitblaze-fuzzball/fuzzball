@@ -4,10 +4,10 @@
  permission.
 *)
 
-open Concrete_domain;;
-open Exec_options;;
-open Fragment_machine;;
-open Linux_syscalls;;
+open Exec_utils
+open Exec_options
+open Fragment_machine
+open Linux_syscalls
 
 type elf_header = {
   eh_type : int;

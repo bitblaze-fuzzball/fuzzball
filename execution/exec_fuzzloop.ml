@@ -8,7 +8,7 @@ module V = Vine;;
 
 open Exec_domain;;
 open Exec_exceptions;;
-open Concrete_domain;;
+open Exec_utils;;
 open Exec_options;;
 open Frag_simplify;;
 open Fragment_machine;;
@@ -142,13 +142,7 @@ let fuzz start_eip fuzz_start_eip end_eips
       with
 	| LastIteration -> ()
 	| Signal("QUIT") -> Printf.printf "Caught SIGQUIT\n");
-     (match (!opt_measure_deref_influence_at,
-	     !opt_measure_expr_influence_at) with
-	| (Some eip, _) -> fm#compute_multipath_influence 
-	    (Printf.sprintf "eip 0x%08Lx" eip)
-	| (_, Some (eip, expr)) -> fm#compute_multipath_influence 
-	    (Printf.sprintf "eip 0x%08Lx" eip)
-	| _ -> fm#compute_all_multipath_influence)
+     fm#after_exploration
    with
      | Signal(("INT"|"HUP"|"TERM") as s) -> Printf.printf "Caught SIG%s\n" s
      | e -> Printf.printf "Caught fatal error %s\n" (Printexc.to_string e);

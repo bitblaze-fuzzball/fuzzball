@@ -4,12 +4,12 @@
  permission.
 *)
 
-module V = Vine;;
+module V = Vine
 
-open Concrete_domain;;
-open Exec_exceptions;;
-open Frag_simplify;;
-open Formula_manager;;
+open Exec_utils
+open Exec_exceptions
+open Frag_simplify
+open Formula_manager
 
 module SymbolicDomain : Exec_domain.DOMAIN = struct
   type t = V.exp

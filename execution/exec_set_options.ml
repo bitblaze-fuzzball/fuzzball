@@ -563,7 +563,8 @@ let apply_cmdline_opts (fm : Fragment_machine.fragment_machine) dl =
   List.iter (fun (addr,v) -> fm#store_long_conc addr v) !opt_store_longs;
   ()
 
-let make_symbolic_init (fm:Fragment_machine.fragment_machine) =
+let make_symbolic_init (fm:Fragment_machine.fragment_machine) 
+    (infl_man:Exec_no_influence.influence_manager) =
   (fun () ->
      let new_max i =
        max_input_string_length :=
@@ -585,25 +586,25 @@ let make_symbolic_init (fm:Fragment_machine.fragment_machine) =
 		    fm#store_symbolic_byte addr varname)
 	 !opt_symbolic_bytes;
        List.iter (fun (addr, varname) ->
-		    fm#store_symbolic_byte_influence addr varname)
+		    infl_man#store_symbolic_byte_influence addr varname)
 	 !opt_symbolic_bytes_influence;
        List.iter (fun (addr, varname) ->
 		    fm#store_symbolic_short addr varname)
 	 !opt_symbolic_shorts;
        List.iter (fun (addr, varname) ->
-		    fm#store_symbolic_short_influence addr varname)
+		    infl_man#store_symbolic_short_influence addr varname)
 	 !opt_symbolic_shorts_influence;
        List.iter (fun (addr, varname) ->
 		    fm#store_symbolic_word addr varname)
 	 !opt_symbolic_words;
        List.iter (fun (addr, varname) ->
-		    fm#store_symbolic_word_influence addr varname)
+		    infl_man#store_symbolic_word_influence addr varname)
 	 !opt_symbolic_words_influence;
        List.iter (fun (addr, varname) ->
 		    fm#store_symbolic_long addr varname)
 	 !opt_symbolic_longs;
        List.iter (fun (addr, varname) ->
-		    fm#store_symbolic_long_influence addr varname)
+		    infl_man#store_symbolic_long_influence addr varname)
 	 !opt_symbolic_longs_influence;
        List.iter (fun (varname, size) ->
 		    fm#make_sink_region varname size)

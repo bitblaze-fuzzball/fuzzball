@@ -44,10 +44,10 @@ sig
     method load_x86_user_regs : Temu_state.userRegs -> unit
     method print_x86_regs : unit
 
-    method private store_byte  : int64 -> D.t -> unit
-    method private store_short : int64 -> D.t -> unit
-    method private store_word  : int64 -> D.t -> unit
-    method private store_long  : int64 -> D.t -> unit
+    method store_byte  : int64 -> D.t -> unit
+    method store_short : int64 -> D.t -> unit
+    method store_word  : int64 -> D.t -> unit
+    method store_long  : int64 -> D.t -> unit
 
     method store_byte_conc  : int64 -> int   -> unit
     method store_short_conc : int64 -> int   -> unit
@@ -81,6 +81,12 @@ sig
     method handle_special : string -> Vine.stmt list option
 
     method private get_int_var : Vine.var -> D.t
+
+    method get_bit_var_d   : register_name -> D.t
+    method get_byte_var_d  : register_name -> D.t
+    method get_short_var_d : register_name -> D.t
+    method get_word_var_d  : register_name -> D.t
+    method get_long_var_d  : register_name -> D.t
 
     method get_bit_var   : register_name -> int
     method get_byte_var  : register_name -> int
@@ -117,7 +123,7 @@ sig
       Vine.binop_type -> D.t -> D.t -> Vine.typ -> Vine.typ ->
       (D.t * D.t)
 
-    method private eval_int_exp_ty : Vine.exp -> (D.t * Vine.typ)
+    method eval_int_exp_ty : Vine.exp -> (D.t * Vine.typ)
 	    
     method private eval_int_exp : Vine.exp -> D.t
 
@@ -198,8 +204,11 @@ sig
 
     method mem_val_as_string : int64 -> Vine.typ -> string
 
+    method get_loop_cnt : int64
+
     val form_man : Formula_manager.FormulaManagerFunctor(D).formula_manager
-    val mutable loop_cnt : int64
+    method get_form_man :
+      Formula_manager.FormulaManagerFunctor(D).formula_manager
     val reg_to_var : (register_name, Vine.var) Hashtbl.t
     val mem :
       Granular_memory.GranularMemoryFunctor(D).granular_second_snapshot_memory
@@ -212,8 +221,7 @@ sig
     method print_tree : out_channel -> unit
     method set_iter_seed : int -> unit
     method finish_path : bool
-    method compute_multipath_influence : string -> unit
-    method compute_all_multipath_influence : unit
+    method after_exploration : unit
     method make_x86_segtables_symbolic : unit
     method store_word_special_region :
       register_name -> int64 -> int64 -> unit
@@ -223,10 +231,6 @@ sig
     method load_short_concretize : int64 -> bool -> string -> int
     method load_word_concretize  : int64 -> bool -> string -> int64
     method make_sink_region : string -> int64 -> unit
-    method store_symbolic_byte_influence  : int64 -> string -> unit
-    method store_symbolic_short_influence : int64 -> string -> unit
-    method store_symbolic_word_influence  : int64 -> string -> unit
-    method store_symbolic_long_influence  : int64 -> string -> unit
   end
 end
 
@@ -384,8 +388,7 @@ class virtual fragment_machine : object
 
   method virtual finish_path : bool
 
-  method virtual compute_multipath_influence : string -> unit
-  method virtual compute_all_multipath_influence : unit
+  method virtual after_exploration : unit
 
   method virtual make_x86_segtables_symbolic : unit
   method virtual store_word_special_region :
@@ -399,9 +402,4 @@ class virtual fragment_machine : object
   method virtual load_word_concretize  : int64 -> bool -> string -> int64
 
   method virtual make_sink_region : string -> int64 -> unit
-
-  method virtual store_symbolic_byte_influence  : int64 -> string -> unit
-  method virtual store_symbolic_short_influence : int64 -> string -> unit
-  method virtual store_symbolic_word_influence  : int64 -> string -> unit
-  method virtual store_symbolic_long_influence  : int64 -> string -> unit
 end
