@@ -35,11 +35,10 @@ let main argv =
 	Array.iteri
 	  (fun i b -> fm#store_byte_conc (Int64.add code_addr (Int64.of_int i))
 	     (Char.code b)) bytes_a;
-	if !Exec_options.opt_trace_registers then
-	  fm#print_x86_regs;
-	Exec_runloop.runloop fm code_addr asmir_gamma (fun _ -> true);
-	if !Exec_options.opt_trace_registers then
-	  fm#print_x86_regs;
+	let next_eip = 
+	  Exec_run_common.run_one_insn fm asmir_gamma code_addr bytes_a in
+	  if !Exec_options.opt_trace_eip then
+	    Printf.printf "Next instruction would be at 0x%08Lx\n" next_eip
 ;;
 
 main Sys.argv;;

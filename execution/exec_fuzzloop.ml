@@ -12,6 +12,7 @@ open Frag_simplify;;
 open Fragment_machine;;
 open Sym_path_frag_machine;;
 open Sym_region_frag_machine;;
+open Exec_run_common;;
 open Exec_runloop;;
 open Exec_stats;;
 

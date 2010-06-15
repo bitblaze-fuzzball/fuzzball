@@ -44,6 +44,7 @@ export SOURCES = \
 	linux_syscalls.mli linux_syscalls.ml \
 	linux_loader.mli linux_loader.ml \
 	state_loader.mli state_loader.ml \
+	exec_run_common.mli exec_run_common.ml \
 	exec_runloop.mli exec_runloop.ml \
 	exec_stats.mli exec_stats.ml \
 	exec_fuzzloop.mli exec_fuzzloop.ml \
