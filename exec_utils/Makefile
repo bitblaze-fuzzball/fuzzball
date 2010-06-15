@@ -23,7 +23,7 @@ OCAMLFLAGS = -warn-error Aelz  #-w A
 
 # default subprojects to build
 ifndef SUBPROJS
-	export SUBPROJS = fuzzball vinegrind
+	export SUBPROJS = fuzzball test_insn vinegrind
 endif
 
 define PROJ_fuzzball
@@ -32,6 +32,13 @@ define PROJ_fuzzball
         DOC_FILES=$(SOURCES)
 endef
 export PROJ_fuzzball
+
+define PROJ_test_insn
+        RESULT=test_insn
+        SOURCES=test_insn.ml
+        DOC_FILES=$(SOURCES)
+endef
+export PROJ_test_insn
 
 define PROJ_vinegrind
         RESULT=vinegrind
