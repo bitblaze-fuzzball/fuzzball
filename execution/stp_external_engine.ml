@@ -31,7 +31,8 @@ let parse_counterex line =
      let lhs = String.sub trimmed 0 eq_loc and
 	 rhs = (String.sub trimmed (eq_loc + 1)
 		  ((String.length trimmed) - eq_loc - 1)) in
-       assert((String.sub lhs ((String.length lhs) - 2) 2) = "  ");
+       assert((String.sub lhs ((String.length lhs) - 2) 2) = "  "
+	   || (String.sub lhs ((String.length lhs) - 2) 2) = " <");
        let varname = String.sub lhs 0 ((String.length lhs) - 2) in
        let value =
 	 let len = String.length rhs in
@@ -42,6 +43,10 @@ let parse_counterex line =
 		 ("0x" ^ (String.sub rhs 3 (len - 3)))
 	       else if len >= 4 && (String.sub rhs 0 3) = " 0b" then
 		 ("0b" ^ (String.sub rhs 3 (len - 3)))
+	       else if rhs = ">FALSE" then
+		 "0"
+	       else if rhs = ">TRUE" then
+		 "1"
 	       else
 		 failwith "Failed to parse value in counterexample"))
        in
