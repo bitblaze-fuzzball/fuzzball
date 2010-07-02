@@ -40,7 +40,7 @@ let reg_to_regstr reg = match reg with
   | R_ECX -> "R_ECX" | R_EDX -> "R_EDX"
   | EFLAGSREST -> "EFLAGSREST" | R_CF -> "R_CF" | R_PF -> "R_PF"
   | R_AF -> "R_AF"| R_ZF -> "R_ZF" | R_SF -> "R_SF" | R_OF -> "R_OF"
-  | R_CC_OP -> "R_CC_OP" | R_CC_DEP1 -> "R_CC_DEP2"
+  | R_CC_OP -> "R_CC_OP" | R_CC_DEP1 -> "R_CC_DEP1"
   | R_CC_DEP2 -> "R_CC_DEP2" | R_CC_NDEP -> "R_CC_NDEP"
   | R_DFLAG -> "R_DFLAG" | R_IDFLAG -> "R_IDFLAG" | R_ACFLAG -> "R_ACFLAG"
   | R_EMWARN -> "R_EMWARN"
@@ -55,7 +55,7 @@ let regstr_to_reg s = match s with
   | "R_ECX" -> R_ECX | "R_EDX" -> R_EDX
   | "EFLAGSREST" -> EFLAGSREST | "R_CF" -> R_CF | "R_PF" -> R_PF
   | "R_AF" -> R_AF| "R_ZF" -> R_ZF | "R_SF" -> R_SF | "R_OF" -> R_OF
-  | "R_CC_OP" -> R_CC_OP | "R_CC_DEP1" -> R_CC_DEP2
+  | "R_CC_OP" -> R_CC_OP | "R_CC_DEP1" -> R_CC_DEP1
   | "R_CC_DEP2" -> R_CC_DEP2 | "R_CC_NDEP" -> R_CC_NDEP
   | "R_DFLAG" -> R_DFLAG | "R_IDFLAG" -> R_IDFLAG | "R_ACFLAG" -> R_ACFLAG
   | "R_EMWARN" -> R_EMWARN
