@@ -37,19 +37,24 @@ let parse_counterex line =
 	 if (String.sub lhs ((String.length lhs) - 2) 1) = " " then
 	   2 else 1
        in
+       let rhs_rtrim =
+	 if (String.sub rhs ((String.length rhs) - 1) 1) = " " then
+	   1 else 0
+       in
        let varname = String.sub lhs 0 ((String.length lhs) - lhs_rtrim) in
        let value =
-	 let len = String.length rhs in
+	 let rhs' = String.sub rhs 0 ((String.length rhs) - rhs_rtrim) in
+	 let len = String.length rhs' in
 	   (Int64.of_string
-	      (if len >= 6 && (String.sub rhs 0 5) = " 0hex" then
-		 ("0x" ^ (String.sub rhs 5 (len - 5)))
-	       else if len >= 4 && (String.sub rhs 0 3) = " 0x" then
-		 ("0x" ^ (String.sub rhs 3 (len - 3)))
-	       else if len >= 4 && (String.sub rhs 0 3) = " 0b" then
-		 ("0b" ^ (String.sub rhs 3 (len - 3)))
-	       else if rhs = ">FALSE" then
+	      (if len >= 6 && (String.sub rhs' 0 5) = " 0hex" then
+		 ("0x" ^ (String.sub rhs' 5 (len - 5)))
+	       else if len >= 4 && (String.sub rhs' 0 3) = " 0x" then
+		 ("0x" ^ (String.sub rhs' 3 (len - 3)))
+	       else if len >= 4 && (String.sub rhs' 0 3) = " 0b" then
+		 ("0b" ^ (String.sub rhs' 3 (len - 3)))
+	       else if rhs' = ">FALSE" then
 		 "0"
-	       else if rhs = ">TRUE" then
+	       else if rhs' = ">TRUE" then
 		 "1"
 	       else
 		 failwith "Failed to parse value in counterexample"))
