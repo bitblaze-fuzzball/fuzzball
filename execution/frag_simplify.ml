@@ -311,8 +311,10 @@ let copy_const_prop (dl, sl) =
 	  let st' = replace_uses st in
 	    (match st' with
 	       | V.Move(V.Temp(lhs_v), rhs)
-		   -> invalidate_uses map lhs_v;
-		     V.VarHash.remove map lhs_v;
+		 -> invalidate_uses map lhs_v;
+		   V.VarHash.remove map lhs_v;
+	       | V.Move(V.Mem(var, _, _), rhs)
+		 -> invalidate_uses map var;
 	       | _ -> ());
 	    (match st' with
 	       | V.CJmp(_, _, _)
