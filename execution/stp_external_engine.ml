@@ -25,15 +25,19 @@ let parse_counterex line =
     None
   else
     (assert((String.sub line 0 8) = "ASSERT( ");
-     assert((String.sub line ((String.length line) - 4) 4) = "  );");
-     let trimmed = String.sub line 8 ((String.length line) - 12) in
+     assert((String.sub line ((String.length line) - 3) 3) = " );");
+     let trimmed = String.sub line 8 ((String.length line) - 11) in
      let eq_loc = String.index trimmed '=' in
      let lhs = String.sub trimmed 0 eq_loc and
 	 rhs = (String.sub trimmed (eq_loc + 1)
 		  ((String.length trimmed) - eq_loc - 1)) in
-       assert((String.sub lhs ((String.length lhs) - 2) 2) = "  "
-	   || (String.sub lhs ((String.length lhs) - 2) 2) = " <");
-       let varname = String.sub lhs 0 ((String.length lhs) - 2) in
+       assert((String.sub lhs ((String.length lhs) - 1) 1) = " "
+	   || (String.sub lhs ((String.length lhs) - 1) 1) = "<");
+       let lhs_rtrim =
+	 if (String.sub lhs ((String.length lhs) - 2) 1) = " " then
+	   2 else 1
+       in
+       let varname = String.sub lhs 0 ((String.length lhs) - lhs_rtrim) in
        let value =
 	 let len = String.length rhs in
 	   (Int64.of_string
