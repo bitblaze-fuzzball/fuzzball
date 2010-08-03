@@ -227,16 +227,16 @@ module ConcreteDomain : Exec_domain.DOMAIN = struct
   let le32 v v2 = bool ((Vine_util.int64_ucompare (fix_u32 v) (fix_u32 v2))<=0)
   let le64 v v2 = bool ((Vine_util.int64_ucompare (        v) (        v2))<=0)
 
-  let slt1  v v2 = bool ((fix_u1  v) < (fix_u1  v2))
-  let slt8  v v2 = bool ((fix_u8  v) < (fix_u8  v2))
-  let slt16 v v2 = bool ((fix_u16 v) < (fix_u16 v2))
-  let slt32 v v2 = bool ((fix_u32 v) < (fix_u32 v2))
+  let slt1  v v2 = bool ((fix_s1  v) < (fix_s1  v2))
+  let slt8  v v2 = bool ((fix_s8  v) < (fix_s8  v2))
+  let slt16 v v2 = bool ((fix_s16 v) < (fix_s16 v2))
+  let slt32 v v2 = bool ((fix_s32 v) < (fix_s32 v2))
   let slt64 v v2 = bool ((        v) < (        v2))
 
-  let sle1  v v2 = bool ((fix_u1  v) <= (fix_u1  v2))
-  let sle8  v v2 = bool ((fix_u8  v) <= (fix_u8  v2))
-  let sle16 v v2 = bool ((fix_u16 v) <= (fix_u16 v2))
-  let sle32 v v2 = bool ((fix_u32 v) <= (fix_u32 v2))
+  let sle1  v v2 = bool ((fix_s1  v) <= (fix_s1  v2))
+  let sle8  v v2 = bool ((fix_s8  v) <= (fix_s8  v2))
+  let sle16 v v2 = bool ((fix_s16 v) <= (fix_s16 v2))
+  let sle32 v v2 = bool ((fix_s32 v) <= (fix_s32 v2))
   let sle64 v v2 = bool ((        v) <= (        v2))
 
   let neg1  = Int64.neg
