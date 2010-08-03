@@ -205,21 +205,14 @@ struct
       let reg r v =
 	self#set_int_var (Hashtbl.find reg_to_var r) v
       in
-	reg R_FTOP (D.from_concrete_32 0L);	
-	reg EFLAGSREST (D.from_concrete_32 0L);
-	reg R_LDT (D.from_concrete_32 0x00000000L);
-	reg R_GDT (D.from_concrete_32 0x00000000L);
-	reg R_DFLAG (D.from_concrete_32 1L);
-	reg R_IDFLAG (D.from_concrete_32 0L);
-	reg R_ACFLAG (D.from_concrete_32 0L);
-	reg R_EBP (D.from_concrete_32 0x00000000L);
-	reg R_ESP (D.from_concrete_32 0x00000000L);
-	reg R_ESI (D.from_concrete_32 0x00000000L);
-	reg R_EDI (D.from_concrete_32 0x00000000L);
 	reg R_EAX (D.from_concrete_32 0x00000000L);
 	reg R_EBX (D.from_concrete_32 0x00000000L);
 	reg R_ECX (D.from_concrete_32 0x00000000L);
 	reg R_EDX (D.from_concrete_32 0x00000000L);
+	reg R_EBP (D.from_concrete_32 0x00000000L);
+	reg R_ESP (D.from_concrete_32 0x00000000L);
+	reg R_ESI (D.from_concrete_32 0x00000000L);
+	reg R_EDI (D.from_concrete_32 0x00000000L);
 	reg R_CS (D.from_concrete_16 0);
 	reg R_DS (D.from_concrete_16 0);
 	reg R_ES (D.from_concrete_16 0);
@@ -231,6 +224,13 @@ struct
 	reg R_SF (D.from_concrete_1 0);
 	reg R_OF (D.from_concrete_1 0);
 	reg R_ZF (D.from_concrete_1 0);
+	reg R_FTOP (D.from_concrete_32 0L);	
+	reg EFLAGSREST (D.from_concrete_32 0L);
+	reg R_LDT (D.from_concrete_32 0x00000000L);
+	reg R_GDT (D.from_concrete_32 0x00000000L);
+	reg R_DFLAG (D.from_concrete_32 1L);
+	reg R_IDFLAG (D.from_concrete_32 0L);
+	reg R_ACFLAG (D.from_concrete_32 0L);
 
     method make_x86_regs_symbolic =
       let reg r v =
@@ -362,21 +362,34 @@ struct
       self#set_short_var R_SS (Int32.to_int regs.Temu_state.xss)
 
     method print_x86_regs =
-      let reg str r =
+      let reg32 str r =
 	Printf.printf "%s: " str;
 	Printf.printf "%s\n"
 	  (D.to_string_32 
 	     (form_man#simplify32
 		(self#get_int_var (Hashtbl.find reg_to_var r))))
       in
-	reg "%eax" R_EAX;
-	reg "%ebx" R_EBX;
-	reg "%ecx" R_ECX;
-	reg "%edx" R_EDX;
-	reg "%esi" R_ESI;
-	reg "%edi" R_EDI;
-	reg "%esp" R_ESP;
-	reg "%ebp" R_EBP
+      let reg1 str r =
+	Printf.printf "%s: " str;
+	Printf.printf "%s\n"
+	  (D.to_string_1 
+	     (form_man#simplify1
+		(self#get_int_var (Hashtbl.find reg_to_var r))))
+      in
+	reg32 "%eax" R_EAX;
+	reg32 "%ebx" R_EBX;
+	reg32 "%ecx" R_ECX;
+	reg32 "%edx" R_EDX;
+	reg32 "%esi" R_ESI;
+	reg32 "%edi" R_EDI;
+	reg32 "%esp" R_ESP;
+	reg32 "%ebp" R_EBP;
+	reg1 "CF" R_CF;
+	reg1 "PF" R_PF;
+	reg1 "AF" R_AF;
+	reg1 "ZF" R_ZF;
+	reg1 "SF" R_SF;
+	reg1 "OF" R_OF
 
     method store_byte  addr b = mem#store_byte  addr b
     method store_short addr s = mem#store_short addr s
