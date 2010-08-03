@@ -55,7 +55,9 @@ let rec expr_size e =
     | V.Name(_) -> 1
     | V.Cast(_, _, e1) -> 1 + (expr_size e1)
     | V.Unknown(_) -> 1
-    | V.Let(_, _, _) -> failwith "Unexpected let in expr_size"
+    | V.Let(V.Temp(_), e1, e2) -> 2 + (expr_size e1) + (expr_size e2)
+    | V.Let(V.Mem(_,e0,_), e1, e2) ->
+	2 + (expr_size e0) + (expr_size e1) + (expr_size e2)
 
 let rec stmt_size = function
   | V.Jmp(e) -> 1 + (expr_size e)
@@ -128,7 +130,15 @@ let rec cfold_with_type e =
 	raise IllegalInstruction
     | V.Unknown(s) ->
 	raise (Simplify_failure ("unhandled unknown "^s^" in cfold_with_type"))
-    | V.Let(_) -> failwith "unhandled let in cfold_with_type"
+    | V.Let(V.Temp(t), e1, e2) ->
+	let (e1', _) = cfold_with_type e1 and
+	    (e2', ty2) = cfold_with_type e2 in
+	  (V.Let(V.Temp(t), e1', e2), ty2)
+    | V.Let(V.Mem(mem,e0,mem_ty), e1, e2) ->
+	let (e0', _) = cfold_with_type e0 and
+	    (e1', _) = cfold_with_type e1 and
+	    (e2', ty2) = cfold_with_type e2 in
+	  (V.Let(V.Mem(mem,e0',mem_ty), e1', e2), ty2)
 
 let cfold_exprs_w_type (dl, sl) =
   let fold e =
@@ -200,6 +210,8 @@ let rec count_uses_e var e =
     | V.UnOp(_, e) -> count_uses_e var e
     | V.Cast(_, _, e) -> count_uses_e var e
     | V.Lval(lv) -> count_uses_lv var lv
+    | V.Let(lv, e1, e2) ->
+	(count_uses_lv var lv) + (count_uses_e var e1) + (count_uses_e var e2)
     | _ -> 0
 and count_uses_lv var lv =
   match lv with
@@ -277,6 +289,13 @@ let copy_const_prop (dl, sl) =
 	  V.VarHash.find map v
       | V.Lval(V.Mem(v, idx, ty)) ->
 	  V.Lval(V.Mem(v, replace_uses_e idx, ty))
+      | V.Let(V.Temp(v), e1, e2) ->
+	  assert(not (contains map v));
+	  V.Let(V.Temp(v), (replace_uses_e e1), (replace_uses_e e2))
+      | V.Let(V.Mem(v, idx, mem_ty), e1, e2) ->
+	  assert(not (contains map v));
+	  V.Let(V.Mem(v, (replace_uses_e idx), mem_ty),
+		(replace_uses_e e1), (replace_uses_e e2))
       | _ -> expr
   in
   let replace_uses st =
@@ -424,9 +443,80 @@ let split_divmod (dl, sl) =
   in
     (dl @ !new_dl, stmt_loop sl)
 
+let lets_to_moves (dl, sl) =
+  let rec expr_loop = function
+    | V.BinOp(op, e1, e2) ->
+	let (bl1, e1') = expr_loop e1 in
+	let (bl2, e2') = expr_loop e2 in
+	  (bl1 @ bl2, (V.BinOp(op, e1', e2')))
+    | V.UnOp(op, e1) ->
+	let (bl1, e1') = expr_loop e1 in
+	  (bl1, V.UnOp(op, e1'))
+    | V.Constant(_) as e -> ([], e)
+    | V.Lval(V.Temp(_)) as e -> ([], e)
+    | V.Lval(V.Mem(v, e1, ty)) ->
+	let (bl1, e1') = expr_loop e1 in
+	  (bl1, V.Lval(V.Mem(v, e1', ty)))
+    | V.Name(_) as e -> ([], e)
+    | V.Cast(ct, ty, e1) ->
+	let (bl1, e1') = expr_loop e1 in
+	  (bl1, (V.Cast(ct, ty, e1')))
+    | V.Unknown(_) as e -> ([], e)
+    | V.Let(V.Temp(v), e1, e2) ->
+	let (bl1, e1') = expr_loop e1 in
+	let (bl2, e2') = expr_loop e2 in
+	  (bl1 @ [v, e1'] @ bl2, e2')
+    | V.Let(V.Mem(_,_,_), _, _) ->
+	failwith "Let mem unhandled in lets_to_moves"
+  in
+  let rec stmt_loop = function
+    | st :: rest ->
+	let (bl, st') = match st with
+	  | V.Jmp(e1) ->
+	      let (bl1, e1') = expr_loop e1 in
+		(bl1, V.Jmp(e1'))
+	  | V.CJmp(e1, e2, e3) ->
+	      let (bl1, e1') = expr_loop e1 and
+		  (bl2, e2') = expr_loop e2 and
+		  (bl3, e3') = expr_loop e3 in
+		(bl1 @ bl2 @ bl3, V.CJmp(e1', e2', e3'))
+	  | V.Move((V.Temp(_) as lhs), e1) ->
+	      let (bl1, e1') = expr_loop e1 in
+		(bl1, V.Move(lhs, e1'))
+	  | V.Move(V.Mem(v, e1, m_ty), e2) ->
+	      let (bl1, e1') = expr_loop e1 and
+		  (bl2, e2') = expr_loop e2 in
+		(bl1 @ bl2, V.Move(V.Mem(v, e1', m_ty), e2'))
+	  | V.Special(_) as st ->
+	      ([], st)
+	  | V.Label(_) as st ->
+	      ([], st)
+	  | V.ExpStmt(e1) ->
+	      let (bl1, e1') = expr_loop e1 in
+		(bl1, V.ExpStmt(e1'))
+	  | V.Comment(_) as st ->
+	      ([], st)
+	  | V.Block(dl1, sl1) ->
+	      let (dl1', sl1') = stmt_loop sl1 in
+		([], V.Block(dl1 @ dl1', sl1))
+	  | V.Assert(e1) ->
+	      let (bl1, e1') = expr_loop e1 in
+		(bl1, V.Assert(e1'))
+	  | _ -> failwith "Unhandled stmt type in lets_to_moves"
+	in
+	let dl' = List.map (fun (a,_) -> a) bl in
+	let sl' = List.map (fun (v,e) -> V.Move(V.Temp(v), e)) bl in
+	let (dl2, sl2) = stmt_loop rest in
+	  (dl' @ dl2, sl' @ (st' :: sl2))
+    | [] -> ([], [])
+  in
+  let (dl', sl') = stmt_loop sl in
+    (dl @ dl', sl')
+
 let simplify_frag (orig_dl, orig_sl) =
   (* V.pp_program print_string (orig_dl, orig_sl); *)
   let (dl, sl) = (orig_dl, orig_sl) in
+  let (dl, sl) = lets_to_moves (dl, sl) in
   let sl = rm_unused_stmts sl in
   let sl = uncond_jmps sl in
   let sl = rm_sequential_jmps sl in
