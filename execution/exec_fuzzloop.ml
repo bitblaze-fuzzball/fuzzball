@@ -144,6 +144,7 @@ let fuzz start_eip fuzz_start_eip end_eips
      fm#after_exploration
    with
      | Signal(("INT"|"HUP"|"TERM") as s) -> Printf.printf "Caught SIG%s\n" s
+    (*
      | e -> Printf.printf "Caught fatal error %s\n" (Printexc.to_string e);
-	 Printexc.print_backtrace stderr);
+	 Printexc.print_backtrace stderr *) );
   periodic_stats fm true false

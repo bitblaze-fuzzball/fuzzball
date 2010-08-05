@@ -35,7 +35,7 @@ let main argv =
     (fun arg -> Exec_set_options.set_program_name arg)
     "fuzzball [options]* program\n";
   let dt = ((new Binary_decision_tree.binary_decision_tree)
-	    :> Decision_tree.decision_tree) in
+	    :> Decision_tree.decision_tree)#init in
   let (fm, infl_man) = if !Exec_options.opt_use_tags then
     (let srfm = new SRFMT.sym_region_frag_machine dt in
      let spfm = (srfm :> SPFMT.sym_path_frag_machine) in

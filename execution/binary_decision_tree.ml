@@ -47,6 +47,8 @@ class binary_decision_tree = object(self)
     root.query_children <- Some 0;
     cur <- root;
     cur_query <- root;
+    if !opt_trace_decision_tree then
+      Printf.printf "DT: Initialized.\n";
     (self :> Decision_tree.decision_tree)
 
   method reset =

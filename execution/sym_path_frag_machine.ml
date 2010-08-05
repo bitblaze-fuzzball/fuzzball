@@ -160,14 +160,15 @@ struct
 	let currpath_str = dt#get_hist_str in
 	let followplen = String.length !opt_follow_path and
 	    currplen = String.length currpath_str in
-	  if followplen > currplen then
-	    let follow_prefix = String.sub !opt_follow_path 0 currplen in
-	      if follow_prefix = currpath_str then
-		(String.sub !opt_follow_path currplen 1) = "1"
-	      else 
-		dt#random_bit
-	  else
-	    dt#random_bit
+        if followplen > currplen then
+	  let follow_prefix = String.sub !opt_follow_path 0 currplen in
+	    if follow_prefix = currpath_str
+	    then
+	      (String.sub !opt_follow_path currplen 1) = "1"
+	    else 
+	      dt#random_bit
+          else
+            dt#random_bit
 
     method query_with_pc_choice cond verbose choice =
       let trans_func b =
