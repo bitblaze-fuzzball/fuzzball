@@ -438,6 +438,18 @@ object(self)
       the_break := Some new_break;
       put_reg R_EAX new_break;
 
+  method sys_clock_getres clkid timep =
+    match clkid with
+      | 1 -> (* CLOCK_MONOTONIC *)
+	  store_word timep 0 0L;
+	  store_word timep 4 1L; (* 1-nanosecond precision *)
+	  put_reg R_EAX 0L
+      | 0 -> (* CLOCK_REALTIME *)
+	  store_word timep 0 0L;
+	  store_word timep 4 1L; (* 1-nanosecond precision; is this right? *)
+	  put_reg R_EAX 0L
+      | _ -> self#put_errno Unix.EINVAL (* unsupported clock type *)
+
   method sys_clock_gettime clkid timep =
     match clkid with
       | 1 -> (* CLOCK_MONOTONIC *)
@@ -470,6 +482,32 @@ object(self)
   method sys_exit_group status =
     raise (SimulatedExit(status))
 
+  method sys_fcntl64 fd cmd arg =
+    match cmd with
+      | 1 (* F_GETFD *) ->
+	  ignore(fd);
+	  ignore(arg);
+	  put_reg R_EAX 1L (* FD_CLOEXEC set *)
+      | 2 (* F_SETFD *) ->
+	  let real_fd = self#get_fd fd in
+	    if (Int64.logand arg 0o2000000L) <> 0L then
+	      Unix.set_close_on_exec real_fd
+	    else
+	      Unix.clear_close_on_exec real_fd;
+	  put_reg R_EAX 0L (* success *)
+      | 3 (* F_GETFL *) ->
+	  ignore(fd);
+	  ignore(arg);
+	  put_reg R_EAX 2L (* O_RDWR *)
+      | 4 (* F_SETFL*) ->
+	  let real_fd = self#get_fd fd in
+	    if (Int64.logand arg 0o4000L) <> 0L then
+	      Unix.set_nonblock real_fd
+	    else
+	      Unix.clear_nonblock real_fd;
+	  put_reg R_EAX 0L (* success *)
+      | _ -> failwith "Unhandled cmd in fcntl64"
+
   method sys_futex uaddr op value timebuf uaddr2 val3 =
     let ret = 
       match (op, value) with
@@ -493,11 +531,29 @@ object(self)
   method sys_getegid32 () = 
     put_reg R_EAX (Int64.of_int (Unix.getegid ()))
 
+  method sys_getresgid32 rgid_ptr egid_ptr sgid_ptr =
+    let rgid = Int64.of_int (Unix.getgid ()) and
+	egid = Int64.of_int (Unix.getegid ()) in
+    let sgid = egid in
+      store_word rgid_ptr 0 rgid;
+      store_word egid_ptr 0 egid;
+      store_word sgid_ptr 0 sgid;
+      put_reg R_EAX 0L (* success *)
+
   method sys_getuid32 () = 
     put_reg R_EAX (Int64.of_int (Unix.getuid ()))
 
   method sys_geteuid32 () = 
     put_reg R_EAX (Int64.of_int (Unix.geteuid ()))
+
+  method sys_getresuid32 ruid_ptr euid_ptr suid_ptr =
+    let ruid = Int64.of_int (Unix.getuid ()) and
+	euid = Int64.of_int (Unix.geteuid ()) in
+    let suid = euid in
+      store_word ruid_ptr 0 ruid;
+      store_word euid_ptr 0 euid;
+      store_word suid_ptr 0 suid;
+      put_reg R_EAX 0L (* success *)
 
   method sys_getpid () =
     let pid = self#get_pid in
@@ -647,6 +703,39 @@ object(self)
     with
       | Unix.Unix_error(err, _, _) -> self#put_errno err
 
+  method sys_poll fds_buf nfds timeout_ms =
+    let get_pollfd buf idx =
+      let fd = load_word (lea buf idx 8 0) and
+	  events = load_short (lea buf idx 8 4) in
+	((self#get_fd (Int64.to_int fd)), events)
+    in
+    let put_pollfd buf idx flags =
+      fm#store_short_conc (lea buf idx 8 6) flags
+    in
+    let filter_event flag pollfds =
+      List.map (fun (fd,_) -> fd)
+	(List.filter (fun (_,e) -> e land flag <> 0) pollfds)
+    in
+    let timeout_f = (Int64.to_float timeout_ms) /. 1000.0 in
+    let pollfds_a = Array.init nfds (get_pollfd fds_buf) in
+    let pollfds = Array.to_list pollfds_a in
+    let readfds = filter_event 0x1 (* POLLIN *) pollfds and
+	writefds = filter_event 0x4 (* POLLOUT *) pollfds and
+	execepfds = filter_event 0x3682 (* XXX others *) pollfds in
+    let (r_fds, w_fds, e_fds) =
+      Unix.select readfds writefds execepfds timeout_f in
+    let count = ref 0 in
+      for i = 0 to nfds - 1 do
+	let (oc_fd,_) = pollfds_a.(i) in
+	let r_flag = if List.mem oc_fd r_fds then 0x1 else 0 and
+	    w_flag = if List.mem oc_fd w_fds then 0x4 else 0 in
+	let flags = (r_flag lor w_flag) (* XXX other flags? *) in
+	  if flags <> 0 then
+	    count := !count + 1;
+	  put_pollfd fds_buf i flags
+      done;
+      put_reg R_EAX (Int64.of_int !count)
+
   method sys_read fd buf count =
     try
       let str = self#string_create count in
@@ -661,6 +750,23 @@ object(self)
     let written = min buflen (String.length real) in
       fm#store_str out_buf 0L (String.sub real 0 written);
       put_reg R_EAX (Int64.of_int written);
+
+  method sys_sched_getparam pid buf =
+    ignore(pid); (* Pretend all processes are SCHED_OTHER *)
+    store_word buf 0 0L; (* sched_priority = 0 *)
+    put_reg R_EAX 0L (* success *)
+
+  method sys_sched_get_priority_max policy =
+    assert(policy = 0); (* SCHED_OTHER *)
+    put_reg R_EAX 0L
+
+  method sys_sched_get_priority_min policy =
+    assert(policy = 0); (* SCHED_OTHER *)
+    put_reg R_EAX 0L
+
+  method sys_sched_getscheduler pid =
+    ignore(pid);
+    put_reg R_EAX 0L (* SCHED_OTHER *)
 
   method sys_select nfds readfds writefds exceptfds timeout =
     put_reg R_EAX 0L (* no events *)
@@ -1136,7 +1242,9 @@ object(self)
 		      let dom_i = Int64.to_int (load_word args) and
 			  typ_i = Int64.to_int (load_word (lea args 0 0 4)) and
 			  prot_i = Int64.to_int (load_word (lea args 0 0 8)) in
-			Printf.printf "socket(%d, %d, %d)" dom_i typ_i prot_i;
+			if !opt_trace_syscalls then
+			  Printf.printf "socket(%d, %d, %d)"
+			    dom_i typ_i prot_i;
 			self#sys_socket dom_i typ_i prot_i
 		  | 2 -> raise (UnhandledSysCall("Unhandled Linux system call bind (102:2)"))
 		  | 3 -> 
@@ -1144,8 +1252,9 @@ object(self)
 			  addr = load_word (lea args 0 0 4) and
 			  addrlen = Int64.to_int (load_word (lea args 0 0 8))
 		      in
-			Printf.printf "connect(%d, 0x%08Lx, %d)"
-			  sockfd addr addrlen;
+			if !opt_trace_syscalls then
+			  Printf.printf "connect(%d, 0x%08Lx, %d)"
+			    sockfd addr addrlen;
 			self#sys_connect sockfd addr addrlen
 		  | 4 -> raise (UnhandledSysCall("Unhandled Linux system call listen (102:4)"))
 		  | 5 -> raise (UnhandledSysCall("Unhandled Linux system call accept (102:5)"))
@@ -1154,16 +1263,18 @@ object(self)
 			  addr = load_word (lea args 0 0 4) and
 			  addrlen_ptr = load_word (lea args 0 0 8)
 		      in
-			Printf.printf "getsockname(%d, 0x%08Lx, 0x%08Lx)"
-			  sockfd addr addrlen_ptr;
+			if !opt_trace_syscalls then
+			  Printf.printf "getsockname(%d, 0x%08Lx, 0x%08Lx)"
+			    sockfd addr addrlen_ptr;
 			self#sys_getsockname sockfd addr addrlen_ptr
 		  | 7 -> 
 		      let sockfd = Int64.to_int (load_word args) and
 			  addr = load_word (lea args 0 0 4) and
 			  addrlen_ptr = load_word (lea args 0 0 8)
 		      in
-			Printf.printf "getpeername(%d, 0x%08Lx, 0x%08Lx)"
-			  sockfd addr addrlen_ptr;
+			if !opt_trace_syscalls then
+			  Printf.printf "getpeername(%d, 0x%08Lx, 0x%08Lx)"
+			    sockfd addr addrlen_ptr;
 			self#sys_getpeername sockfd addr addrlen_ptr
 		  | 8 -> raise (UnhandledSysCall("Unhandled Linux system call socketpair (102:8)"))
 		  | 9 -> raise (UnhandledSysCall("Unhandled Linux system call send (102:9)"))
@@ -1323,17 +1434,34 @@ object(self)
 	 | 154 -> (* sched_setparam *)
 	     raise (UnhandledSysCall( "Unhandled Linux system call sched_setparam (154)"))
 	 | 155 -> (* sched_getparam *)
-	     raise (UnhandledSysCall( "Unhandled Linux system call sched_getparam (155)"))
+	     let (ebx, ecx) = read_2_regs () in
+	     let pid = Int64.to_int ebx and
+		 buf = ecx in
+	       if !opt_trace_syscalls then
+		 Printf.printf "sched_getparam(%d, 0x%08Lx)" pid buf;
+	       self#sys_sched_getparam pid buf
 	 | 156 -> (* sched_setscheduler *)
 	     raise (UnhandledSysCall( "Unhandled Linux system call sched_setscheduler (156)"))
 	 | 157 -> (* sched_getscheduler *)
-	     raise (UnhandledSysCall( "Unhandled Linux system call sched_getscheduler (157)"))
+	     let ebx = read_1_reg () in
+	     let pid = Int64.to_int ebx in
+	       if !opt_trace_syscalls then
+		 Printf.printf "sched_getscheduler(%d)" pid;
+	       self#sys_sched_getscheduler pid
 	 | 158 -> (* sched_yield *)
 	     raise (UnhandledSysCall( "Unhandled Linux system call sched_yield (158)"))
 	 | 159 -> (* sched_get_priority_max *)
-	     raise (UnhandledSysCall( "Unhandled Linux system call sched_get_priority_max (159)"))
+	     let ebx = read_1_reg () in
+	     let policy = Int64.to_int ebx in
+	       if !opt_trace_syscalls then
+		 Printf.printf "sched_get_priority_max(%d)" policy;
+	       self#sys_sched_get_priority_max policy
 	 | 160 -> (* sched_get_priority_min *)
-	     raise (UnhandledSysCall( "Unhandled Linux system call sched_get_priority_min (160)"))
+	     let ebx = read_1_reg () in
+	     let policy = Int64.to_int ebx in
+	       if !opt_trace_syscalls then
+		 Printf.printf "sched_get_priority_min(%d)" policy;
+	       self#sys_sched_get_priority_min policy
 	 | 161 -> (* sched_rr_get_interval *)
 	     raise (UnhandledSysCall( "Unhandled Linux system call sched_rr_get_interval (161)"))
 	 | 162 -> (* nanosleep *)
@@ -1349,7 +1477,13 @@ object(self)
 	 | 167 -> (* query_module *)
 	     raise (UnhandledSysCall( "Unhandled Linux system call query_module (167)"))
 	 | 168 -> (* poll *)
-	     raise (UnhandledSysCall( "Unhandled Linux system call poll (168)"))
+	     let (ebx, ecx, edx) = read_3_regs () in
+	     let fds_buf = ebx and
+		 nfds = Int64.to_int ecx and
+		 timeout = edx in
+	       if !opt_trace_syscalls then	
+		 Printf.printf "poll(0x%08Lx, %d, %Ld)" fds_buf nfds timeout;
+	       self#sys_poll fds_buf nfds timeout
 	 | 169 -> (* nfsservctl *)
 	     raise (UnhandledSysCall( "Unhandled Linux system call nfsservctl (169)"))
 	 | 170 -> (* setresgid *)
@@ -1481,11 +1615,25 @@ object(self)
 	 | 208 -> (* setresuid32 *)
 	     raise (UnhandledSysCall( "Unhandled Linux system call setresuid32 (208)"))
 	 | 209 -> (* getresuid32 *)
-	     raise (UnhandledSysCall( "Unhandled Linux system call getresuid32 (209)"))
+	     let (ebx, ecx, edx) = read_3_regs () in
+	     let ruid_ptr = ebx and
+		 euid_ptr = ecx and
+		 suid_ptr = edx in
+	     if !opt_trace_syscalls then
+	       Printf.printf "getresuid32(0x%08Lx, 0x%08Lx, 0x%08Lx)"
+		 ruid_ptr euid_ptr suid_ptr;
+	     self#sys_getresuid32 ruid_ptr euid_ptr suid_ptr;
 	 | 210 -> (* setresgid32 *)
 	     raise (UnhandledSysCall( "Unhandled Linux system call setresgid32 (210)"))
 	 | 211 -> (* getresgid32 *)
-	     raise (UnhandledSysCall( "Unhandled Linux system call getresgid32 (211)"))
+	     let (ebx, ecx, edx) = read_3_regs () in
+	     let rgid_ptr = ebx and
+		 egid_ptr = ecx and
+		 sgid_ptr = edx in
+	     if !opt_trace_syscalls then
+	       Printf.printf "getresgid32(0x%08Lx, 0x%08Lx, 0x%08Lx)"
+		 rgid_ptr egid_ptr sgid_ptr;
+	     self#sys_getresgid32 rgid_ptr egid_ptr sgid_ptr;
 	 | 212 -> (* chown32 *)
 	     raise (UnhandledSysCall( "Unhandled Linux system call chown32 (212)"))
 	 | 213 -> (* setuid32 *)
@@ -1513,7 +1661,13 @@ object(self)
 	 | 220 -> (* getdents64 *)
 	     raise (UnhandledSysCall( "Unhandled Linux system call getdents64 (220)"))
 	 | 221 -> (* fcntl64 *)
-	     raise (UnhandledSysCall( "Unhandled Linux system call fcntl64 (221)"))
+	     let (ebx, ecx, edx) = read_3_regs () in
+	     let fd = Int64.to_int ebx and
+		 cmd = Int64.to_int ecx and
+		 arg = edx in
+	       if !opt_trace_syscalls then
+		 Printf.printf "fcntl64(%d, %d, 0x%08Lx)" fd cmd arg;
+	       self#sys_fcntl64 fd cmd arg
 	 | 224 -> (* gettid *)
 	     if !opt_trace_syscalls then
 	       Printf.printf "gettid()";
@@ -1626,7 +1780,12 @@ object(self)
 		 Printf.printf "clock_gettime(%d, 0x08%Lx)" clkid timep;
 	       self#sys_clock_gettime clkid timep
 	 | 266 -> (* clock_getres *)
-	     raise (UnhandledSysCall( "Unhandled Linux system call clock_getres (266)"))
+	     let (ebx, ecx) = read_2_regs () in
+	     let clkid = Int64.to_int ebx and
+		 timep = ecx in
+	       if !opt_trace_syscalls then
+		 Printf.printf "clock_getres(%d, 0x08%Lx)" clkid timep;
+	       self#sys_clock_getres clkid timep
 	 | 267 -> (* clock_nanosleep *)
 	     raise (UnhandledSysCall( "Unhandled Linux system call clock_nanosleep (267)"))
 	 | 268 -> (* statfs64 *)

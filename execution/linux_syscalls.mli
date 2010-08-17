@@ -44,16 +44,20 @@ object
 
   method sys_access : string -> int -> unit
   method sys_brk : int64 -> unit
+  method sys_clock_getres : int -> int64 -> unit
   method sys_clock_gettime : int -> int64 -> unit
   method sys_close : int -> unit
   method sys_connect : int -> int64 -> int -> unit
   method sys_exit_group : int64 -> unit
+  method sys_fcntl64 : int -> int -> int64 -> unit
   method sys_futex : int64 -> int -> int64 -> int64 -> int64 -> int64 -> unit
   method sys_ugetrlimit : int -> int64 -> unit
   method sys_getgid32 : unit -> unit
   method sys_getegid32 : unit -> unit
   method sys_getuid32 : unit -> unit
   method sys_geteuid32 : unit -> unit
+  method sys_getresgid32 : int64 -> int64 -> int64 -> unit
+  method sys_getresuid32 : int64 -> int64 -> int64 -> unit
   method sys_getpid : unit -> unit
   method sys_getpgid : int -> unit
   method sys_getpgrp : unit -> unit
@@ -71,8 +75,13 @@ object
   method sys_mprotect : int64 -> int64 -> int64 -> unit
   method sys_munmap : int64 -> int64 -> unit
   method sys_open : string -> int -> Unix.file_perm -> unit
+  method sys_poll : int64 -> int -> int64 -> unit
   method sys_read : int -> int64 -> int -> unit
   method sys_readlink : string -> int64 -> int -> unit
+  method sys_sched_getparam : int -> int64 -> unit
+  method sys_sched_get_priority_max : int -> unit
+  method sys_sched_get_priority_min : int -> unit
+  method sys_sched_getscheduler : int -> unit
   method sys_select : int -> int64 -> int64 -> int64 -> int64 -> unit
   method sys_setgid32 : int -> unit
   method sys_setuid32 : int -> unit
