@@ -43,6 +43,11 @@ let chroot s =
   else
     s
 
+type fd_extra_info = {
+  mutable dirp_offset : int;
+  mutable fname : string;
+}
+
 class linux_special_handler (fm : fragment_machine) =
   let put_reg = fm#set_word_var in
   let load_word addr =
@@ -86,6 +91,8 @@ object(self)
       | Some fd -> fd
       | None -> raise
 	  (Unix.Unix_error(Unix.EBADF, "Bad (virtual) file handle", ""))
+
+  val fd_info = Array.init 1024 (fun _ -> { dirp_offset = 0; fname = "" })
 
   method errno err =
     match err with
@@ -187,7 +194,13 @@ object(self)
 	      let str = Array.fold_left (^) ""
 		(Array.map (String.make 1) bytes)
 	      in
-	      let (ufd, toapp) = if ((fd = 1) || (fd = 2))  then (Unix.stdout, (Printf.sprintf "[Trans-eval fd %d]: " fd)) else ((self#get_fd fd), "") in
+	      let (ufd, toapp) = if
+		!opt_prefix_out && (fd = 1 || fd = 2) 
+	      then
+		(Unix.stdout, (Printf.sprintf "[Trans-eval fd %d]: " fd))
+	      else
+		((self#get_fd fd), "")
+	      in
 	      let strout = toapp ^ str in
 		match Unix.write (ufd) strout 0 (String.length strout)
 		with
@@ -336,6 +349,33 @@ object(self)
       store_word addr 89 ino;     (* low bits of 64-bit inode *)
       store_word addr 92 0L;      (* high bits of 64-bit inode *)
 
+  method write_fake_statfs_buf addr =
+    (* OCaml's Unix module doesn't provide an interface for this
+       information, so we just make it up. *)
+    let f_type   = 0x52654973L (* REISERFS_SUPER_MAGIC *) and
+	f_bsize  = 4096L and
+	f_blocks = 244182546L and
+	f_bfree  = 173460244L and
+	f_bavail = 173460244L and
+	f_files  = 0L and
+	f_ffree  = 0L and
+	f_fsid_0 = 0L and
+	f_fsid_1 = 0L and
+	f_namelen = 255L and
+	f_frsize = 4096L
+    in
+      store_word addr  0 f_type;
+      store_word addr  4 f_bsize;
+      store_word addr  8 f_blocks;
+      store_word addr 12 f_bfree;
+      store_word addr 16 f_bavail;
+      store_word addr 20 f_files;
+      store_word addr 24 f_ffree;
+      store_word addr 28 f_fsid_0;
+      store_word addr 32 f_fsid_1;
+      store_word addr 36 f_namelen;
+      store_word addr 40 f_frsize
+
   method write_fake_statfs64buf addr =
     (* OCaml's Unix module doesn't provide an interface for this
        information, so we just make it up. *)
@@ -438,6 +478,19 @@ object(self)
       the_break := Some new_break;
       put_reg R_EAX new_break;
 
+  method sys_capget hdrp datap =
+    ignore(hdrp);
+    ignore(datap);
+    self#put_errno Unix.EFAULT
+
+  method sys_fchmod fd mode =
+    Unix.fchmod (self#get_fd fd) mode;
+    put_reg R_EAX 0L (* success *)
+
+  method sys_fchown32 fd user group =
+    Unix.fchown (self#get_fd fd) user group;
+    put_reg R_EAX 0L (* success *)
+
   method sys_clock_getres clkid timep =
     match clkid with
       | 1 -> (* CLOCK_MONOTONIC *)
@@ -506,6 +559,13 @@ object(self)
 	    else
 	      Unix.clear_nonblock real_fd;
 	  put_reg R_EAX 0L (* success *)
+      | 6 (* F_SETLK *)
+      | 7 (* F_SETLKW *) ->
+	  (* Ignore locks for the moment. OCaml has only lockf, so
+	     emulation would be a bit complex. *)
+	  ignore(fd);
+	  ignore(arg);
+	  put_reg R_EAX 0L (* success *)
       | _ -> failwith "Unhandled cmd in fcntl64"
 
   method sys_futex uaddr op value timebuf uaddr2 val3 =
@@ -519,6 +579,83 @@ object(self)
     | _ -> raise( UnhandledSysCall("Unhandled futex operation"));
     in
       put_reg R_EAX ret
+
+  method sys_getcwd buf size =
+    let s = Unix.getcwd () in
+    let len = String.length s in
+      if len + 1 > size then
+	self#put_errno Unix.ERANGE
+      else
+	(fm#store_cstr buf 0L s;
+	 put_reg R_EAX (Int64.of_int len))
+
+  method sys_getdents fd dirp buf_sz =
+    let dirname = fd_info.(fd).fname in
+    let dirh = Unix.opendir dirname in
+    let written = ref 0 in
+      for i = 0 to fd_info.(fd).dirp_offset do
+	ignore(Unix.readdir dirh)
+      done;
+      try
+	while true do
+	  let fname = Unix.readdir dirh in
+	  let reclen = 10 + (String.length fname) + 1 in
+	  let next_pos = !written + reclen in
+	    if next_pos >= buf_sz then
+	      raise End_of_file
+	    else
+	      let oc_st = Unix.stat (dirname ^ "/" ^ fname) in
+	      let d_ino = oc_st.Unix.st_ino in
+		store_word dirp !written (Int64.of_int d_ino);
+		written := !written + 4;
+		store_word dirp !written (Int64.of_int next_pos);
+		written := !written + 4;
+		fm#store_short_conc (lea dirp 0 0 !written) reclen;
+		written := !written + 2;
+		fm#store_cstr dirp (Int64.of_int !written) fname;
+		written := !written + (String.length fname) + 1;
+		fd_info.(fd).dirp_offset <- fd_info.(fd).dirp_offset + 1;
+	done;
+      with End_of_file -> ();
+      Unix.closedir dirh;
+      put_reg R_EAX (Int64.of_int !written)
+
+  method sys_getdents64 fd dirp buf_sz =
+    let dirname = fd_info.(fd).fname in
+    let dirh = Unix.opendir dirname in
+    let written = ref 0 in
+      for i = 0 to fd_info.(fd).dirp_offset do
+	ignore(Unix.readdir dirh)
+      done;
+      try
+	while true do
+	  let fname = Unix.readdir dirh in
+	  let reclen = 19 + (String.length fname) + 1 in
+	  let next_pos = !written + reclen in
+	    if next_pos >= buf_sz then
+	      raise End_of_file
+	    else
+	      let oc_st = Unix.stat (dirname ^ "/" ^ fname) in
+	      let d_ino = oc_st.Unix.st_ino in
+		store_word dirp !written (Int64.of_int d_ino);
+		written := !written + 4;
+		store_word dirp !written 0L; (* high bits of d_ino *)
+		written := !written + 4;
+		store_word dirp !written (Int64.of_int next_pos);
+		written := !written + 4;
+		store_word dirp !written 0L; (* high bits of d_off *)
+		written := !written + 4;
+		fm#store_short_conc (lea dirp 0 0 !written) reclen;
+		written := !written + 2;
+		fm#store_byte_conc (lea dirp 0 0 !written) 0; (* d_type *)
+		written := !written + 1;
+		fm#store_cstr dirp (Int64.of_int !written) fname;
+		written := !written + (String.length fname) + 1;
+		fd_info.(fd).dirp_offset <- fd_info.(fd).dirp_offset + 1;
+	done;
+      with End_of_file -> ();
+      Unix.closedir dirh;
+      put_reg R_EAX (Int64.of_int !written)
 
   method sys_ugetrlimit rsrc buf =
     store_word buf 0 0xffffffffL; (* infinity *)
@@ -607,12 +744,137 @@ object(self)
        store_word zonep 4 0L); (* no DST *)
     put_reg R_EAX 0L
 
+  method sys_getxattr path name value_ptr size =
+    ignore(path); ignore(name); ignore(value_ptr); ignore(size);
+    put_reg R_EAX (Int64.of_int (-61)) (* ENODATA *)
+ 
   method sys_ioctl fd req argp =
     match req with
-      | 0x5401L -> (* put_reg R_EAX 0L *)
-	  (*	  let attrs = Unix.tcgetattr (self#get_fd fd) in *)
-	  raise (UnhandledSysCall ("Unhandled TCGETS ioctl"))
-      | _ -> 	  raise (UnhandledSysCall ("Unhandled ioct syscall"))
+      | 0x5401L -> (* TCGETS *)
+	  let baud_to_flags = function
+	    | 0       -> 0o000000
+	    | 50      -> 0o000001
+	    | 75      -> 0o000002
+	    | 110     -> 0o000003
+	    | 134     -> 0o000004
+	    | 150     -> 0o000005
+	    | 200     -> 0o000006
+	    | 300     -> 0o000007
+	    | 600     -> 0o000010
+	    | 1200    -> 0o000011
+	    | 1800    -> 0o000012
+	    | 2400    -> 0o000013
+	    | 4800    -> 0o000014
+	    | 9600    -> 0o000015
+	    | 19200   -> 0o000016
+	    | 38400   -> 0o000017
+	    | 57600   -> 0o010001
+	    | 115200  -> 0o010002
+	    | 230400  -> 0o010003
+	    | 460800  -> 0o010004
+	    | 500000  -> 0o010005
+	    | 576000  -> 0o010006
+	    | 921600  -> 0o010007
+	    | 1000000 -> 0o010010
+	    | 1152000 -> 0o010011
+	    | 1500000 -> 0o010012
+	    | 2000000 -> 0o010013
+	    | 2500000 -> 0o010014
+	    | 3000000 -> 0o010015
+	    | 3500000 -> 0o010016
+	    | 4000000 -> 0o010017
+	    | _ -> failwith "Unhandled baud rate in TCGETS"
+	  in
+	    (try
+	       let t = Unix.tcgetattr (self#get_fd fd) in
+	       let my_icrnl = true in
+	       let my_imaxbel = true in
+	       let my_onlcr = true in
+	       let my_iexten = true in
+	       let my_echoctl = true in
+	       let my_echoke = true in
+	       let iflag =
+	             (if t.Unix.c_ignbrk then 0o000001 else 0)
+		 lor (if t.Unix.c_brkint then 0o000002 else 0)
+		 lor (if t.Unix.c_ignpar then 0o000004 else 0)
+		 lor (if t.Unix.c_parmrk then 0o000010 else 0)
+		 lor (if t.Unix.c_inpck  then 0o000020 else 0)
+		 lor (if t.Unix.c_istrip then 0o000040 else 0)
+		 lor (if t.Unix.c_inlcr  then 0o000100 else 0)
+		 lor (if t.Unix.c_igncr  then 0o000200 else 0)
+		 lor (if       my_icrnl  then 0o000400 else 0)
+		 lor (if t.Unix.c_ixon   then 0o002000 else 0)
+		 lor (if t.Unix.c_ixoff  then 0o010000 else 0)
+		 lor (if      my_imaxbel then 0o020000 else 0) and
+		   oflag =
+	             (if t.Unix.c_opost then 0o000001 else 0)
+		 lor (if       my_onlcr then 0o000004 else 0) and
+		   cflag =
+		     (baud_to_flags t.Unix.c_obaud)
+		 lor (match t.Unix.c_csize with 
+			| 5 -> 0 | 6 -> 0o20 | 7 -> 0o40 | 8 -> 0o60
+			| _ -> failwith "Unexpected character size in TCGETS")
+		 lor (match t.Unix.c_cstopb with 1 -> 0 | 2 -> 0o100
+			| _ -> failwith "Unexpected # of stop bits in TCGETS")
+		 lor (if t.Unix.c_cread  then 0o000200 else 0)
+		 lor (if t.Unix.c_parenb then 0o000400 else 0)
+		 lor (if t.Unix.c_parodd then 0o001000 else 0)
+		 lor (if t.Unix.c_hupcl  then 0o002000 else 0)
+		 lor (if t.Unix.c_hupcl  then 0o004000 else 0)
+		 lor ((baud_to_flags t.Unix.c_obaud) lsl 16) and
+		  lflag =
+	             (if t.Unix.c_isig   then 0o000001 else 0)
+		 lor (if t.Unix.c_icanon then 0o000002 else 0)
+		 lor (if t.Unix.c_echo   then 0o000010 else 0)
+		 lor (if t.Unix.c_echoe  then 0o000020 else 0)
+		 lor (if t.Unix.c_echok  then 0o000040 else 0)
+		 lor (if t.Unix.c_echonl then 0o000100 else 0)
+		 lor (if t.Unix.c_noflsh then 0o000200 else 0)
+		 lor (if      my_echoctl then 0o001000 else 0)
+		 lor (if       my_echoke then 0o004000 else 0)
+		 lor (if       my_iexten then 0o100000 else 0)
+	       in
+	       let cc = Array.make 19 '\000' in
+		 cc.( 0) <- t.Unix.c_vintr;
+		 cc.( 1) <- t.Unix.c_vquit;
+		 cc.( 2) <- t.Unix.c_verase;
+		 cc.( 3) <- t.Unix.c_vkill;
+		 cc.( 4) <- t.Unix.c_veof;
+		 cc.( 5) <- Char.chr (t.Unix.c_vtime);
+		 cc.( 6) <- Char.chr (t.Unix.c_vmin);
+		 cc.( 7) <- '\000'; (* VSWTC: default disabled *)
+		 cc.( 8) <- t.Unix.c_vstart;
+		 cc.( 9) <- t.Unix.c_vstop;
+		 cc.(10) <- '\x1a'; (* VSUSP: default ^Z *)
+		 cc.(11) <- t.Unix.c_veol;
+		 cc.(12) <- '\x12'; (* VREPRINT: default ^R *)
+		 cc.(13) <- '\x0f'; (* VDISCARD ("flush"): default ^O *)
+		 cc.(14) <- '\x17'; (* VWERASE: default ^W *)
+		 cc.(15) <- '\x16'; (* VLNEXT: default ^V *)
+		 cc.(16) <- '\000'; (* VEOL2: default disabled *)
+		 cc.(17) <- '\000';
+		 cc.(18) <- '\000';
+		 store_word argp  0 (Int64.of_int iflag);
+		 store_word argp  4 (Int64.of_int oflag);
+		 store_word argp  8 (Int64.of_int cflag);
+		 store_word argp 12 (Int64.of_int lflag);
+		 fm#store_byte_idx argp 16 0; (* c_line *)
+		 for i = 0 to 18 do
+		   fm#store_byte_idx argp (17 + i) (Char.code cc.(i))
+		 done;
+		 put_reg R_EAX 0L (* success *)
+	     with
+	       | Unix.Unix_error(err, _, _) -> self#put_errno err)
+      | 0x540fL -> (* TIOCGPGRP *)
+	  store_word argp 0 (Int64.of_int (self#get_pid));
+	  put_reg R_EAX 0L (* success *)
+      | 0x5413L -> (* TCGWINSZ *)
+	  fm#store_short_conc (lea argp 0 0 0) 24; (* ws_row *)
+	  fm#store_short_conc (lea argp 0 0 2) 80; (* ws_col *)
+	  fm#store_short_conc (lea argp 0 0 4) 0; (* ws_xpixel *)
+	  fm#store_short_conc (lea argp 0 0 6) 0; (* ws_ypixel *)
+	  put_reg R_EAX 0L (* success *)
+      | _ -> 	  raise (UnhandledSysCall ("Unhandled ioctl sub-call"))
 
 
   method sys_lseek (fd: int) (offset: Int64.t) (whence: int) =
@@ -699,9 +961,35 @@ object(self)
       let oc_fd = Unix.openfile (chroot path) oc_flags mode and
 	  vt_fd = self#fresh_fd () in
 	Array.set unix_fds vt_fd (Some oc_fd);
+	fd_info.(vt_fd).fname <- path;
+	fd_info.(vt_fd).dirp_offset <- 0;
 	put_reg R_EAX (Int64.of_int vt_fd)
     with
       | Unix.Unix_error(err, _, _) -> self#put_errno err
+
+  method sys_pipe buf =
+    let (oc_fd1, oc_fd2) = Unix.pipe () in
+    let (vt_fd1, vt_fd2) = (self#fresh_fd (), self#fresh_fd ()) in
+      Array.set unix_fds vt_fd1 (Some oc_fd1);
+      Array.set unix_fds vt_fd2 (Some oc_fd2);
+      store_word buf 0 (Int64.of_int vt_fd1);
+      store_word buf 4 (Int64.of_int vt_fd2);
+      put_reg R_EAX 0L (* success *)
+
+  method sys_pipe2 buf flags =
+    let (oc_fd1, oc_fd2) = Unix.pipe () in
+    let (vt_fd1, vt_fd2) = (self#fresh_fd (), self#fresh_fd ()) in
+      Array.set unix_fds vt_fd1 (Some oc_fd1);
+      Array.set unix_fds vt_fd2 (Some oc_fd2);
+      store_word buf 0 (Int64.of_int vt_fd1);
+      store_word buf 4 (Int64.of_int vt_fd2);
+      if (flags land 0o4000 <> 0) then (* O_NONBLOCK *)
+	(Unix.set_nonblock oc_fd1;
+	 Unix.set_nonblock oc_fd2);
+      if (flags land 0o2000000 <> 0) then (* O_CLOEXEC *)
+	(Unix.set_close_on_exec oc_fd1;
+	 Unix.set_close_on_exec oc_fd2);
+      put_reg R_EAX 0L (* success *)
 
   method sys_poll fds_buf nfds timeout_ms =
     let get_pollfd buf idx =
@@ -806,8 +1094,24 @@ object(self)
     (if oldbuf = 0L then () else
       let (action, mask_low, mask_high, flags) =
 	match signum with
-          | 11 | 4 | 13
-	  | 8 (* SIGFPE *) -> (0L, 0L, 0L, 0L)
+	  | 1  (* HUP *)
+	  | 2  (* INT *)
+	  | 3  (* QUIT *)
+	  | 4  (* ILL *)
+	  | 7  (* BUS *)
+	  | 8  (* FPE *) 
+          | 11 (* SEGV *)
+	  | 13 (* PIPE *)
+	  | 14 (* ALRM *)
+	  | 15 (* TERM *)
+	  | 17 (* CHLD *)
+	  | 20 (* TSTP *)
+	  | 24 (* XCPU *)
+	  | 25 (* XFSZ *)
+	  | 26 (* VTALRM *)
+	  | 27 (* PROF *)
+	  | 29 (* IO *)
+	    -> (0L, 0L, 0L, 0L)
 	  | _ -> raise (UnhandledSysCall("Unhandled old signal in rt_sigaction"));
       in
 	store_word oldbuf 0 action;
@@ -819,7 +1123,10 @@ object(self)
 
   method sys_rt_sigprocmask how newset oldset setlen =
     (if oldset = 0L then () else
-       failwith "Can't report old mask");
+       ((* report an empty old mask *)
+	 assert(setlen = 8);
+	 store_word oldset 0 0L;
+	 store_word oldset 4 0L));
     put_reg R_EAX 0L (* success *)
 
   method sys_socket dom_i typ_i prot_i =
@@ -852,14 +1159,32 @@ object(self)
     with
       | Unix.Unix_error(err, _, _) -> self#put_errno err
 
+  method sys_lstat64 path buf_addr =
+    try
+      let oc_buf = Unix.lstat path in
+	self#write_oc_statbuf buf_addr oc_buf;
+	put_reg R_EAX 0L (* success *)
+    with
+      | Unix.Unix_error(err, _, _) -> self#put_errno err
+
   method sys_fstat64 fd buf_addr =
     let oc_buf =
-      (if (fd <> 1) then
+      (if (fd <> 1 or true) then
 	 Unix.fstat (self#get_fd fd)
        else
 	 Unix.stat "/etc/group") (* pretend stdout is always redirected *) in
       self#write_oc_statbuf buf_addr oc_buf;
       put_reg R_EAX 0L (* success *)
+
+  method sys_statfs path buf =
+    ignore(path);
+    self#write_fake_statfs_buf buf;
+    put_reg R_EAX 0L (* success *)
+
+  method sys_fstatfs fd buf =
+    ignore(fd);
+    self#write_fake_statfs_buf buf;
+    put_reg R_EAX 0L (* success *)
 
   method sys_statfs64 path buf_len struct_buf =
     assert(buf_len = 84);
@@ -886,6 +1211,10 @@ object(self)
       store_word addr 12 cst;
       put_reg R_EAX (Int64.add ut st)
 
+  method sys_umask new_mask =
+    let old_mask = Unix.umask new_mask in
+      put_reg R_EAX (Int64.of_int old_mask)
+
   method sys_uname buf =
     List.iter2
       (fun i str ->
@@ -900,6 +1229,17 @@ object(self)
       ];
     put_reg R_EAX 0L (* success *)
 
+  method sys_unlink path =
+    Unix.unlink path;
+    put_reg R_EAX 0L (* success *)
+
+  method sys_utime path times_buf =
+    let actime = Int64.to_float (load_word (lea times_buf 0 0 0)) and
+	modtime = Int64.to_float (load_word (lea times_buf 0 0 4))
+    in
+      Unix.utimes path actime modtime;
+      put_reg R_EAX 0L (* success *)
+    
   method sys_write fd bytes count =
     self#do_write fd bytes count
 
@@ -990,7 +1330,11 @@ object(self)
 	 | 9 -> (* link *)
 	     raise (UnhandledSysCall( "Unhandled Linux system call link (9)"))
 	 | 10 -> (* unlink *)
-	     raise (UnhandledSysCall( "Unhandled Linux system call unlink (10)"))
+	     let ebx = read_1_reg () in
+	     let path = fm#read_cstr ebx in
+	       if !opt_trace_syscalls then
+		 Printf.printf "unlink(\"%s\")" path;
+	       self#sys_unlink path
 	 | 11 -> (* execve *)
 	     raise (UnhandledSysCall( "Unhandled Linux system call execve (11)"))
 	 | 12 -> (* chdir *)
@@ -1042,7 +1386,12 @@ object(self)
 	 | 29 -> (* pause *)
 	     raise (UnhandledSysCall( "Unhandled Linux system call pause (29)"))
 	 | 30 -> (* utime *)
-	     raise (UnhandledSysCall( "Unhandled Linux system call utime (30)"))
+	     let (ebx, ecx) = read_2_regs () in
+	     let path = fm#read_cstr ebx and
+		 times_buf = ecx in
+	       if !opt_trace_syscalls then
+		 Printf.printf "utime(\"%s\", 0x%08Lx)" path times_buf;
+	       self#sys_utime path times_buf
 	 | 31 -> (* stty *)
 	     raise (UnhandledSysCall( "Unhandled Linux system call stty (31)"))
 	 | 32 -> (* gtty *)
@@ -1078,7 +1427,11 @@ object(self)
 	 | 41 -> (* dup *)
 	     raise (UnhandledSysCall( "Unhandled Linux system call dup (41)"))
 	 | 42 -> (* pipe *)
-	     raise (UnhandledSysCall( "Unhandled Linux system call pipe (42)"))
+	     let ebx = read_1_reg () in
+	     let buf = ebx in
+	       if !opt_trace_syscalls then
+		 Printf.printf "pipe(0x%08Lx)" buf;
+	       self#sys_pipe buf
 	 | 43 -> (* times *)
 	     let ebx = read_1_reg () in
 	     let addr = ebx in
@@ -1128,7 +1481,11 @@ object(self)
 	 | 59 -> (* oldolduname *)
 	     raise (UnhandledSysCall( "Unhandled Linux system call oldolduname (59)"))
 	 | 60 -> (* umask *)
-	     raise (UnhandledSysCall( "Unhandled Linux system call umask (60)"))
+	     let ebx = read_1_reg () in
+	     let mask = Int64.to_int ebx in
+	       if !opt_trace_syscalls then
+		 Printf.printf "umask(0o%03o)" mask;
+	       self#sys_umask mask;
 	 | 61 -> (* chroot *)
 	     raise (UnhandledSysCall( "Unhandled Linux system call chroot (61)"))
 	 | 62 -> (* ustat *)
@@ -1218,7 +1575,12 @@ object(self)
 	 | 93 -> (* ftruncate *)
 	     raise (UnhandledSysCall( "Unhandled Linux system call ftruncate (93)"))
 	 | 94 -> (* fchmod *)
-	     raise (UnhandledSysCall( "Unhandled Linux system call fchmod (94)"))
+	     let (ebx, ecx) = read_2_regs () in
+	     let fd = Int64.to_int ebx and
+		 mode = Int64.to_int ecx in
+	       if !opt_trace_syscalls then
+		 Printf.printf "fchmod(%d, 0o%03o)" fd mode;
+	       self#sys_fchmod fd mode
 	 | 95 -> (* fchown *)
 	     raise (UnhandledSysCall( "Unhandled Linux system call fchown (95)"))
 	 | 96 -> (* getpriority *)
@@ -1228,9 +1590,19 @@ object(self)
 	 | 98 -> (* profil *)
 	     raise (UnhandledSysCall( "Unhandled Linux system call profil (98)"))
 	 | 99 -> (* statfs *)
-	     raise (UnhandledSysCall( "Unhandled Linux system call statfs (99)"))
+	     let (ebx, ecx) = read_2_regs () in
+	     let path = fm#read_cstr ebx and
+		 buf = ecx in
+	       if !opt_trace_syscalls then
+		 Printf.printf "statfs(\"%s\", 0x%08Lx)" path buf;
+	       self#sys_statfs path buf
 	 | 100 -> (* fstatfs *)
-	     raise (UnhandledSysCall( "Unhandled Linux system call fstatfs (100)"))
+	     let (ebx, ecx) = read_2_regs () in
+	     let fd = Int64.to_int ebx and
+		 buf = ecx in
+	       if !opt_trace_syscalls then
+		 Printf.printf "fstatfs(%d, 0x%08Lx)" fd buf;
+	       self#sys_fstatfs fd buf
 	 | 101 -> (* ioperm *)
 	     raise (UnhandledSysCall( "Unhandled Linux system call ioperm (101)"))
 	 | 102 -> (* socketcall *)
@@ -1389,7 +1761,13 @@ object(self)
 		   fd offset resultp whence;
 	       self#sys__llseek fd offset resultp whence
 	 | 141 -> (* getdents *)
-	     raise (UnhandledSysCall( "Unhandled Linux system call getdents (141)"))
+	     let (ebx, ecx, edx) = read_3_regs () in
+	     let fd = Int64.to_int ebx and
+		 dirp = ecx and
+		 count = Int64.to_int edx in
+	       if !opt_trace_syscalls then
+		 Printf.printf "getdents(%d, 0x%08Lx, %d)" fd dirp count;
+	       self#sys_getdents fd dirp count
 	 | 142 -> (* _newselect *)
 	     let (ebx, ecx, edx, esi, edi) = read_5_regs () in
 	     let nfds = Int64.to_int ebx and
@@ -1529,9 +1907,19 @@ object(self)
 	 | 182 -> (* chown *)
 	     raise (UnhandledSysCall( "Unhandled Linux system call chown (182)"))
 	 | 183 -> (* getcwd *)
-	     raise (UnhandledSysCall( "Unhandled Linux system call getcwd (183)"))
+	     let (ebx, ecx) = read_2_regs () in
+	     let buf = ebx and
+		 size = Int64.to_int ecx in
+	       if !opt_trace_syscalls then
+		 Printf.printf "getcwd(0x%08Lx, %d)" buf size;
+	       self#sys_getcwd buf size
 	 | 184 -> (* capget *)
-	     raise (UnhandledSysCall( "Unhandled Linux system call capget (184)"))
+	     let (ebx, ecx) = read_2_regs () in
+	     let hdrp = ebx and
+		 datap = ecx in
+	       if !opt_trace_syscalls then
+		 Printf.printf "capget(0x%08Lx, 0x%08Lx)" hdrp datap;
+	       self#sys_capget hdrp datap
 	 | 185 -> (* capset *)
 	     raise (UnhandledSysCall( "Unhandled Linux system call capset (185)"))
 	 | 186 -> (* sigaltstack *)
@@ -1576,7 +1964,13 @@ object(self)
 		 Printf.printf "stat64(\"%s\", 0x%08Lx)" path buf_addr;
 	       self#sys_stat64 path buf_addr
 	 | 196 -> (* lstat64 *)
-	     raise (UnhandledSysCall( "Unhandled Linux system call lstat64 (196)"))
+	     let (ebx, ecx) = read_2_regs () in
+	     let path_buf = ebx and
+		 buf_addr = ecx in
+	     let path = fm#read_cstr path_buf in
+	       if !opt_trace_syscalls then
+		 Printf.printf "lstat64(\"%s\", 0x%08Lx)" path buf_addr;
+	       self#sys_lstat64 path buf_addr
 	 | 197 -> (* fstat64 *)
 	     let (ebx, ecx) = read_2_regs () in
 	     let fd = Int64.to_int ebx and
@@ -1611,7 +2005,13 @@ object(self)
 	 | 206 -> (* setgroups32 *)
 	     raise (UnhandledSysCall( "Unhandled Linux system call setgroups32 (206)"))
 	 | 207 -> (* fchown32 *)
-	     raise (UnhandledSysCall( "Unhandled Linux system call fchown32 (207)"))
+	     let (ebx, ecx, edx) = read_3_regs () in
+	     let fd = Int64.to_int ebx and
+		 user = Int64.to_int ecx and
+		 group = Int64.to_int edx in
+	       if !opt_trace_syscalls then
+		 Printf.printf "fchown32(%d, %d, %d)" fd user group;
+	       self#sys_fchown32 fd user group
 	 | 208 -> (* setresuid32 *)
 	     raise (UnhandledSysCall( "Unhandled Linux system call setresuid32 (208)"))
 	 | 209 -> (* getresuid32 *)
@@ -1659,7 +2059,13 @@ object(self)
 	 | 219 -> (* madvise *)
 	     raise (UnhandledSysCall( "Unhandled Linux system call madvise (219)"))
 	 | 220 -> (* getdents64 *)
-	     raise (UnhandledSysCall( "Unhandled Linux system call getdents64 (220)"))
+	     let (ebx, ecx, edx) = read_3_regs () in
+	     let fd = Int64.to_int ebx and
+		 dirp = ecx and
+		 count = Int64.to_int edx in
+	       if !opt_trace_syscalls then
+		 Printf.printf "getdents64(%d, 0x%08Lx, %d)" fd dirp count;
+	       self#sys_getdents64 fd dirp count
 	 | 221 -> (* fcntl64 *)
 	     let (ebx, ecx, edx) = read_3_regs () in
 	     let fd = Int64.to_int ebx and
@@ -1681,7 +2087,17 @@ object(self)
 	 | 228 -> (* fsetxattr *)
 	     raise (UnhandledSysCall( "Unhandled Linux system call fsetxattr (228)"))
 	 | 229 -> (* getxattr *)
-	     raise (UnhandledSysCall( "Unhandled Linux system call getxattr (229)"))
+	     let (ebx, ecx, edx, esi) = read_4_regs () in
+	     let path_ptr = ebx and
+		 name_ptr = ecx and
+		 value_ptr = edx and
+		 size = Int64.to_int esi in
+	     let path = fm#read_cstr path_ptr and
+		 name = fm#read_cstr name_ptr in
+	       if !opt_trace_syscalls then
+		 Printf.printf "getxattr(\"%s\", \"%s\", 0x%08Lx, %d)"
+		   path name value_ptr size;
+	       self#sys_getxattr path name value_ptr size
 	 | 230 -> (* lgetxattr *)
 	     raise (UnhandledSysCall( "Unhandled Linux system call lgetxattr (230)"))
 	 | 231 -> (* fgetxattr *)
@@ -1917,6 +2333,33 @@ object(self)
 	     raise (UnhandledSysCall( "Unhandled Linux system call timerfd_settime (325)"))
 	 | 326 -> (* timerfd_gettime *)
 	     raise (UnhandledSysCall( "Unhandled Linux system call timerfd_gettime (326)"))
+
+	 | 327 -> (* signalfd4 *)
+	     raise (UnhandledSysCall "Unhandled Linux system call signalfd4 (327)")
+	 | 328 -> (* eventfd2 *)
+	     raise (UnhandledSysCall "Unhandled Linux system call eventfd2 (328)")
+	 | 329 -> (* epoll_create1 *)
+	     raise (UnhandledSysCall "Unhandled Linux system call epoll_create1 (329)")
+	 | 330 -> (* dup3 *)
+	     raise (UnhandledSysCall "Unhandled Linux system call dup3 (330)")
+	 | 331 -> (* pipe2 *)
+	     let (ebx, ecx) = read_2_regs () in
+	     let buf = ebx and
+		 flags = Int64.to_int ecx in
+	       if !opt_trace_syscalls then
+		 Printf.printf "pipe2(0x%08Lx, %d)" buf flags;
+	       self#sys_pipe2 buf flags
+	 | 332 -> (* inotify_init1 *)
+	     raise (UnhandledSysCall "Unhandled Linux system call inotify_init1 (332)")
+	 | 333 -> (* preadv *)
+	     raise (UnhandledSysCall "Unhandled Linux system call preadv (333)")
+	 | 334 -> (* pwritev *)
+	     raise (UnhandledSysCall "Unhandled Linux system call pwritev (334)")
+	 | 335 -> (* rt_tgsigqueueinfo *)
+	     raise (UnhandledSysCall "Unhandled Linux system call rt_tgsigqueueinfo (335)")
+	 | 336 -> (* perf_event_open *)
+	     raise (UnhandledSysCall "Unhandled Linux system call perf_event_open (336)")
+
 	 | _ ->
 	     Printf.printf "Unhandled system call %d\n" syscall_num;
 	     failwith "Unhandled Linux system call");
