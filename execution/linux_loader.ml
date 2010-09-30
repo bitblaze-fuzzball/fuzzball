@@ -313,7 +313,24 @@ let load_dynamic_program (fm : fragment_machine) fname load_base
     if do_setup then
       build_startup_state fm eh load_base !ldso_base argv;
     !entry_point
-      
+
+let addr_to_io fname addr =
+  let ic = open_in fname in
+  let io = IO.input_channel ic in
+  let eh = read_elf_header ic in
+  let found = ref false in
+    List.iter
+      (fun phr ->
+	 if addr >= phr.vaddr && addr < (Int64.add phr.vaddr phr.filesz) then
+	   let in_section = Int64.sub addr phr.vaddr in
+	   seek_in ic (Int64.to_int (Int64.add phr.offset in_section));
+	     found := true)
+      (read_program_headers ic eh);
+    if !found then
+      io
+    else
+      raise Not_found
+
 let start_eip = ref 0L
 
 let proc_identities = ref None
