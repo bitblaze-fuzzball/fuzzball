@@ -161,10 +161,12 @@ let rm_unused_stmts sl =
     (fun st -> match st with
        | V.Special("call") -> false
        | V.Special("ret") -> false
-       (*| V.Move(V.Temp(_,"R_CC_OP",_),_) -> false
+       | V.Move(V.Temp(_,"R_CC_OP",_),_) -> false
        | V.Move(V.Temp(_,"R_CC_DEP1",_),_) -> false
        | V.Move(V.Temp(_,"R_CC_DEP2",_),_) -> false
-       | V.Move(V.Temp(_,"R_CC_NDEP",_),_) -> false*)
+       | V.Move(V.Temp(_,"R_CC_NDEP",_),_) -> false
+       | V.Move(V.Temp(_,("R_PF"|"R_AF"),_),_)
+	   when !Exec_options.opt_omit_pf_af -> false
        | _ -> true)
     sl
 
@@ -197,10 +199,13 @@ let rm_unused_labels sl =
 	  | _ -> [])
        sl)
   in
+  let is_eip l = (String.length l > 5) && (String.sub l 0 5) = "pc_0x" in
     (* List.iter print_string used_labels; *)
     List.filter
       (fun st -> match st with
-	 | V.Label(l) when not (List.mem l used_labels) -> false
+	 | V.Label(l) when not (List.mem l used_labels) &&
+	     (not (is_eip l))
+	     -> false
 	 | _ -> true)
       sl
 
@@ -265,13 +270,6 @@ let rm_unused_vars (dl, sl) =
   let sl' = List.fold_right rm_defs to_rm sl in
     (dl', sl')
 
-let contains hash ent =
-  try
-    V.VarHash.find hash ent;
-    true;
-  with
-      Not_found -> false
-
 let copy_const_prop (dl, sl) =
   let map = V.VarHash.create 10 in
   let use_counts = List.fold_left2 
@@ -285,15 +283,15 @@ let copy_const_prop (dl, sl) =
 	  V.UnOp(op, replace_uses_e e)
       | V.Cast(op, ty, e) ->
 	  V.Cast(op, ty, replace_uses_e e)
-      | V.Lval(V.Temp(v)) when contains map v ->
+      | V.Lval(V.Temp(v)) when V.VarHash.mem map v ->
 	  V.VarHash.find map v
       | V.Lval(V.Mem(v, idx, ty)) ->
 	  V.Lval(V.Mem(v, replace_uses_e idx, ty))
       | V.Let(V.Temp(v), e1, e2) ->
-	  assert(not (contains map v));
+	  assert(not (V.VarHash.mem map v));
 	  V.Let(V.Temp(v), (replace_uses_e e1), (replace_uses_e e2))
       | V.Let(V.Mem(v, idx, mem_ty), e1, e2) ->
-	  assert(not (contains map v));
+	  assert(not (V.VarHash.mem map v));
 	  V.Let(V.Mem(v, (replace_uses_e idx), mem_ty),
 		(replace_uses_e e1), (replace_uses_e e2))
       | _ -> expr
@@ -353,6 +351,61 @@ let copy_const_prop (dl, sl) =
 	    st' :: (loop rest)
   in
     (dl, loop sl)
+
+let rec rm_set_used_e hash e =
+  match e with
+    | V.BinOp(_, e1, e2) -> (rm_set_used_e hash e1); (rm_set_used_e hash e2)
+    | V.UnOp(_, e) -> rm_set_used_e hash e
+    | V.Cast(_, _, e) -> rm_set_used_e hash e
+    | V.Lval(lv) -> rm_set_used_lv hash lv
+    | V.Let(lv, e1, e2) ->
+	(rm_set_used_lv hash lv) ;
+	(rm_set_used_e hash e1);
+	(rm_set_used_e hash e2)
+    | _ -> ()
+and rm_set_used_lv hash lv =
+  match lv with
+    | V.Temp(v) -> Hashtbl.remove hash v
+    | V.Mem(v, e, _) -> Hashtbl.remove hash v; (rm_set_used_e hash e)
+
+let rm_dead_assigns (dl, sl) =
+  ignore(dl);
+  let dead = Hashtbl.create 31 in
+  let rec loop sl_r =
+    match sl_r with
+      | [] -> []
+      | st :: rest ->
+	  match st with
+	    | V.Move(V.Temp(lhs_v), rhs) ->
+		if Hashtbl.mem dead lhs_v then
+		  (loop rest)
+		else
+		  (Hashtbl.replace dead lhs_v ();
+		   rm_set_used_e dead rhs;
+		   st :: (loop rest))
+	    | V.Move(V.Mem(_, addr_e, _), rhs) ->
+		rm_set_used_e dead addr_e;
+		rm_set_used_e dead rhs;
+		st :: (loop rest)
+	    | V.Jmp(_)
+	    | V.CJmp(_, _, _)
+	    | V.Label(_) ->
+		Hashtbl.clear dead;
+		st :: (loop rest)
+	    | V.ExpStmt(e)
+	    | V.Assert(e)
+	    | V.Halt(e) ->
+		rm_set_used_e dead e;
+		st :: (loop rest)
+	    | V.Block(dl1, sl1) ->
+		let st' = V.Block(dl1, List.rev (loop (List.rev sl1))) in
+		  st' :: (loop rest)
+	    | V.Special(_)
+	    | V.Comment(_) ->
+		st :: (loop rest)
+	    | _ -> failwith "Unhandled stmt type in rm_dead_assigns"
+  in
+    (dl, List.rev (loop (List.rev sl)))
 
 let peephole_patterns (dl, sl) =
   let rec loop sl =
@@ -521,6 +574,7 @@ let simplify_frag (orig_dl, orig_sl) =
   let sl = uncond_jmps sl in
   let sl = rm_sequential_jmps sl in
   let sl = rm_unused_labels sl in
+  let (dl, sl) = rm_dead_assigns (dl, sl) in
   let (dl, sl) = split_divmod (dl, sl) in
   let (dl, sl) = cfold_exprs (dl, sl) in
   let (dl, sl) = rm_unused_vars (dl, sl) in

@@ -168,7 +168,23 @@ struct
 
     method concretize_misc = ()
 
-    method eip_hook eip = ignore(eip)
+    val unique_eips = Hashtbl.create 1001
+
+    method eip_hook eip =
+      if !opt_trace_registers then
+	self#print_x86_regs;
+      if !opt_trace_eip then
+	Printf.printf "EIP is 0x%08Lx\n" eip;
+      (if !opt_trace_unique_eips then
+	 (if Hashtbl.mem unique_eips eip then
+	    ()
+	  else
+	    (Printf.printf "Saw new EIP 0x%08Lx\n" eip;
+	     Hashtbl.add unique_eips eip ())));
+    (* Libasmir.print_disasm_rawbytes Libasmir.Bfd_arch_i386 eip insn_bytes;
+       print_string "\n"; *)
+      self#watchpoint
+
 
     method set_eip eip =
       self#set_word_var R_EIP eip
@@ -864,7 +880,13 @@ struct
 			| None ->
 			    Printf.printf "Unhandled special %s\n" str;
 			    failwith "Unhandled special")
-		 | V.Label(_) -> loop rest
+		 | V.Label(l) ->
+		     if ((String.length l > 5) && 
+			   (String.sub l 0 5) = "pc_0x") then
+		       (let eip = Vine.label_to_addr l in
+			  self#set_eip eip;
+			  self#run_eip_hooks);
+		     loop rest
 		 | V.ExpStmt(e) ->
 		     let v = self#eval_int_exp e in
 		       ignore(v);

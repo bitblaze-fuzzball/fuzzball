@@ -284,6 +284,8 @@ let cmdline_opts =
      "N-M As above, but only for an eip range");
     ("-trace-eip", Arg.Set(opt_trace_eip),
      " Print PC of each insn executed");
+    ("-trace-unique-eips", Arg.Set(opt_trace_unique_eips),
+     " Print PC of each new insn executed");
     ("-trace-insns", Arg.Set(opt_trace_insns),
      " Print assembly-level instructions");
     ("-trace-ir", Arg.Set(opt_trace_ir),
@@ -298,6 +300,8 @@ let cmdline_opts =
      " Print each memory store");
     ("-trace-regions", Arg.Set(opt_trace_regions),
      " Print symbolic memory regions");
+    ("-trace-registers", Arg.Set(opt_trace_registers),
+     " Print register contents");
     ("-trace-setup", Arg.Set(opt_trace_setup),
      " Print progress of program loading");
     ("-trace-stopping", Arg.Set(opt_trace_stopping),
@@ -330,6 +334,8 @@ let cmdline_opts =
        (fun s -> opt_extra_condition_strings :=
 	  s :: !opt_extra_condition_strings),
      "cond Add an extra constraint for solving");
+    ("-omit-pf-af", Arg.Set(opt_omit_pf_af),
+     " Omit computation of the (rarely used) PF and AF flags");
   ]
 
 let trace_replay_cmdline_opts =
@@ -345,8 +351,6 @@ let trace_replay_cmdline_opts =
      " Compare insn outputs against trace");
     ("-fix-write-operands", Arg.Set(opt_fix_write_operands),
      " Modify outputs to match trace");
-    ("-trace-registers", Arg.Set(opt_trace_registers),
-     " Print register contents");
     ("-trace-segments", Arg.Set(opt_trace_segments),
      " Print messages about non-default segments");
     ("-trace-taint", Arg.Set(opt_trace_taint),

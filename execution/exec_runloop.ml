@@ -81,15 +81,6 @@ let rec runloop (fm : fragment_machine) eip asmir_gamma until =
        if old_count > !opt_iteration_limit then raise TooManyIterations);
     let (dl, sl) = decode_insns_cached fm asmir_gamma eip in
     let prog = (dl, sl) in
-      (* Libasmir.print_disasm_rawbytes Libasmir.Bfd_arch_i386 eip insn_bytes;
-	 print_string "\n"; *)
-      if !opt_trace_registers then
-	fm#print_x86_regs;
-      if !opt_trace_eip then
-	Printf.printf "EIP is 0x%08Lx\n" eip;
-      fm#set_eip eip;
-      (* Printf.printf "EFLAGSREST is %08Lx\n" (fm#get_word_var EFLAGSREST);*)
-      fm#watchpoint;
       let prog' = match call_replacements fm eip with
 	| None -> prog
 	| Some thunk ->
@@ -101,7 +92,6 @@ let rec runloop (fm : fragment_machine) eip asmir_gamma until =
 	if !opt_trace_ir then
 	  V.pp_program print_string prog';
 	fm#set_frag prog';
-	fm#run_eip_hooks;
 	(* flush stdout; *)
 	let new_eip = label_to_eip (fm#run ()) in
 	  match (new_eip, until) with
