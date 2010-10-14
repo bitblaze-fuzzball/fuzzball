@@ -213,6 +213,10 @@ let explore_cmdline_opts =
      "string String of 0's and 1's signifying the specific path decisions to make.");
     ("-random-seed", Arg.Set_int opt_random_seed,
      "N Use given seed for path choice");
+    ("-save-decision-tree-interval",
+     Arg.String (fun s -> opt_save_decision_tree_interval
+		   := Some (float_of_string s)),
+     "SECS Output decision tree every SECS seconds");
   ]
 
 

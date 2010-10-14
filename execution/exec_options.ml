@@ -34,6 +34,7 @@ let opt_path_depth_limit = ref 1000000000000L
 let opt_query_branch_limit = ref 999999999
 let opt_random_seed = ref 0
 let opt_trace_decision_tree = ref false
+let opt_save_decision_tree_interval = ref None
 let opt_trace_randomness = ref false
 let opt_measure_influence_derefs = ref false
 let opt_measure_influence_reploops = ref false

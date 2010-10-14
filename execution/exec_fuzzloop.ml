@@ -45,13 +45,20 @@ let loop_w_stats count fn =
     if !opt_gc_stats then
       Gc.full_major () (* for the benefit of leak checking *)
 
+let last_dt_print_time = ref 0.0
+
 let print_tree fm =
-  let chan = open_out "fuzz.tree" in
-    fm#print_tree chan;
-    close_out chan
+  let now = Unix.gettimeofday () in
+  let interval = match !opt_save_decision_tree_interval with
+    | Some i -> i | None -> failwith "missing interval in print_tree" in
+    if now -. !last_dt_print_time > interval then
+      let chan = open_out "fuzz.tree" in
+	fm#print_tree chan;
+	close_out chan;
+	last_dt_print_time := Unix.gettimeofday ()
 
 let periodic_stats fm at_end force = 
-  if true || force then
+  if !opt_save_decision_tree_interval <> None || force then
     print_tree fm;
   if !opt_gc_stats || force then
     check_memory_usage fm trans_cache;
