@@ -408,7 +408,8 @@ struct
 		    | [v] -> (v, not_known)
 		    | _ -> 
 			select_one vl
-			  (fun () -> self#random_case_split true)
+			  (fun () -> self#random_case_split
+			     !opt_trace_decisions)
 	      in
 		if !opt_trace_sym_addrs then
 		  Printf.printf "Choosing %s as the base address\n"
