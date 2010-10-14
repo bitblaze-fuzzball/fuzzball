@@ -130,12 +130,12 @@ let fuzz start_eip fuzz_start_eip end_eips
 		  (* | NotConcrete(_) -> () (* shouldn't happen *)
 		     | Simplify_failure(_) -> () (* shouldn't happen *)*)
 	       ); 
-	       if not fm#finish_path then raise LastIteration;
 	       if !opt_coverage_stats && 
 		 (Hashtbl.length trans_cache - old_tcs > 0) then
 		   Printf.printf "Coverage increased to %d on %Ld\n"
 		     (Hashtbl.length trans_cache) iter;
 	       periodic_stats fm false false;
+	       if not fm#finish_path then raise LastIteration;
 	       fm#reset ()
 	  );
       with
