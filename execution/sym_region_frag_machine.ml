@@ -64,6 +64,10 @@ struct
       | V.Cast(_, V.REG_16, e1) -> min 16 (narrow_bitwidth e1)
       | V.Cast(_, V.REG_8, e1)  -> min 8  (narrow_bitwidth e1)
       | V.Cast(_, V.REG_1, e1)  -> min 1  (narrow_bitwidth e1)
+      | V.Lval(V.Temp(_, _, V.REG_1))  ->  1
+      | V.Lval(V.Temp(_, _, V.REG_8))  ->  8
+      | V.Lval(V.Temp(_, _, V.REG_16)) -> 16
+      | V.Lval(V.Temp(_, _, V.REG_32)) -> 32
       | _ -> 64
 
   let split_terms e form_man =
@@ -168,21 +172,6 @@ struct
       | V.BinOp(V.BITAND, _, _)
       | V.BinOp(V.BITOR, _, _) (* XXX happens in Windows 7, don't know why *)
 	  -> ExprOffset(e)
-      | V.Cast(V.CAST_UNSIGNED, V.REG_32,
-	       V.Lval(V.Mem(_, _, V.REG_16)))
-	  -> ExprOffset(e)
-      | V.Cast(V.CAST_UNSIGNED, V.REG_32,
-	       V.Lval(V.Mem(_, _, V.REG_8)))
-	  -> ExprOffset(e)
-      | V.Cast(V.CAST_UNSIGNED, V.REG_32,
-	       V.Lval(V.Temp(_, _, V.REG_16)))
-	  -> ExprOffset(e)
-      | V.Cast(V.CAST_UNSIGNED, V.REG_32,
-	       V.Lval(V.Temp(_, _, V.REG_8)))
-	  -> ExprOffset(e)
-      | V.Cast(V.CAST_UNSIGNED, V.REG_32,
-               V.Cast(_, (V.REG_8|V.REG_16), _))
-          -> ExprOffset(e)
       | V.Lval(_) -> Symbol(e)
       | _ -> if (!opt_fail_offset_heuristic) then (
 	  failwith ("Strange term "^(V.exp_to_string e)^" in address")
