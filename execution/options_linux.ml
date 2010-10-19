@@ -13,6 +13,7 @@ let opt_tls_base = ref None
 let opt_load_extra_regions = ref []
 let opt_core_file_name = ref None
 let opt_use_ids_from_core = ref false
+let opt_symbolic_files = ref []
 
 let set_linux_defaults_for_concrete () =
   opt_linux_syscalls := true
@@ -51,6 +52,9 @@ let linux_cmdline_opts =
      " Print systems calls (like strace)");
     ("-prefix-out", Arg.Set(opt_prefix_out),
      " Add a distinguishing prefix before the program's writes");
+    ("-symbolic-file", Arg.String
+       (fun s -> opt_symbolic_files := s :: !opt_symbolic_files),
+     "FNAME Make data read from the named file symbolic");
     ("-chroot", Arg.String
        (fun s -> opt_chroot_path := Some s),
      "path Prepend PATH to absolute filenames");
@@ -86,6 +90,7 @@ let apply_linux_cmdline_opts (fm : Fragment_machine.fragment_machine) =
     let lsh = new Linux_syscalls.linux_special_handler fm in
       if !opt_use_ids_from_core then
 	lsh#set_proc_identities !Linux_loader.proc_identities;
+      List.iter lsh#add_symbolic_file !opt_symbolic_files;
       fm#add_special_handler (lsh :> Fragment_machine.special_handler)
   else
     fm#add_special_handler

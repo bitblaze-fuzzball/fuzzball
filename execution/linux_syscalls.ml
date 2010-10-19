@@ -443,6 +443,12 @@ object(self)
       | Some (_, _, _, sid) -> sid
       | None -> failwith "OCaml has no getsid()"
 
+  val symbolic_fnames = Hashtbl.create 11
+  val symbolic_fds = Hashtbl.create 11
+
+  method add_symbolic_file s =
+    Hashtbl.replace symbolic_fnames s ()
+
   method sys_access path mode =
     let oc_mode =
       (if   (mode land 0x7)= 0 then [Unix.F_OK] else []) @
@@ -519,9 +525,11 @@ object(self)
 
   method sys_close fd =
     try
+      let oc_fd = self#get_fd fd in
       if (fd <> 1 && fd <> 2) then
-	Unix.close (self#get_fd fd);
+	Unix.close oc_fd;
       Array.set unix_fds fd None;
+      Hashtbl.remove symbolic_fds oc_fd;
       put_reg R_EAX 0L (* success *)
     with
       | Unix.Unix_error(err, _, _) -> self#put_errno err
@@ -963,6 +971,9 @@ object(self)
 	Array.set unix_fds vt_fd (Some oc_fd);
 	fd_info.(vt_fd).fname <- path;
 	fd_info.(vt_fd).dirp_offset <- 0;
+	(* XXX: canonicalize filename here? *)
+	if Hashtbl.mem symbolic_fnames path then
+	  Hashtbl.replace symbolic_fds oc_fd ();
 	put_reg R_EAX (Int64.of_int vt_fd)
     with
       | Unix.Unix_error(err, _, _) -> self#put_errno err
@@ -1027,8 +1038,12 @@ object(self)
   method sys_read fd buf count =
     try
       let str = self#string_create count in
-      let num_read = Unix.read (self#get_fd fd) str 0 count in
-	fm#store_str buf 0L (String.sub str 0 num_read);
+      let oc_fd = self#get_fd fd in
+      let num_read = Unix.read oc_fd str 0 count in
+	if Hashtbl.mem symbolic_fds oc_fd then
+	  fm#make_symbolic_region buf num_read
+	else
+	  fm#store_str buf 0L (String.sub str 0 num_read);
 	put_reg R_EAX (Int64.of_int num_read)
     with
       | Unix.Unix_error(err, _, _) -> self#put_errno err
