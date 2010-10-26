@@ -73,5 +73,10 @@ class linear_decision_tree = object(self)
 
   method try_again_p = false
 
+  method check_last_choices =
+    match history with
+      | b :: _ -> Some b
+      | [] -> failwith "Missing parent in check_last_choices"
+
   method print_tree chan = ()
 end

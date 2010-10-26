@@ -31,6 +31,7 @@ class binary_decision_tree : object
 
   method mark_all_seen : unit
 
+  method check_last_choices : bool option
   method try_again_p : bool
 
   method print_tree : out_channel -> unit

@@ -160,15 +160,14 @@ struct
 	let currpath_str = dt#get_hist_str in
 	let followplen = String.length !opt_follow_path and
 	    currplen = String.length currpath_str in
-        if followplen > currplen then
-	  let follow_prefix = String.sub !opt_follow_path 0 currplen in
-	    if follow_prefix = currpath_str
-	    then
-	      (String.sub !opt_follow_path currplen 1) = "1"
-	    else 
-	      dt#random_bit
-          else
-            dt#random_bit
+	  if followplen > currplen then
+	    let follow_prefix = String.sub !opt_follow_path 0 currplen in
+	      if follow_prefix = currpath_str then
+		(String.sub !opt_follow_path currplen 1) = "1"
+	      else 
+		dt#random_bit
+	  else
+	    dt#random_bit
 
     method query_with_pc_choice cond verbose choice =
       let trans_func b =
@@ -220,10 +219,13 @@ struct
 			   (fun () -> self#follow_or_random)) in
 	result
 
-    method eval_bool_exp exp =
+    method private eval_bool_exp_tristate exp =
       let v = self#eval_int_exp exp in
 	try
-	  if (D.to_concrete_1 v) = 1 then true else false
+	  if (D.to_concrete_1 v) = 1 then
+	    (true, Some true)
+	  else
+	    (false, Some false)
 	with
 	    NotConcrete _ ->
 	      let e = D.to_symbolic_1 v in
@@ -236,17 +238,24 @@ struct
 		      Printf.printf "Computed concrete value %b\n" b;
 		    if !opt_solve_path_conditions then
 		      (let b' = self#extend_pc_known e true b in
-			assert(b = b'))
+		       let choices = dt#check_last_choices in
+			 assert(b = b');
+			 (b, choices))
 		    else
-		      self#add_to_path_cond
-			(if b then e else V.UnOp(V.NOT, e));
-		    b
+		      (self#add_to_path_cond
+			 (if b then e else V.UnOp(V.NOT, e));
+		       (b, Some b))
 		else 
 		  (dt#start_new_query_binary;
 		   let b = self#extend_pc_random e true in
+		   let choices = dt#check_last_choices in
 		     dt#count_query;
-		     b)
-		
+		     (b, choices))
+
+    method eval_bool_exp e = 
+      let (b, _) = self#eval_bool_exp_tristate e in
+	b
+
     method eval_addr_exp exp =
       let c32 x = V.Constant(V.Int(V.REG_32, x)) in
       let v = self#eval_int_exp_simplify exp in
@@ -353,9 +362,13 @@ struct
       infl_man#eip_hook eip;
       (match !opt_check_condition_at with
 	 | Some (eip', expr) when eip' = eip ->
-	     let b = self#eval_bool_exp expr in
-	       Printf.printf "At 0x%08Lx, condition %s can be %b\n"
-		 eip (V.exp_to_string expr) b
+	     let (_, choices) = self#eval_bool_exp_tristate expr in
+	       Printf.printf "At 0x%08Lx, condition %s %s\n"
+		 eip (V.exp_to_string expr)
+		 (match choices with
+		    | Some true -> "is true"
+		    | Some false -> "is false"
+		    | None -> "can be true or false")
 	 | _ -> ());
       List.iter
 	(fun (_, t_eip) -> 

@@ -462,6 +462,20 @@ class binary_decision_tree = object(self)
 
   method try_again_p = not root.all_seen
 
+  method check_last_choices =
+    match cur.parent with
+      | None -> failwith "Missing parent in check_last_choices"
+      | Some p ->
+	  (match (p.f_child, p.t_child) with
+	     | (Some(Some _), Some (Some _)) -> None
+	     | (Some(Some _), Some None) -> Some false
+	     | (Some None, Some(Some _)) -> Some true
+	     | (Some None, Some None) ->
+		 failwith "Parent invariant failure in check_last_choices"
+	     | (None, _)
+	     | (_, None)
+		 -> failwith "Unexplored parent in check_last_choices")
+
   method print_tree chan =
     let kid_to_string mmn =
       match mmn with

@@ -30,6 +30,7 @@ class virtual decision_tree : object
 
   method virtual mark_all_seen : unit
 
+  method virtual check_last_choices : bool option
   method virtual try_again_p : bool
 
   method virtual print_tree : out_channel -> unit

@@ -356,18 +356,18 @@ struct
 
     method private region_expr e =
       if !opt_check_for_null then
-	(let sat_dir = ref false in
-	   dt#start_new_query;
-	   self#restore_path_cond
-	     (fun () ->
-		sat_dir := self#extend_pc_random
-		  (V.BinOp(V.EQ, e, V.Constant(V.Int(V.REG_32, 0L))))
-		  false);
+	(dt#start_new_query;
+	 self#restore_path_cond
+	   (fun () ->
+	      ignore(self#extend_pc_random
+		       (V.BinOp(V.EQ, e, V.Constant(V.Int(V.REG_32, 0L))))
+		       false));
+	 let choices = dt#check_last_choices in
 	   dt#count_query;
-	   if !sat_dir = true then
-	     Printf.printf "Can be null.\n"
-	   else
-	     Printf.printf "Can be non-null.\n");
+	   match choices with
+	     | Some true -> Printf.printf "Can be null.\n"
+	     | Some false -> Printf.printf "Cannot be null.\n"
+	     | None -> Printf.printf "Cannot be null or non-null\n");
       infl_man#maybe_measure_influence_deref e;
       dt#start_new_query;
       let (cbases, coffs, eoffs, syms) = classify_terms e form_man in
