@@ -27,6 +27,7 @@ let main argv =
 		@ State_loader.state_loader_cmdline_opts
 		@ Exec_set_options.concrete_state_cmdline_opts
 		@ Exec_set_options.symbolic_state_cmdline_opts	
+		@ Exec_set_options.concolic_state_cmdline_opts	
 		@ Exec_set_options.explore_cmdline_opts
 		@ Exec_set_options.tags_cmdline_opts
 		@ Exec_set_options.fuzzball_cmdline_opts

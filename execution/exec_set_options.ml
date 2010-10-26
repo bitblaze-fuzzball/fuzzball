@@ -31,6 +31,7 @@ let opt_symbolic_shorts_influence = ref []
 let opt_symbolic_words_influence = ref []
 let opt_symbolic_longs_influence = ref []
 let opt_symbolic_regions = ref []
+let opt_concolic_cstrings = ref []
 let opt_sink_regions = ref []
 let opt_measure_expr_influence_at_strings = ref None
 let opt_check_condition_at_strings = ref None
@@ -52,7 +53,7 @@ let influence_cmdline_opts =
      "addr=var Like -symbolic-byte, but also use for -periodic-influence");
     ("-symbolic-short-influence", Arg.String
        (add_delimited_num_str_pair opt_symbolic_shorts_influence '='),
-     "addr=var Like -symbolic-short,, but also use for -periodic-influence");
+     "addr=var Like -symbolic-short, but also use for -periodic-influence");
     ("-symbolic-word-influence", Arg.String
        (add_delimited_num_str_pair opt_symbolic_words_influence '='),
      "addr=var Like -symbolic-word, but also use for -periodic-influence");
@@ -168,6 +169,17 @@ let symbolic_state_cmdline_opts =
     ("-skip-call-addr-symbol", Arg.String
        (add_delimited_num_str_pair opt_skip_call_addr_symbol '='),
      "addr=symname As above, but return a fresh symbol");
+  ]
+
+let concolic_state_cmdline_opts =
+  [
+    ("-concrete-path", Arg.Set(opt_concrete_path),
+     " Execute only according to concrete values");
+    ("-solve-path-conditions", Arg.Set(opt_solve_path_conditions),
+     " Solve conditions along a concrete path");
+    ("-concolic-cstring", Arg.String
+       (add_delimited_num_escstr_pair opt_concolic_cstrings '='),
+     "base=\"str\" Make a C string with given size, concrete \\0");
   ]
 
 let explore_cmdline_opts =
@@ -344,9 +356,6 @@ let cmdline_opts =
 
 let trace_replay_cmdline_opts =
   [
-    (* Would you ever not want this set in tracereplay?
-    ("-concrete-path", Arg.Set(opt_concrete_path),
-     " Execute only according to concrete values"); *)
     ("-solve-path-conditions", Arg.Set(opt_solve_path_conditions),
      " Solve conditions along a concrete path");
     ("-check-read-operands", Arg.Set(opt_check_read_operands),
@@ -478,6 +487,10 @@ let make_symbolic_init (fm:Fragment_machine.fragment_machine)
 		    new_max len;
 		    fm#store_symbolic_cstr base (Int64.to_int len))
 	 !opt_symbolic_cstrings;
+       List.iter (fun (base, str) ->
+		    new_max (Int64.of_int (String.length str));
+		    fm#store_concolic_cstr base str)
+	 !opt_concolic_cstrings;
        List.iter (fun (base, len) ->
 		    new_max (Int64.mul 2L len);
 		    fm#store_symbolic_wcstr base (Int64.to_int len))

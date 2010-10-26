@@ -179,6 +179,7 @@ sig
     method store_str : int64 -> int64 -> string -> unit
     method make_symbolic_region : int64 -> int -> unit
     method store_symbolic_cstr : int64 -> int -> unit
+    method store_concolic_cstr : int64 -> string -> unit
     method store_symbolic_wcstr : int64 -> int -> unit
     method store_symbolic_byte  : int64 -> string -> unit
     method store_symbolic_short : int64 -> string -> unit

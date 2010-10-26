@@ -9,6 +9,7 @@ val cmdline_opts                : (string * Arg.spec * string) list
 val influence_cmdline_opts      : (string * Arg.spec * string) list
 val concrete_state_cmdline_opts : (string * Arg.spec * string) list
 val symbolic_state_cmdline_opts : (string * Arg.spec * string) list
+val concolic_state_cmdline_opts : (string * Arg.spec * string) list
 val explore_cmdline_opts        : (string * Arg.spec * string) list
 val tags_cmdline_opts           : (string * Arg.spec * string) list
 val fuzzball_cmdline_opts       : (string * Arg.spec * string) list

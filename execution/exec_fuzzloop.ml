@@ -143,6 +143,7 @@ let fuzz start_eip fuzz_start_eip end_eips
 		     (Hashtbl.length trans_cache) iter;
 	       periodic_stats fm false false;
 	       if not fm#finish_path then raise LastIteration;
+	       if !opt_concrete_path then raise LastIteration;
 	       fm#reset ()
 	  );
       with
