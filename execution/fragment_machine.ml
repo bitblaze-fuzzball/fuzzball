@@ -192,6 +192,10 @@ struct
     method run_eip_hooks =
       self#eip_hook (self#get_word_var R_EIP)
 
+    method set_cjmp_heuristic
+      (func:(int64 -> int64 -> int64 -> float -> bool option))
+      = ()
+
     method private on_missing_zero_m (m:GM.granular_memory) =
       m#on_missing
 	(fun size _ -> match size with
@@ -820,6 +824,9 @@ struct
       let v = self#eval_int_exp exp in
 	if (D.to_concrete_1 v) = 1 then true else false
 
+    method eval_cjmp exp targ1 targ2 =
+      self#eval_bool_exp exp
+
     method eval_addr_exp exp =
       let v = self#eval_int_exp exp in
 	(D.to_concrete_32 v)
@@ -859,6 +866,18 @@ struct
 	  | st :: rest ->
 	      (match st with
 		 | V.Jmp(l) -> jump (self#eval_label_exp l)
+		 | V.CJmp(cond, V.Name(l1), V.Name(l2))
+		     when
+		       (String.length l1 > 5) &&
+			 ((String.sub l1 0 5) = "pc_0x") &&
+			 (String.length l2 > 5) &&
+			 ((String.sub l2 0 5) = "pc_0x") ->
+		     let a1 = Vine.label_to_addr l1 and
+			 a2 = Vine.label_to_addr l2 in
+		       if (self#eval_cjmp cond a1 a2) then
+			 jump l1
+		       else
+			 jump l2
 		 | V.CJmp(cond, l1, l2) ->
 		     let cond_v = self#eval_bool_exp cond in
 		       if cond_v then
@@ -1221,6 +1240,9 @@ class virtual fragment_machine = object
   method virtual set_eip : int64 -> unit
   method virtual run_eip_hooks : unit
   
+  method virtual set_cjmp_heuristic :
+    (int64 -> int64 -> int64 -> float -> bool option) -> unit
+
   method virtual on_missing_zero : unit
   method virtual on_missing_random : unit
   method virtual on_missing_symbol : unit

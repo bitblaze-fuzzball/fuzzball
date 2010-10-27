@@ -440,6 +440,12 @@ let peephole_patterns (dl, sl) =
 	    V.Move(V.Temp(r2), load) ::
 	    update ::
 	    loop rest
+      (* Make both target addrs visible in a Cjmp *)
+      | V.CJmp(e, V.Name(l1), V.Name(l2)) ::
+	  V.Label(l2') ::
+	  V.Jmp(V.Name(l3)) :: rest
+	  when l2 = l2' ->
+	  V.CJmp(e, V.Name(l1), V.Name(l3)) :: (loop rest)
       | st :: rest -> st :: loop rest
       | [] -> []
   in

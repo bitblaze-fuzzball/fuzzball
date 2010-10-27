@@ -219,6 +219,20 @@ struct
 			   (fun () -> self#follow_or_random)) in
 	result
 
+    method private eval_bool_exp_conc_path e =
+      let b = (form_man#eval_expr e) <> 0L in
+	if !opt_trace_conditions then 
+	  Printf.printf "Computed concrete value %b\n" b;
+	if !opt_solve_path_conditions then
+	  (let b' = self#extend_pc_known e true b in
+	   let choices = dt#check_last_choices in
+	     assert(b = b');
+	     (b, choices))
+	else
+	  (self#add_to_path_cond
+	     (if b then e else V.UnOp(V.NOT, e));
+	   (b, Some b))
+
     method private eval_bool_exp_tristate exp =
       let v = self#eval_int_exp exp in
 	try
@@ -233,18 +247,7 @@ struct
 		  Printf.printf "Symbolic branch condition %s\n"
 		    (V.exp_to_string e);
 		if !opt_concrete_path then
-		  let b = (form_man#eval_expr e) <> 0L in
-		    if !opt_trace_conditions then 
-		      Printf.printf "Computed concrete value %b\n" b;
-		    if !opt_solve_path_conditions then
-		      (let b' = self#extend_pc_known e true b in
-		       let choices = dt#check_last_choices in
-			 assert(b = b');
-			 (b, choices))
-		    else
-		      (self#add_to_path_cond
-			 (if b then e else V.UnOp(V.NOT, e));
-		       (b, Some b))
+		  self#eval_bool_exp_conc_path e
 		else 
 		  (dt#start_new_query_binary;
 		   let b = self#extend_pc_random e true in
@@ -255,6 +258,41 @@ struct
     method eval_bool_exp e = 
       let (b, _) = self#eval_bool_exp_tristate e in
 	b
+
+    val mutable cjmp_heuristic = (fun eip t1 t2 r -> None)
+
+    method set_cjmp_heuristic f = cjmp_heuristic <- f
+
+    method private cjmp_choose targ1 targ2 =
+      let eip = self#get_word_var R_EIP in
+	(cjmp_heuristic eip targ1 targ2 (dt#random_float))
+
+    method eval_cjmp exp targ1 targ2 =
+      let v = self#eval_int_exp exp in
+	try
+	  (D.to_concrete_1 v) = 1
+	with
+	    NotConcrete _ ->
+	      let e = D.to_symbolic_1 v in
+		if !opt_trace_conditions then 
+		  Printf.printf "Symbolic branch condition %s\n"
+		    (V.exp_to_string e);
+		if !opt_concrete_path then
+		  let (b, _) = self#eval_bool_exp_conc_path e in
+		    b
+		else
+		  (dt#start_new_query_binary;
+		   let choice = if dt#have_choice then
+		     self#cjmp_choose targ1 targ2
+		   else
+		     None
+		   in
+		   let b = match choice with
+		     | None -> self#extend_pc_random e true
+		     | Some bit -> self#extend_pc_known e true bit
+		   in
+		     dt#count_query;
+		     b)
 
     method eval_addr_exp exp =
       let c32 x = V.Constant(V.Int(V.REG_32, x)) in

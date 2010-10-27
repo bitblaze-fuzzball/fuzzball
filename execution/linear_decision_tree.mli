@@ -19,6 +19,7 @@ class linear_decision_tree : object
   method extend : bool -> unit
   method set_iter_seed : int -> unit
   method random_bit : bool
+  method random_float : float
   method record_unsat : bool -> unit
 
   method try_extend : (bool -> Vine.exp) ->
@@ -32,6 +33,7 @@ class linear_decision_tree : object
   method mark_all_seen : unit
 
   method check_last_choices : bool option
+  method have_choice : bool
   method try_again_p : bool
 
   method print_tree : out_channel -> unit

@@ -47,6 +47,8 @@ class linear_decision_tree = object(self)
 
   method random_bit = Random.bool ()
 
+  method random_float = Random.float 1.0
+
   method record_unsat b = ()
 
   method try_extend (trans_func : bool -> V.exp)
@@ -77,6 +79,8 @@ class linear_decision_tree = object(self)
     match history with
       | b :: _ -> Some b
       | [] -> failwith "Missing parent in check_last_choices"
+
+  method have_choice = false
 
   method print_tree chan = ()
 end

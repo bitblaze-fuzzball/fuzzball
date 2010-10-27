@@ -29,6 +29,9 @@ sig
     method set_eip : int64 -> unit
     method run_eip_hooks : unit
 
+    method set_cjmp_heuristic :
+      (int64 -> int64 -> int64 -> float -> bool option) -> unit
+
     method private on_missing_zero_m :
       Granular_memory.GranularMemoryFunctor(D).granular_memory -> unit
     method private on_missing_symbol_m :
@@ -128,6 +131,7 @@ sig
 
     method private eval_int_exp_simplify : Vine.exp -> D.t
 
+    method eval_cjmp : Vine.exp -> int64 -> int64 -> bool
     method eval_bool_exp : Vine.exp -> bool
     method eval_addr_exp : Vine.exp -> int64
     method eval_label_exp : Vine.exp -> string
@@ -245,6 +249,9 @@ class virtual fragment_machine : object
   method virtual set_eip : int64 -> unit
   method virtual run_eip_hooks : unit
   
+  method virtual set_cjmp_heuristic :
+    (int64 -> int64 -> int64 -> float -> bool option) -> unit
+
   method virtual on_missing_zero : unit
   method virtual on_missing_random : unit
   method virtual on_missing_symbol : unit

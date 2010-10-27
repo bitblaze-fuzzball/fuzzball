@@ -231,6 +231,12 @@ class binary_decision_tree = object(self)
 	Printf.printf "Flipping a coin to get %B\n" b;
       b
 
+  method random_float =
+    let f = Random.State.float randomness 1.0 in
+      if !opt_trace_randomness then
+	Printf.printf "Flipping a floating coin to get %f\n" f;
+      f
+
   method record_unsat b =
     match (b, cur.f_child, cur.t_child) with
       | (false, None, _) ->
@@ -475,6 +481,28 @@ class binary_decision_tree = object(self)
 	     | (None, _)
 	     | (_, None)
 		 -> failwith "Unexplored parent in check_last_choices")
+
+  method have_choice =
+    let result = 
+      match (cur.f_child, cur.t_child) with
+	| (None, _)
+	| (_, None)
+	  -> true
+	| (Some(Some fkid), Some (Some tkid)) -> 
+	    (match fkid.all_seen, tkid.all_seen with
+	       | (true, true) -> true
+	       | (false, false) -> true
+	       | (true, false)
+	       | (false, true) -> false)
+	| (Some(Some _), Some None)
+	| (Some None, Some(Some _))
+	  -> false
+	| (Some None, Some None) ->
+	    failwith "Feasibility invariant failure in have_choice"
+    in
+      if !opt_trace_decision_tree then
+	Printf.printf "DT: at %d, have_choice is %b\n" cur.ident result;
+      result
 
   method print_tree chan =
     let kid_to_string mmn =

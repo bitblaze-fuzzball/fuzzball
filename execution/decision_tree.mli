@@ -18,6 +18,7 @@ class virtual decision_tree : object
   method virtual extend : bool -> unit
   method virtual set_iter_seed : int -> unit
   method virtual random_bit : bool
+  method virtual random_float : float
   method virtual record_unsat : bool -> unit
 
   method virtual try_extend : (bool -> Vine.exp) ->
@@ -31,6 +32,7 @@ class virtual decision_tree : object
   method virtual mark_all_seen : unit
 
   method virtual check_last_choices : bool option
+  method virtual have_choice : bool
   method virtual try_again_p : bool
 
   method virtual print_tree : out_channel -> unit
