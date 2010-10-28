@@ -561,7 +561,16 @@ let lets_to_moves (dl, sl) =
 	  | V.Assert(e1) ->
 	      let (bl1, e1') = expr_loop e1 in
 		(bl1, V.Assert(e1'))
-	  | _ -> failwith "Unhandled stmt type in lets_to_moves"
+	  | V.Function(_) ->
+	      failwith "Unhandled stmt type Function in lets_to_moves"
+	  | V.Return(_) ->
+	      failwith "Unhandled stmt type Return in lets_to_moves"
+	  | V.Call(_) ->
+	      failwith "Unhandled stmt type Call in lets_to_moves"
+	  | V.Attr(_) ->
+	      failwith "Unhandled stmt type Attr in lets_to_moves"
+	  | V.Halt(_) ->
+	      failwith "Unhandled stmt type Halt in lets_to_moves"
 	in
 	let dl' = List.map (fun (a,_) -> a) bl in
 	let sl' = List.map (fun (v,e) -> V.Move(V.Temp(v), e)) bl in
