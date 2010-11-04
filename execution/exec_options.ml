@@ -140,7 +140,7 @@ let unescape str =
 		 | ' ' -> char 1 ' '
 		 | 'x' when i + 3 < len ->
 		     char 3 (Char.chr (int_of_string
-					 ("0" ^ (String.sub str (i+2) 2))))
+					 ("0x" ^ (String.sub str (i+2) 2))))
 		 | '0' .. '9' when i + 3 < len ->
 		     char 3 (Char.chr (int_of_string
 					 (String.sub str (i+1) 3)))
