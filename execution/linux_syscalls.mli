@@ -47,6 +47,7 @@ object
   method sys_access : string -> int -> unit
   method sys_brk : int64 -> unit
   method sys_capget : int64 -> int64 -> unit
+  method sys_chdir : string -> unit
   method sys_fchmod : int -> int -> unit
   method sys_fchown32 : int -> int -> int -> unit
   method sys_clock_getres : int -> int64 -> unit

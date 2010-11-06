@@ -489,6 +489,13 @@ object(self)
     ignore(datap);
     self#put_errno Unix.EFAULT
 
+  method sys_chdir path =
+    try
+      Unix.chdir path;
+      put_reg R_EAX 0L (* success *)
+    with
+      | Unix.Unix_error(err, _, _) -> self#put_errno err
+
   method sys_fchmod fd mode =
     Unix.fchmod (self#get_fd fd) mode;
     put_reg R_EAX 0L (* success *)
@@ -1353,7 +1360,11 @@ object(self)
 	 | 11 -> (* execve *)
 	     raise (UnhandledSysCall( "Unhandled Linux system call execve (11)"))
 	 | 12 -> (* chdir *)
-	     raise (UnhandledSysCall( "Unhandled Linux system call chdir (12)"))
+	     let ebx = read_1_reg () in
+	     let path = fm#read_cstr ebx in
+	       if !opt_trace_syscalls then
+		 Printf.printf "chdir(\"%s\")" path;
+	       self#sys_chdir path
 	 | 13 -> (* time *)
 	     let ebx = read_1_reg () in
 	     let addr = ebx in
