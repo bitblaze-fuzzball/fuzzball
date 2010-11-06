@@ -463,13 +463,26 @@ struct
 		      let a = form_man#eval_expr e in
 			if !opt_trace_sym_addrs then
 			  Printf.printf "Computed concrete value 0x%08Lx\n" a;
+			if !opt_solve_path_conditions then
+			  (let cond = V.BinOp(V.EQ, e,
+					      V.Constant(V.Int(V.REG_32, a)))
+			   in
+			   let sat = self#extend_pc_known cond false true in
+			     assert(sat));
 			(Some 0, a)
 		  | [V.Lval(V.Temp(var)) as vexp] ->
-		      let a = form_man#eval_expr (sum_list rest) in
+		      let sum = sum_list rest in
+		      let a = form_man#eval_expr sum in
 			if !opt_trace_sym_addrs then
 			  Printf.printf
 			    "Computed concrete offset %s + 0x%08Lx\n" 
 			    (V.var_to_string var) a;
+			if !opt_solve_path_conditions then
+			  (let cond = V.BinOp(V.EQ, sum,
+					      V.Constant(V.Int(V.REG_32, a)))
+			   in
+			   let sat = self#extend_pc_known cond false true in
+			     assert(sat));
 			(Some(self#region_for vexp), a)
 		  | [_] -> failwith "known_base invariant failure"
 		  | _ -> failwith "multiple bases"
