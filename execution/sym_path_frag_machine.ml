@@ -39,7 +39,10 @@ struct
 
     method set_influence_manager im = infl_man <- im
 
-    method get_path_cond = path_cond
+    method get_path_cond =
+      if path_cond = [] then
+	path_cond <- !opt_extra_conditions;
+      path_cond
 
     method add_to_path_cond cond =
       if path_cond = [] then
@@ -47,6 +50,8 @@ struct
       path_cond <- cond :: path_cond
       
     method restore_path_cond f =
+      if path_cond = [] then
+	path_cond <- !opt_extra_conditions;
       let saved_pc = path_cond in
       let ret = f () in
 	path_cond <- saved_pc;
@@ -176,7 +181,8 @@ struct
       let try_func b cond' =
 	if verbose && !opt_trace_decisions then
 	  Printf.printf "Trying %B: " b;
-	let (is_sat, _) = self#query_with_path_cond path_cond cond' verbose in
+	let (is_sat, _) =
+	  self#query_with_path_cond (self#get_path_cond) cond' verbose in
 	  is_sat
       in
       let non_try_func b =
@@ -434,7 +440,7 @@ struct
       if !opt_final_pc then
 	(Printf.printf "Path condition: true\n";
 	 List.iter (fun e -> Printf.printf "& (%s)\n" (V.exp_to_string e))
-	   (List.rev path_cond));
+	   (List.rev (self#get_path_cond)));
       if !opt_solve_final_pc then
 	assert(let (b,_) = self#query_with_path_cond path_cond V.exp_true true
 	       in b);
