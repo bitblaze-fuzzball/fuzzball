@@ -68,6 +68,9 @@ struct
       | V.Lval(V.Temp(_, _, V.REG_8))  ->  8
       | V.Lval(V.Temp(_, _, V.REG_16)) -> 16
       | V.Lval(V.Temp(_, _, V.REG_32)) -> 32
+      | V.Lval(V.Mem(_, _, V.REG_8))  ->  8
+      | V.Lval(V.Mem(_, _, V.REG_16)) -> 16
+      | V.Lval(V.Mem(_, _, V.REG_32)) -> 32
       | _ -> 64
 
   let split_terms e form_man =
