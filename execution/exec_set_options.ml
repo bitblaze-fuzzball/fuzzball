@@ -21,6 +21,7 @@ let opt_store_words = ref []
 let opt_store_longs = ref []
 let opt_symbolic_regs = ref false
 let opt_symbolic_cstrings = ref []
+let opt_symbolic_cstrings_fulllen = ref []
 let opt_symbolic_string16s = ref []
 let opt_symbolic_bytes = ref []
 let opt_symbolic_shorts = ref []
@@ -146,6 +147,9 @@ let symbolic_state_cmdline_opts =
     ("-symbolic-cstring", Arg.String
        (add_delimited_pair opt_symbolic_cstrings '+'),
      "base+size Make a C string with given size, concrete \\0");
+    ("-symbolic-cstring-fulllen", Arg.String
+       (add_delimited_pair opt_symbolic_cstrings_fulllen '+'),
+     "base+size As above, but all chars are non-null");
     ("-symbolic-string16", Arg.String
        (add_delimited_pair opt_symbolic_string16s '+'),
      "base+16s As above, but with 16-bit characters");
@@ -479,14 +483,21 @@ let make_symbolic_init (fm:Fragment_machine.fragment_machine)
        max_input_string_length :=
 	 max (!max_input_string_length) (Int64.to_int i)
      in
+       opt_extra_conditions :=
+	 List.map (fun s -> fm#parse_symbolic_expr s)
+	   !opt_extra_condition_strings;
        List.iter (fun (base, len) ->
 		    new_max len;
 		    fm#make_symbolic_region base (Int64.to_int len))
 	 !opt_symbolic_regions;
        List.iter (fun (base, len) ->
 		    new_max len;
-		    fm#store_symbolic_cstr base (Int64.to_int len))
+		    fm#store_symbolic_cstr base (Int64.to_int len) false)
 	 !opt_symbolic_cstrings;
+       List.iter (fun (base, len) ->
+		    new_max len;
+		    fm#store_symbolic_cstr base (Int64.to_int len) true)
+	 !opt_symbolic_cstrings_fulllen;
        List.iter (fun (base, str) ->
 		    new_max (Int64.of_int (String.length str));
 		    fm#store_concolic_cstr base str)
@@ -521,10 +532,7 @@ let make_symbolic_init (fm:Fragment_machine.fragment_machine)
 	 !opt_symbolic_longs_influence;
        List.iter (fun (varname, size) ->
 		    fm#make_sink_region varname size)
-	 !opt_sink_regions;
-       opt_extra_conditions :=
-	 List.map (fun s -> fm#parse_symbolic_expr s)
-	   !opt_extra_condition_strings)
+	 !opt_sink_regions)
 
 let decide_start_addrs () =
   let (start_addr, fuzz_start) = match

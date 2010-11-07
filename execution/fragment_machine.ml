@@ -966,12 +966,17 @@ struct
 	    (form_man#fresh_symbolic_mem_8 varname (Int64.of_int i))
 	done
 
-    method store_symbolic_cstr base len =
+    method store_symbolic_cstr base len fulllen =
       let varname = "input" ^ (string_of_int symbolic_string_id) ^ "_" in
 	symbolic_string_id <- symbolic_string_id + 1;
 	for i = 0 to len - 1 do
-	  self#store_byte (Int64.add base (Int64.of_int i))
-	    (form_man#fresh_symbolic_8 (varname ^ (string_of_int i)))
+	  let d = form_man#fresh_symbolic_8 (varname ^ (string_of_int i)) in
+	    self#store_byte (Int64.add base (Int64.of_int i)) d;
+	    if fulllen then
+	      opt_extra_conditions :=
+		V.BinOp(V.LT, V.Constant(V.Int(V.REG_8, 0L)),
+			(D.to_symbolic_8 d))
+	      :: !opt_extra_conditions
 	done;
 	self#store_byte_idx base len 0
 
@@ -1318,7 +1323,7 @@ class virtual fragment_machine = object
 
   method virtual make_symbolic_region : int64 -> int -> unit
 
-  method virtual store_symbolic_cstr : int64 -> int -> unit
+  method virtual store_symbolic_cstr : int64 -> int -> bool -> unit
   method virtual store_concolic_cstr : int64 -> string -> unit
 
   method virtual store_symbolic_wcstr : int64 -> int -> unit
