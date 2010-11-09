@@ -31,7 +31,6 @@ object
 
   method oc_kind_to_mode : Unix.file_kind -> int
   method flags_to_oc_flags : int -> Unix.open_flag list
-  method write_oc_statbuf : int64 -> Unix.stats -> unit
   method write_fake_statfs_buf : int64 -> unit
   method write_fake_statfs64buf : int64 -> unit
   method write_ftime_as_words : float -> int64 -> float -> unit
@@ -48,12 +47,14 @@ object
   method sys_brk : int64 -> unit
   method sys_capget : int64 -> int64 -> unit
   method sys_chdir : string -> unit
+  method sys_fchdir : int -> unit
   method sys_fchmod : int -> int -> unit
   method sys_fchown32 : int -> int -> int -> unit
   method sys_clock_getres : int -> int64 -> unit
   method sys_clock_gettime : int -> int64 -> unit
   method sys_close : int -> unit
   method sys_connect : int -> int64 -> int -> unit
+  method sys_exit : int64 -> unit
   method sys_exit_group : int64 -> unit
   method sys_fcntl64 : int -> int -> int64 -> unit
   method sys_futex : int64 -> int -> int64 -> int64 -> int64 -> int64 -> unit
@@ -81,6 +82,7 @@ object
   method sys_lseek : int -> int64 -> int -> unit
   method sys__llseek : int -> int64 -> int64 -> int -> unit
   method sys_mkdir : string -> Unix.file_perm -> unit
+  method sys_mmap : int64 -> int64 -> int64 -> int64 -> int64 -> int -> unit
   method sys_mmap2 : int64 -> int64 -> int64 -> int64 -> int64 -> int -> unit
   method sys_mprotect : int64 -> int64 -> int64 -> unit
   method sys_munmap : int64 -> int64 -> unit
@@ -103,6 +105,9 @@ object
   method sys_rt_sigaction : int -> int64 -> int64 -> int -> unit
   method sys_rt_sigprocmask : int -> int64 -> int64 -> int -> unit
   method sys_socket : int -> int -> int -> unit
+  method sys_stat : string -> int64 -> unit
+  method sys_lstat : string -> int64 -> unit
+  method sys_fstat : int -> int64 -> unit
   method sys_stat64 : string -> int64 -> unit
   method sys_lstat64 : string -> int64 -> unit
   method sys_fstat64 : int -> int64 -> unit

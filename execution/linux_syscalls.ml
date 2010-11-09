@@ -69,6 +69,10 @@ class linux_special_handler (fm : fragment_machine) =
     let addr = Int64.add base (Int64.of_int idx) in
       fm#store_word_conc addr v
   in
+  let store_short base idx v =
+    let addr = Int64.add base (Int64.of_int idx) in
+      fm#store_short_conc addr v
+  in
   let zero_region base len =
     for i = 0 to len -1 do fm#store_byte_idx base i 0 done
   in
@@ -310,7 +314,40 @@ object(self)
       (if (flags land 0o200) != 0   then [Unix.O_EXCL]     else []) @
       (if (flags land 0o10000) != 0 then [Unix.O_SYNC]     else [])
 
-  method write_oc_statbuf addr oc_buf =
+  method private write_oc_statbuf_as_stat addr oc_buf =
+    let dev = Int64.of_int oc_buf.Unix.st_dev and
+	ino = Int64.of_int oc_buf.Unix.st_ino and
+	mode = (oc_buf.Unix.st_perm lor 
+		  (self#oc_kind_to_mode oc_buf.Unix.st_kind)) and
+	nlink = oc_buf.Unix.st_nlink and
+	uid = oc_buf.Unix.st_uid and
+	gid = oc_buf.Unix.st_gid and
+	rdev = Int64.of_int oc_buf.Unix.st_rdev and
+	size = Int64.of_int oc_buf.Unix.st_size and
+	atime = Int64.of_float oc_buf.Unix.st_atime and
+	mtime = Int64.of_float oc_buf.Unix.st_mtime and
+	ctime = Int64.of_float oc_buf.Unix.st_ctime and
+	blksize = 4096L and
+	blocks = Int64.of_int (oc_buf.Unix.st_size/4096)
+    in
+      store_word  addr  0 dev;
+      store_word  addr  4 ino;     (* 32-bit inode *)
+      store_short addr  8 mode;
+      store_short addr 10 nlink;
+      store_short addr 12 uid;
+      store_short addr 14 gid;
+      store_word  addr 16 rdev;
+      store_word  addr 20 size; 
+      store_word  addr 24 blksize;
+      store_word  addr 28 blocks;
+      store_word  addr 32 atime;
+      store_word  addr 36 0L;      (* atime nanosecs *)
+      store_word  addr 40 mtime;
+      store_word  addr 44 0L;      (* mtime naonsecs *)
+      store_word  addr 48 ctime;
+      store_word  addr 52 0L;      (* ctime nanosecs *)
+
+  method private write_oc_statbuf_as_stat64 addr oc_buf =
     let dev = Int64.of_int oc_buf.Unix.st_dev and
 	ino = Int64.of_int oc_buf.Unix.st_ino and
 	mode = Int64.of_int (oc_buf.Unix.st_perm lor 
@@ -346,7 +383,7 @@ object(self)
       store_word addr 76 0L;      (* mtime naonsecs *)
       store_word addr 80 ctime;
       store_word addr 84 0L;      (* ctime nanosecs *)
-      store_word addr 89 ino;     (* low bits of 64-bit inode *)
+      store_word addr 88 ino;     (* low bits of 64-bit inode *)
       store_word addr 92 0L;      (* high bits of 64-bit inode *)
 
   method write_fake_statfs_buf addr =
@@ -496,6 +533,14 @@ object(self)
     with
       | Unix.Unix_error(err, _, _) -> self#put_errno err
 
+  method sys_fchdir fd =
+    try
+      let dirname = fd_info.(fd).fname in
+	Unix.chdir dirname;
+	put_reg R_EAX 0L (* success *)
+    with
+      | Unix.Unix_error(err, _, _) -> self#put_errno err
+
   method sys_fchmod fd mode =
     Unix.fchmod (self#get_fd fd) mode;
     put_reg R_EAX 0L (* success *)
@@ -546,6 +591,9 @@ object(self)
       Unix.connect (self#get_fd sockfd) (self#read_sockaddr addr addrlen)
     with
       | Unix.Unix_error(err, _, _) -> self#put_errno err
+
+  method sys_exit status =
+    raise (SimulatedExit(status))
 
   method sys_exit_group status =
     raise (SimulatedExit(status))
@@ -928,39 +976,45 @@ object(self)
     with
       | Unix.Unix_error(err, _, _) -> self#put_errno err
 	  
-  method sys_mmap2 addr length prot flags fd pgoffset =
+  method private mmap_common addr length prot flags fd offset =
     let fdi = Int64.to_int fd in
     let do_read addr = 
       let len = Int64.to_int length in
       let old_loc = Unix.lseek (self#get_fd fdi) 0 Unix.SEEK_CUR in
-      let _ = Unix.lseek (self#get_fd fdi) (4096*pgoffset) Unix.SEEK_SET in
+      let _ = Unix.lseek (self#get_fd fdi) offset Unix.SEEK_SET in
       let _ = self#do_unix_read (self#get_fd fdi) addr len in
       let _ = Unix.lseek (self#get_fd fdi) old_loc Unix.SEEK_SET in
 	(* assert(nr = len); *)
 	addr
     in
     let ret =
-      match (addr, length, prot, flags, fd, pgoffset) with
+      match (addr, length, prot, flags, fd) with
 	| (0L, _, 0x3L (* PROT_READ|PROT_WRITE *),
-	   0x22L (* MAP_PRIVATE|MAP_ANONYMOUS *), 0xffffffffL, _) ->
+	   0x22L (* MAP_PRIVATE|MAP_ANONYMOUS *), 0xffffffffL) ->
 	    let fresh = self#fresh_addr length in
 	      zero_region fresh (Int64.to_int length);
 	      fresh
 	| (_, _, (0x3L|0x7L) (* PROT_READ|PROT_WRITE|PROT_EXEC) *),
-	   0x32L (* MAP_PRIVATE|FIXED|ANONYMOUS *), 0xffffffffL, _) ->
+	   0x32L (* MAP_PRIVATE|FIXED|ANONYMOUS *), 0xffffffffL) ->
 	    zero_region addr (Int64.to_int length);
 	    addr
 	| (0L, _, 
 	   (0x1L|0x5L) (* PROT_READ|PROT_EXEC *),
-	   (0x802L|0x2L|0x1L) (* MAP_PRIVATE|MAP_DENYWRITE|MAP_SHARED *), _, _) ->
+	   (0x802L|0x2L|0x1L) (* MAP_PRIVATE|MAP_DENYWRITE|MAP_SHARED *), _) ->
 	    let dest_addr = self#fresh_addr length in
 	      do_read dest_addr
 	| (_, _, (0x3L|0x7L) (* PROT_READ|PROT_WRITE|PROT_EXEC *),
-	   0x812L (* MAP_DENYWRITE|PRIVATE|FIXED *), _, _) ->
+	   0x812L (* MAP_DENYWRITE|PRIVATE|FIXED *), _) ->
 	    do_read addr
 	| _ -> failwith "Unhandled mmap operation"
     in
       put_reg R_EAX ret
+
+  method sys_mmap addr length prot flags fd offset =
+    self#mmap_common addr length prot flags fd offset
+
+  method sys_mmap2 addr length prot flags fd pgoffset =
+    self#mmap_common addr length prot flags fd (4096*pgoffset)
 
   method sys_mprotect addr len prot =
     (* treat as no-op *)
@@ -1173,10 +1227,38 @@ object(self)
     with 
       | Unix.Unix_error(err, _, _) -> self#put_errno err
 
+  method sys_stat path buf_addr =
+    try
+      let oc_buf = Unix.stat path in
+	self#write_oc_statbuf_as_stat buf_addr oc_buf;
+	put_reg R_EAX 0L (* success *)
+    with
+      | Unix.Unix_error(err, _, _) -> self#put_errno err
+
+  method sys_lstat path buf_addr =
+    try
+      let oc_buf = Unix.lstat path in
+	self#write_oc_statbuf_as_stat buf_addr oc_buf;
+	put_reg R_EAX 0L (* success *)
+    with
+      | Unix.Unix_error(err, _, _) -> self#put_errno err
+
+  method sys_fstat fd buf_addr =
+    try
+      let oc_buf =
+	(if (fd <> 1 or true) then
+	   Unix.fstat (self#get_fd fd)
+	 else
+	   Unix.stat "/etc/group") (* pretend stdout is always redirected *) in
+	self#write_oc_statbuf_as_stat buf_addr oc_buf;
+	put_reg R_EAX 0L (* success *)
+    with
+      | Unix.Unix_error(err, _, _) -> self#put_errno err
+
   method sys_stat64 path buf_addr =
     try
       let oc_buf = Unix.stat path in
-	self#write_oc_statbuf buf_addr oc_buf;
+	self#write_oc_statbuf_as_stat64 buf_addr oc_buf;
 	put_reg R_EAX 0L (* success *)
     with
       | Unix.Unix_error(err, _, _) -> self#put_errno err
@@ -1184,20 +1266,23 @@ object(self)
   method sys_lstat64 path buf_addr =
     try
       let oc_buf = Unix.lstat path in
-	self#write_oc_statbuf buf_addr oc_buf;
+	self#write_oc_statbuf_as_stat64 buf_addr oc_buf;
 	put_reg R_EAX 0L (* success *)
     with
       | Unix.Unix_error(err, _, _) -> self#put_errno err
 
   method sys_fstat64 fd buf_addr =
-    let oc_buf =
-      (if (fd <> 1 or true) then
-	 Unix.fstat (self#get_fd fd)
-       else
-	 Unix.stat "/etc/group") (* pretend stdout is always redirected *) in
-      self#write_oc_statbuf buf_addr oc_buf;
-      put_reg R_EAX 0L (* success *)
-
+    try
+      let oc_buf =
+	(if (fd <> 1 or true) then
+	   Unix.fstat (self#get_fd fd)
+	 else
+	   Unix.stat "/etc/group") (* pretend stdout is always redirected *) in
+	self#write_oc_statbuf_as_stat64 buf_addr oc_buf;
+	put_reg R_EAX 0L (* success *)
+    with
+      | Unix.Unix_error(err, _, _) -> self#put_errno err
+	  
   method sys_statfs path buf =
     ignore(path);
     self#write_fake_statfs_buf buf;
@@ -1306,7 +1391,11 @@ object(self)
 	 | 0 -> (* restart_syscall *)
 	     raise (UnhandledSysCall( "Unhandled Linux system call restart_syscall (0)"))
 	 | 1 -> (* exit *)
-	     raise (UnhandledSysCall( "Unhandled Linux system call exit (1)"))
+	     let ebx = read_1_reg () in
+	     let status = ebx in
+	       if !opt_trace_syscalls then
+		 Printf.printf "exit(%Ld) (no return)\n" status;
+	       self#sys_exit status
 	 | 2 -> (* fork *)
 	     raise (UnhandledSysCall( "Unhandled Linux system call fork (2)"))
 	 | 3 -> (* read *)		    
@@ -1588,7 +1677,17 @@ object(self)
 	 | 89 -> (* readdir *)
 	     raise (UnhandledSysCall( "Unhandled Linux system call readdir (89)"))
 	 | 90 -> (* mmap *)
-	     raise (UnhandledSysCall( "Unhandled Linux system call mmap (90)"))
+	     let ebx = read_1_reg () in
+	     let addr   = load_word ebx and
+		 length = load_word (lea ebx 0 0 4) and
+		 prot   = load_word (lea ebx 0 0 8) and
+		 flags  = load_word (lea ebx 0 0 12) and
+		 fd     = load_word (lea ebx 0 0 16) and
+		 offset = Int64.to_int (load_word (lea ebx 0 0 20)) in
+	       if !opt_trace_syscalls then
+		 Printf.printf "mmap(0x%08Lx, %Ld, 0x%Lx, 0x%0Lx, %Ld, %d)"
+		   addr length prot flags fd offset;
+	       self#sys_mmap addr length prot flags fd offset
 	 | 91 -> (* munmap *)
 	     let (ebx, ecx) = read_2_regs () in
 	     let addr = ebx and
@@ -1693,11 +1792,28 @@ object(self)
 	 | 105 -> (* getitimer *)
 	     raise (UnhandledSysCall( "Unhandled Linux system call getitimer (105)"))
 	 | 106 -> (* stat *)
-	     raise (UnhandledSysCall( "Unhandled Linux system call stat (106)"))
+	     let (ebx, ecx) = read_2_regs () in
+	     let path_buf = ebx and
+		 buf_addr = ecx in
+	     let path = fm#read_cstr path_buf in
+	       if !opt_trace_syscalls then
+		 Printf.printf "stat(\"%s\", 0x%08Lx)" path buf_addr;
+	       self#sys_stat path buf_addr
 	 | 107 -> (* lstat *)
-	     raise (UnhandledSysCall( "Unhandled Linux system call lstat (107)"))
+	     let (ebx, ecx) = read_2_regs () in
+	     let path_buf = ebx and
+		 buf_addr = ecx in
+	     let path = fm#read_cstr path_buf in
+	       if !opt_trace_syscalls then
+		 Printf.printf "lstat(\"%s\", 0x%08Lx)" path buf_addr;
+	       self#sys_lstat path buf_addr
 	 | 108 -> (* fstat *)
-	     raise (UnhandledSysCall( "Unhandled Linux system call fstat (108)"))
+	     let (ebx, ecx) = read_2_regs () in
+	     let fd = Int64.to_int ebx and
+		 buf_addr = ecx in
+	       if !opt_trace_syscalls then
+		 Printf.printf "fstat(%d, 0x%08Lx)" fd buf_addr;
+	       self#sys_fstat fd buf_addr
 	 | 109 -> (* olduname *)
 	     raise (UnhandledSysCall( "Unhandled Linux system call olduname (109)"))
 	 | 110 -> (* iopl *)
@@ -1755,13 +1871,17 @@ object(self)
 	 | 131 -> (* quotactl *)
 	     raise (UnhandledSysCall( "Unhandled Linux system call quotactl (131)"))
 	 | 132 -> (* getpgid *)
-	     let eax = read_1_reg () in
-	     let pid = Int64.to_int eax in
+	     let ebx = read_1_reg () in
+	     let pid = Int64.to_int ebx in
 	       if !opt_trace_syscalls then
 		 Printf.printf "getpgid()";
 	       self#sys_getpgid pid
 	 | 133 -> (* fchdir *)
-	     raise (UnhandledSysCall( "Unhandled Linux system call fchdir (133)"))
+	     let ebx = read_1_reg () in
+	     let fd = Int64.to_int ebx in
+	       if !opt_trace_syscalls then
+		 Printf.printf "fchdir(%d)" fd;
+	       self#sys_fchdir fd
 	 | 134 -> (* bdflush *)
 	     raise (UnhandledSysCall( "Unhandled Linux system call bdflush (134)"))
 	 | 135 -> (* sysfs *)
