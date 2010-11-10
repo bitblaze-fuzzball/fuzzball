@@ -54,7 +54,10 @@ let linux_cmdline_opts =
      " Add a distinguishing prefix before the program's writes");
     ("-symbolic-file", Arg.String
        (fun s -> opt_symbolic_files := s :: !opt_symbolic_files),
-     "FNAME Make data read from the named file symbolic");
+     "fname Make data read from the named file symbolic");
+    ("-symbolic-syscall-error", Arg.String
+       (fun s -> opt_symbolic_syscall_error := Some (Int64.of_string s)),
+     "errno Force syscalls with symbolic args to return given value");
     ("-chroot", Arg.String
        (fun s -> opt_chroot_path := Some s),
      "path Prepend PATH to absolute filenames");

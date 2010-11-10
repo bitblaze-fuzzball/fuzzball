@@ -69,7 +69,9 @@ val opt_trace_stopping : bool ref
 val opt_trace_setup : bool ref
 val opt_extra_env : (string, string) Hashtbl.t
 val opt_skip_call_addr : (int64 * int64) list ref
+val opt_skip_func_addr : (int64 * int64) list ref
 val opt_skip_call_addr_symbol : (int64 * string) list ref
+val opt_skip_func_addr_symbol : (int64 * string) list ref
 val opt_trace_eip : bool ref
 val opt_trace_unique_eips : bool ref
 val opt_trace_ir : bool ref
@@ -85,6 +87,7 @@ val opt_pid : int ref
 val opt_translation_cache_size : int option ref
 val opt_prefix_out : bool ref
 val opt_omit_pf_af : bool ref
+val opt_symbolic_syscall_error : int64 option ref
 val opt_chroot_path : string option ref
 
 val opt_symbolic_memory : bool ref

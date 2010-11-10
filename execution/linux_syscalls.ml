@@ -2515,19 +2515,26 @@ object(self)
 	flush stdout
 
   method handle_special str =
-    try
+    let handle_catch () =
+      try
+	self#handle_linux_syscall ();
+      with
+	  NotConcrete(_) ->
+	    match !opt_symbolic_syscall_error with
+	      | Some errno -> fm#set_word_var R_EAX errno
+	      | None -> raise SymbolicSyscall
+    in
+
       match str with
 	| "int 0x80" ->
-	    self#handle_linux_syscall ();
+	    handle_catch();
 	    Some []
 	| "sysenter" ->
 	    let sysenter_eip = fm#get_word_var R_EIP in
 	    let sysexit_eip = (Int64.logor 0x430L
 				 (Int64.logand 0xfffff000L sysenter_eip)) in
 	    let label = "pc_0x" ^ (Printf.sprintf "%08Lx" sysexit_eip) in
-	      self#handle_linux_syscall ();
+	      handle_catch ();
 	      Some [V.Jmp(V.Name(label))]
 	| _ -> None
-    with
-	NotConcrete(_) -> raise SymbolicSyscall
 end

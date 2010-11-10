@@ -73,7 +73,9 @@ let opt_trace_stopping = ref false
 let opt_trace_setup = ref false
 let opt_extra_env = Hashtbl.create 10
 let opt_skip_call_addr = ref []
+let opt_skip_func_addr = ref []
 let opt_skip_call_addr_symbol = ref []
+let opt_skip_func_addr_symbol = ref []
 let opt_trace_eip = ref false
 let opt_trace_unique_eips = ref false
 let opt_trace_ir = ref false
@@ -89,6 +91,7 @@ let opt_pid = ref (-1)
 let opt_translation_cache_size = ref None
 let opt_prefix_out = ref false
 let opt_omit_pf_af = ref false
+let opt_symbolic_syscall_error = ref None
 let opt_chroot_path = ref None
 
 let opt_symbolic_memory = ref false

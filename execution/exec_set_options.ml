@@ -134,9 +134,12 @@ let concrete_state_cmdline_opts =
     ("-store-word", Arg.String
        (add_delimited_pair opt_store_longs '='),
      "addr=val Set 64-bit location to a concrete value");
-    ("-skip-call-addr", Arg.String
+    ("-skip-call-ret", Arg.String
        (add_delimited_pair opt_skip_call_addr '='),
-     "addr=retval Replace the call instruction at address 'addr' with a nop, and place 'retval' in EAX (return value)");
+     "addr=retval Replace the call at address 'addr' with a nop, and return 'retval' in EAX");
+    ("-skip-func-ret", Arg.String
+       (add_delimited_pair opt_skip_func_addr '='),
+     "addr=retval Replace the function at address 'addr' with a nop, and return 'retval' in EAX");
   ]
 
 let symbolic_state_cmdline_opts =
@@ -170,9 +173,12 @@ let symbolic_state_cmdline_opts =
     ("-sink-region", Arg.String
        (add_delimited_str_num_pair opt_sink_regions '+'),
      "var+size Range-check but ignore writes to a region");
-    ("-skip-call-addr-symbol", Arg.String
+    ("-skip-call-ret-symbol", Arg.String
        (add_delimited_num_str_pair opt_skip_call_addr_symbol '='),
-     "addr=symname As above, but return a fresh symbol");
+     "addr=symname Like -s-c-r, but return a fresh symbol");
+    ("-skip-func-ret-symbol", Arg.String
+       (add_delimited_num_str_pair opt_skip_func_addr_symbol '='),
+     "addr=symname Like -s-f-r, but return a fresh symbol");
   ]
 
 let concolic_state_cmdline_opts =

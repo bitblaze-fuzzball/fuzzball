@@ -10,22 +10,29 @@ open Frag_simplify
 open Fragment_machine
 open Exec_run_common
 
-let call_replacements fm eip =
-  let eaxreplace = List.fold_left
-    (fun ret (addr, retval) -> 
-       if (addr = eip) then Some (retval) else ret)
-    None !opt_skip_call_addr in
-    match eaxreplace with 
-      | Some(x) -> Some (fun () -> fm#set_word_var R_EAX x)
-      | None ->
-	  let eax_sym = List.fold_left
-	    (fun ret (addr, symname) -> 
-	       if (addr = eip) then Some symname else ret)
-	    None !opt_skip_call_addr_symbol in
-	    match eax_sym with 
-	      | Some symname ->
-		  Some (fun () -> fm#set_word_reg_fresh_symbolic R_EAX symname)
-	      | _ -> None
+let call_replacements fm last_eip eip =
+  let lookup targ l =
+    List.fold_left
+      (fun ret (addr, retval) -> 
+	 if (addr = targ) then Some (retval) else ret)
+      None l
+  in
+    match ((lookup eip      !opt_skip_func_addr),
+	   (lookup eip      !opt_skip_func_addr_symbol),
+	   (lookup last_eip !opt_skip_call_addr),
+	   (lookup last_eip !opt_skip_call_addr_symbol))
+      
+    with
+      | (None, None, None, None) -> None
+      | (Some sfa_val, None, None, None) ->
+	  Some (fun () -> fm#set_word_var R_EAX sfa_val)
+      | (None, Some sfas_sym, None, None) ->
+	  Some (fun () -> fm#set_word_reg_fresh_symbolic R_EAX sfas_sym)
+      | (None, None, Some cfa_val, None) ->
+	  Some (fun () -> fm#set_word_var R_EAX cfa_val)
+      | (None, None, None, Some cfas_sym) ->
+	  Some (fun () -> fm#set_word_reg_fresh_symbolic R_EAX cfas_sym)
+      | _ -> failwith "Contradictory replacement options"
 
 let loop_detect = Hashtbl.create 1000
 
@@ -69,7 +76,7 @@ let decode_insns_cached fm gamma eip =
   with_trans_cache eip (fun () -> decode_insns fm gamma eip bb_size true)
 
 let rec runloop (fm : fragment_machine) eip asmir_gamma until =
-  let rec loop eip =
+  let rec loop last_eip eip =
     (let old_count =
        (try
 	  Hashtbl.find loop_detect eip
@@ -81,7 +88,7 @@ let rec runloop (fm : fragment_machine) eip asmir_gamma until =
        if old_count > !opt_iteration_limit then raise TooManyIterations);
     let (dl, sl) = decode_insns_cached fm asmir_gamma eip in
     let prog = (dl, sl) in
-      let prog' = match call_replacements fm eip with
+      let prog' = match call_replacements fm last_eip eip with
 	| None -> prog
 	| Some thunk ->
 	    thunk ();
@@ -97,7 +104,7 @@ let rec runloop (fm : fragment_machine) eip asmir_gamma until =
 	  match (new_eip, until) with
 	    | (e1, e2) when e2 e1 -> ()
 	    | (0L, _) -> raise JumpToNull
-	    | _ -> loop new_eip
+	    | _ -> loop eip new_eip
   in
     Hashtbl.clear loop_detect;
-    loop eip
+    loop (0L) eip
