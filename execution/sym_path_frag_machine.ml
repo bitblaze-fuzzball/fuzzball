@@ -72,7 +72,7 @@ struct
 	  then
 	    let wo_input = String.sub s plen (len - plen) in
 	      Some (int_of_string wo_input)
-	  else if (String.sub s 0 7) = "input0_" then
+	  else if len >= 7 && (String.sub s 0 7) = "input0_" then
 	    let wo_input = String.sub s 7 (len - 7) in
 	      Some (int_of_string wo_input)
 	  else
