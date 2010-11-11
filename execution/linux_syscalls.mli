@@ -62,9 +62,13 @@ object
   method sys_getdents : int -> int64 -> int -> unit
   method sys_getdents64 : int -> int64 -> int -> unit
   method sys_ugetrlimit : int -> int64 -> unit
+  method sys_getgid : unit -> unit
   method sys_getgid32 : unit -> unit
+  method sys_getegid : unit -> unit
   method sys_getegid32 : unit -> unit
+  method sys_getuid : unit -> unit
   method sys_getuid32 : unit -> unit
+  method sys_geteuid : unit -> unit
   method sys_geteuid32 : unit -> unit
   method sys_getresgid32 : int64 -> int64 -> int64 -> unit
   method sys_getresuid32 : int64 -> int64 -> int64 -> unit
@@ -99,6 +103,7 @@ object
   method sys_select : int -> int64 -> int64 -> int64 -> int64 -> unit
   method sys_setgid32 : int -> unit
   method sys_setuid32 : int -> unit
+  method sys_setreuid : int -> int -> unit
   method sys_set_robust_list : int64 -> int64 -> unit
   method sys_set_thread_area : int64 -> unit
   method sys_set_tid_address : int64 -> unit

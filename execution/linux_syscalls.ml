@@ -725,8 +725,14 @@ object(self)
     store_word buf 4 0xffffffffL; (* infinity *)
     put_reg R_EAX 0L (* success *)
 
+  method sys_getgid () = 
+    put_reg R_EAX (Int64.of_int (Unix.getgid ()))
+
   method sys_getgid32 () = 
     put_reg R_EAX (Int64.of_int (Unix.getgid ()))
+
+  method sys_getegid () = 
+    put_reg R_EAX (Int64.of_int (Unix.getegid ()))
 
   method sys_getegid32 () = 
     put_reg R_EAX (Int64.of_int (Unix.getegid ()))
@@ -740,8 +746,14 @@ object(self)
       store_word sgid_ptr 0 sgid;
       put_reg R_EAX 0L (* success *)
 
+  method sys_getuid () = 
+    put_reg R_EAX (Int64.of_int (Unix.getuid ()))
+
   method sys_getuid32 () = 
     put_reg R_EAX (Int64.of_int (Unix.getuid ()))
+
+  method sys_geteuid () = 
+    put_reg R_EAX (Int64.of_int (Unix.geteuid ()))
 
   method sys_geteuid32 () = 
     put_reg R_EAX (Int64.of_int (Unix.geteuid ()))
@@ -1139,6 +1151,19 @@ object(self)
     Unix.setgid gid;
     put_reg R_EAX 0L (* success *)
 
+  method sys_setreuid new_ruid new_euid =
+    try
+      (* Most of these cases probably can't be implemented with
+	 just OCaml's Unix.setuid. *)
+      match (Unix.getuid (), Unix.geteuid(), new_ruid, new_euid) with
+	| (u1, u2, 65535, 0) when u1 <> 0 && u1 = u2 ->
+	    raise (Unix.Unix_error(Unix.EPERM, "setreuid", ""))
+	| (u1, u2, 65535, u4) when u1 <> 0 && u2 = u4 ->
+	    put_reg R_EAX 0L (* success *)
+	| _ -> failwith "Unhandled case in setreuid"
+    with
+      | Unix.Unix_error(err, _, _) -> self#put_errno err
+
   method sys_setuid32 uid =
     Unix.setuid uid;
     put_reg R_EAX 0L (* success *)
@@ -1489,7 +1514,9 @@ object(self)
 	 | 23 -> (* setuid *)
 	     raise (UnhandledSysCall( "Unhandled Linux system call setuid (23)"))
 	 | 24 -> (* getuid *)
-	     raise (UnhandledSysCall( "Unhandled Linux system call getuid (24)"))
+	     if !opt_trace_syscalls then
+	       Printf.printf "getuid()";
+	     self#sys_getuid ()
 	 | 25 -> (* stime *)
 	     raise (UnhandledSysCall( "Unhandled Linux system call stime (25)"))
 	 | 26 -> (* ptrace *)
@@ -1564,13 +1591,19 @@ object(self)
 	 | 46 -> (* setgid *)
 	     raise (UnhandledSysCall( "Unhandled Linux system call setgid (46)"))
 	 | 47 -> (* getgid *)
-	     raise (UnhandledSysCall( "Unhandled Linux system call getgid (47)"))
+	     if !opt_trace_syscalls then
+	       Printf.printf "getgid()";
+	     self#sys_getgid ()
 	 | 48 -> (* signal *)
 	     raise (UnhandledSysCall( "Unhandled Linux system call signal (48)"))
 	 | 49 -> (* geteuid *)
-	     raise (UnhandledSysCall( "Unhandled Linux system call geteuid (49)"))
+	     if !opt_trace_syscalls then
+	       Printf.printf "geteuid()";
+	     self#sys_geteuid ()
 	 | 50 -> (* getegid *)
-	     raise (UnhandledSysCall( "Unhandled Linux system call getegid (50)"))
+	     if !opt_trace_syscalls then
+	       Printf.printf "getegid()";
+	     self#sys_getegid ()
 	 | 51 -> (* acct *)
 	     raise (UnhandledSysCall( "Unhandled Linux system call acct (51)"))
 	 | 52 -> (* umount2 *)
@@ -1624,7 +1657,12 @@ object(self)
 	 | 69 -> (* ssetmask *)
 	     raise (UnhandledSysCall( "Unhandled Linux system call ssetmask (69)"))
 	 | 70 -> (* setreuid *)
-	     raise (UnhandledSysCall( "Unhandled Linux system call setreuid (70)"))
+	     let (ebx, ecx) = read_2_regs () in
+	     let ruid = Int64.to_int ebx and
+		 euid = Int64.to_int ecx in
+	       if !opt_trace_syscalls then
+		 Printf.printf "setreuid(%d, %d)" ruid euid;
+	       self#sys_setreuid ruid euid
 	 | 71 -> (* setregid *)
 	     raise (UnhandledSysCall( "Unhandled Linux system call setregid (71)"))
 	 | 72 -> (* sigsuspend *)
