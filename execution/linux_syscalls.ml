@@ -76,6 +76,13 @@ class linux_special_handler (fm : fragment_machine) =
   let zero_region base len =
     for i = 0 to len -1 do fm#store_byte_idx base i 0 done
   in
+  let string_of_char_array ca =
+    let s = String.create (Array.length ca) in
+      for i = 0 to (Array.length ca) - 1 do
+	s.[i] <- ca.(i)
+      done;
+      s
+  in
 object(self)
   val unix_fds = 
     let a = Array.make 1024 None in
@@ -195,9 +202,7 @@ object(self)
 	  | 1 -> Array.iter print_char bytes;
 	      put_reg R_EAX (Int64.of_int count)
 	  | _ ->
-	      let str = Array.fold_left (^) ""
-		(Array.map (String.make 1) bytes)
-	      in
+	      let str = string_of_char_array bytes in
 	      let (ufd, toapp) = if
 		!opt_prefix_out && (fd = 1 || fd = 2) 
 	      then
@@ -588,7 +593,8 @@ object(self)
 
   method sys_connect sockfd addr addrlen =
     try
-      Unix.connect (self#get_fd sockfd) (self#read_sockaddr addr addrlen)
+      Unix.connect (self#get_fd sockfd) (self#read_sockaddr addr addrlen);
+      put_reg R_EAX 0L (* success *)
     with
       | Unix.Unix_error(err, _, _) -> self#put_errno err
 
@@ -598,7 +604,7 @@ object(self)
   method sys_exit_group status =
     raise (SimulatedExit(status))
 
-  method sys_fcntl64 fd cmd arg =
+  method private fcntl_common fd cmd arg =
     match cmd with
       | 1 (* F_GETFD *) ->
 	  ignore(fd);
@@ -630,6 +636,12 @@ object(self)
 	  ignore(arg);
 	  put_reg R_EAX 0L (* success *)
       | _ -> failwith "Unhandled cmd in fcntl64"
+
+  method sys_fcntl fd cmd arg =
+    self#fcntl_common fd cmd arg
+
+  method sys_fcntl64 fd cmd arg =
+    self#fcntl_common fd cmd arg
 
   method sys_futex uaddr op value timebuf uaddr2 val3 =
     let ret = 
@@ -1146,7 +1158,21 @@ object(self)
 
   method sys_select nfds readfds writefds exceptfds timeout =
     put_reg R_EAX 0L (* no events *)
-    
+
+  method sys_send sockfd buf len flags =
+    try
+      let str = string_of_char_array (fm#read_buf buf len) in
+      let flags = (if (flags land 1) <> 0 then [Unix.MSG_OOB] else []) @
+	          (if (flags land 4) <> 0 then [Unix.MSG_DONTROUTE] else []) @
+		  (if (flags land 2) <> 0 then [Unix.MSG_PEEK] else [])
+      in
+      let num_sent =
+	Unix.send (self#get_fd sockfd) str 0 len flags
+      in
+	put_reg R_EAX (Int64.of_int num_sent) (* success *)
+    with
+      | Unix.Unix_error(err, _, _) -> self#put_errno err
+
   method sys_setgid32 gid =
     Unix.setgid gid;
     put_reg R_EAX 0L (* success *)
@@ -1619,7 +1645,13 @@ object(self)
 		 Printf.printf "ioctl(%d, 0x%Lx, 0x%08Lx)" fd req argp;
 	       self#sys_ioctl fd req argp;
 	 | 55 -> (* fcntl *)
-	     raise (UnhandledSysCall( "Unhandled Linux system call fcntl (55)"))
+	     let (ebx, ecx, edx) = read_3_regs () in
+	     let fd = Int64.to_int ebx and
+		 cmd = Int64.to_int ecx and
+		 arg = edx in
+	       if !opt_trace_syscalls then
+		 Printf.printf "fcntl(%d, %d, 0x%08Lx)" fd cmd arg;
+	       self#sys_fcntl fd cmd arg
 	 | 56 -> (* mpx *)
 	     raise (UnhandledSysCall( "Unhandled Linux system call mpx (56)"))
 	 | 57 -> (* setpgid *)
@@ -1812,7 +1844,16 @@ object(self)
 			    sockfd addr addrlen_ptr;
 			self#sys_getpeername sockfd addr addrlen_ptr
 		  | 8 -> raise (UnhandledSysCall("Unhandled Linux system call socketpair (102:8)"))
-		  | 9 -> raise (UnhandledSysCall("Unhandled Linux system call send (102:9)"))
+		  | 9 ->
+		      let sockfd = Int64.to_int (load_word args) and
+			  buf = load_word (lea args 0 0 4) and
+			  len = Int64.to_int (load_word (lea args 0 0 8)) and
+			  flags = Int64.to_int (load_word (lea args 0 0 12))
+		      in
+			if !opt_trace_syscalls then
+			  Printf.printf "send(%d, 0x%08Lx, %d, %d)"
+			    sockfd buf len flags;
+			self#sys_send sockfd buf len flags
 		  | 10 -> raise (UnhandledSysCall("Unhandled Linux system call recv (102:10)"))
 		  | 11 -> raise (UnhandledSysCall("Unhandled Linux system call sendto (102:11)"))
 		  | 12 -> raise (UnhandledSysCall("Unhandled Linux system call recvfrom (102:12)"))

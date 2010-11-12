@@ -56,6 +56,7 @@ object
   method sys_connect : int -> int64 -> int -> unit
   method sys_exit : int64 -> unit
   method sys_exit_group : int64 -> unit
+  method sys_fcntl : int -> int -> int64 -> unit
   method sys_fcntl64 : int -> int -> int64 -> unit
   method sys_futex : int64 -> int -> int64 -> int64 -> int64 -> int64 -> unit
   method sys_getcwd : int64 -> int -> unit
@@ -101,6 +102,7 @@ object
   method sys_sched_get_priority_min : int -> unit
   method sys_sched_getscheduler : int -> unit
   method sys_select : int -> int64 -> int64 -> int64 -> int64 -> unit
+  method sys_send : int -> int64 -> int -> int -> unit
   method sys_setgid32 : int -> unit
   method sys_setuid32 : int -> unit
   method sys_setreuid : int -> int -> unit
