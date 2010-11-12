@@ -974,7 +974,7 @@ struct
 	    self#store_byte (Int64.add base (Int64.of_int i)) d;
 	    if fulllen then
 	      opt_extra_conditions :=
-		V.BinOp(V.LT, V.Constant(V.Int(V.REG_8, 0L)),
+		V.BinOp(V.NEQ, V.Constant(V.Int(V.REG_8, 0L)),
 			(D.to_symbolic_8 d))
 	      :: !opt_extra_conditions
 	done;
