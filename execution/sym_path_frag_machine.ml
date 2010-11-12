@@ -44,11 +44,21 @@ struct
 	path_cond <- !opt_extra_conditions;
       path_cond
 
+    method private quick_check_in_path_cond cond =
+      if List.mem cond path_cond then
+	Some true
+      else
+	match cond with
+	  | V.UnOp(V.NOT, cond') when List.mem cond' path_cond
+	      -> Some false
+	  | _ -> None 
+
     method add_to_path_cond cond =
       if path_cond = [] then
 	path_cond <- !opt_extra_conditions;
-      path_cond <- cond :: path_cond
-      
+      if (self#quick_check_in_path_cond cond) <> Some true then
+	path_cond <- cond :: path_cond
+
     method restore_path_cond f =
       if path_cond = [] then
 	path_cond <- !opt_extra_conditions;
@@ -181,9 +191,12 @@ struct
       let try_func b cond' =
 	if verbose && !opt_trace_decisions then
 	  Printf.printf "Trying %B: " b;
-	let (is_sat, _) =
-	  self#query_with_path_cond (self#get_path_cond) cond' verbose in
-	  is_sat
+	match self#quick_check_in_path_cond cond' with
+	  | Some b -> b
+	  | None -> 
+	      let (is_sat, _) =
+		self#query_with_path_cond (self#get_path_cond) cond' verbose in
+		is_sat
       in
       let non_try_func b =
 	if verbose && !opt_trace_decisions then
@@ -274,7 +287,7 @@ struct
 	(cjmp_heuristic eip targ1 targ2 (dt#random_float))
 
     method eval_cjmp exp targ1 targ2 =
-      let v = self#eval_int_exp exp in
+      let v = form_man#simplify1 (self#eval_int_exp exp) in
 	try
 	  (D.to_concrete_1 v) = 1
 	with
@@ -442,7 +455,8 @@ struct
 	 List.iter (fun e -> Printf.printf "& (%s)\n" (V.exp_to_string e))
 	   (List.rev (self#get_path_cond)));
       if !opt_solve_final_pc then
-	assert(let (b,_) = self#query_with_path_cond path_cond V.exp_true true
+	assert(let (b,_) =
+		 self#query_with_path_cond (self#get_path_cond) V.exp_true true
 	       in b);
       dt#try_again_p
 
