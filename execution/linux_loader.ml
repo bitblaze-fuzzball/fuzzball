@@ -263,18 +263,26 @@ let build_startup_state fm eh load_base ldso argv =
      (23L, 0L);                             (* AT_SECURE *)
      (* Let's see if we can avoid bothering with AT_SYSINFO *)
     ] in
+    (* Arrange so that the program's initial %esp is page-aligned, and
+       therefore unlikely to change with changes in argv or the
+       environment. *)
+  let ptrs_len = 4 * (2 * ((List.length auxv) + ((List.length auxv) mod 2))
+		      + 1 + (List.length env_locs)
+		      + 1 + (List.length argv) + 1) in
     esp := Int64.logand !esp (Int64.lognot 0xfL); (* 16-bit align *)
-    if (List.length auxv) mod 2 = 1 then
-      (push_word 0L; push_word 0L);
-    List.iter (fun (k, v) -> push_word v; push_word k) auxv;
-    push_word 0L; (* 0 byte marking end of environment *)
-    List.iter push_word env_locs;
-    push_word 0L; (* 0 byte marking end of argv *)
-    List.iter push_word (List.rev argv_locs);
-    push_word (Int64.of_int (List.length argv)); (* argc *)
-    if !opt_trace_setup then
-      Printf.printf "Initial ESP is 0x%08Lx\n" !esp;
-    fm#set_word_var R_ESP !esp      
+    let pad_to = Int64.logand (Int64.sub !esp 0x2000L) (Int64.lognot 0xfffL) in
+      esp := Int64.add pad_to (Int64.of_int ptrs_len);
+      if (List.length auxv) mod 2 = 1 then
+	(push_word 0L; push_word 0L);
+      List.iter (fun (k, v) -> push_word v; push_word k) auxv;
+      push_word 0L; (* 0 word marking end of environment *)
+      List.iter push_word env_locs;
+      push_word 0L; (* 0 word marking end of argv *)
+      List.iter push_word (List.rev argv_locs);
+      push_word (Int64.of_int (List.length argv)); (* argc *)
+      if !opt_trace_setup then
+	Printf.printf "Initial ESP is 0x%08Lx\n" !esp;
+      fm#set_word_var R_ESP !esp      
 
 let load_dynamic_program (fm : fragment_machine) fname load_base
     data_too do_setup extras argv =
