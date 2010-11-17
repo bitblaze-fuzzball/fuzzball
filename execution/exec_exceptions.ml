@@ -24,3 +24,4 @@ exception SymbolicSyscall
 exception TooManyIterations
 exception UnhandledSysCall of string
 exception UnhandledTrap
+exception UnproductivePath

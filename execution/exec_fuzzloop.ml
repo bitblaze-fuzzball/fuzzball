@@ -133,6 +133,7 @@ let fuzz start_eip fuzz_start_eip end_eips
 		  | BranchLimit -> stop "on branch limit"
 		  | SolverFailure when !opt_nonfatal_solver
 		      -> stop "on solver failure"
+		  | UnproductivePath -> stop "on unproductive path"
 		  | Signal("USR1") -> stop "on SIGUSR1"
 		  (* | NotConcrete(_) -> () (* shouldn't happen *)
 		     | Simplify_failure(_) -> () (* shouldn't happen *)*)
