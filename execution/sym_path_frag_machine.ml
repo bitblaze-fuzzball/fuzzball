@@ -287,14 +287,14 @@ struct
 	(cjmp_heuristic eip targ1 targ2 (dt#random_float) None)
 
     method eval_cjmp exp targ1 targ2 =
+      let eip = self#get_word_var R_EIP in
       let v = form_man#simplify1 (self#eval_int_exp exp) in
       let (is_conc, result) =
 	try (true, (D.to_concrete_1 v) = 1)
 	with NotConcrete _ -> (false, false)
       in
 	if is_conc then
-	  (ignore(cjmp_heuristic (self#get_word_var R_EIP)
-		    targ1 targ2 0.0 (Some result));
+	  (ignore(cjmp_heuristic eip targ1 targ2 0.0 (Some result));
 	   result)
 	else
 	  let e = D.to_symbolic_1 v in
@@ -316,6 +316,7 @@ struct
 		 | Some bit -> self#extend_pc_known e true bit
 	       in
 		 dt#count_query;
+		 ignore(cjmp_heuristic eip targ1 targ2 0.0 (Some b));
 		 b)
 
     method eval_addr_exp exp =
