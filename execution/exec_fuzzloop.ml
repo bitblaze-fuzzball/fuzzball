@@ -71,7 +71,7 @@ let periodic_stats fm at_end force =
      Printf.printf "Solver failed %Ld time(s)\n" !solver_fails)
 
 let fuzz start_eip fuzz_start_eip end_eips
-    (fm : fragment_machine) asmir_gamma symbolic_init =
+    (fm : fragment_machine) asmir_gamma symbolic_init reset_cb =
   if !opt_trace_setup then
     (Printf.printf "Initial registers:\n";
      fm#print_x86_regs);
@@ -145,6 +145,7 @@ let fuzz start_eip fuzz_start_eip end_eips
 	       periodic_stats fm false false;
 	       if not fm#finish_path then raise LastIteration;
 	       if !opt_concrete_path then raise LastIteration;
+	       reset_cb ();
 	       fm#reset ()
 	  );
       with

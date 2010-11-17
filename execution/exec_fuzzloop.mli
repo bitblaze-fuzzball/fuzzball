@@ -3,4 +3,4 @@
 *)
 
 val fuzz : int64 -> int64 -> int64 list -> Fragment_machine.fragment_machine
-  -> Asmir.varctx -> (unit -> unit) -> unit
+  -> Asmir.varctx -> (unit -> unit) -> (unit -> unit) -> unit
