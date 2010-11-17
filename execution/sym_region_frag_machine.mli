@@ -86,7 +86,7 @@ sig
     method extend_pc_known : Vine.exp -> bool -> bool -> bool 
     method random_case_split : bool -> bool
     method set_cjmp_heuristic :
-      (int64 -> int64 -> int64 -> float -> bool option) -> unit
+      (int64 -> int64 -> int64 -> float -> bool option -> bool option) -> unit
     method eval_cjmp : Vine.exp -> int64 -> int64 -> bool
     method eval_bool_exp : Vine.exp -> bool
     method on_missing_random : unit
@@ -215,6 +215,7 @@ sig
     method zero_fill : int64 -> int -> unit
     method print_backtrace : unit
     method private eval_expr_to_string : Vine.exp -> string
+    method eval_expr_to_int64 : Vine.exp -> int64
     method eval_expr_to_symbolic_expr : Vine.exp -> Vine.exp
     method watchpoint : unit
     method mem_val_as_string : int64 -> Vine.typ -> string

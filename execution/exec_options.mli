@@ -88,6 +88,7 @@ val opt_translation_cache_size : int option ref
 val opt_prefix_out : bool ref
 val opt_omit_pf_af : bool ref
 val opt_symbolic_syscall_error : int64 option ref
+val opt_finish_on_nonfalse_cond : bool ref
 val opt_chroot_path : string option ref
 
 val opt_symbolic_memory : bool ref

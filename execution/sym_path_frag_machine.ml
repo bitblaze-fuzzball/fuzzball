@@ -278,40 +278,45 @@ struct
       let (b, _) = self#eval_bool_exp_tristate e in
 	b
 
-    val mutable cjmp_heuristic = (fun eip t1 t2 r -> None)
+    val mutable cjmp_heuristic = (fun eip t1 t2 r dir -> None)
 
     method set_cjmp_heuristic f = cjmp_heuristic <- f
 
     method private cjmp_choose targ1 targ2 =
       let eip = self#get_word_var R_EIP in
-	(cjmp_heuristic eip targ1 targ2 (dt#random_float))
+	(cjmp_heuristic eip targ1 targ2 (dt#random_float) None)
 
     method eval_cjmp exp targ1 targ2 =
       let v = form_man#simplify1 (self#eval_int_exp exp) in
-	try
-	  (D.to_concrete_1 v) = 1
-	with
-	    NotConcrete _ ->
-	      let e = D.to_symbolic_1 v in
-		if !opt_trace_conditions then 
-		  Printf.printf "Symbolic branch condition %s\n"
-		    (V.exp_to_string e);
-		if !opt_concrete_path then
-		  let (b, _) = self#eval_bool_exp_conc_path e in
-		    b
-		else
-		  (dt#start_new_query_binary;
-		   let choice = if dt#have_choice then
-		     self#cjmp_choose targ1 targ2
-		   else
-		     None
-		   in
-		   let b = match choice with
-		     | None -> self#extend_pc_random e true
-		     | Some bit -> self#extend_pc_known e true bit
-		   in
-		     dt#count_query;
-		     b)
+      let (is_conc, result) =
+	try (true, (D.to_concrete_1 v) = 1)
+	with NotConcrete _ -> (false, false)
+      in
+	if is_conc then
+	  (ignore(cjmp_heuristic (self#get_word_var R_EIP)
+		    targ1 targ2 0.0 (Some result));
+	   result)
+	else
+	  let e = D.to_symbolic_1 v in
+	    if !opt_trace_conditions then 
+	      Printf.printf "Symbolic branch condition %s\n"
+		(V.exp_to_string e);
+	    if !opt_concrete_path then
+	      let (b, _) = self#eval_bool_exp_conc_path e in
+		b
+	    else
+	      (dt#start_new_query_binary;
+	       let choice = if dt#have_choice then
+		 self#cjmp_choose targ1 targ2
+	       else
+		 None
+	       in
+	       let b = match choice with
+		 | None -> self#extend_pc_random e true
+		 | Some bit -> self#extend_pc_known e true bit
+	       in
+		 dt#count_query;
+		 b)
 
     method eval_addr_exp exp =
       let c32 x = V.Constant(V.Int(V.REG_32, x)) in
@@ -425,7 +430,9 @@ struct
 		 (match choices with
 		    | Some true -> "is true"
 		    | Some false -> "is false"
-		    | None -> "can be true or false")
+		    | None -> "can be true or false");
+	       if !opt_finish_on_nonfalse_cond && choices <> Some false then
+		 raise LastIteration
 	 | _ -> ());
       List.iter
 	(fun (_, t_eip) -> 

@@ -356,6 +356,8 @@ let cmdline_opts =
 	  opt_check_condition_at_strings :=
 	    Some (eip_s, expr_s)),
      "eip:expr Check boolean assertion at address");
+    ("-finish-on-nonfalse-cond", Arg.Set(opt_finish_on_nonfalse_cond),
+     " Finish exploration if -c-c-a condition could be true");
     ("-extra-condition", Arg.String
        (fun s -> opt_extra_condition_strings :=
 	  s :: !opt_extra_condition_strings),
@@ -489,9 +491,7 @@ let make_symbolic_init (fm:Fragment_machine.fragment_machine)
        max_input_string_length :=
 	 max (!max_input_string_length) (Int64.to_int i)
      in
-       opt_extra_conditions :=
-	 List.map (fun s -> fm#parse_symbolic_expr s)
-	   !opt_extra_condition_strings;
+       opt_extra_conditions := [];
        List.iter (fun (base, len) ->
 		    new_max len;
 		    fm#make_symbolic_region base (Int64.to_int len))
@@ -538,7 +538,10 @@ let make_symbolic_init (fm:Fragment_machine.fragment_machine)
 	 !opt_symbolic_longs_influence;
        List.iter (fun (varname, size) ->
 		    fm#make_sink_region varname size)
-	 !opt_sink_regions)
+	 !opt_sink_regions;
+       opt_extra_conditions := !opt_extra_conditions @ 
+	 List.map (fun s -> fm#parse_symbolic_expr s)
+	   !opt_extra_condition_strings)
 
 let decide_start_addrs () =
   let (start_addr, fuzz_start) = match

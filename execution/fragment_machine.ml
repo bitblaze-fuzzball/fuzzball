@@ -193,7 +193,7 @@ struct
       self#eip_hook (self#get_word_var R_EIP)
 
     method set_cjmp_heuristic
-      (func:(int64 -> int64 -> int64 -> float -> bool option))
+      (func:(int64 -> int64 -> int64 -> float -> bool option -> bool option))
       = ()
 
     method private on_missing_zero_m (m:GM.granular_memory) =
@@ -1186,6 +1186,15 @@ struct
 	| (v, V.REG_64) -> D.to_string_64 v
 	| _ -> failwith "Unexpected type in eval_expr_to_string"
 
+    method eval_expr_to_int64 e =
+      match self#eval_int_exp_ty e with
+	| (v, V.REG_1) -> Int64.of_int (D.to_concrete_1 v)
+	| (v, V.REG_8) -> Int64.of_int (D.to_concrete_8 v)
+	| (v, V.REG_16) -> Int64.of_int (D.to_concrete_16 v)
+	| (v, V.REG_32) -> D.to_concrete_32 v
+	| (v, V.REG_64) -> D.to_concrete_64 v
+	| _ -> failwith "Unexpected type in eval_expr_to_int64"
+
     method eval_expr_to_symbolic_expr e =
       match self#eval_int_exp_ty e with
 	| (v, V.REG_1) -> D.to_symbolic_1 v
@@ -1246,7 +1255,7 @@ class virtual fragment_machine = object
   method virtual run_eip_hooks : unit
   
   method virtual set_cjmp_heuristic :
-    (int64 -> int64 -> int64 -> float -> bool option) -> unit
+    (int64 -> int64 -> int64 -> float -> bool option -> bool option) -> unit
 
   method virtual on_missing_zero : unit
   method virtual on_missing_random : unit
@@ -1371,6 +1380,8 @@ class virtual fragment_machine = object
 
   method virtual print_backtrace : unit
 
+  method virtual eval_expr_to_int64 : Vine.exp -> int64
+      
   method virtual eval_expr_to_symbolic_expr : Vine.exp -> Vine.exp
 
   method virtual watchpoint : unit
