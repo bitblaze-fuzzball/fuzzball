@@ -19,12 +19,50 @@ type decision_tree_node = {
 
 let next_dt_ident = ref 1
 
+let ident_to_node_table = Array.init 1024 (fun _ -> None)
+
 let new_dt_node the_parent =
   next_dt_ident := !next_dt_ident + 1;
-  {parent = the_parent;
-   f_child = None; t_child = None;
-   query_children = None; query_counted = false;
-   all_seen = false; ident = !next_dt_ident}
+  let i = !next_dt_ident in
+  let i3 = i land 1023 and
+      i2 = (i asr 10) land 1023 and
+      i1 = i asr 20
+  in
+  let t2 = match ident_to_node_table.(i1) with
+    | Some t -> t
+    | None ->
+	let t = Array.init 1024 (fun _ -> None) in
+	  ident_to_node_table.(i1) <- Some t; t
+  in
+  let t3 = match t2.(i2) with
+    | Some t -> t
+    | None ->
+	let t = Array.init 1024 (fun _ -> None) in
+	  t2.(i2) <- Some t; t
+  in
+  let node =
+    {parent = the_parent;
+     f_child = None; t_child = None;
+     query_children = None; query_counted = false;
+     all_seen = false; ident = i}
+  in
+    t3.(i3) <- Some node;
+    node
+
+let ident_to_node i =
+  let i3 = i land 1023 and
+      i2 = (i asr 10) land 1023 and
+      i1 = i asr 20
+  in
+    match ident_to_node_table.(i1) with
+      | Some t2 ->
+	  (match t2.(i2) with
+	     | Some t3 ->
+		 (match t3.(i3) with
+		    | Some node -> node
+		    | _ -> failwith "Node missing (t3)")
+	     | _ -> failwith "Node sub-table missing (t2)")
+      | None -> failwith "Node sub-table missing (t1)"
 
 (* This hash algorithm is FNV-1a,
    c.f. http://www.isthe.com/chongo/tech/comp/fnv/index.html *)
@@ -503,6 +541,29 @@ class binary_decision_tree = object(self)
       if !opt_trace_decision_tree then
 	Printf.printf "DT: at %d, have_choice is %b\n" cur.ident result;
       result
+
+  method cur_ident =
+    cur.ident
+
+  method is_live_ident i =
+    let node = ident_to_node i in
+      not node.all_seen
+
+  method cur_can_reach_ident i =
+    let rec loop n =
+      match n.parent with
+	| None -> None
+	| Some p when p == cur ->
+	    (match (cur.f_child, cur.t_child) with
+	       | (Some Some f_kid, _) when f_kid == n -> Some false
+	       | (_, Some Some t_kid) when t_kid == n -> Some true
+	       | _ -> 
+		   failwith "Parent invariant failure in cur_can_reach_ident")
+	| Some p -> loop p
+    in
+    let dir = loop (ident_to_node i)
+    in
+      dir
 
   method print_tree chan =
     let kid_to_string mmn =

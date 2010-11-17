@@ -36,5 +36,9 @@ class binary_decision_tree : object
   method have_choice : bool
   method try_again_p : bool
 
+  method cur_ident : int
+  method is_live_ident : int -> bool
+  method cur_can_reach_ident : int -> bool option
+
   method print_tree : out_channel -> unit
 end
