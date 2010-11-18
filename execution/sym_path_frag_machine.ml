@@ -294,7 +294,8 @@ struct
 	with NotConcrete _ -> (false, false)
       in
 	if is_conc then
-	  (ignore(cjmp_heuristic eip targ1 targ2 0.0 (Some result));
+	  (ignore(cjmp_heuristic eip targ1 targ2
+		    (dt#random_float) (Some result));
 	   result)
 	else
 	  let e = D.to_symbolic_1 v in
@@ -316,7 +317,8 @@ struct
 		 | Some bit -> self#extend_pc_known e true bit
 	       in
 		 dt#count_query;
-		 ignore(cjmp_heuristic eip targ1 targ2 0.0 (Some b));
+		 ignore(cjmp_heuristic eip targ1 targ2
+			  (dt#random_float) (Some b));
 		 b)
 
     method eval_addr_exp exp =
