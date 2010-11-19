@@ -1413,8 +1413,13 @@ object(self)
       self#do_write fd bytes (Array.length bytes)
 
   method handle_linux_syscall () =
-    let get_reg r = fm#get_word_var_concretize r
-      !opt_measure_influence_syscall_args "syscall arg" in
+    let get_reg r = 
+      if !opt_symbolic_syscall_error <> None then
+	fm#get_word_var r (* fail if not concrete *)
+      else
+	fm#get_word_var_concretize r
+	  !opt_measure_influence_syscall_args "syscall arg"
+    in
     (let syscall_num = Int64.to_int (get_reg R_EAX) and
 	 read_1_reg () = get_reg R_EBX in
      let read_2_regs () =
