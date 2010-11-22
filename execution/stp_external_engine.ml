@@ -66,15 +66,58 @@ class stp_external_engine fname = object(self)
 
   val mutable chan = None
   val mutable visitor = None
+  val mutable temp_dir = None
   val mutable filenum = 0
   val mutable curr_fname = fname
 
+  method private get_temp_dir =
+    match temp_dir with
+      | Some t -> t
+      | None ->
+	  let rec loop num =
+	    let name = Printf.sprintf "fuzzball-tmp-%d" num in
+	      if Sys.file_exists name then
+		loop (num + 1)
+	      else
+		(Unix.mkdir name 0o777;
+		 temp_dir <- Some name;
+		 name)
+	  in
+	    loop 1
+		  
   method private get_fresh_fname = 
-    filenum <- filenum + 1;
-    curr_fname <- (Printf.sprintf "%s-%d" fname filenum);
-    if !opt_trace_solver then
-      Printf.printf "Creating STP file: %s.stp\n" curr_fname;
-    curr_fname
+    let split_limbs n m =
+      let rec loop n =
+	if n < m then
+	  [n]
+	else
+	  (n mod m) :: loop (n / m)
+      in
+	loop n
+    in
+    let make_dirs parent limbs =
+      let rec loop p l =
+	match l with
+	  | [] -> p
+	  | n :: rest ->
+	      let dir = p ^ "/" ^ Printf.sprintf "%03d" n in
+		if not (Sys.file_exists dir) then
+		  Unix.mkdir dir 0o777;
+		loop dir rest
+      in
+	loop parent limbs
+    in
+    let dir = self#get_temp_dir in
+      filenum <- filenum + 1;
+      let (low, rest) = match split_limbs filenum 1000 with
+	| (low :: rest) -> (low, rest)
+	| _ -> failwith "Non-empty list invariant failure in get_fresh_fname"
+      in
+      let dir' = make_dirs dir (List.rev rest) in
+	curr_fname <- (Printf.sprintf "%s/%s-%d" dir' fname low);
+	if !opt_trace_solver then
+	  Printf.printf "Creating STP file: %s.stp\n" curr_fname;
+	curr_fname
 
   method private chan =
     match chan with
