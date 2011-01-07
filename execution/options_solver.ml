@@ -1,5 +1,5 @@
 (*
-  Copyright (C) BitBlaze, 2009-2010, and copyright (C) 2010 Ensighta
+  Copyright (C) BitBlaze, 2009-2011, and copyright (C) 2010 Ensighta
   Security Inc.  All rights reserved.
 *)
 
@@ -35,21 +35,31 @@ let solver_cmdline_opts =
      " Keep going even if the solver fails/crashes");
   ]
 
+let solvers_table = 
+  (let h = Hashtbl.create 7 in
+     Hashtbl.replace h "none" (fun _ -> None);
+     Hashtbl.replace h "stpvc"
+       (fun _ ->
+	  Some (new Stpvc_engine.stpvc_engine :> Query_engine.query_engine));
+     Hashtbl.replace h "stp-external"
+       (fun s ->
+	  Some (new Stp_external_engine.stp_external_engine ("fuzz" ^ s)));
+     h)
+
 let construct_solver () =
-  let checking_solver = match !opt_solver_check_against with
-    | "none" -> None
-    | "stpvc" -> Some (new Stpvc_engine.stpvc_engine
-		       :> Query_engine.query_engine)
-    | "stp-external" -> Some (new Stp_external_engine.stp_external_engine
-				"fuzz-check")
-    | _ -> failwith "Unknown solver for -solver-check-against" in
-  let main_solver = match !opt_solver with
-    | "stpvc" -> ((new Stpvc_engine.stpvc_engine)
-		  :> Query_engine.query_engine)
-    | "stp-external" -> new Stp_external_engine.stp_external_engine "fuzz"
-    | _ -> failwith "Unknown -solver"
+  let checking_solver_opt =
+    try (Hashtbl.find solvers_table !opt_solver_check_against) "-check"
+    with Not_found -> failwith "Unknown solver for -solver-check-against"
   in
-    match checking_solver with
+  let main_solver_opt =
+    try (Hashtbl.find solvers_table !opt_solver) ""
+    with Not_found -> failwith "Unknown -solver"
+  in
+  let main_solver = match main_solver_opt with
+    | Some s -> s
+    | None -> failwith "-solver none is not supported"
+  in
+    match checking_solver_opt with
       | None -> main_solver
       | Some cs -> new Query_engine.parallel_check_engine main_solver cs
 	  
