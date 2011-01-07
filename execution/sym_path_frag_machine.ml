@@ -278,13 +278,18 @@ struct
       let (b, _) = self#eval_bool_exp_tristate e in
 	b
 
-    val mutable cjmp_heuristic = (fun eip t1 t2 r dir -> None)
+    val mutable cjmp_heuristic = None
 
-    method set_cjmp_heuristic f = cjmp_heuristic <- f
+    method set_cjmp_heuristic f = cjmp_heuristic <- Some f
+
+    method private call_cjmp_heuristic eip t1 t2 dir =
+      match cjmp_heuristic with
+	| None -> None
+	| Some h -> h eip t1 t2 (dt#random_float) dir
 
     method private cjmp_choose targ1 targ2 =
       let eip = self#get_word_var R_EIP in
-	(cjmp_heuristic eip targ1 targ2 (dt#random_float) None)
+	(self#call_cjmp_heuristic eip targ1 targ2 None)
 
     method eval_cjmp exp targ1 targ2 =
       let eip = self#get_word_var R_EIP in
@@ -294,8 +299,7 @@ struct
 	with NotConcrete _ -> (false, false)
       in
 	if is_conc then
-	  (ignore(cjmp_heuristic eip targ1 targ2
-		    (dt#random_float) (Some result));
+	  (ignore(self#call_cjmp_heuristic eip targ1 targ2 (Some result));
 	   result)
 	else
 	  let e = D.to_symbolic_1 v in
@@ -317,8 +321,7 @@ struct
 		 | Some bit -> self#extend_pc_known e true bit
 	       in
 		 dt#count_query;
-		 ignore(cjmp_heuristic eip targ1 targ2
-			  (dt#random_float) (Some b));
+		 ignore(self#call_cjmp_heuristic eip targ1 targ2 (Some b));
 		 b)
 
     method eval_addr_exp exp =
