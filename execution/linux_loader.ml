@@ -191,7 +191,7 @@ let load_partial_segment fm ic phr vbase size =
       fm#watchpoint
 	  
 let load_ldso fm dso vaddr =
-  let ic = open_in dso in
+  let ic = open_in (chroot dso) in
   let dso_eh = read_elf_header ic in
     if !opt_trace_setup then
       Printf.printf "Loading from dynamic linker %s\n" dso;
@@ -278,7 +278,7 @@ let build_startup_state fm eh load_base ldso argv =
 
 let load_dynamic_program (fm : fragment_machine) fname load_base
     data_too do_setup extras argv =
-  let ic = open_in fname in
+  let ic = open_in (chroot fname) in
   let i = IO.input_channel ic in
   let ldso_base = ref 0L in
   let eh = read_elf_header ic in
@@ -379,7 +379,7 @@ let read_core_note fm ic =
     seek_in ic endpos
   
 let load_core (fm:fragment_machine) fname =
-  let ic = open_in fname in
+  let ic = open_in (chroot fname) in
   let eh = read_elf_header ic in
     assert(eh.eh_type = 4);
     List.iter

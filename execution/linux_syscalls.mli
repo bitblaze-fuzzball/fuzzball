@@ -7,6 +7,8 @@ val linux_initial_break : int64 option ref
 val linux_setup_tcb_seg : Fragment_machine.fragment_machine
     -> int -> int64 -> int64 -> int64 -> unit
 
+val chroot : string -> string
+
 class linux_special_handler : Fragment_machine.fragment_machine ->
 object
   method handle_special : string -> Vine.stmt list option
@@ -65,7 +67,7 @@ object
   method sys_lseek : int -> int64 -> int -> unit
   method sys__llseek : int -> int64 -> int64 -> int -> unit
   method sys_mkdir : string -> Unix.file_perm -> unit
-  method sys_mmap2 : int64 -> int64 -> int64 -> int64 -> int -> int -> unit
+  method sys_mmap2 : int64 -> int64 -> int64 -> int64 -> int64 -> int -> unit
   method sys_mprotect : int64 -> int64 -> int64 -> unit
   method sys_munmap : int64 -> int64 -> unit
   method sys_open : string -> int -> Unix.file_perm -> unit

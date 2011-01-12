@@ -35,6 +35,14 @@ let linux_setup_tcb_seg (fm : fragment_machine) new_ent new_gdt base limit =
     store_byte descr 7 (Int64.logand
 			  (Int64.shift_right base 24) 0xffL)
 
+let chroot s =
+  if String.length s >= 1 && String.sub s 0 1 = "/" then
+    (match !opt_chroot_path with
+       | Some p -> p ^ s
+       | None -> s)
+  else
+    s
+
 class linux_special_handler (fm : fragment_machine) =
   let put_reg = fm#set_word_var in
   let load_word addr =
@@ -588,24 +596,25 @@ object(self)
       | Unix.Unix_error(err, _, _) -> self#put_errno err
 	  
   method sys_mmap2 addr length prot flags fd pgoffset =
+    let fdi = Int64.to_int fd in
     let do_read addr = 
       let len = Int64.to_int length in
-      let old_loc = Unix.lseek (self#get_fd fd) 0 Unix.SEEK_CUR in
-      let _ = Unix.lseek (self#get_fd fd) (4096*pgoffset) Unix.SEEK_SET in
-      let _ = self#do_unix_read (self#get_fd fd) addr len in
-      let _ = Unix.lseek (self#get_fd fd) old_loc Unix.SEEK_SET in
+      let old_loc = Unix.lseek (self#get_fd fdi) 0 Unix.SEEK_CUR in
+      let _ = Unix.lseek (self#get_fd fdi) (4096*pgoffset) Unix.SEEK_SET in
+      let _ = self#do_unix_read (self#get_fd fdi) addr len in
+      let _ = Unix.lseek (self#get_fd fdi) old_loc Unix.SEEK_SET in
 	(* assert(nr = len); *)
 	addr
     in
     let ret =
       match (addr, length, prot, flags, fd, pgoffset) with
 	| (0L, _, 0x3L (* PROT_READ|PROT_WRITE *),
-	   0x22L (* MAP_PRIVATE|MAP_ANONYMOUS *), -1, _) ->
+	   0x22L (* MAP_PRIVATE|MAP_ANONYMOUS *), 0xffffffffL, _) ->
 	    let fresh = self#fresh_addr length in
 	      zero_region fresh (Int64.to_int length);
 	      fresh
 	| (_, _, (0x3L|0x7L) (* PROT_READ|PROT_WRITE|PROT_EXEC) *),
-	   0x32L (* MAP_PRIVATE|FIXED|ANONYMOUS *), -1, _) ->
+	   0x32L (* MAP_PRIVATE|FIXED|ANONYMOUS *), 0xffffffffL, _) ->
 	    zero_region addr (Int64.to_int length);
 	    addr
 	| (0L, _, 
@@ -631,7 +640,7 @@ object(self)
   method sys_open path flags mode =
     try
       let oc_flags = self#flags_to_oc_flags flags in
-      let oc_fd = Unix.openfile path oc_flags mode and
+      let oc_fd = Unix.openfile (chroot path) oc_flags mode and
 	  vt_fd = self#fresh_fd () in
 	Array.set unix_fds vt_fd (Some oc_fd);
 	put_reg R_EAX (Int64.of_int vt_fd)
@@ -668,15 +677,15 @@ object(self)
     put_reg R_EAX 0L (* success *)
 
   method sys_set_thread_area uinfo =
-    let old_ent = Int64.to_int (load_word (lea uinfo 0 0 0))
+    let old_ent = load_word (lea uinfo 0 0 0)
     and
 	base  = load_word (lea uinfo 0 0 4) and
 	limit = load_word (lea uinfo 0 0 8) in
       if !opt_trace_syscalls then
-	Printf.printf " set_thread_area({entry: %d, base: %Lx, limit: %Ld})\n"
+	Printf.printf " set_thread_area({entry: %Ld, base: %Lx, limit: %Ld})\n"
 	  old_ent base limit;
       (match (old_ent, base, limit) with
-	 | (-1, _, _) ->
+	 | (0xffffffffL, _, _) ->
 	     let new_ent = 12 in
 	       linux_setup_tcb_seg fm new_ent 0x60000000L base limit;
 	       store_word uinfo 0 (Int64.of_int new_ent);
@@ -1414,10 +1423,10 @@ object(self)
 		 length   = ecx and
 		 prot     = edx and
 		 flags    = esi and
-		 fd       = Int64.to_int edi and
+		 fd       = edi and
 		 pgoffset = Int64.to_int ebp in
 	       if !opt_trace_syscalls then
-		 Printf.printf "mmap2(0x%08Lx, %Ld, 0x%Lx, 0x%0Lx, %d, %d)"
+		 Printf.printf "mmap2(0x%08Lx, %Ld, 0x%Lx, 0x%0Lx, %Ld, %d)"
 		   addr length prot flags fd pgoffset;
 	       self#sys_mmap2 addr length prot flags fd pgoffset
 	 | 193 -> (* truncate64 *)

@@ -49,6 +49,9 @@ let linux_cmdline_opts =
      " Simulate Linux system calls on the real system");
     ("-trace-syscalls", Arg.Set(opt_trace_syscalls),
      " Print systems calls (like strace)");
+    ("-chroot", Arg.String
+       (fun s -> opt_chroot_path := Some s),
+     "path Prepend PATH to absolute filenames");
     ("--", Arg.Rest(fun s -> opt_argv := !opt_argv @ [s]),
      " Pass any remaining arguments to the program");
   ]

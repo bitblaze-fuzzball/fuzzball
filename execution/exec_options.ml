@@ -85,6 +85,7 @@ let opt_nonfatal_solver = ref false
 let opt_num_paths = ref None
 let opt_pid = ref (-1)
 let opt_translation_cache_size = ref None
+let opt_chroot_path = ref None
 
 let opt_symbolic_memory = ref false
 let opt_zero_memory = ref false
