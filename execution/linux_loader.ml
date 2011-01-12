@@ -323,7 +323,7 @@ let load_dynamic_program (fm : fragment_machine) fname load_base
     !entry_point
 
 let addr_to_io fname addr =
-  let ic = open_in fname in
+  let ic = open_in (chroot fname) in
   let io = IO.input_channel ic in
   let eh = read_elf_header ic in
   let found = ref false in

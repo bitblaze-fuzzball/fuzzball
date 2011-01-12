@@ -666,7 +666,7 @@ object(self)
 
   method sys_getdents fd dirp buf_sz =
     let dirname = fd_info.(fd).fname in
-    let dirh = Unix.opendir dirname in
+    let dirh = Unix.opendir (chroot dirname) in
     let written = ref 0 in
       for i = 0 to fd_info.(fd).dirp_offset do
 	ignore(Unix.readdir dirh)
@@ -697,7 +697,7 @@ object(self)
 
   method sys_getdents64 fd dirp buf_sz =
     let dirname = fd_info.(fd).fname in
-    let dirh = Unix.opendir dirname in
+    let dirh = Unix.opendir (chroot dirname) in
     let written = ref 0 in
       for i = 0 to fd_info.(fd).dirp_offset do
 	ignore(Unix.readdir dirh)
