@@ -77,7 +77,7 @@ sig
     method set_query_engine : Query_engine.query_engine -> unit
     method match_input_var : string -> int option
     method print_ce : (string * int64) list -> unit
-    method query_with_path_cond : Vine.exp list -> Vine.exp -> bool
+    method query_with_path_cond : Vine.exp -> bool
       -> (bool * (string * int64) list)
     method follow_or_random : bool 
     method query_with_pc_choice : Vine.exp -> bool -> (unit -> bool)

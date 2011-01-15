@@ -5,10 +5,16 @@
 class stpvc_engine : object
   inherit Query_engine.query_engine
 
-  method prepare : Vine.var list -> Vine.var list -> unit
+  method start_query : unit
+  method add_free_var : Vine.var -> unit
+  method add_temp_var : Vine.var -> unit
   method assert_eq : Vine.var -> Vine.exp -> unit
+  method add_condition : Vine.exp -> unit
+  method push : unit
+  method pop : unit
   method query : Vine.exp -> (bool option) * ((string * int64) list)
-  method unprepare : bool -> unit
+  method after_query : bool -> unit
+  method reset : unit
 
   method push_vc : unit
   method get_vc : Stpvc.vc

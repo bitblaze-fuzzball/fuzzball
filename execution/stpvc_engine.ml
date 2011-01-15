@@ -13,6 +13,9 @@ class stpvc_engine = object(self)
   val vc = Stpvc.create_validity_checker ()
   val mutable ctx = None
   val mutable free_vars = []
+  val mutable temp_vars = []
+  val mutable eqns = []
+  val mutable conds = []
 
   val mutable asserts = []
   val mutable the_query = None
@@ -22,12 +25,43 @@ class stpvc_engine = object(self)
       | Some c -> c
       | None -> failwith "Missing ctx in stpvc_engine"
 
-  method prepare free_vars_a temp_vars =
-    Libstp.vc_push vc;
-    free_vars <- free_vars_a;
-    ctx <- Some(Vine_stpvc.new_ctx vc (free_vars_a @ temp_vars))
+  method start_query =
+    Libstp.vc_push vc    
+
+  method add_free_var v =
+    free_vars <- v :: free_vars
+
+  method add_temp_var v =
+    temp_vars <- v :: temp_vars
+
+  method private ensure_ctx =
+    match ctx with
+      | Some c -> ()
+      | None -> 
+	  ctx <- Some(Vine_stpvc.new_ctx vc (free_vars @ temp_vars))
 
   method assert_eq var rhs =
+    eqns <- (var, rhs) :: eqns
+
+  method add_condition e =
+    conds <- e :: conds;
+    
+  val mutable ctx_stack = []
+
+  method push =
+    ctx_stack <- (free_vars, temp_vars, eqns, conds) :: ctx_stack
+
+  method pop =
+    match ctx_stack with
+      | (free_vars', temp_vars', eqns', conds') :: rest ->
+	  free_vars <- free_vars';
+	  temp_vars <- temp_vars';
+	  eqns <- eqns';
+	  conds <- conds';
+	  ctx_stack <- rest
+      | [] -> failwith "Context underflow in stpvc_engine#pop"
+
+  method private real_assert_eq (var, rhs) =
     let form = V.BinOp(V.EQ, V.Lval(V.Temp(var)), rhs) in
     (* Printf.printf "Asserting %s\n" (V.exp_to_string form); *)
     let f = Stpvc.e_bvbitextract vc (Vine_stpvc.vine_to_stp vc self#ctx form) 0
@@ -35,11 +69,19 @@ class stpvc_engine = object(self)
       Stpvc.do_assert vc f;
       asserts <- f :: asserts
 
-  method query e =
+  method private real_prepare =
+    ctx <- Some(Vine_stpvc.new_ctx vc (List.rev (temp_vars @ free_vars)));
+    List.iter self#real_assert_eq (List.rev eqns)
+
+  method query qe =
+    self#real_prepare;
+    let conj = List.fold_left
+      (fun es e -> V.BinOp(V.BITAND, e, es)) qe (List.rev conds)
+    in
     let s = (Stpvc.e_simplify vc
 	       (Stpvc.e_not vc
 		  (Stpvc.e_bvbitextract vc
-		     (Vine_stpvc.vine_to_stp vc self#ctx e) 0)))
+		     (Vine_stpvc.vine_to_stp vc self#ctx conj) 0)))
     in
     (* Printf.printf "STP formula is %s\n" (Stpvc.to_string s);
        flush stdout; *)
@@ -67,7 +109,7 @@ class stpvc_engine = object(self)
 
   val mutable filenum = 0
 
-  method unprepare save_results =
+  method after_query save_results =
     if save_results || !opt_save_solver_files then
       (filenum <- filenum + 1;
        let fname = "fuzz-stpvc-" ^ (string_of_int filenum) ^ ".stp" in
@@ -84,9 +126,15 @@ class stpvc_engine = object(self)
     the_query <- None;
     Libstp.vc_clearDecls vc;
     Libstp.vc_pop vc;
-    ctx <- None;
     Libstp.vc_push vc;
     Libstp.vc_pop vc;
+
+  method reset =
+    ctx <- None;
+    free_vars <- [];
+    temp_vars <- [];
+    eqns <- [];
+    conds <- []
 
   method push_vc = Libstp.vc_push vc
     

@@ -1219,7 +1219,7 @@ struct
 	| V.REG_64 -> D.to_string_64 (self#load_byte addr)
 	| _ -> failwith "Unexpected type in mem_val_as_string"
 
-    method query_with_path_cond (pc:Vine.exp list) (e:Vine.exp) (v:bool)
+    method query_with_path_cond (e:Vine.exp) (v:bool)
       : (bool * (string * int64) list) =
       (false, [])
     method match_input_var (s:string) : int option = None
@@ -1392,7 +1392,7 @@ class virtual fragment_machine = object
 
   method virtual set_query_engine : Query_engine.query_engine -> unit
 
-  method virtual query_with_path_cond : Vine.exp list -> Vine.exp -> bool
+  method virtual query_with_path_cond : Vine.exp -> bool
     -> (bool * (string * int64) list)
 
   method virtual match_input_var : string -> int option

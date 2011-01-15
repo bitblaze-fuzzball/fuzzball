@@ -29,7 +29,7 @@ sig
 
     method print_ce : (string * int64) list -> unit
 
-    method query_with_path_cond : Vine.exp list -> Vine.exp -> bool
+    method query_with_path_cond : Vine.exp -> bool
       -> (bool * (string * int64) list)
 
     method follow_or_random : bool 

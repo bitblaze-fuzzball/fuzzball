@@ -30,42 +30,12 @@ struct
   class sym_path_frag_machine (dt:decision_tree) = object(self)
     inherit FM.frag_machine as fm
 
-    val mutable path_cond = []
-
     method get_depth = dt#get_depth
     method get_hist_str = dt#get_hist_str
 
     val mutable infl_man = ((new no_influence_manager) :> influence_manager)
 
     method set_influence_manager im = infl_man <- im
-
-    method get_path_cond =
-      if path_cond = [] then
-	path_cond <- !opt_extra_conditions;
-      path_cond
-
-    method private quick_check_in_path_cond cond =
-      if List.mem cond path_cond then
-	Some true
-      else
-	match cond with
-	  | V.UnOp(V.NOT, cond') when List.mem cond' path_cond
-	      -> Some false
-	  | _ -> None 
-
-    method add_to_path_cond cond =
-      if path_cond = [] then
-	path_cond <- !opt_extra_conditions;
-      if (self#quick_check_in_path_cond cond) <> Some true then
-	path_cond <- cond :: path_cond
-
-    method restore_path_cond f =
-      if path_cond = [] then
-	path_cond <- !opt_extra_conditions;
-      let saved_pc = path_cond in
-      let ret = f () in
-	path_cond <- saved_pc;
-	ret
 
     val mutable query_engine = new stp_external_engine "fuzz"
 
@@ -125,16 +95,61 @@ struct
 
     method print_ce ce = print_ce ce
 
-    method query_with_path_cond path_cond_a cond verbose =
-      let get_time () = Unix.gettimeofday () in
-      let pc = cond :: path_cond_a and
-	  expr = V.Unknown("") in
-      let (decls, assigns, cond_e, _, _) =
-	form_man#collect_for_solving [] pc expr
+    val mutable path_cond = []
+    val mutable var_seen_hash = V.VarHash.create 101
+
+    method get_path_cond =
+      if path_cond = [] then
+	path_cond <- !opt_extra_conditions;
+      path_cond
+
+    method private quick_check_in_path_cond cond =
+      if List.mem cond path_cond then
+	Some true
+      else
+	match cond with
+	  | V.UnOp(V.NOT, cond') when List.mem cond' path_cond
+	      -> Some false
+	  | _ -> None 
+
+    method private push_cond_to_qe cond =
+      let (decls, assigns, cond_e, new_vars) =
+	form_man#one_cond_for_solving cond var_seen_hash
       in
-      let assign_vars = List.map (fun (v, exp) -> v) assigns in
-	query_engine#prepare decls assign_vars;
-	List.iter (fun (v, exp) -> (query_engine#assert_eq v exp)) assigns;
+	List.iter query_engine#add_free_var decls;
+	List.iter (fun (v,_) -> query_engine#add_temp_var v) assigns;
+	List.iter (fun (v,e) -> query_engine#assert_eq v e) assigns;
+	query_engine#add_condition cond_e
+
+    method add_to_path_cond cond =
+      if path_cond = [] then
+	path_cond <- !opt_extra_conditions;
+      if (self#quick_check_in_path_cond cond) <> Some true then
+	(path_cond <- cond :: path_cond;
+	 self#push_cond_to_qe cond)
+
+    method restore_path_cond f =
+      if path_cond = [] then
+	path_cond <- !opt_extra_conditions;
+      let saved_pc = path_cond in
+      let saved_vsh = var_seen_hash in
+	var_seen_hash <- V.VarHash.copy saved_vsh; (* could be expensive *)
+	query_engine#push;
+	let ret = f () in
+	  query_engine#pop;
+	  path_cond <- saved_pc;
+	  var_seen_hash <- saved_vsh;
+	  ret
+
+    method query_with_path_cond cond verbose =
+      let get_time () = Unix.gettimeofday () in
+      let (decls, assigns, cond_e, new_vars) =
+	form_man#one_cond_for_solving cond var_seen_hash
+      in
+	query_engine#push;
+	List.iter query_engine#add_free_var decls;
+	List.iter (fun (v,_) -> query_engine#add_temp_var v) assigns;
+	List.iter (fun (v,e) -> query_engine#assert_eq v e) assigns;
 	let time_before = get_time () in
 	let (result_o, ce) = query_engine#query cond_e in
 	let is_sat = match result_o with
@@ -146,7 +161,7 @@ struct
 	      true
 	  | None ->
 	      solver_fails := Int64.succ !solver_fails;
-	      query_engine#unprepare true;
+	      query_engine#after_query true;
 	      raise SolverFailure
 	in
 	  if verbose then
@@ -167,7 +182,9 @@ struct
 	      Printf.printf "Slow query (%f sec)\n"
 		((get_time ()) -. time_before);
 	    flush stdout;
-	    query_engine#unprepare is_slow;
+	    query_engine#after_query is_slow;
+	    query_engine#pop;
+	    List.iter (fun v -> V.VarHash.remove var_seen_hash v) new_vars;
 	    infl_man#maybe_periodic_influence;
 	    (is_sat, ce)
 
@@ -195,7 +212,7 @@ struct
 	  | Some b -> b
 	  | None -> 
 	      let (is_sat, _) =
-		self#query_with_path_cond (self#get_path_cond) cond' verbose in
+		self#query_with_path_cond cond' verbose in
 		is_sat
       in
       let non_try_func b =
@@ -469,7 +486,7 @@ struct
 	   (List.rev (self#get_path_cond)));
       if !opt_solve_final_pc then
 	assert(let (b,_) =
-		 self#query_with_path_cond (self#get_path_cond) V.exp_true true
+		 self#query_with_path_cond V.exp_true true
 	       in b);
       dt#try_again_p
 
@@ -481,6 +498,8 @@ struct
       fm#reset ();
       form_man#reset_mem_axioms;
       path_cond <- [];
+      V.VarHash.clear var_seen_hash;
+      query_engine#reset;
       infl_man#reset;
       dt#reset
 

@@ -5,10 +5,26 @@
 module V = Vine;;
 
 class virtual query_engine = object(self)
-  method virtual prepare : V.var list -> V.var list -> unit
+  method virtual start_query : unit
+  method virtual add_free_var : V.var -> unit
+  method virtual add_temp_var : V.var -> unit
+
+  method prepare free_vars temp_vars =
+    self#start_query;
+    List.iter self#add_free_var free_vars;
+    List.iter self#add_temp_var temp_vars
+
   method virtual assert_eq : V.var -> V.exp -> unit
+  method virtual add_condition : V.exp -> unit
+  method virtual push : unit
+  method virtual pop : unit
   method virtual query : V.exp -> (bool option) * ((string * int64) list)
-  method virtual unprepare : bool -> unit
+  method virtual after_query : bool -> unit
+  method virtual reset : unit
+
+  method unprepare save =
+    self#after_query save;
+    self#reset
 end
 
 let print_ce ce =
@@ -23,16 +39,37 @@ class parallel_check_engine (e1:query_engine) (e2:query_engine) = object(self)
   inherit query_engine
 
   val mutable eqns = []
+  val mutable conds = []
 
-  method prepare free_vars temp_vars =
-    e1#prepare free_vars temp_vars;
-    e2#prepare free_vars temp_vars;
-    eqns <- []
+  method start_query =
+    e1#start_query;
+    e2#start_query
+
+  method add_free_var var =
+    e1#add_free_var var;
+    e2#add_free_var var
+
+  method add_temp_var var =
+    e1#add_temp_var var;
+    e2#add_temp_var var
 
   method assert_eq var rhs =
     e1#assert_eq var rhs;
     e2#assert_eq var rhs;
     eqns <- (var, rhs) :: eqns
+
+  method add_condition e =
+    e1#add_condition e;
+    e2#add_condition e;
+    conds <- e :: conds
+
+  method push =
+    e1#push;
+    e2#push
+
+  method pop =
+    e1#pop;
+    e2#pop
 
   method query e =
     let string_of_result r = match r with
@@ -46,7 +83,10 @@ class parallel_check_engine (e1:query_engine) (e2:query_engine) = object(self)
 	 List.iter
 	   (fun (var, rhs) ->
 	      Printf.printf "%s := %s\n" (V.var_to_string var)
-		(V.exp_to_string rhs)) eqns;
+		(V.exp_to_string rhs)) (List.rev eqns);
+	 List.iter
+	   (fun e -> Printf.printf "%s AND\n" (V.exp_to_string e))
+	   (List.rev conds);
 	 Printf.printf "in query %s\n" (V.exp_to_string e);
 	 Printf.printf "Solver 1 says %s, solver 2 says %s\n"
 	   (string_of_result r1) (string_of_result r2);
@@ -64,8 +104,13 @@ class parallel_check_engine (e1:query_engine) (e2:query_engine) = object(self)
       else
 	(r1, ce1)
 
-  method unprepare save_results =
-    e1#unprepare save_results;
-    e2#unprepare save_results;
-    eqns <- []
+  method after_query save_results =
+    e1#after_query save_results;
+    e2#after_query save_results
+
+  method reset =
+    e1#reset;
+    e2#reset;
+    eqns <- [];
+    conds <- []
 end

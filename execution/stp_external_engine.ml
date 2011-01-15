@@ -129,14 +129,43 @@ class stp_external_engine fname = object(self)
       | Some v -> v
       | None -> failwith "Missing visitor in stp_external_engine"
 
-  method prepare free_vars temp_vars =
-    let fname = self#get_fresh_fname in
-      chan <- Some(open_out (fname ^ ".stp"));
-      visitor <- Some(new Stp.vine_cvcl_print_visitor
-			(output_string self#chan));
-      List.iter self#visitor#declare_var free_vars
+  val mutable free_vars = []
+  val mutable eqns = []
+  val mutable conds = []
+
+  method start_query =
+    ()
+
+  method add_free_var var =
+    free_vars <- var :: free_vars
+ 
+  method private real_add_free_var var =
+    self#visitor#declare_var var
+
+  method add_temp_var var =
+    ()
 
   method assert_eq var rhs =
+    eqns <- (var, rhs) :: eqns;
+
+  method add_condition e =
+    conds <- e :: conds
+
+  val mutable ctx_stack = []
+
+  method push =
+    ctx_stack <- (free_vars, eqns, conds) :: ctx_stack
+
+  method pop =
+    match ctx_stack with
+      | (free_vars', eqns', conds') :: rest ->
+	  free_vars <- free_vars';
+	  eqns <- eqns';
+	  conds <- conds';
+	  ctx_stack <- rest
+      | [] -> failwith "Context underflow in stp_external_engine#pop"
+
+  method private real_assert_eq (var, rhs) =
     try
       self#visitor#declare_var_value var rhs
     with
@@ -145,18 +174,30 @@ class stp_external_engine fname = object(self)
 	    (V.exp_to_string rhs) err;
 	  failwith "Typecheck failure in assert_eq"
 
-  method query e =
+  method private real_prepare =
+    let fname = self#get_fresh_fname in
+      chan <- Some(open_out (fname ^ ".stp"));
+      visitor <- Some(new Stp.vine_cvcl_print_visitor
+			(output_string self#chan));
+      List.iter self#real_add_free_var (List.rev free_vars);
+      List.iter self#real_assert_eq (List.rev eqns);
+
+  method query qe =
+    self#real_prepare;
     output_string self#chan "QUERY(NOT (";
-    (let visitor = (self#visitor :> V.vine_visitor) in
-     let rec loop = function
-       | V.BinOp(V.BITAND, e1, e2) ->
-	   loop e1;
-	   output_string self#chan "\n  AND ";
-	   loop e2
-       | e ->
-	   ignore(V.exp_accept visitor e)
-     in
-       loop e);
+    let conj = List.fold_left
+      (fun es e -> V.BinOp(V.BITAND, e, es)) qe (List.rev conds)
+    in
+      (let visitor = (self#visitor :> V.vine_visitor) in
+       let rec loop = function
+	 | V.BinOp(V.BITAND, e1, e2) ->
+	     loop e1;
+	     output_string self#chan "\n  AND ";
+	     loop e2
+	 | e ->
+	     ignore(V.exp_accept visitor e)
+       in
+	 loop conj);
     output_string self#chan "));\n";
     output_string self#chan "COUNTEREXAMPLE;\n";
     close_out self#chan;
@@ -198,12 +239,17 @@ class stp_external_engine fname = object(self)
 	    close_in results;
 	    (result, first_assign @ ce)
 
-  method unprepare save_results =
+  method after_query save_results =
     if save_results then
       Printf.printf "STP query and results are in %s.stp and %s.stp.out\n"
 	curr_fname curr_fname
     else if not !opt_save_solver_files then
       (Sys.remove (curr_fname ^ ".stp");
-       Sys.remove (curr_fname ^ ".stp.out"));
-    visitor <- None
+       Sys.remove (curr_fname ^ ".stp.out"))
+
+  method reset =
+    visitor <- None;
+    free_vars <- [];
+    eqns <- [];
+    conds <- []
 end

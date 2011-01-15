@@ -13,6 +13,22 @@ open Frag_marshal
 
 module VarWeak = Weak.Make(VarByInt)
 
+(* Unlike Vine_util.list_unique, this preserves order (keeping the
+   first occurrence) which is important because the temps have to retain
+   a topological ordering. *)
+let list_unique l = 
+  let h = Hashtbl.create 10 in
+  let rec loop = function
+    | [] -> []
+    | e :: el ->
+	if Hashtbl.mem h e then
+	  loop el
+	else
+	  (Hashtbl.replace h e ();
+	   e :: (loop el))
+  in
+    (loop l)
+
 module FormulaManagerFunctor =
   functor (D : Exec_domain.DOMAIN) ->
 struct
@@ -156,7 +172,7 @@ struct
       in
 	self#fresh_symbolic_var name ty
 
-    val mem_byte_vars = V.VarHash.create 30
+    val mutable mem_byte_vars = V.VarHash.create 30
 
     method private mem_var_byte region_str addr =
       let var = self#mem_var region_str V.REG_8 addr in
@@ -188,7 +204,7 @@ struct
 	@ (self#mem_axioms_word region_str addr wvar0)
 	@ (self#mem_axioms_word region_str (Int64.add addr 4L) wvar1)
 
-    val mem_axioms = V.VarHash.create 30
+    val mutable mem_axioms = V.VarHash.create 30
 
     method private add_mem_axioms region_str ty addr =
       let var = self#mem_var region_str ty addr in
@@ -247,6 +263,16 @@ struct
     method reset_mem_axioms = 
       V.VarHash.clear mem_byte_vars;
       V.VarHash.clear mem_axioms
+
+    method private with_saved_mem_axioms f =
+      let old_mbv = mem_byte_vars and
+	  old_max = mem_axioms in
+	mem_byte_vars <- V.VarHash.create 30;
+	mem_axioms <- V.VarHash.create 30;
+	let r = f () in
+	  mem_byte_vars <- old_mbv;
+	  mem_axioms <- old_max;
+	  r
 
     method private eval_var lv =
       let d = D.from_symbolic (V.Lval lv) in
@@ -517,22 +543,6 @@ struct
 	| e :: el -> List.fold_left (fun a b -> V.BinOp(V.BITOR, a, b)) e el
 
     method collect_for_solving u_temps conds val_e =
-      (* Unlike Vine_util.list_unique, this preserves order (keeping the
-	 first occurrence) which is important because the temps have to
-	 retain a topological ordering. *)
-      let list_unique l = 
-	let h = Hashtbl.create 10 in
-	let rec loop = function
-	  | [] -> []
-	  | e :: el ->
-	      if Hashtbl.mem h e then
-		loop el
-	      else
-		(Hashtbl.replace h e ();
-		 e :: (loop el))
-	in
-	  (loop l)
-      in
       let val_expr = self#rewrite_for_solver val_e in
       let cond_expr = self#rewrite_for_solver
 	(self#conjoin (List.rev conds)) in
@@ -555,6 +565,31 @@ struct
       let inputs_in_val_expr = i_vars 
       in
 	(decls, assigns, cond_expr, val_expr, inputs_in_val_expr)
+
+    method one_cond_for_solving cond seen_hash =
+      let (all_decls, all_assigns, cond_expr) =
+	self#with_saved_mem_axioms
+	  (fun _ ->
+	     let cond_expr = self#rewrite_for_solver cond in
+	     let (nts, ts) =
+	       self#walk_temps (fun var e -> (var, e)) cond_expr in
+	     let temps =
+	       List.map
+		 (fun (var, e) -> (var, self#rewrite_for_solver e)) ts in
+	     let i_vars = (list_unique (nts @ self#get_mem_bytes)) in
+	     let m_axioms = self#get_mem_axioms in
+	     let m_vars = List.map (fun (v, _) -> v) m_axioms in
+	     let assigns = m_axioms @ temps in
+	     let decls = Vine_util.list_difference i_vars m_vars in
+	       (decls, assigns, cond_expr))
+      in
+      let new_decls = List.filter
+	(fun v -> not (V.VarHash.mem seen_hash v)) all_decls in
+      let new_assigns = List.filter
+	(fun (v,_) -> not (V.VarHash.mem seen_hash v)) all_assigns in
+      let new_vars = new_decls @ (List.map (fun (v,_) -> v) new_assigns) in
+	List.iter (fun v -> V.VarHash.replace seen_hash v ()) new_vars;
+	(new_decls, new_assigns, cond_expr, new_vars)
 
     method measure_size =
       let (input_ents, input_nodes) =
