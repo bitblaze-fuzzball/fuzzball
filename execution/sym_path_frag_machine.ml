@@ -98,9 +98,18 @@ struct
     val mutable path_cond = []
     val mutable var_seen_hash = V.VarHash.create 101
 
+    method private ensure_extra_conditions =
+      if path_cond = [] && !opt_extra_conditions <> [] then
+	List.iter
+	  (fun cond ->
+	     (* Similar to self#add_to_path_cond, but without the call
+		to ensure_extra_conditions. *)
+	     path_cond <- cond :: path_cond;
+	     self#push_cond_to_qe cond)
+	  (List.rev !opt_extra_conditions)
+
     method get_path_cond =
-      if path_cond = [] then
-	path_cond <- !opt_extra_conditions;
+      self#ensure_extra_conditions;
       path_cond
 
     method private quick_check_in_path_cond cond =
@@ -122,15 +131,13 @@ struct
 	query_engine#add_condition cond_e
 
     method add_to_path_cond cond =
-      if path_cond = [] then
-	path_cond <- !opt_extra_conditions;
+      self#ensure_extra_conditions;
       if (self#quick_check_in_path_cond cond) <> Some true then
 	(path_cond <- cond :: path_cond;
 	 self#push_cond_to_qe cond)
 
     method restore_path_cond f =
-      if path_cond = [] then
-	path_cond <- !opt_extra_conditions;
+      self#ensure_extra_conditions;
       let saved_pc = path_cond in
       let saved_vsh = var_seen_hash in
 	var_seen_hash <- V.VarHash.copy saved_vsh; (* could be expensive *)
@@ -142,6 +149,7 @@ struct
 	  ret
 
     method query_with_path_cond cond verbose =
+      self#ensure_extra_conditions;
       let get_time () = Unix.gettimeofday () in
       let (decls, assigns, cond_e, new_vars) =
 	form_man#one_cond_for_solving cond var_seen_hash
