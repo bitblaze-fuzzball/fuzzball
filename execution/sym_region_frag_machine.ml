@@ -476,14 +476,15 @@ struct
 		  | [V.Lval(V.Temp(var)) as vexp] ->
 		      let sum = sum_list rest in
 		      let a = form_man#eval_expr sum in
+		      let a_const = V.Constant(V.Int(V.REG_32, a)) in
 			if !opt_trace_sym_addrs then
 			  Printf.printf
 			    "Computed concrete offset %s + 0x%08Lx\n" 
 			    (V.var_to_string var) a;
-			if !opt_solve_path_conditions then
-			  (let cond = V.BinOp(V.EQ, sum,
-					      V.Constant(V.Int(V.REG_32, a)))
-			   in
+			if !opt_solve_path_conditions && 
+			  (sum <> a_const)
+			then
+			  (let cond = V.BinOp(V.EQ, sum, a_const) in
 			   let sat = self#extend_pc_known cond false true in
 			     assert(sat));
 			(Some(self#region_for vexp), a)
