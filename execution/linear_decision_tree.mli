@@ -36,5 +36,6 @@ class linear_decision_tree : object
   method have_choice : bool
   method try_again_p : bool
 
+  method measure_size : int
   method print_tree : out_channel -> unit
 end

@@ -32,6 +32,7 @@ struct
 
     method get_depth = dt#get_depth
     method get_hist_str = dt#get_hist_str
+    method measure_dt_size = dt#measure_size
 
     val mutable infl_man = ((new no_influence_manager) :> influence_manager)
 

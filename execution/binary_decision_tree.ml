@@ -565,6 +565,9 @@ class binary_decision_tree = object(self)
     in
       dir
 
+  method measure_size =
+    !next_dt_ident    
+
   method print_tree chan =
     let kid_to_string mmn =
       match mmn with

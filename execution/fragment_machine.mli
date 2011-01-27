@@ -145,6 +145,7 @@ sig
 
     method measure_mem_size : int * int * int
     method measure_form_man_size : int * int
+    method measure_dt_size : int
     method measure_size : int * int
 
     method store_byte_idx : int64 -> int -> int -> unit
@@ -321,6 +322,7 @@ class virtual fragment_machine : object
 
   method virtual measure_mem_size : int * int * int
   method virtual measure_form_man_size : int * int
+  method virtual measure_dt_size : int
   method virtual measure_size : int * int
 
   method virtual store_byte_idx : int64 -> int -> int -> unit

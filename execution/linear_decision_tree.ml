@@ -82,5 +82,7 @@ class linear_decision_tree = object(self)
 
   method have_choice = false
 
+  method measure_size = depth
+
   method print_tree chan = ()
 end

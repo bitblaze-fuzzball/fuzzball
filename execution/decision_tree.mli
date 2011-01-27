@@ -35,5 +35,6 @@ class virtual decision_tree : object
   method virtual have_choice : bool
   method virtual try_again_p : bool
 
+  method virtual measure_size : int
   method virtual print_tree : out_channel -> unit
 end

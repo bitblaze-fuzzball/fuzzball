@@ -941,6 +941,7 @@ struct
 
     method measure_mem_size = mem#measure_size
     method measure_form_man_size = form_man#measure_size
+    method measure_dt_size = 0
 
     method measure_size =
       let measure_add k v n = n + (D.measure_size v) in
@@ -1324,6 +1325,7 @@ class virtual fragment_machine = object
 
   method virtual measure_mem_size : int * int * int
   method virtual measure_form_man_size : int * int
+  method virtual measure_dt_size : int
   method virtual measure_size : int * int
 
   method virtual store_byte_idx : int64 -> int -> int -> unit
