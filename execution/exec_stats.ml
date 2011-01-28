@@ -31,9 +31,9 @@ let check_memory_usage (fm:Fragment_machine.fragment_machine) trans_cache =
       reg_nodes temps_nodes;
     Printf.printf "Formula manager has %d entries, %d nodes\n"
       form_ents form_nodes;
-    Printf.printf "Decision tree has %d nodes\n" dt_nodes;
+    Printf.printf "Decision tree (on disk) has %d nodes\n" dt_nodes;
     Printf.printf "Total counted size is %d nodes\n"
-      (mem_nodes + reg_nodes + temps_nodes + tc_size + form_nodes + dt_nodes);
+      (mem_nodes + reg_nodes + temps_nodes + tc_size + form_nodes);
     Printf.printf "/proc size is %s\n" (check_memory_size ());
     flush stdout;
     Gc.print_stat stdout

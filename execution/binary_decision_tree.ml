@@ -8,19 +8,171 @@ open Exec_exceptions;;
 open Exec_options;;
 
 type decision_tree_node = {
-  mutable parent : decision_tree_node option;
+  mutable parent : dt_node_ref option;
   (* None: unexplored; Some None: unsat; Some Some n: sat *)
-  mutable f_child : decision_tree_node option option;
-  mutable t_child : decision_tree_node option option;
+  mutable f_child : dt_node_ref option option;
+  mutable t_child : dt_node_ref option option;
   mutable all_seen : bool;
   mutable query_children : int option;
   mutable query_counted : bool;
   mutable ident : int }
+and
+  dt_node_ref = int
 
-let next_dt_ident = ref 1
+let dt_node_to_string n =
+  let parent_int = match n.parent with
+    | None -> 0
+    | Some pr -> pr in
+  let kid_to_int = function
+    | None -> -1
+    | Some None -> 0
+    | Some (Some k) -> k
+  in
+  let f_child_int = kid_to_int n.f_child and
+      t_child_int = kid_to_int n.t_child in
+  let query_children_int = match n.query_children with
+    | None -> -1
+    | Some c -> c
+  in
+  let flags_int = (if n.all_seen then 1 else 0) +
+    (if n.query_counted then 2 else 0)
+  in
+  let s = Printf.sprintf "%08x%c%08x%08x%04x"
+    parent_int (Char.chr (0x40 + flags_int)) f_child_int t_child_int
+    (query_children_int land 0xffff) in
+    assert(String.length s = 29);
+    s
+
+let string_to_dt_node ident_arg s =
+  assert(String.length s = 29);
+  let parent_str = String.sub s 0 8 and
+      flags_char = s.[8] and
+      f_child_str = String.sub s 9 8 and
+      t_child_str = String.sub s 17 8 and
+      query_children_str = String.sub s 25 4
+  in
+  let int_of_hex_string s = int_of_string ("0x" ^ s) in
+  let parent_int = int_of_hex_string parent_str and
+      flags_int = (Char.code flags_char) - 0x40 and
+      f_child_int = int_of_hex_string f_child_str and
+      t_child_int = int_of_hex_string t_child_str and
+      query_children_int = int_of_hex_string query_children_str
+  in
+  let parent_o = match parent_int with
+    | 0 -> None
+    | i -> Some i
+  in
+  let kid_to_oo = function
+    | -1 -> None
+    | 0 -> Some None
+    | i -> Some (Some i)
+  in
+  let f_child_oo = kid_to_oo f_child_int and
+      t_child_oo = kid_to_oo t_child_int in
+  let query_children_o = match query_children_int with
+    | 0xffff -> None
+    | i -> Some i
+  in
+  let all_seen_bool = (flags_int land 1) <> 0 and
+      query_counted_bool = (flags_int land 2) <> 0
+  in
+    {parent = parent_o;
+     f_child = f_child_oo; t_child = t_child_oo;
+     query_children = query_children_o; query_counted = query_counted_bool;
+     all_seen = all_seen_bool; ident = ident_arg}
+
+let next_dt_ident = ref 0
+
+let use_file = true
 
 let ident_to_node_table = Array.init 1024 (fun _ -> None)
 
+let nodes_fd = Unix.openfile "fuzzball.tree"
+  [Unix.O_RDWR; Unix.O_TRUNC; Unix.O_CREAT] 0o666
+
+let ident_to_node i =
+  if use_file then
+    ((let off = Unix.lseek nodes_fd (30 * (i-1)) Unix.SEEK_SET in
+	assert(off = 30 * (i-1)));
+     let buf = String.create 30 in
+     let len = Unix.read nodes_fd buf 0 30 in
+       assert(len = 30);
+       assert(String.sub buf 29 1 = "\n");
+       string_to_dt_node i (String.sub buf 0 29))
+  else
+    let i3 = i land 1023 and
+	i2 = (i asr 10) land 1023 and
+	i1 = i asr 20
+    in
+      match ident_to_node_table.(i1) with
+	| Some t2 ->
+	    (match t2.(i2) with
+	       | Some t3 ->
+		   string_to_dt_node i t3.(i3)
+	       | _ -> failwith "Node sub-table missing (t2)")
+	| None -> failwith "Node sub-table missing (t1)"
+
+let get_dt_node (dnr : dt_node_ref) : decision_tree_node =
+  ident_to_node dnr
+
+let ref_dt_node (n : decision_tree_node) : dt_node_ref =
+  n.ident
+
+let get_parent n =
+  match n.parent with
+    | None -> None
+    | Some nr -> Some (get_dt_node nr)
+
+let get_f_child n =
+  match n.f_child with
+    | None -> None
+    | Some None -> Some None
+    | Some (Some nr) -> Some (Some (get_dt_node nr))
+
+let get_t_child n =
+  match n.t_child with
+    | None -> None
+    | Some None -> Some None
+    | Some (Some nr) -> Some (Some (get_dt_node nr))
+
+let print_node chan n =
+  let kid_to_string mmn =
+    match mmn with
+      | None -> "unknown"
+      | Some None -> "none"
+      | Some(Some kid) -> string_of_int kid.ident
+  in
+    Printf.fprintf chan "%d: " n.ident;
+    Printf.fprintf chan "%s " (kid_to_string (get_f_child n));
+    Printf.fprintf chan "%s " (kid_to_string (get_t_child n));
+    Printf.fprintf chan "%s " (if n.all_seen then "*" else "?");
+    Printf.fprintf chan "%s " (kid_to_string (Some (get_parent n)));
+    Printf.fprintf chan "%s\n"
+      (match n.query_children with
+	 | None -> "[]"
+	 | Some k -> "[" ^ (string_of_int k) ^ "]")
+
+let update_dt_node n =
+  (* assert(n = string_to_dt_node n.ident (dt_node_to_string n)); *)
+  if use_file then
+    let i = n.ident in 
+      (let off = Unix.lseek nodes_fd (30 * (i-1)) Unix.SEEK_SET in
+	 assert(off = 30 * (i-1)));
+      let len = Unix.write nodes_fd (dt_node_to_string n ^ "\n") 0 30 in
+	assert(len = 30);
+  else
+    let i3 = n.ident land 1023 and
+	i2 = (n.ident asr 10) land 1023 and
+	i1 = n.ident asr 20
+    in
+      match ident_to_node_table.(i1) with
+	| Some t2 ->
+	    (match t2.(i2) with
+	       | Some t3 ->
+		   t3.(i3) <- dt_node_to_string n
+	      | _ -> failwith "Node sub-table missing (t2)")
+	| None -> failwith "Node sub-table missing (t1)"
+	  
 let new_dt_node the_parent =
   next_dt_ident := !next_dt_ident + 1;
   let i = !next_dt_ident in
@@ -37,32 +189,43 @@ let new_dt_node the_parent =
   let t3 = match t2.(i2) with
     | Some t -> t
     | None ->
-	let t = Array.init 1024 (fun _ -> None) in
+	let t = Array.init 1024 (fun _ -> "") in
 	  t2.(i2) <- Some t; t
   in
   let node =
-    {parent = the_parent;
+    {parent = (match the_parent with
+		 | None -> None
+		 | Some nr -> Some (ref_dt_node nr));
      f_child = None; t_child = None;
      query_children = None; query_counted = false;
      all_seen = false; ident = i}
   in
-    t3.(i3) <- Some node;
+    ignore(i3); ignore(t3);
+    update_dt_node node;
     node
 
-let ident_to_node i =
-  let i3 = i land 1023 and
-      i2 = (i asr 10) land 1023 and
-      i1 = i asr 20
-  in
-    match ident_to_node_table.(i1) with
-      | Some t2 ->
-	  (match t2.(i2) with
-	     | Some t3 ->
-		 (match t3.(i3) with
-		    | Some node -> node
-		    | _ -> failwith "Node missing (t3)")
-	     | _ -> failwith "Node sub-table missing (t2)")
-      | None -> failwith "Node sub-table missing (t1)"
+let put_parent n p =
+  n.parent <-
+    (match p with
+      | None -> None
+      | Some p' -> Some (ref_dt_node p'));
+  update_dt_node n
+	  
+let put_f_child n k =
+  n.f_child <-
+    (match k with
+       | None -> None
+       | Some None -> Some None
+       | Some (Some k') -> Some (Some (ref_dt_node k')));
+  update_dt_node n
+
+let put_t_child n k =
+  n.t_child <-
+    (match k with
+       | None -> None
+       | Some None -> Some None
+       | Some (Some k') -> Some (Some (ref_dt_node k')));
+  update_dt_node n
 
 (* This hash algorithm is FNV-1a,
    c.f. http://www.isthe.com/chongo/tech/comp/fnv/index.html *)
@@ -83,6 +246,7 @@ class binary_decision_tree = object(self)
 
   method init =
     root.query_children <- Some 0;
+    update_dt_node root;
     cur <- root;
     cur_query <- root;
     if !opt_trace_decision_tree then
@@ -102,19 +266,19 @@ class binary_decision_tree = object(self)
   method get_hist =
     let child_is kid n =
       match kid with
-	| Some (Some n') -> n' == n
+	| Some (Some n') -> n'.ident = n.ident
 	| _ -> false
     in
     let last_choice n p =
-      if child_is p.f_child n then
+      if child_is (get_f_child p) n then
 	false
-      else if child_is p.t_child n then
+      else if child_is (get_t_child p) n then
 	true
       else
 	failwith "Parent invariant failure in get_hist"
     in
     let rec loop n =
-      match n.parent with
+      match get_parent n with
 	| None -> []
 	| Some p -> (last_choice n p) :: loop p
     in
@@ -126,7 +290,7 @@ class binary_decision_tree = object(self)
 
   method private get_hist_queries =
     let kid n b =
-      match (n.f_child, n.t_child, b) with
+      match ((get_f_child n), (get_t_child n), b) with
 	| (Some(Some k), _, false) -> k
 	| (_, Some(Some k), true) -> k
 	| _ -> failwith "missing kid in get_hist_queries"
@@ -177,15 +341,15 @@ class binary_decision_tree = object(self)
     if !opt_trace_decision_tree then
       Printf.printf "DT: Adding %B child to %d\n" b cur.ident;
     assert(not cur.all_seen);
-    match (b, cur.f_child, cur.t_child) with
+    match (b, (get_f_child cur), (get_t_child cur)) with
       | (false, Some(Some kid), _)
       | (true,  _, Some(Some kid)) -> () (* already there *)
       | (false, None, _) ->
 	  let new_kid = new_dt_node (Some cur) in
-	    cur.f_child <- Some (Some new_kid)
+	    put_f_child cur (Some (Some new_kid))
       | (true,  _, None) ->
 	  let new_kid = new_dt_node (Some cur) in
-	    cur.t_child <- Some (Some new_kid)
+	    put_t_child cur (Some (Some new_kid))
       | (false, Some None, _)
       | (true,  _, Some None) ->
 	  failwith "Tried to extend an unsat branch"
@@ -205,14 +369,14 @@ class binary_decision_tree = object(self)
       if !opt_trace_decision_tree then
 	Printf.printf "DT: Finish internal nodes at %d (%B)\n" n.ident top;
       if n.query_children = None || top then
-	((match n.f_child with
+	((match get_f_child n with
 	    | Some(Some kid) -> finish_internal_nodes kid false
 	    | Some None -> ()
-	    | None -> n.f_child <- Some None);
-	 (match n.t_child with
+	    | None -> put_f_child n (Some None));
+	 (match get_t_child n with
 	    | Some(Some kid) -> finish_internal_nodes kid false
 	    | Some None -> ()
-	    | None -> n.t_child <- Some None);
+	    | None -> put_t_child n (Some None));
 	 self#maybe_mark_all_seen_node n)
     in
       if !opt_trace_decision_tree then
@@ -227,8 +391,10 @@ class binary_decision_tree = object(self)
 		  Printf.printf " -> %d" (k+1);
 		assert(k < !opt_query_branch_limit);
  		cur_query.query_children <- Some (k + 1);
+		update_dt_node cur_query;
 		cur.query_counted <- true
 	    | Some k -> ());
+	 update_dt_node cur;
 	 if !opt_trace_decision_tree then	
 	   Printf.printf "\n";
 	 match cur_query.query_children with 
@@ -248,7 +414,7 @@ class binary_decision_tree = object(self)
       (if !opt_trace_randomness then
 	 Printf.printf "Setting random state to %08x\n" h;
        randomness <- Random.State.make [|!opt_random_seed; h|]));
-    (match (b, cur.f_child, cur.t_child) with
+    (match (b, get_f_child cur, get_t_child cur) with
        | (false, Some(Some kid), _) -> cur <- kid
        | (true,  _, Some(Some kid)) -> cur <- kid
        | (false, None, _)
@@ -276,11 +442,11 @@ class binary_decision_tree = object(self)
       f
 
   method record_unsat b =
-    match (b, cur.f_child, cur.t_child) with
+    match (b, get_f_child cur, get_t_child cur) with
       | (false, None, _) ->
-	  cur.f_child <- Some None
+	  put_f_child cur (Some None)
       | (true,  _, None) ->
-	  cur.t_child <- Some None
+	  put_t_child cur (Some None)
       | (false, Some None, _)
       | (true,  _, Some None) -> () (* already recorded *)
       | (false, Some (Some _), _)
@@ -336,7 +502,7 @@ class binary_decision_tree = object(self)
       in
       if !opt_trace_decision_tree then	
 	Printf.printf "try_extend at %d\n" cur.ident;
-      match (cur.f_child, cur.t_child, limited) with
+      match (get_f_child cur, get_t_child cur, limited) with
 	| (Some(Some f_kid), Some(Some t_kid), _) ->
 	    (match (f_kid.all_seen, t_kid.all_seen) with
 	       | (true, true) -> 
@@ -391,22 +557,22 @@ class binary_decision_tree = object(self)
 	      (self#record_unsat b; (fn b))
     in
     if (random_bit_gen ()) then
-      try_branch false (trans_func false) cur.f_child
-	(fun _ -> try_branch true (trans_func true) cur.t_child
+      try_branch false (trans_func false) (get_f_child cur)
+	(fun _ -> try_branch true (trans_func true) (get_t_child cur)
 	   (fun _ -> failwith "Both branches unsat in try_extend"))
     else
-      try_branch true (trans_func true) cur.t_child
-	(fun _ -> try_branch false (trans_func false) cur.f_child
+      try_branch true (trans_func true) (get_t_child cur)
+	(fun _ -> try_branch false (trans_func false) (get_f_child cur)
 	   (fun _ -> failwith "Both branches unsat in try_extend"))
 
   method private mark_all_seen_node node =
     let mark n =
       (* check the invariant that a node can only be marked all_seen
 	 if all of its children are. *)
-      (match n.f_child with
+      (match get_f_child n with
 	 | Some(Some kid) -> assert(kid.all_seen);
 	 | _ -> ());
-      (match n.t_child with
+      (match get_t_child n with
 	 | Some(Some kid) ->
 	     if not kid.all_seen then
 	       (Printf.printf "all_seen invariant failure at node %d\n"
@@ -414,15 +580,16 @@ class binary_decision_tree = object(self)
 		self#print_tree stdout;
 	       assert(kid.all_seen))
 	 | _ -> ());
-      n.all_seen <- true
+      n.all_seen <- true;
+      update_dt_node n
     in
     let rec mark_internal_nodes n =
-      (match n.f_child with
+      (match get_f_child n with
 	 | Some(Some kid) when
 	     kid.query_children = None && not kid.all_seen ->
 	     mark_internal_nodes kid
 	 | _ -> ());
-      (match n.t_child with
+      (match get_t_child n with
 	 | Some(Some kid) when
 	     kid.query_children = None && not kid.all_seen ->
 	     mark_internal_nodes kid
@@ -435,11 +602,11 @@ class binary_decision_tree = object(self)
       else if n.query_children <> None && not top then
 	false
       else if
-	(match n.f_child with
+	(match get_f_child n with
 	   | Some(Some kid) -> internal_nodes_check kid false
 	   | _ -> true)
 	  &&
-	(match n.t_child with
+	(match get_t_child n with
 	   | Some(Some kid) -> internal_nodes_check kid false
 	   | _ -> true)
       then
@@ -451,16 +618,16 @@ class binary_decision_tree = object(self)
       match n.query_children with
 	| Some k -> n
 	| None ->
-	    match n.parent with
+	    match get_parent n with
 	      | Some p -> query_parent p
 	      | _ -> failwith "Missing query node parent"
     in
     let rec loop n = 
       mark n;
-      match n.parent with
+      match get_parent n with
 	| None -> ()
 	| Some p ->
-	    (match (p.all_seen, p.t_child, p.f_child) with
+	    (match (p.all_seen, (get_t_child p), (get_f_child p)) with
 	       | (false, Some(Some f_kid), Some(Some t_kid))
 		   when f_kid.all_seen && t_kid.all_seen ->
 		   loop p
@@ -490,12 +657,12 @@ class binary_decision_tree = object(self)
   method private maybe_mark_all_seen_node n =
     if !opt_trace_decision_tree then	
       Printf.printf "DT: maybe_mark_all_seen_node at %d\n" n.ident;
-    if (match n.f_child with
+    if (match get_f_child n with
 	  | None -> false
 	  | Some None -> true
 	  | Some(Some kid) -> kid.all_seen)
       &&
-	  (match n.t_child with
+	  (match get_t_child n with
 	     | None -> false
 	     | Some None -> true
 	     | Some(Some kid) -> kid.all_seen)
@@ -507,10 +674,10 @@ class binary_decision_tree = object(self)
   method try_again_p = not root.all_seen
 
   method check_last_choices =
-    match cur.parent with
+    match get_parent cur with
       | None -> failwith "Missing parent in check_last_choices"
       | Some p ->
-	  (match (p.f_child, p.t_child) with
+	  (match ((get_f_child p), (get_t_child p)) with
 	     | (Some(Some _), Some (Some _)) -> None
 	     | (Some(Some _), Some None) -> Some false
 	     | (Some None, Some(Some _)) -> Some true
@@ -522,7 +689,7 @@ class binary_decision_tree = object(self)
 
   method have_choice =
     let result = 
-      match (cur.f_child, cur.t_child) with
+      match ((get_f_child cur), (get_t_child cur)) with
 	| (None, _)
 	| (_, None)
 	  -> true
@@ -551,10 +718,10 @@ class binary_decision_tree = object(self)
 
   method cur_can_reach_ident i =
     let rec loop n =
-      match n.parent with
+      match get_parent n with
 	| None -> None
 	| Some p when p == cur ->
-	    (match (cur.f_child, cur.t_child) with
+	    (match ((get_f_child cur), (get_t_child cur)) with
 	       | (Some Some f_kid, _) when f_kid == n -> Some false
 	       | (_, Some Some t_kid) when t_kid == n -> Some true
 	       | _ -> 
@@ -569,30 +736,12 @@ class binary_decision_tree = object(self)
     !next_dt_ident    
 
   method print_tree chan =
-    let kid_to_string mmn =
-      match mmn with
-	| None -> "unknown"
-	| Some None -> "none"
-	| Some(Some kid) -> string_of_int kid.ident
-    in
-    let print_node n =
-      Printf.fprintf chan "%d: " n.ident;
-      Printf.fprintf chan "%s " (kid_to_string n.f_child);
-      Printf.fprintf chan "%s " (kid_to_string n.t_child);
-      Printf.fprintf chan "%s " (if n.all_seen then "*" else "?");
-      Printf.fprintf chan "%s " (kid_to_string (Some n.parent));
-      Printf.fprintf chan "%s\n"
-	(match n.query_children with
-	   | None -> "[]"
-	   | Some k -> "[" ^ (string_of_int k) ^ "]");
-      
-    in
     let rec loop n =
-      print_node n;
-      (match n.f_child with
+      print_node chan n;
+      (match get_f_child n with
 	 | Some(Some kid) -> loop kid
 	 | _ -> ());
-      (match n.t_child with
+      (match get_t_child n with
 	 | Some(Some kid) -> loop kid
 	 | _ -> ());
     in
