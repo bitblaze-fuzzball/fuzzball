@@ -176,33 +176,35 @@ let update_dt_node n =
 let new_dt_node the_parent =
   next_dt_ident := !next_dt_ident + 1;
   let i = !next_dt_ident in
-  let i3 = i land 1023 and
-      i2 = (i asr 10) land 1023 and
-      i1 = i asr 20
-  in
-  let t2 = match ident_to_node_table.(i1) with
-    | Some t -> t
-    | None ->
-	let t = Array.init 1024 (fun _ -> None) in
-	  ident_to_node_table.(i1) <- Some t; t
-  in
-  let t3 = match t2.(i2) with
-    | Some t -> t
-    | None ->
-	let t = Array.init 1024 (fun _ -> "") in
-	  t2.(i2) <- Some t; t
-  in
-  let node =
-    {parent = (match the_parent with
-		 | None -> None
-		 | Some nr -> Some (ref_dt_node nr));
-     f_child = None; t_child = None;
-     query_children = None; query_counted = false;
-     all_seen = false; ident = i}
-  in
-    ignore(i3); ignore(t3);
-    update_dt_node node;
-    node
+    if not use_file then
+      (let i3 = i land 1023 and
+	   i2 = (i asr 10) land 1023 and
+	   i1 = i asr 20
+       in
+       let t2 = match ident_to_node_table.(i1) with
+	 | Some t -> t
+	 | None ->
+	     let t = Array.init 1024 (fun _ -> None) in
+	       ident_to_node_table.(i1) <- Some t; t
+       in
+       let t3 = match t2.(i2) with
+	 | Some t -> t
+	 | None ->
+	     let t = Array.init 1024 (fun _ -> "") in
+	       t2.(i2) <- Some t; t
+       in
+	 ignore(i3);
+	 ignore(t3));
+    let node =
+      {parent = (match the_parent with
+		   | None -> None
+		   | Some nr -> Some (ref_dt_node nr));
+       f_child = None; t_child = None;
+       query_children = None; query_counted = false;
+       all_seen = false; ident = i}
+    in
+      update_dt_node node;
+      node
 
 let put_parent n p =
   n.parent <-
