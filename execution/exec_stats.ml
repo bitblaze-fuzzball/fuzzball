@@ -37,3 +37,12 @@ let check_memory_usage (fm:Fragment_machine.fragment_machine) trans_cache =
     Printf.printf "/proc size is %s\n" (check_memory_size ());
     flush stdout;
     Gc.print_stat stdout
+
+let final_check_memory_usage () =
+  Gc.full_major ();
+  Gc.compact ();
+  Printf.printf "After final collection:\n";
+  Printf.printf "/proc size is %s\n" (check_memory_size ());
+  flush stdout;
+  Gc.print_stat stdout
+  

@@ -76,6 +76,8 @@ let fuzz start_eip fuzz_start_eip end_eips
     (Printf.printf "Initial registers:\n";
      fm#print_x86_regs);
   flush stdout;
+  if !opt_gc_stats then
+    at_exit final_check_memory_usage;
   (if start_eip <> fuzz_start_eip then
      (if !opt_trace_setup then Printf.printf "Pre-fuzzing execution...\n";
       flush stdout;
