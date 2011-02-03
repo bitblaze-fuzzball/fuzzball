@@ -95,6 +95,7 @@ let opt_omit_pf_af = ref false
 let opt_symbolic_syscall_error = ref None
 let opt_chroot_path = ref None
 let opt_finish_on_nonfalse_cond = ref false
+let opt_total_timeout = ref None
 
 let opt_symbolic_memory = ref false
 let opt_zero_memory = ref false

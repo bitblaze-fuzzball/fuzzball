@@ -241,6 +241,9 @@ let explore_cmdline_opts =
      "SECS Output decision tree every SECS seconds");
     ("-decision-tree-use-file", Arg.Set(opt_decision_tree_use_file),
      " Store the decision tree in a file (default: in memory)");
+    ("-total-timeout", Arg.String
+       (fun s -> opt_total_timeout := Some (float_of_string s)),
+     "SECS Finish exploration after a given time has elapsed");
   ]
 
 
