@@ -31,6 +31,7 @@ val opt_query_branch_limit : int ref
 val opt_random_seed : int ref
 val opt_trace_decision_tree : bool ref
 val opt_save_decision_tree_interval : float option ref
+val opt_decision_tree_use_file : bool ref
 val opt_trace_randomness : bool ref
 val opt_measure_influence_derefs : bool ref
 val opt_measure_influence_reploops : bool ref

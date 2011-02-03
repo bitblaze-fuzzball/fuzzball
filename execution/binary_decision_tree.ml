@@ -83,19 +83,27 @@ let string_to_dt_node ident_arg s =
 
 let next_dt_ident = ref 0
 
-let use_file = true
-
 let ident_to_node_table = Array.init 1024 (fun _ -> None)
 
-let nodes_fd = Unix.openfile "fuzzball.tree"
-  [Unix.O_RDWR; Unix.O_TRUNC; Unix.O_CREAT] 0o666
+let nodes_fd_or = ref None
+
+let nodes_fd () =
+  assert(!opt_decision_tree_use_file);
+  match !nodes_fd_or with
+    | Some fd -> fd
+    | None ->
+	let fd = Unix.openfile "fuzzball.tree"
+	  [Unix.O_RDWR; Unix.O_TRUNC; Unix.O_CREAT] 0o666
+	in
+	  nodes_fd_or := Some fd;
+	  fd
 
 let ident_to_node i =
-  if use_file then
-    ((let off = Unix.lseek nodes_fd (30 * (i-1)) Unix.SEEK_SET in
+  if !opt_decision_tree_use_file then
+    ((let off = Unix.lseek (nodes_fd ()) (30 * (i-1)) Unix.SEEK_SET in
 	assert(off = 30 * (i-1)));
      let buf = String.create 30 in
-     let len = Unix.read nodes_fd buf 0 30 in
+     let len = Unix.read (nodes_fd ()) buf 0 30 in
        assert(len = 30);
        assert(String.sub buf 29 1 = "\n");
        string_to_dt_node i (String.sub buf 0 29))
@@ -154,11 +162,11 @@ let print_node chan n =
 
 let update_dt_node n =
   (* assert(n = string_to_dt_node n.ident (dt_node_to_string n)); *)
-  if use_file then
+  if !opt_decision_tree_use_file then
     let i = n.ident in 
-      (let off = Unix.lseek nodes_fd (30 * (i-1)) Unix.SEEK_SET in
+      (let off = Unix.lseek (nodes_fd ()) (30 * (i-1)) Unix.SEEK_SET in
 	 assert(off = 30 * (i-1)));
-      let len = Unix.write nodes_fd (dt_node_to_string n ^ "\n") 0 30 in
+      let len = Unix.write (nodes_fd ()) (dt_node_to_string n ^ "\n") 0 30 in
 	assert(len = 30);
   else
     let i3 = n.ident land 1023 and
@@ -176,7 +184,7 @@ let update_dt_node n =
 let new_dt_node the_parent =
   next_dt_ident := !next_dt_ident + 1;
   let i = !next_dt_ident in
-    if not use_file then
+    if not !opt_decision_tree_use_file then
       (let i3 = i land 1023 and
 	   i2 = (i asr 10) land 1023 and
 	   i1 = i asr 20

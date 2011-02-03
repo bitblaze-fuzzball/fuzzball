@@ -239,6 +239,8 @@ let explore_cmdline_opts =
      Arg.String (fun s -> opt_save_decision_tree_interval
 		   := Some (float_of_string s)),
      "SECS Output decision tree every SECS seconds");
+    ("-decision-tree-use-file", Arg.Set(opt_decision_tree_use_file),
+     " Store the decision tree in a file (default: in memory)");
   ]
 
 
