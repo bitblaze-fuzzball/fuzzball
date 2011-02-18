@@ -162,6 +162,9 @@ let print_node chan n =
 
 let update_dt_node n =
   (* assert(n = string_to_dt_node n.ident (dt_node_to_string n)); *)
+  if !opt_trace_decision_tree then
+    (Printf.printf "DT: Writing back node %d\n" n.ident;
+     print_node stdout n);
   if !opt_decision_tree_use_file then
     let i = n.ident in 
       (let off = Unix.lseek (nodes_fd ()) (30 * (i-1)) Unix.SEEK_SET in
@@ -246,7 +249,7 @@ let hash_round h x =
 class binary_decision_tree = object(self)
   inherit Decision_tree.decision_tree
 
-  val root = new_dt_node None
+  val root_ident = (new_dt_node None).ident
   val mutable cur = new_dt_node None (* garbage *)
   val mutable cur_query = new_dt_node None (* garbage *)
   val mutable depth = 0
@@ -255,17 +258,18 @@ class binary_decision_tree = object(self)
   val mutable randomness = Random.State.make [|!opt_random_seed; 0|]
 
   method init =
-    root.query_children <- Some 0;
-    update_dt_node root;
-    cur <- root;
-    cur_query <- root;
-    if !opt_trace_decision_tree then
-      Printf.printf "DT: Initialized.\n";
-    (self :> Decision_tree.decision_tree)
+    let root = get_dt_node root_ident in
+      root.query_children <- Some 0;
+      update_dt_node root;
+      cur <- root;
+      cur_query <- root;
+      if !opt_trace_decision_tree then
+	Printf.printf "DT: Initialized.\n";
+      (self :> Decision_tree.decision_tree)
 
   method reset =
-    cur <- root;
-    cur_query <- root;
+    cur <- get_dt_node root_ident;
+    cur_query <- get_dt_node root_ident;
     depth <- 0;
     path_hash <- Int64.to_int32 0x811c9dc5L;
     iteration_count <- iteration_count + 1;
@@ -328,7 +332,7 @@ class binary_decision_tree = object(self)
 	    outer_loop (ql :: l) n' h'
     in
     let hist = List.rev self#get_hist in
-    List.rev (outer_loop [] root hist)
+    List.rev (outer_loop [] (get_dt_node root_ident) hist)
 
   method get_hist_str_queries = 
     String.concat "-"
@@ -519,7 +523,9 @@ class binary_decision_tree = object(self)
 		   if cur.all_seen then
 		     known (random_bit_gen ())
 		   else
-		     failwith "all_seen invariant failure"
+		     (Printf.printf "Bug: kids %d and %d are all_seen, but not parent %d\n"
+			f_kid.ident t_kid.ident cur.ident;
+		      failwith "all_seen invariant failure")
 	       | (false, true) -> known false
 	       | (true, false) -> known true
 	       | (false, false) -> known (random_bit_gen ()))
@@ -585,12 +591,14 @@ class binary_decision_tree = object(self)
       (match get_t_child n with
 	 | Some(Some kid) ->
 	     if not kid.all_seen then
-	       (Printf.printf "all_seen invariant failure at node %d\n"
-		  n.ident;
+	       (Printf.printf "all_seen invariant failure: parent %d is all seen, but not true child %d%!\n"
+		  n.ident kid.ident;
 		self#print_tree stdout;
 	       assert(kid.all_seen))
 	 | _ -> ());
       n.all_seen <- true;
+      if !opt_trace_decision_tree then	
+	Printf.printf "Marking node %d as all_seen\n" n.ident;
       update_dt_node n
     in
     let rec mark_internal_nodes n =
@@ -681,7 +689,7 @@ class binary_decision_tree = object(self)
 
   method mark_all_seen = self#mark_all_seen_node cur
 
-  method try_again_p = not root.all_seen
+  method try_again_p = not (get_dt_node root_ident).all_seen
 
   method check_last_choices =
     match get_parent cur with
@@ -755,5 +763,5 @@ class binary_decision_tree = object(self)
 	 | Some(Some kid) -> loop kid
 	 | _ -> ());
     in
-      loop root
+      loop (get_dt_node root_ident)
 end
