@@ -478,7 +478,10 @@ object(self)
   method get_pgrp =
     match proc_identities with
       | Some (_, _, pgrp, _) -> pgrp
-      | None -> failwith "OCaml has no getpgrp()"
+      | None ->
+	  (* Was: failwith "OCaml has no getpgrp()". This approximation
+	     may work for at least some programs. *)
+	  Unix.getpid ();
 
   method get_sid =
     match proc_identities with
@@ -737,6 +740,11 @@ object(self)
     store_word buf 4 0xffffffffL; (* infinity *)
     put_reg R_EAX 0L (* success *)
 
+  method sys_setrlimit resource rlim =
+    ignore(resource);
+    ignore(rlim);
+    put_reg R_EAX 0L (* success *)
+
   method sys_getgid () = 
     put_reg R_EAX (Int64.of_int (Unix.getgid ()))
 
@@ -757,6 +765,17 @@ object(self)
       store_word egid_ptr 0 egid;
       store_word sgid_ptr 0 sgid;
       put_reg R_EAX 0L (* success *)
+
+  method sys_getgroups32 size list =
+    let oc_groups = Unix.getgroups () in
+    let len = Array.length oc_groups in
+      if size <> 0 && size < len then
+	self#put_errno Unix.ERANGE	
+      else
+	(for i = 0 to len - 1 do
+	   store_word list i (Int64.of_int (oc_groups.(i)))
+	 done;
+	 put_reg R_EAX (Int64.of_int len))
 
   method sys_getuid () = 
     put_reg R_EAX (Int64.of_int (Unix.getuid ()))
@@ -992,6 +1011,13 @@ object(self)
 	put_reg R_EAX 0L
     with
       | Unix.Unix_error(err, _, _) -> self#put_errno err
+
+  method sys_mincore addr length vec =
+    for i = 0 to (length / 4096) - 1 do
+      (* Say everything is present *)
+      fm#store_byte_idx addr i 1
+    done;
+    put_reg R_EAX 0L
 
   method sys_mkdir path mode =
     try
@@ -1246,6 +1272,11 @@ object(self)
 	store_word oldbuf 8 0L; (* restorer *)
 	store_word oldbuf 12 mask_low;
 	store_word oldbuf 12 mask_high);
+    put_reg R_EAX 0L; (* success *)
+
+  method sys_sigaltstack new_stack_t old_stack_t =
+    if old_stack_t <> 0L then
+      raise (UnhandledSysCall("Query in sigaltstack"));
     put_reg R_EAX 0L; (* success *)
 
   method sys_rt_sigprocmask how newset oldset setlen =
@@ -1709,7 +1740,12 @@ object(self)
 	 | 74 -> (* sethostname *)
 	     raise (UnhandledSysCall( "Unhandled Linux system call sethostname (74)"))
 	 | 75 -> (* setrlimit *)
-	     raise (UnhandledSysCall( "Unhandled Linux system call setrlimit (75)"))
+	     let (ebx, ecx) = read_2_regs () in
+	     let resource = Int64.to_int ebx and
+		 rlim = ecx in
+	       if !opt_trace_syscalls then
+		 Printf.printf "setrlimit(%d, 0x%08Lx)" resource rlim;
+	       self#sys_setrlimit resource rlim
 	 | 76 -> (* getrlimit *)
 	     raise (UnhandledSysCall( "Unhandled Linux system call getrlimit (76)"))
 	 | 77 -> (* getrusage *)
@@ -2153,7 +2189,13 @@ object(self)
 	 | 185 -> (* capset *)
 	     raise (UnhandledSysCall( "Unhandled Linux system call capset (185)"))
 	 | 186 -> (* sigaltstack *)
-	     raise (UnhandledSysCall( "Unhandled Linux system call sigaltstack (186)"))
+	     let (ebx, ecx) = read_2_regs () in
+	     let new_stack_t = ebx and
+		 old_stack_t = ecx in
+	       if !opt_trace_syscalls then
+		 Printf.printf "sigaltstack(0x%08Lx, 0x%08Lx)"
+		   new_stack_t old_stack_t;
+	       self#sys_sigaltstack new_stack_t old_stack_t
 	 | 187 -> (* sendfile *)
 	     raise (UnhandledSysCall( "Unhandled Linux system call sendfile (187)"))
 	 | 188 -> (* getpmsg *)
@@ -2231,7 +2273,12 @@ object(self)
 	 | 204 -> (* setregid32 *)
 	     raise (UnhandledSysCall( "Unhandled Linux system call setregid32 (204)"))
 	 | 205 -> (* getgroups32 *)
-	     raise (UnhandledSysCall( "Unhandled Linux system call getgroups32 (205)"))
+	     let (ebx, ecx) = read_2_regs () in
+	     let size = Int64.to_int ebx and
+		 list = ecx in
+	       if !opt_trace_syscalls then
+		 Printf.printf "getgroups32(%d, 0x%08Lx)" size list;
+	       self#sys_getgroups32 size list
 	 | 206 -> (* setgroups32 *)
 	     raise (UnhandledSysCall( "Unhandled Linux system call setgroups32 (206)"))
 	 | 207 -> (* fchown32 *)
@@ -2285,7 +2332,13 @@ object(self)
 	 | 217 -> (* pivot_root *)
 	     raise (UnhandledSysCall( "Unhandled Linux system call pivot_root (217)"))
 	 | 218 -> (* mincore *)
-	     raise (UnhandledSysCall( "Unhandled Linux system call mincore (218)"))
+	     let (ebx, ecx, edx) = read_3_regs () in
+	     let addr = ebx and
+		 length = Int64.to_int ecx and
+		 vec = edx in
+	       if !opt_trace_syscalls then
+		 Printf.printf "mincore(0x%08Lx, %d, 0x%08Lx)" addr length vec;
+	       self#sys_mincore addr length vec
 	 | 219 -> (* madvise *)
 	     raise (UnhandledSysCall( "Unhandled Linux system call madvise (219)"))
 	 | 220 -> (* getdents64 *)

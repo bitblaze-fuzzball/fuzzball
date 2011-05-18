@@ -63,6 +63,7 @@ object
   method sys_getdents : int -> int64 -> int -> unit
   method sys_getdents64 : int -> int64 -> int -> unit
   method sys_ugetrlimit : int -> int64 -> unit
+  method sys_setrlimit : int -> int64 -> unit
   method sys_getgid : unit -> unit
   method sys_getgid32 : unit -> unit
   method sys_getegid : unit -> unit
@@ -73,6 +74,7 @@ object
   method sys_geteuid32 : unit -> unit
   method sys_getresgid32 : int64 -> int64 -> int64 -> unit
   method sys_getresuid32 : int64 -> int64 -> int64 -> unit
+  method sys_getgroups32 : int -> int64 -> unit
   method sys_getpid : unit -> unit
   method sys_getpgid : int -> unit
   method sys_getpgrp : unit -> unit
@@ -86,6 +88,7 @@ object
   method sys_ioctl : int -> int64 -> int64 -> unit
   method sys_lseek : int -> int64 -> int -> unit
   method sys__llseek : int -> int64 -> int64 -> int -> unit
+  method sys_mincore : int64 -> int -> int64 -> unit
   method sys_mkdir : string -> Unix.file_perm -> unit
   method sys_mmap : int64 -> int64 -> int64 -> int64 -> int64 -> int -> unit
   method sys_mmap2 : int64 -> int64 -> int64 -> int64 -> int64 -> int -> unit
@@ -110,6 +113,7 @@ object
   method sys_set_thread_area : int64 -> unit
   method sys_set_tid_address : int64 -> unit
   method sys_rt_sigaction : int -> int64 -> int64 -> int -> unit
+  method sys_sigaltstack : int64 -> int64 -> unit
   method sys_rt_sigprocmask : int -> int64 -> int64 -> int -> unit
   method sys_socket : int -> int -> int -> unit
   method sys_stat : string -> int64 -> unit
