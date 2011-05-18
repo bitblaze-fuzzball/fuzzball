@@ -165,4 +165,7 @@ let fuzz start_eip fuzz_start_eip end_eips
     (*
      | e -> Printf.printf "Caught fatal error %s\n" (Printexc.to_string e);
 	 Printexc.print_backtrace stderr *) );
+  if !opt_coverage_stats then
+    Printf.printf "Final coverage: %d\n"
+      (Hashtbl.length trans_cache);
   periodic_stats fm true false
