@@ -32,7 +32,9 @@ let main argv =
     Exec_set_options.apply_cmdline_opts_late fm;
     let (start_addr, fuzz_start) = Exec_set_options.decide_start_addrs () in
       Exec_fuzzloop.fuzz start_addr fuzz_start
-	!Exec_options.opt_fuzz_end_addrs fm asmir_gamma (fun () -> ())
+	!Exec_options.opt_fuzz_end_addrs fm asmir_gamma
+	(fun () -> ()) (fun () -> ());
+      ()
 ;;
 
 main Sys.argv;;

@@ -67,7 +67,8 @@ let main argv =
     let (start_addr, fuzz_start) = Exec_set_options.decide_start_addrs () in
       Exec_fuzzloop.fuzz start_addr fuzz_start
 	!Exec_options.opt_fuzz_end_addrs fm asmir_gamma symbolic_init
-	(fun _ -> ())
+	(fun _ -> ());
+      ()
 ;;
 
 main Sys.argv;;
