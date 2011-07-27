@@ -71,6 +71,8 @@ OCAMLDOCFLAGS = -m avlsoper
 
 all: dncl
 
+bytecode: dcl top
+
 vine_lib_doc: all htdoc
 
 include $(OCAMLMAKEFILE)

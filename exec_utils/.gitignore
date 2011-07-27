@@ -1,3 +1,6 @@
 fuzzball
 test_insn
 vinegrind
+fuzzball.dbg
+test_insn.dbg
+vinegrind.dbg
