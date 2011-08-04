@@ -6,6 +6,26 @@
 module SRFM = Sym_region_frag_machine.SymRegionFragMachineFunctor
   (Symbolic_domain.SymbolicDomain)
 
+let parse_hex_to_bytes str =
+  if String.length str = 4 && (String.sub str 0 2) = "0x" then
+    [int_of_string str]
+  else if String.length str = 6 && (String.sub str 0 2) = "0x" then
+    let short = int_of_string str in
+    let b1 = short land 0xff and
+	b2 = (short lsr 8) land 0xff
+    in
+      [b1; b2] (* i.e., little endian *)
+  else if String.length str = 10 && (String.sub str 0 2) = "0x" then
+    let word = Int64.of_string str in
+    let b1 = Int64.to_int (Int64.logand word 0xffL) and
+	b2 = Int64.to_int (Int64.logand (Int64.shift_right word 8) 0xffL) and
+	b3 = Int64.to_int (Int64.logand (Int64.shift_right word 16) 0xffL) and
+	b4 = Int64.to_int (Int64.logand (Int64.shift_right word 24) 0xffL)
+    in
+      [b1; b2; b3; b4] (* i.e., little endian *)
+  else
+    failwith "Args should look like 0x90, 0xcafe, or 0xfeedface"
+
 let main argv = 
   let bytes_arg = ref [] in
     Arg.parse
@@ -14,13 +34,13 @@ let main argv =
 		  @ Exec_set_options.symbolic_state_cmdline_opts
 		  @ Options_solver.solver_cmdline_opts
 		  @ Exec_set_options.trace_replay_cmdline_opts))
-      (fun s -> bytes_arg := (int_of_string s) :: !bytes_arg)
+      (fun s -> bytes_arg := (parse_hex_to_bytes s) @ !bytes_arg)
       "test_insn [options]* 0xfe 0xed 0x42 ...\n";
     let dt = ((new Linear_decision_tree.linear_decision_tree)
 		:> Decision_tree.decision_tree) in
     let fm = ((new SRFM.sym_region_frag_machine dt)
 	      :> Fragment_machine.fragment_machine) in
-    let dl = Asmir.decls_for_arch Asmir.arch_i386 in
+    let dl = Asmir.decls_for_arch !Exec_options.opt_arch in
     let asmir_gamma = Asmir.gamma_create 
       (List.find (fun (i, s, t) -> s = "mem") dl) dl
     in
@@ -29,7 +49,7 @@ let main argv =
       Exec_set_options.apply_cmdline_opts_nonlinux fm;
       Options_solver.apply_solver_cmdline_opts fm;
       Exec_set_options.apply_cmdline_opts_late fm;
-      let bytes_l = List.map Char.chr (List.rev !bytes_arg) in
+      let bytes_l = List.map Char.chr !bytes_arg in
       let code_addr = 0x08048000L in
       let bytes_a = Array.of_list bytes_l in
 	Array.iteri

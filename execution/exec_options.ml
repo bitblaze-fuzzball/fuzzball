@@ -114,6 +114,7 @@ let opt_progress_interval = ref None
 let opt_final_pc = ref false
 let opt_solve_final_pc = ref false
 let opt_skip_untainted = ref false
+let opt_arch = ref Asmir.arch_i386
 
 let split_string char s =
   let delim_loc = String.index s char in

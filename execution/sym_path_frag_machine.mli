@@ -71,6 +71,7 @@ sig
     method init_prog : Vine.program -> unit
     method set_frag : Vine.program -> unit
     method concretize_misc : unit
+    method get_eip : int64
     method set_eip : int64 -> unit
     method run_eip_hooks : unit
     method on_missing_symbol : unit
@@ -79,8 +80,8 @@ sig
     method private on_missing_symbol_m :
       Granular_memory.GranularMemoryFunctor(D).granular_memory
       -> string -> unit
-    method make_x86_regs_zero : unit
-    method make_x86_regs_symbolic : unit
+    method make_regs_zero : unit
+    method make_regs_symbolic : unit
     method load_x86_user_regs : Temu_state.userRegs -> unit
     method print_x86_regs : unit
     method store_byte  : int64 -> D.t -> unit

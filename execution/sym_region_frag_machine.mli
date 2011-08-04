@@ -32,6 +32,7 @@ sig
   val sum_list : Vine.exp list -> Vine.exp 
 
   class sym_region_frag_machine : Decision_tree.decision_tree -> object
+    method get_eip : int64
     method set_eip : int64 -> unit
 
     method eval_addr_exp_region : Vine.exp -> (int option * int64)
@@ -104,8 +105,8 @@ sig
     method private on_missing_symbol_m :
       Granular_memory.GranularMemoryFunctor(D).granular_memory
       -> string -> unit
-    method make_x86_regs_zero : unit
-    method make_x86_regs_symbolic : unit
+    method make_regs_zero : unit
+    method make_regs_symbolic : unit
     method load_x86_user_regs : Temu_state.userRegs -> unit
     method print_x86_regs : unit
     method store_byte  : int64 -> D.t -> unit

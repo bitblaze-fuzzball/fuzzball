@@ -27,12 +27,26 @@ class virtual special_handler = object(self)
 end
 
 type register_name = 
+  (* VEX generic *)
+  | R_CC_OP | R_CC_DEP1 | R_CC_DEP2 | R_CC_NDEP
+  | R_IP_AT_SYSCALL | R_EMWARN
+  (* x86 *)
   | R_EBP | R_ESP | R_ESI | R_EDI | R_EIP | R_EAX | R_EBX | R_ECX | R_EDX
   | EFLAGSREST | R_CF | R_PF | R_AF | R_ZF | R_SF | R_OF
-  | R_CC_OP | R_CC_DEP1 | R_CC_DEP2 | R_CC_NDEP
-  | R_DFLAG | R_IDFLAG | R_ACFLAG | R_EMWARN
+  | R_DFLAG | R_IDFLAG | R_ACFLAG
   | R_LDT | R_GDT | R_CS | R_DS| R_ES | R_FS | R_GS | R_SS
-  | R_FTOP | R_FPROUND | R_FC3210 | R_SSEROUND | R_IP_AT_SYSCALL
+  | R_FTOP | R_FPROUND | R_FC3210 | R_SSEROUND 
+  (* ARM *)
+  | R0 | R1 |  R2 |  R3 |  R4 |  R5 |  R6 |  R7
+  | R8 | R9 | R10 | R11 | R12 | R13 | R14 | R15 | R15T
+  |  R_D0 |  R_D1 |  R_D2 |  R_D3 |  R_D4 |  R_D5 |  R_D6 |  R_D7
+  |  R_D8 |  R_D9 | R_D10 | R_D11 | R_D12 | R_D13 | R_D14 | R_D15
+  | R_D16 | R_D17 | R_D18 | R_D19 | R_D20 | R_D21 | R_D22 | R_D23
+  | R_D24 | R_D25 | R_D26 | R_D27 | R_D28 | R_D29 | R_D30 | R_D31
+  | R_CC
+  | R_QFLAG32 | R_GEFLAG0 | R_GEFLAG1 | R_GEFLAG2 | R_GEFLAG3
+  | R_TISTART | R_TILEN | R_NRADDR
+  | R_FPSCR | R_TPIDRURO | R_ITSTATE
 
 let reg_to_regstr reg = match reg with
   | R_EBP -> "R_EBP" | R_ESP -> "R_ESP" | R_ESI -> "R_ESI"
@@ -48,6 +62,26 @@ let reg_to_regstr reg = match reg with
   | R_ES -> "R_ES" | R_FS -> "R_FS" | R_GS -> "R_GS"| R_SS -> "R_SS"
   | R_FTOP -> "R_FTOP" | R_FPROUND -> "R_FPROUND" | R_FC3210  -> "R_FC3210"
   | R_SSEROUND -> "R_SSEROUND" | R_IP_AT_SYSCALL -> "R_IP_AT_SYSCALL"
+  | R0  ->  "R0" | R1  ->  "R1" |  R2 ->  "R2" | R3  -> "R3"
+  | R4  ->  "R4" | R5  ->  "R5" |  R6 ->  "R6" | R7  -> "R7"
+  | R8  ->  "R8" | R9  ->  "R9" | R10 -> "R10" | R11 -> "R11"
+  | R12 -> "R12" | R13 -> "R13" | R14 -> "R14" | R15 -> "R15"
+  | R15T -> "R15T"
+  | R_D0  -> "R_D0"  | R_D1  -> "R_D1"  | R_D2  -> "R_D2"  | R_D3  ->  "R_D3"
+  | R_D4  -> "R_D4"  | R_D5  -> "R_D5"  | R_D6  -> "R_D6"  | R_D7  ->  "R_D7"
+  | R_D8  -> "R_D8"  | R_D9  -> "R_D9"  | R_D10 -> "R_D10" | R_D11 -> "R_D11"
+  | R_D12 -> "R_D12" | R_D13 -> "R_D13" | R_D14 -> "R_D14" | R_D15 -> "R_D15"
+  | R_D16 -> "R_D16" | R_D17 -> "R_D17" | R_D18 -> "R_D18" | R_D19 -> "R_D19"
+  | R_D20 -> "R_D20" | R_D21 -> "R_D21" | R_D22 -> "R_D22" | R_D23 -> "R_D23"
+  | R_D24 -> "R_D24" | R_D25 -> "R_D25" | R_D26 -> "R_D26" | R_D27 -> "R_D27"
+  | R_D28 -> "R_D28" | R_D29 -> "R_D29" | R_D30 -> "R_D30" | R_D31 -> "R_D31"
+  | R_CC -> "R_CC" | R_QFLAG32 -> "R_QFLAG32"
+  | R_GEFLAG0 -> "R_GEFLAG0" | R_GEFLAG1 -> "R_GEFLAG1"
+  | R_GEFLAG2 -> "R_GEFLAG2" | R_GEFLAG3 -> "R_GEFLAG3"
+  | R_TISTART -> "R_TISTART" | R_TILEN -> "R_TILEN"
+  | R_NRADDR -> "R_NRADDR"
+  | R_FPSCR -> "R_FPSCR" | R_TPIDRURO -> "R_TPIDRURO"
+  | R_ITSTATE -> "R_ITSTATE"
 
 let regstr_to_reg s = match s with
   | "R_EBP" -> R_EBP | "R_ESP" -> R_ESP | "R_ESI" -> R_ESI
@@ -63,6 +97,26 @@ let regstr_to_reg s = match s with
   | "R_ES" -> R_ES | "R_FS" -> R_FS | "R_GS" -> R_GS| "R_SS" -> R_SS
   | "R_FTOP" -> R_FTOP | "R_FPROUND" -> R_FPROUND | "R_FC3210"  -> R_FC3210
   | "R_SSEROUND" -> R_SSEROUND | "R_IP_AT_SYSCALL" -> R_IP_AT_SYSCALL
+  | "R0"  ->  R0 | "R1"  ->  R1 |  "R2" ->  R2 | "R3"  -> R3
+  | "R4"  ->  R4 | "R5"  ->  R5 |  "R6" ->  R6 | "R7"  -> R7
+  | "R8"  ->  R8 | "R9"  ->  R9 | "R10" -> R10 | "R11" -> R11
+  | "R12" -> R12 | "R13" -> R13 | "R14" -> R14 | "R15" -> R15
+  | "R15T" -> R15T
+  | "R_D0"  -> R_D0  | "R_D1"  -> R_D1  | "R_D2"  -> R_D2  | "R_D3"  -> R_D3
+  | "R_D4"  -> R_D4  | "R_D5"  -> R_D5  | "R_D6"  -> R_D6  | "R_D7"  -> R_D7
+  | "R_D8"  -> R_D8  | "R_D9"  -> R_D9  | "R_D10" -> R_D10 | "R_D11" -> R_D11
+  | "R_D12" -> R_D12 | "R_D13" -> R_D13 | "R_D14" -> R_D14 | "R_D15" -> R_D15
+  | "R_D16" -> R_D16 | "R_D17" -> R_D17 | "R_D18" -> R_D18 | "R_D19" -> R_D19
+  | "R_D20" -> R_D20 | "R_D21" -> R_D21 | "R_D22" -> R_D22 | "R_D23" -> R_D23
+  | "R_D24" -> R_D24 | "R_D25" -> R_D25 | "R_D26" -> R_D26 | "R_D27" -> R_D27
+  | "R_D28" -> R_D28 | "R_D29" -> R_D29 | "R_D30" -> R_D30 | "R_D31" -> R_D31
+  | "R_CC" -> R_CC | "R_QFLAG32" -> R_QFLAG32
+  | "R_GEFLAG0" -> R_GEFLAG0 | "R_GEFLAG1" -> R_GEFLAG1
+  | "R_GEFLAG2" -> R_GEFLAG2 | "R_GEFLAG3" -> R_GEFLAG3
+  | "R_TISTART" -> R_TISTART | "R_TILEN" -> R_TILEN
+  | "R_NRADDR" -> R_NRADDR
+  | "R_FPSCR" -> R_FPSCR | "R_TPIDRURO" -> R_TPIDRURO
+  | "R_ITSTATE" -> R_ITSTATE
   | _ -> failwith ("Unrecognized register name " ^ s)
 
 module FragmentMachineFunctor =
@@ -181,16 +235,24 @@ struct
 	  else
 	    (Printf.printf "Saw new EIP 0x%08Lx\n" eip;
 	     Hashtbl.add unique_eips eip ())));
-    (* Libasmir.print_disasm_rawbytes Libasmir.Bfd_arch_i386 eip insn_bytes;
-       print_string "\n"; *)
+      (* Libasmir.print_disasm_rawbytes Libasmir.Bfd_arch_i386 eip insn_bytes;
+	 print_string "\n"; *)
       self#watchpoint
 
+    method get_eip =
+      match !opt_arch with
+	| a when a = Asmir.arch_i386 -> self#get_word_var R_EIP
+	| a when a = Asmir.arch_arm ->  self#get_word_var R15T
+	| _ -> failwith "Unexpected arch"
 
     method set_eip eip =
-      self#set_word_var R_EIP eip
+      match !opt_arch with
+	| a when a = Asmir.arch_i386 -> self#set_word_var R_EIP eip
+	| a when a = Asmir.arch_arm ->  self#set_word_var R15T eip
+	| _ -> failwith "Unexpected arch"
 
     method run_eip_hooks =
-      self#eip_hook (self#get_word_var R_EIP)
+      self#eip_hook (self#get_eip)
 
     method set_cjmp_heuristic
       (func:(int64 -> int64 -> int64 -> float -> bool option -> bool option))
@@ -221,7 +283,7 @@ struct
     method on_missing_symbol =
       self#on_missing_symbol_m (mem :> GM.granular_memory) "mem"
 
-    method make_x86_regs_zero =
+    method private make_x86_regs_zero =
       let reg r v =
 	self#set_int_var (Hashtbl.find reg_to_var r) v
       in
@@ -252,7 +314,34 @@ struct
 	reg R_IDFLAG (D.from_concrete_32 0L);
 	reg R_ACFLAG (D.from_concrete_32 0L);
 
-    method make_x86_regs_symbolic =
+    method private make_arm_regs_zero =
+      let reg r v =
+	self#set_int_var (Hashtbl.find reg_to_var r) v
+      in
+	reg R0   (D.from_concrete_32 0x00000000L);
+	reg R1   (D.from_concrete_32 0x00000000L);
+	reg R2   (D.from_concrete_32 0x00000000L);
+	reg R3   (D.from_concrete_32 0x00000000L);
+	reg R4   (D.from_concrete_32 0x00000000L);
+	reg R5   (D.from_concrete_32 0x00000000L);
+	reg R6   (D.from_concrete_32 0x00000000L);
+	reg R7   (D.from_concrete_32 0x00000000L);
+	reg R8   (D.from_concrete_32 0x00000000L);
+	reg R9   (D.from_concrete_32 0x00000000L);
+	reg R10  (D.from_concrete_32 0x00000000L);
+	reg R11  (D.from_concrete_32 0x00000000L);
+	reg R12  (D.from_concrete_32 0x00000000L);
+	reg R13  (D.from_concrete_32 0x00000000L);
+	reg R14  (D.from_concrete_32 0x00000000L);
+	reg R15T (D.from_concrete_32 0x00000000L)
+
+    method make_regs_zero =
+      match !opt_arch with
+	| a when a = Asmir.arch_i386 -> self#make_x86_regs_zero
+	| a when a = Asmir.arch_arm  -> self#make_arm_regs_zero
+	| _ -> failwith "Unsupported architecture"
+
+    method private make_x86_regs_symbolic =
       let reg r v =
 	self#set_int_var (Hashtbl.find reg_to_var r) v
       in
@@ -355,6 +444,33 @@ struct
 	self#store_byte_conc 0x6000003dL 0xf3; (* flags *)
 	self#store_byte_conc 0x6000003eL 0xfd; (* flags, limit high *)
 	self#store_byte_conc 0x6000003fL 0x7f; (* base high *)
+
+    method private make_arm_regs_symbolic =
+      let reg r v =
+	self#set_int_var (Hashtbl.find reg_to_var r) v
+      in
+	reg R0   (form_man#fresh_symbolic_32 "initial_r0");
+	reg R1   (form_man#fresh_symbolic_32 "initial_r1");
+	reg R2   (form_man#fresh_symbolic_32 "initial_r2");
+	reg R3   (form_man#fresh_symbolic_32 "initial_r3");
+	reg R4   (form_man#fresh_symbolic_32 "initial_r4");
+	reg R5   (form_man#fresh_symbolic_32 "initial_r5");
+	reg R6   (form_man#fresh_symbolic_32 "initial_r6");
+	reg R7   (form_man#fresh_symbolic_32 "initial_r7");
+	reg R8   (form_man#fresh_symbolic_32 "initial_r8");
+	reg R9   (form_man#fresh_symbolic_32 "initial_r9");
+	reg R10  (form_man#fresh_symbolic_32 "initial_r10");
+	reg R11  (form_man#fresh_symbolic_32 "initial_r11");
+	reg R12  (form_man#fresh_symbolic_32 "initial_r12");
+	reg R13  (form_man#fresh_symbolic_32 "initial_r13");
+	reg R14  (form_man#fresh_symbolic_32 "initial_r14");
+	reg R15T (form_man#fresh_symbolic_32 "initial_r15")
+
+    method make_regs_symbolic =
+      match !opt_arch with	
+	| a when a = Asmir.arch_i386 -> self#make_x86_regs_symbolic
+	| a when a = Asmir.arch_arm  -> self#make_arm_regs_symbolic
+	| _ -> failwith "Unsupported architecture"
 
     method load_x86_user_regs regs =
       self#set_word_var R_EAX (Int64.of_int32 regs.Temu_state.eax);
@@ -476,7 +592,7 @@ struct
       try
 	let v = V.VarHash.find reg_store var in
 	  (* if v = D.uninit then
-	    Printf.printf "Warning: read uninitialized register %s\n"
+	     Printf.printf "Warning: read uninitialized register %s\n"
 	     vname; *)
 	  v
       with
@@ -803,10 +919,10 @@ struct
 	| V.Cast(kind, ty, e) ->
 	    let (v1, ty1) = self#eval_int_exp_ty e in
 	      self#eval_cast kind ty v1 ty1
-	(* XXX move this to something like a special handler: *)
+		(* XXX move this to something like a special handler: *)
 	| V.Unknown("rdtsc") -> ((D.from_concrete_64 1L), V.REG_64) 
 	| _ -> failwith "Unsupported (or non-int) expr type in eval_int_exp_ty"
-	  
+	    
     method private eval_int_exp exp =
       let (v, _) = self#eval_int_exp_ty exp in
 	v
@@ -852,7 +968,7 @@ struct
 	    | None -> lab
 	    | Some sl ->
 		self#run_sl do_jump sl
-	      
+		  
     method run_sl do_jump sl =
       let jump lab =
 	if do_jump lab then
@@ -914,7 +1030,7 @@ struct
 		     if (!opt_print_callrets) then (
 		       if (Str.string_match
 			     (Str.regexp ".*\\(call\\|ret\\).*") s 0) then (
-			 let eip = self#get_word_var R_EIP in
+			 let eip = self#get_eip in
 			   Printf.printf "%s @ 0x%Lx\n" s eip
 		       );
 		     );
@@ -1076,13 +1192,13 @@ struct
 	match e with
 	  | V.Unknown(s) ->
 	      (try
-		(List.assoc s byte_ds, V.REG_8)
- 	      with Not_found -> try
-		(List.assoc s short_ds, V.REG_16)
- 	      with Not_found -> try
-		(List.assoc s word_ds, V.REG_32)
- 	      with Not_found ->
-		(List.assoc s long_ds, V.REG_16))
+		 (List.assoc s byte_ds, V.REG_8)
+ 	       with Not_found -> try
+		 (List.assoc s short_ds, V.REG_16)
+ 	       with Not_found -> try
+		 (List.assoc s word_ds, V.REG_32)
+ 	       with Not_found ->
+		 (List.assoc s long_ds, V.REG_16))
 	  | V.Constant(V.Int(V.REG_1, i)) ->
 	      (D.from_concrete_1 (Int64.to_int i)), V.REG_1
 	  | V.Constant(V.Int(V.REG_8, i)) ->
@@ -1166,7 +1282,7 @@ struct
       let read_addr addr =
 	try
 	  let v = self#load_word_conc addr in
-	  (v, Printf.sprintf "0x%08Lx" v)
+	    (v, Printf.sprintf "0x%08Lx" v)
 	with NotConcrete(s) -> (0L, "<symbolic " ^ (V.exp_to_string s) ^ ">")
       in
       let rec loop ebp =
@@ -1252,6 +1368,7 @@ class virtual fragment_machine = object
   method virtual set_frag : Vine.program -> unit
   method virtual concretize_misc : unit
   method virtual eip_hook : int64 -> unit
+  method virtual get_eip : int64
   method virtual set_eip : int64 -> unit
   method virtual run_eip_hooks : unit
   
@@ -1262,8 +1379,8 @@ class virtual fragment_machine = object
   method virtual on_missing_random : unit
   method virtual on_missing_symbol : unit
 
-  method virtual make_x86_regs_zero : unit
-  method virtual make_x86_regs_symbolic : unit
+  method virtual make_regs_zero : unit
+  method virtual make_regs_symbolic : unit
   method virtual load_x86_user_regs : Temu_state.userRegs -> unit
   method virtual print_x86_regs : unit
 

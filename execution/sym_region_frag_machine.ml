@@ -453,7 +453,7 @@ struct
 	  (Some 0, D.to_concrete_32 v)
 	with NotConcrete _ ->
 	  let e = D.to_symbolic_32 v in
-	  let eip = self#get_word_var R_EIP in
+	  let eip = self#get_eip in
 	    if !opt_trace_sym_addrs then
 	      Printf.printf "Symbolic address %s @ (0x%Lx)\n"
 		(V.exp_to_string e) eip;
@@ -642,15 +642,16 @@ struct
 	   | _ -> failwith "Unsupported type in memory move")
 
     method concretize_misc =
-      let var = Hashtbl.find reg_to_var R_DFLAG in
-      let d = self#get_int_var var in
-	try ignore(D.to_concrete_32 d)
-	with NotConcrete _ ->
-	  let e = D.to_symbolic_32 d in
-	    if e <> V.Unknown("uninit") then
-	      self#set_int_var var
-		(D.from_concrete_32 
-		   (self#concretize V.REG_32 e))
+      if !opt_arch = Asmir.arch_i386 then
+	let var = Hashtbl.find reg_to_var R_DFLAG in
+	let d = self#get_int_var var in
+	  try ignore(D.to_concrete_32 d)
+	  with NotConcrete _ ->
+	    let e = D.to_symbolic_32 d in
+	      if e <> V.Unknown("uninit") then
+		self#set_int_var var
+		  (D.from_concrete_32 
+		     (self#concretize V.REG_32 e))
 
     method make_sink_region varname size =
       self#add_sink_region

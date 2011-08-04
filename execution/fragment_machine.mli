@@ -8,12 +8,26 @@ class virtual special_handler : object
 end
 
 type register_name = 
+  (* VEX generic *)
+  | R_CC_OP | R_CC_DEP1 | R_CC_DEP2 | R_CC_NDEP
+  | R_IP_AT_SYSCALL | R_EMWARN
+  (* x86 *)
   | R_EBP | R_ESP | R_ESI | R_EDI | R_EIP | R_EAX | R_EBX | R_ECX | R_EDX
   | EFLAGSREST | R_CF | R_PF | R_AF | R_ZF | R_SF | R_OF
-  | R_CC_OP | R_CC_DEP1 | R_CC_DEP2 | R_CC_NDEP
-  | R_DFLAG | R_IDFLAG | R_ACFLAG | R_EMWARN
+  | R_DFLAG | R_IDFLAG | R_ACFLAG
   | R_LDT | R_GDT | R_CS | R_DS| R_ES | R_FS | R_GS | R_SS
-  | R_FTOP | R_FPROUND | R_FC3210 | R_SSEROUND | R_IP_AT_SYSCALL
+  | R_FTOP | R_FPROUND | R_FC3210 | R_SSEROUND 
+  (* ARM *)
+  | R0 | R1 |  R2 |  R3 |  R4 |  R5 |  R6 |  R7
+  | R8 | R9 | R10 | R11 | R12 | R13 | R14 | R15 | R15T
+  |  R_D0 |  R_D1 |  R_D2 |  R_D3 |  R_D4 |  R_D5 |  R_D6 |  R_D7
+  |  R_D8 |  R_D9 | R_D10 | R_D11 | R_D12 | R_D13 | R_D14 | R_D15
+  | R_D16 | R_D17 | R_D18 | R_D19 | R_D20 | R_D21 | R_D22 | R_D23
+  | R_D24 | R_D25 | R_D26 | R_D27 | R_D28 | R_D29 | R_D30 | R_D31
+  | R_CC
+  | R_QFLAG32 | R_GEFLAG0 | R_GEFLAG1 | R_GEFLAG2 | R_GEFLAG3
+  | R_TISTART | R_TILEN | R_NRADDR
+  | R_FPSCR | R_TPIDRURO | R_ITSTATE
 
 val reg_to_regstr : register_name -> string
 val regstr_to_reg : string -> register_name
@@ -26,6 +40,7 @@ sig
     method set_frag : Vine.program -> unit
     method concretize_misc : unit
     method eip_hook : int64 -> unit
+    method get_eip : int64
     method set_eip : int64 -> unit
     method run_eip_hooks : unit
 
@@ -41,8 +56,8 @@ sig
     method on_missing_random : unit
     method on_missing_symbol : unit
 
-    method make_x86_regs_zero : unit
-    method make_x86_regs_symbolic : unit
+    method make_regs_zero : unit
+    method make_regs_symbolic : unit
     method load_x86_user_regs : Temu_state.userRegs -> unit
     method print_x86_regs : unit
 
@@ -249,6 +264,7 @@ class virtual fragment_machine : object
   method virtual set_frag : Vine.program -> unit
   method virtual concretize_misc : unit
   method virtual eip_hook : int64 -> unit
+  method virtual get_eip : int64
   method virtual set_eip : int64 -> unit
   method virtual run_eip_hooks : unit
   
@@ -259,8 +275,8 @@ class virtual fragment_machine : object
   method virtual on_missing_random : unit
   method virtual on_missing_symbol : unit
 
-  method virtual make_x86_regs_zero : unit
-  method virtual make_x86_regs_symbolic : unit
+  method virtual make_regs_zero : unit
+  method virtual make_regs_symbolic : unit
   method virtual load_x86_user_regs : Temu_state.userRegs -> unit
   method virtual print_x86_regs : unit
 

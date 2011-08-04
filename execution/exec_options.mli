@@ -110,6 +110,7 @@ val opt_progress_interval : int64 option ref
 val opt_final_pc : bool ref
 val opt_solve_final_pc : bool ref
 val opt_skip_untainted : bool ref
+val opt_arch : Asmir.arch ref
 
 val split_string : char -> string -> (string * string)
 val add_delimited_pair :

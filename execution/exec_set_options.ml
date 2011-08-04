@@ -269,6 +269,12 @@ let fuzzball_cmdline_opts =
 
 let cmdline_opts =
   [
+    ("-arch", Arg.String
+       (fun s -> match s with
+	  | "i386"|"x86" -> opt_arch := Asmir.arch_i386
+	  | "arm" -> opt_arch := Asmir.arch_arm
+	  | _ -> failwith "Unrecognized -arch"),
+     "arch x86 (default), arm");
     ("-translation-cache-size", Arg.String
        (fun s -> opt_translation_cache_size := Some (int_of_string s)),
      "N Save translations of at most N instructions");
@@ -439,9 +445,9 @@ let apply_cmdline_opts_early (fm : Fragment_machine.fragment_machine) dl =
 	   (eip, s, (Vine_parser.parse_exp_from_string dl s)))
 	!opt_string_tracepoint_strings;
   if !opt_symbolic_regs then
-    fm#make_x86_regs_symbolic
+    fm#make_regs_symbolic
   else
-    fm#make_x86_regs_zero;
+    fm#make_regs_zero;
   fm#add_special_handler
     ((new Special_handlers.trap_special_nonhandler fm)
      :> Fragment_machine.special_handler);

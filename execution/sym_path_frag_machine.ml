@@ -314,11 +314,11 @@ struct
 	| Some h -> h eip t1 t2 (dt#random_float) dir
 
     method private cjmp_choose targ1 targ2 =
-      let eip = self#get_word_var R_EIP in
+      let eip = self#get_eip in
 	(self#call_cjmp_heuristic eip targ1 targ2 None)
 
     method eval_cjmp exp targ1 targ2 =
-      let eip = self#get_word_var R_EIP in
+      let eip = self#get_eip in
       let v = form_man#simplify1 (self#eval_int_exp exp) in
       let (is_conc, result) =
 	try (true, (D.to_concrete_1 v) = 1)
@@ -357,7 +357,7 @@ struct
 	with
 	    NotConcrete _ ->
 	      let e = (D.to_symbolic_32 v) in
-	      let eip = self#get_word_var R_EIP in
+	      let eip = self#get_eip in
 		if !opt_trace_sym_addrs then
 		  Printf.printf "Symbolic address %s @ (0x%Lx)\n"
 		    (V.exp_to_string e) eip;

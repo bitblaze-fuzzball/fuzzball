@@ -52,7 +52,7 @@ let main argv =
        ((srfm :> FM.fragment_machine),
 	(im :> Exec_no_influence.influence_manager)))
   in
-  let dl = Asmir.decls_for_arch Asmir.arch_i386 in
+  let dl = Asmir.decls_for_arch !Exec_options.opt_arch in
   let asmir_gamma = Asmir.gamma_create 
     (List.find (fun (i, s, t) -> s = "mem") dl) dl
   in
