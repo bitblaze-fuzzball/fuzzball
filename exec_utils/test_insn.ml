@@ -34,7 +34,7 @@ let main argv =
 		  @ Exec_set_options.symbolic_state_cmdline_opts
 		  @ Options_solver.solver_cmdline_opts
 		  @ Exec_set_options.trace_replay_cmdline_opts))
-      (fun s -> bytes_arg := (parse_hex_to_bytes s) @ !bytes_arg)
+      (fun s -> bytes_arg := !bytes_arg @ (parse_hex_to_bytes s))
       "test_insn [options]* 0xfe 0xed 0x42 ...\n";
     let dt = ((new Linear_decision_tree.linear_decision_tree)
 		:> Decision_tree.decision_tree) in
