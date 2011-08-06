@@ -30,9 +30,11 @@ type register_name =
   (* VEX generic *)
   | R_CC_OP | R_CC_DEP1 | R_CC_DEP2 | R_CC_NDEP
   | R_IP_AT_SYSCALL | R_EMWARN
+  (* Common to x86 and ARM: *)
+  | R_CF | R_ZF
   (* x86 *)
   | R_EBP | R_ESP | R_ESI | R_EDI | R_EIP | R_EAX | R_EBX | R_ECX | R_EDX
-  | EFLAGSREST | R_CF | R_PF | R_AF | R_ZF | R_SF | R_OF
+  | EFLAGSREST | R_PF | R_AF | R_SF | R_OF
   | R_DFLAG | R_IDFLAG | R_ACFLAG
   | R_LDT | R_GDT | R_CS | R_DS| R_ES | R_FS | R_GS | R_SS
   | R_FTOP | R_FPROUND | R_FC3210 | R_SSEROUND 
@@ -43,7 +45,7 @@ type register_name =
   |  R_D8 |  R_D9 | R_D10 | R_D11 | R_D12 | R_D13 | R_D14 | R_D15
   | R_D16 | R_D17 | R_D18 | R_D19 | R_D20 | R_D21 | R_D22 | R_D23
   | R_D24 | R_D25 | R_D26 | R_D27 | R_D28 | R_D29 | R_D30 | R_D31
-  | R_CC
+  | R_CC | R_NF | R_VF
   | R_QFLAG32 | R_GEFLAG0 | R_GEFLAG1 | R_GEFLAG2 | R_GEFLAG3
   | R_TISTART | R_TILEN | R_NRADDR
   | R_FPSCR | R_TPIDRURO | R_ITSTATE
@@ -75,7 +77,7 @@ let reg_to_regstr reg = match reg with
   | R_D20 -> "R_D20" | R_D21 -> "R_D21" | R_D22 -> "R_D22" | R_D23 -> "R_D23"
   | R_D24 -> "R_D24" | R_D25 -> "R_D25" | R_D26 -> "R_D26" | R_D27 -> "R_D27"
   | R_D28 -> "R_D28" | R_D29 -> "R_D29" | R_D30 -> "R_D30" | R_D31 -> "R_D31"
-  | R_CC -> "R_CC" | R_QFLAG32 -> "R_QFLAG32"
+  | R_CC -> "R_CC" | R_NF -> "R_NF" | R_VF -> "R_VF" | R_QFLAG32 -> "R_QFLAG32"
   | R_GEFLAG0 -> "R_GEFLAG0" | R_GEFLAG1 -> "R_GEFLAG1"
   | R_GEFLAG2 -> "R_GEFLAG2" | R_GEFLAG3 -> "R_GEFLAG3"
   | R_TISTART -> "R_TISTART" | R_TILEN -> "R_TILEN"
@@ -110,7 +112,7 @@ let regstr_to_reg s = match s with
   | "R_D20" -> R_D20 | "R_D21" -> R_D21 | "R_D22" -> R_D22 | "R_D23" -> R_D23
   | "R_D24" -> R_D24 | "R_D25" -> R_D25 | "R_D26" -> R_D26 | "R_D27" -> R_D27
   | "R_D28" -> R_D28 | "R_D29" -> R_D29 | "R_D30" -> R_D30 | "R_D31" -> R_D31
-  | "R_CC" -> R_CC | "R_QFLAG32" -> R_QFLAG32
+  | "R_CC" -> R_CC | "R_NF" -> R_NF | "R_VF" -> R_VF | "R_QFLAG32" -> R_QFLAG32
   | "R_GEFLAG0" -> R_GEFLAG0 | "R_GEFLAG1" -> R_GEFLAG1
   | "R_GEFLAG2" -> R_GEFLAG2 | "R_GEFLAG3" -> R_GEFLAG3
   | "R_TISTART" -> R_TISTART | "R_TILEN" -> R_TILEN
@@ -333,7 +335,12 @@ struct
 	reg R12  (D.from_concrete_32 0x00000000L);
 	reg R13  (D.from_concrete_32 0x00000000L);
 	reg R14  (D.from_concrete_32 0x00000000L);
-	reg R15T (D.from_concrete_32 0x00000000L)
+	reg R15T (D.from_concrete_32 0x00000000L);
+	reg R_NF (D.from_concrete_1 0);
+	reg R_ZF (D.from_concrete_1 0);
+	reg R_CF (D.from_concrete_1 0);
+	reg R_VF (D.from_concrete_1 0);
+	()
 
     method make_regs_zero =
       match !opt_arch with
