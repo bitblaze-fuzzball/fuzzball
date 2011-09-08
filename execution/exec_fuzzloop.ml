@@ -80,7 +80,7 @@ let fuzz start_eip fuzz_start_eip end_eips
     (fm : fragment_machine) asmir_gamma symbolic_init reset_cb =
   if !opt_trace_setup then
     (Printf.printf "Initial registers:\n";
-     fm#print_x86_regs);
+     fm#print_regs);
   flush stdout;
   if !opt_gc_stats then
     at_exit final_check_memory_usage;

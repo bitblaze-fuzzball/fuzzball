@@ -133,6 +133,4 @@ object
   method sys_utime : string -> int64 -> unit
   method sys_write : int -> char array -> int -> unit
   method sys_writev : int -> int64 -> int -> unit
-
-  method handle_linux_syscall : unit -> unit
 end

@@ -228,7 +228,7 @@ struct
 
     method eip_hook eip =
       if !opt_trace_registers then
-	self#print_x86_regs;
+	self#print_regs;
       if !opt_trace_eip then
 	Printf.printf "EIP is 0x%08Lx\n" eip;
       (if !opt_trace_unique_eips then
@@ -504,35 +504,63 @@ struct
       self#set_short_var R_GS (Int32.to_int regs.Temu_state.xgs);
       self#set_short_var R_SS (Int32.to_int regs.Temu_state.xss)
 
-    method print_x86_regs =
-      let reg32 str r =
+    method private print_reg32 str r = 
 	Printf.printf "%s: " str;
 	Printf.printf "%s\n"
 	  (D.to_string_32 
 	     (form_man#simplify32
 		(self#get_int_var (Hashtbl.find reg_to_var r))))
-      in
-      let reg1 str r =
+     
+    method private print_reg1 str r = 
 	Printf.printf "%s: " str;
 	Printf.printf "%s\n"
 	  (D.to_string_1 
 	     (form_man#simplify1
 		(self#get_int_var (Hashtbl.find reg_to_var r))))
-      in
-	reg32 "%eax" R_EAX;
-	reg32 "%ebx" R_EBX;
-	reg32 "%ecx" R_ECX;
-	reg32 "%edx" R_EDX;
-	reg32 "%esi" R_ESI;
-	reg32 "%edi" R_EDI;
-	reg32 "%esp" R_ESP;
-	reg32 "%ebp" R_EBP;
-	reg1 "CF" R_CF;
-	reg1 "PF" R_PF;
-	reg1 "AF" R_AF;
-	reg1 "ZF" R_ZF;
-	reg1 "SF" R_SF;
-	reg1 "OF" R_OF
+
+    method private print_x86_regs =
+      self#print_reg32 "%eax" R_EAX;
+      self#print_reg32 "%ebx" R_EBX;
+      self#print_reg32 "%ecx" R_ECX;
+      self#print_reg32 "%edx" R_EDX;
+      self#print_reg32 "%esi" R_ESI;
+      self#print_reg32 "%edi" R_EDI;
+      self#print_reg32 "%esp" R_ESP;
+      self#print_reg32 "%ebp" R_EBP;
+      self#print_reg1 "CF" R_CF;
+      self#print_reg1 "PF" R_PF;
+      self#print_reg1 "AF" R_AF;
+      self#print_reg1 "ZF" R_ZF;
+      self#print_reg1 "SF" R_SF;
+      self#print_reg1 "OF" R_OF
+
+    method private print_arm_regs =
+      self#print_reg32 " r0" R0;
+      self#print_reg32 " r1" R1;
+      self#print_reg32 " r2" R2;
+      self#print_reg32 " r3" R3;
+      self#print_reg32 " r4" R4;
+      self#print_reg32 " r5" R5;
+      self#print_reg32 " r6" R6;
+      self#print_reg32 " r7" R7;
+      self#print_reg32 " r8" R8;
+      self#print_reg32 " r9" R9;
+      self#print_reg32 "r10" R10;
+      self#print_reg32 "r11" R11;
+      self#print_reg32 "r12" R12;
+      self#print_reg32 " sp" R13;
+      self#print_reg32 " lr" R14;
+      self#print_reg32 " pc" R15T;
+      self#print_reg1 "NF" R_NF;
+      self#print_reg1 "ZF" R_ZF;
+      self#print_reg1 "CF" R_CF;
+      self#print_reg1 "VF" R_VF
+
+    method print_regs =
+      match !opt_arch with	
+	| a when a = Asmir.arch_i386 -> self#print_x86_regs
+	| a when a = Asmir.arch_arm  -> self#print_arm_regs
+	| _ -> failwith "Unsupported architecture"
 
     method store_byte  addr b = mem#store_byte  addr b
     method store_short addr s = mem#store_short addr s
@@ -1389,7 +1417,7 @@ class virtual fragment_machine = object
   method virtual make_regs_zero : unit
   method virtual make_regs_symbolic : unit
   method virtual load_x86_user_regs : Temu_state.userRegs -> unit
-  method virtual print_x86_regs : unit
+  method virtual print_regs : unit
 
   method virtual store_byte_conc  : int64 -> int   -> unit
   method virtual store_short_conc : int64 -> int   -> unit

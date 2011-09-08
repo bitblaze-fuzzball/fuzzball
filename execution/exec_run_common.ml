@@ -106,9 +106,9 @@ let run_one_insn fm gamma eip bytes =
   let prog = (dl, sl) in
     if !opt_trace_eip then
       Printf.printf "EIP is 0x%08Lx\n" eip;
-    if !opt_trace_registers then
-      fm#print_x86_regs;
     fm#set_eip eip;
+    if !opt_trace_registers then
+      fm#print_regs;
     fm#watchpoint;
     if !opt_trace_insns then
       print_insns eip prog None '\n';
@@ -119,6 +119,6 @@ let run_one_insn fm gamma eip bytes =
     (* flush stdout; *)
     let next_lab = fm#run () in
       if !opt_trace_registers then
-	fm#print_x86_regs;
+	fm#print_regs;
       label_to_eip next_lab
 

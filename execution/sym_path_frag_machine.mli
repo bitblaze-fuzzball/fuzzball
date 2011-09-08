@@ -83,7 +83,7 @@ sig
     method make_regs_zero : unit
     method make_regs_symbolic : unit
     method load_x86_user_regs : Temu_state.userRegs -> unit
-    method print_x86_regs : unit
+    method print_regs : unit
     method store_byte  : int64 -> D.t -> unit
     method store_short : int64 -> D.t -> unit
     method store_word  : int64 -> D.t -> unit

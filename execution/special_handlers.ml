@@ -14,7 +14,7 @@ object(self)
   method private unhandle_syscall str =
     if !opt_trace_stopping then
       (Printf.printf "Not handling system call special %s\n" str;
-       fm#print_x86_regs);
+       fm#print_regs);
     raise (UnhandledSysCall("System calls disabled"))
 
   method handle_special str : V.stmt list option =

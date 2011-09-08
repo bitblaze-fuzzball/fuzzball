@@ -5,7 +5,7 @@
 
 open Exec_options;;
 
-let opt_load_base = ref 0x08048000L (* Linux user space default *)
+let opt_load_base = ref None
 let opt_linux_syscalls = ref false
 let opt_setup_initial_proc_state = ref None
 let opt_load_data = ref true
@@ -34,7 +34,7 @@ let linux_cmdline_opts =
        (add_delimited_pair opt_load_extra_regions '+'),
      "base+size Load an additional region from program image");
     ("-load-base", Arg.String
-       (fun s -> opt_load_base := Int64.of_string s),
+       (fun s -> opt_load_base := Some (Int64.of_string s)),
      "addr Base address for program image");
     ("-load-data", Arg.Bool(fun b -> opt_load_data := b),
      "bool Load data segments from a binary?"); 
@@ -79,9 +79,17 @@ let apply_linux_cmdline_opts (fm : Fragment_machine.fragment_machine) =
 		 failwith ("Can't decide whether to "^
 			     "-setup-initial-proc-state")
 	 in
+	 let load_base = match !opt_load_base with
+	   | Some a -> a
+	   | None ->
+	       (match !opt_arch with
+		  | a when a = Asmir.arch_i386 -> 0x08048000L
+		  | a when a = Asmir.arch_arm -> 0x8000L
+		  | _ -> failwith "Unexpected arch in load_base selection")
+	 in
 	   state_start_addr := Some
 	     (Linux_loader.load_dynamic_program fm name
-		!opt_load_base !opt_load_data do_setup
+		load_base !opt_load_data do_setup
 		!opt_load_extra_regions !opt_argv)
      | _ -> ());
   (match !opt_core_file_name with
