@@ -493,6 +493,29 @@ let split_divmod (dl, sl) =
 			V.Cast(V.CAST_LOW, V.REG_32,
 			       V.BinOp(V.SMOD, num1, den1)))) ::
 		(stmt_loop rest)
+	| V.Move(V.Temp((_, t1_str, V.REG_64) as t1),
+		 V.BinOp(V.BITOR,
+			 V.BinOp(V.LSHIFT,
+				 V.Cast(V.CAST_UNSIGNED, V.REG_64,
+					V.Cast(V.CAST_LOW, V.REG_32,
+					       V.BinOp(V.MOD, num2, den2))),
+				 V.Constant(V.Int(V.REG_32, 32L))),
+			 V.Cast(V.CAST_UNSIGNED, V.REG_64,
+				V.Cast(V.CAST_LOW, V.REG_32,
+				       V.BinOp(V.DIVIDE, num1, den1)))))
+	  :: rest
+	    when num1 = num2 && den1 = den2 ->
+	    let div_var = V.newvar (t1_str ^ "_div") V.REG_32 and
+		mod_var = V.newvar (t1_str ^ "_mod") V.REG_32 in
+	      V.VarHash.replace vars t1 (div_var, mod_var);
+	      new_dl := div_var :: mod_var :: !new_dl;
+	      (V.Move(V.Temp(div_var),
+		      V.Cast(V.CAST_LOW, V.REG_32,
+			     V.BinOp(V.DIVIDE, num2, den2)))) ::
+		(V.Move(V.Temp(mod_var),
+			V.Cast(V.CAST_LOW, V.REG_32,
+			       V.BinOp(V.MOD, num1, den1)))) ::
+		(stmt_loop rest)
 	| V.Move(lv, rhs) :: rest ->
 	    V.Move(lv, (walk rhs)) :: (stmt_loop rest)
 	| V.ExpStmt(e) :: rest ->  V.ExpStmt(walk e) :: (stmt_loop rest)
