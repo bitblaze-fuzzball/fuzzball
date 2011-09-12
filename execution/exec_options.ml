@@ -3,6 +3,7 @@
   Security Inc.  All rights reserved.
 *)
 
+
 type offset_strategy = UniformStrat | BiasedSmallStrat
 
 let offset_strategy_of_string s =
@@ -10,6 +11,22 @@ let offset_strategy_of_string s =
     | "uniform" -> UniformStrat
     | "biased-small" -> BiasedSmallStrat
     | _ -> failwith "Unknown offset strategy"
+
+(* This type plays a similar role to Asmir.arch and
+   Libasmir.bfd_architecture, but it's structured to be easier to use
+   in matching by exporting the full list of values, and only
+   including architectures supported by Vine execution. *)
+type execution_arch = X86 | ARM
+
+let execution_arch_of_string s =
+  match s with
+    | "i386"|"x86" -> X86
+    | "arm" -> ARM
+    | _ -> failwith "Unrecognized architecture"
+
+let asmir_arch_of_execution_arch = function
+  | X86 -> Asmir.arch_i386
+  | ARM -> Asmir.arch_arm
 
 let max_input_string_length = ref 0
 let input_string_mem_prefix = ref None
@@ -114,7 +131,10 @@ let opt_progress_interval = ref None
 let opt_final_pc = ref false
 let opt_solve_final_pc = ref false
 let opt_skip_untainted = ref false
-let opt_arch = ref Asmir.arch_i386
+let opt_arch = ref X86
+
+let asmir_arch () =
+  asmir_arch_of_execution_arch !opt_arch
 
 let split_string char s =
   let delim_loc = String.index s char in

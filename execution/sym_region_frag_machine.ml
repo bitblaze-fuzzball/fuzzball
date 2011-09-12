@@ -642,7 +642,7 @@ struct
 	   | _ -> failwith "Unsupported type in memory move")
 
     method concretize_misc =
-      if !opt_arch = Asmir.arch_i386 then
+      if !opt_arch = X86 then
 	let var = Hashtbl.find reg_to_var R_DFLAG in
 	let d = self#get_int_var var in
 	  try ignore(D.to_concrete_32 d)

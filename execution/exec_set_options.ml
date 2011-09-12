@@ -270,10 +270,7 @@ let fuzzball_cmdline_opts =
 let cmdline_opts =
   [
     ("-arch", Arg.String
-       (fun s -> match s with
-	  | "i386"|"x86" -> opt_arch := Asmir.arch_i386
-	  | "arm" -> opt_arch := Asmir.arch_arm
-	  | _ -> failwith "Unrecognized -arch"),
+       (fun s -> opt_arch := execution_arch_of_string s ),
      "arch x86 (default), arm");
     ("-translation-cache-size", Arg.String
        (fun s -> opt_translation_cache_size := Some (int_of_string s)),

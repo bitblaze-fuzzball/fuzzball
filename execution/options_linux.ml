@@ -83,9 +83,9 @@ let apply_linux_cmdline_opts (fm : Fragment_machine.fragment_machine) =
 	   | Some a -> a
 	   | None ->
 	       (match !opt_arch with
-		  | a when a = Asmir.arch_i386 -> 0x08048000L
-		  | a when a = Asmir.arch_arm -> 0x8000L
-		  | _ -> failwith "Unexpected arch in load_base selection")
+		  | X86 -> 0x08048000L
+		  | ARM -> 0x8000L
+	       )
 	 in
 	   state_start_addr := Some
 	     (Linux_loader.load_dynamic_program fm name

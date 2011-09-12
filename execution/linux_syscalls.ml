@@ -52,9 +52,8 @@ class linux_special_handler (fm : fragment_machine) =
   let put_reg = fm#set_word_var in
   let put_return =
     (match !opt_arch with
-       | a when a = Asmir.arch_i386 -> put_reg R_EAX
-       | a when a = Asmir.arch_arm  -> put_reg R0
-       | _ -> failwith "Unsupported arch in Linux syscall put_return")
+       | X86 -> put_reg R_EAX
+       | ARM -> put_reg R0)
   in
   let load_word addr =
     fm#load_word_concretize addr !opt_measure_influence_syscall_args
@@ -2721,9 +2720,9 @@ object(self)
     let handle_catch () =
       try
 	(match !opt_arch with
-	   | a when a = Asmir.arch_i386 -> self#handle_linux_syscall_x86 ();
-	   | a when a = Asmir.arch_arm  -> self#handle_linux_syscall_arm ();
-	   | _ -> failwith "Unsupported arch in Linux syscall")
+	   | X86 -> self#handle_linux_syscall_x86 ()
+	   | ARM -> self#handle_linux_syscall_arm ()
+	)
       with
 	  NotConcrete(_) ->
 	    match !opt_symbolic_syscall_error with

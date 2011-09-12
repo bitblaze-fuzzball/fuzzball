@@ -7,6 +7,12 @@ type offset_strategy = UniformStrat | BiasedSmallStrat
 
 val offset_strategy_of_string : string -> offset_strategy
 
+type execution_arch = X86 | ARM
+
+val execution_arch_of_string : string -> execution_arch
+
+val asmir_arch_of_execution_arch : execution_arch -> Asmir.arch
+
 val max_input_string_length : int ref
 val input_string_mem_prefix : string option ref
 
@@ -110,7 +116,9 @@ val opt_progress_interval : int64 option ref
 val opt_final_pc : bool ref
 val opt_solve_final_pc : bool ref
 val opt_skip_untainted : bool ref
-val opt_arch : Asmir.arch ref
+val opt_arch : execution_arch ref
+
+val asmir_arch : unit -> Asmir.arch
 
 val split_string : char -> string -> (string * string)
 val add_delimited_pair :

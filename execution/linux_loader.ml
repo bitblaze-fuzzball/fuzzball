@@ -244,12 +244,9 @@ let build_startup_state fm eh load_base ldso argv =
   let env_locs = List.map push_cstr env in
   let argv_locs = List.map push_cstr argv in
   let (platform_loc, hwcap) = match !opt_arch with
-    | a when a = Asmir.arch_i386 ->
-	(push_cstr "i686", 0L) (* barebones HWCAP *)
+    | X86 -> (push_cstr "i686", 0L) (* barebones HWCAP *)
 	  (* 0xbfebfbffL (* AT_HWCAP, Core 2 Duo *) *)
-    | a when a = Asmir.arch_arm ->
-	(push_cstr "v5l", 0x1d7L)
-    | _ -> failwith "Unexpected arch"
+    | ARM -> (push_cstr "v5l", 0x1d7L)
   in
   let auxv =
     [(3L, Int64.add load_base eh.phoff);    (* AT_PHDR *)
@@ -289,9 +286,8 @@ let build_startup_state fm eh load_base ldso argv =
       if !opt_trace_setup then
 	Printf.printf "Initial ESP is 0x%08Lx\n" !esp;
       let sp = match !opt_arch with
-	| a when a = Asmir.arch_i386 -> R_ESP
-	| a when a = Asmir.arch_arm -> R13
-	| _ -> failwith "Unexpected arch"
+	| X86 -> R_ESP
+	| ARM -> R13
       in
 	fm#set_word_var sp !esp      
 

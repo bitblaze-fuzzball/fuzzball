@@ -40,7 +40,7 @@ let main argv =
 		:> Decision_tree.decision_tree) in
     let fm = ((new SRFM.sym_region_frag_machine dt)
 	      :> Fragment_machine.fragment_machine) in
-    let dl = Asmir.decls_for_arch !Exec_options.opt_arch in
+    let dl = Asmir.decls_for_arch (Exec_options.asmir_arch ()) in
     let asmir_gamma = Asmir.gamma_create 
       (List.find (fun (i, s, t) -> s = "mem") dl) dl
     in

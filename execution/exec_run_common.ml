@@ -14,7 +14,8 @@ let decode_insn asmir_gamma eip insn_bytes =
      print error messages to stdout, but its buffers are different from
      OCaml's. *)
   flush stdout;
-  let sl = Asmir.asm_bytes_to_vine asmir_gamma !opt_arch eip insn_bytes in
+  let arch = asmir_arch_of_execution_arch !opt_arch in
+  let sl = Asmir.asm_bytes_to_vine asmir_gamma arch eip insn_bytes in
     match sl with 
       | [V.Block(dl', sl')] ->
 	  if !opt_trace_orig_ir then

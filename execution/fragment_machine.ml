@@ -243,15 +243,13 @@ struct
 
     method get_eip =
       match !opt_arch with
-	| a when a = Asmir.arch_i386 -> self#get_word_var R_EIP
-	| a when a = Asmir.arch_arm ->  self#get_word_var R15T
-	| _ -> failwith "Unexpected arch"
+	| X86 -> self#get_word_var R_EIP
+	| ARM -> self#get_word_var R15T
 
     method set_eip eip =
       match !opt_arch with
-	| a when a = Asmir.arch_i386 -> self#set_word_var R_EIP eip
-	| a when a = Asmir.arch_arm ->  self#set_word_var R15T eip
-	| _ -> failwith "Unexpected arch"
+	| X86 -> self#set_word_var R_EIP eip
+	| ARM -> self#set_word_var R15T eip
 
     method run_eip_hooks =
       self#eip_hook (self#get_eip)
@@ -344,9 +342,8 @@ struct
 
     method make_regs_zero =
       match !opt_arch with
-	| a when a = Asmir.arch_i386 -> self#make_x86_regs_zero
-	| a when a = Asmir.arch_arm  -> self#make_arm_regs_zero
-	| _ -> failwith "Unsupported architecture"
+	| X86 -> self#make_x86_regs_zero
+	| ARM -> self#make_arm_regs_zero
 
     method private make_x86_regs_symbolic =
       let reg r v =
@@ -475,9 +472,8 @@ struct
 
     method make_regs_symbolic =
       match !opt_arch with	
-	| a when a = Asmir.arch_i386 -> self#make_x86_regs_symbolic
-	| a when a = Asmir.arch_arm  -> self#make_arm_regs_symbolic
-	| _ -> failwith "Unsupported architecture"
+	| X86 -> self#make_x86_regs_symbolic
+	| ARM -> self#make_arm_regs_symbolic
 
     method load_x86_user_regs regs =
       self#set_word_var R_EAX (Int64.of_int32 regs.Temu_state.eax);
@@ -558,9 +554,8 @@ struct
 
     method print_regs =
       match !opt_arch with	
-	| a when a = Asmir.arch_i386 -> self#print_x86_regs
-	| a when a = Asmir.arch_arm  -> self#print_arm_regs
-	| _ -> failwith "Unsupported architecture"
+	| X86 -> self#print_x86_regs
+	| ARM -> self#print_arm_regs
 
     method store_byte  addr b = mem#store_byte  addr b
     method store_short addr s = mem#store_short addr s
