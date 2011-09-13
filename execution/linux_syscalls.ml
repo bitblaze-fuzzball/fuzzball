@@ -1049,6 +1049,12 @@ object(self)
 	    let fresh = self#fresh_addr length in
 	      zero_region fresh (Int64.to_int length);
 	      fresh
+	| (0L, _, 0x0L (* PROT_NONE *),
+	   0x4022L (* MAP_NORESERVE|MAP_PRIVATE|MAP_ANONYMOUS *),
+	   0xffffffffL) ->
+	    let fresh = self#fresh_addr length in
+	      zero_region fresh (Int64.to_int length);
+	      fresh	    
 	| (_, _, (0x3L|0x7L) (* PROT_READ|PROT_WRITE|PROT_EXEC) *),
 	   0x32L (* MAP_PRIVATE|FIXED|ANONYMOUS *), 0xffffffffL) ->
 	    zero_region addr (Int64.to_int length);
