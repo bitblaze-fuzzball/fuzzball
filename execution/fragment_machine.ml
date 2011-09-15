@@ -468,7 +468,12 @@ struct
 	reg R12  (form_man#fresh_symbolic_32 "initial_r12");
 	reg R13  (form_man#fresh_symbolic_32 "initial_r13");
 	reg R14  (form_man#fresh_symbolic_32 "initial_r14");
-	reg R15T (form_man#fresh_symbolic_32 "initial_r15")
+	reg R15T (form_man#fresh_symbolic_32 "initial_r15");
+	reg R_NF (form_man#fresh_symbolic_1  "initial_nf");
+	reg R_ZF (form_man#fresh_symbolic_1  "initial_zf");
+	reg R_CF (form_man#fresh_symbolic_1  "initial_cf");
+	reg R_VF (form_man#fresh_symbolic_1  "initial_vf");
+	()
 
     method make_regs_symbolic =
       match !opt_arch with	

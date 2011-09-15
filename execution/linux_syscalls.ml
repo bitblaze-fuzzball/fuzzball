@@ -1254,6 +1254,42 @@ object(self)
     let pid = self#get_pid in
       put_return (Int64.of_int pid)
 
+  method private set_up_arm_kuser_page =
+    (* See arch/arm/kernel/entry-armv.S in the Linux sources for details *)
+    (* __kuser_memory_barrier: *)
+    store_word 0xffff0fa0L 0 0xe12fff1eL; (* bx      lr *)
+    store_word 0xffff0fa4L 0 0xe1a00000L; (* nop *)
+    store_word 0xffff0fa8L 0 0xe1a00000L; (* nop *)
+    store_word 0xffff0facL 0 0xe1a00000L; (* nop *)
+    store_word 0xffff0fb0L 0 0xe1a00000L; (* nop *)
+    store_word 0xffff0fb4L 0 0xe1a00000L; (* nop *)
+    store_word 0xffff0fb8L 0 0xe1a00000L; (* nop *)
+    store_word 0xffff0fbcL 0 0xe1a00000L; (* nop *)
+    (* __kuser_cmpxchg: *)
+    store_word 0xffff0fc0L 0 0xe5923000L; (* ldr     r3, [r2] *)
+    store_word 0xffff0fc4L 0 0xe0533000L; (* subs    r3, r3, r0 *)
+    store_word 0xffff0fc8L 0 0x05821000L; (* streq   r1, [r2] *)
+    store_word 0xffff0fccL 0 0xe2730000L; (* rsbs    r0, r3, #0 *)
+    store_word 0xffff0fd0L 0 0xe12fff1eL; (* bx      lr *)
+    store_word 0xffff0fd4L 0 0xe1a00000L; (* nop *)
+    store_word 0xffff0fd8L 0 0xe1a00000L; (* nop *)
+    store_word 0xffff0fdcL 0 0xe1a00000L; (* nop *)
+    (* __kuser_get_tls: *)
+    store_word 0xffff0fe0L 0 0xe59f0008L; (* ldr     r0, [pc, #8] ; 0xff0 *)
+    store_word 0xffff0fe4L 0 0xe12fff1eL; (* bx      lr *)
+    store_word 0xffff0fe8L 0 0x0L; (* pad *)
+    store_word 0xffff0fecL 0 0x0L; (* pad *)
+    store_word 0xffff0ff0L 0 0x0L; (* __kuser_get_tls TLS pointer *)
+    store_word 0xffff0ff4L 0 0x0L; (* pad *)
+    store_word 0xffff0ff8L 0 0x0L; (* pad *)
+    store_word 0xffff0ffcL 0 3L; (* __kuser_helper_version *)
+    ()
+
+  method sys_set_tls tp_value =
+    self#set_up_arm_kuser_page; (* Take the opportunity to do this now *)
+    store_word 0xffff0ff0L 0 tp_value;
+    put_return 0L (* success *)
+
   method sys_rt_sigaction signum newbuf oldbuf setlen =
     (if oldbuf = 0L then () else
       let (action, mask_low, mask_high, flags) =
@@ -1420,13 +1456,24 @@ object(self)
       (fun i str ->
 	 fm#store_cstr buf (Int64.mul 65L i) str)
       [0L; 1L; 2L; 3L; 4L; 5L]
-      ["Linux"; (* sysname *)
-       "amuro"; (* nodename *)
-       "2.6.26-2-amd64"; (* release *)
-       "#1 SMP Fri Mar 27 04:02:59 UTC 2009"; (*version*)
-       "i686"; (* machine *)
-       "example.com" (* domain *)
-      ];
+      (match !opt_arch with
+	 | X86 ->
+	     ["Linux"; (* sysname *)
+	      "box"; (* nodename *)
+	      "2.6.26-2-amd64"; (* release *)
+	      "#1 SMP Fri Mar 27 04:02:59 UTC 2009"; (*version*)
+	      "i686"; (* machine *)
+	      "example.com" (* domain *)
+	     ]
+	 | ARM ->
+	     ["Linux"; (* sysname *)
+	      "box"; (* nodename *)
+	      "2.6.32-5-versatile"; (* release *)
+	      "#1 Wed Jun 15 07:34:48 UTC 2011"; (*version*)
+	      "armv5tejl"; (* machine *)
+	      "example.com" (* domain *)
+	     ]
+      );
     put_return 0L (* success *)
 
   method sys_unlink path =
@@ -1508,12 +1555,11 @@ object(self)
 	       self#sys_exit status
 	 | (_, 2) -> (* fork *)
 	     uh "Unhandled Linux system call fork (2)"
-	 | (ARM, 3) -> uh "Check whether ARM read syscall matches x86"
-	 | (X86, 3) -> (* read *)		    
-	     let (ebx, ecx, edx) = read_3_regs () in
-	     let fd    = Int64.to_int ebx and
-		 buf   = ecx and
-		 count = Int64.to_int edx in
+	 | (_, 3) -> (* read *)		    
+	     let (arg1, arg2, arg3) = read_3_regs () in
+	     let fd    = Int64.to_int arg1 and
+		 buf   = arg2 and
+		 count = Int64.to_int arg3 in
 	       if !opt_trace_syscalls then
 		 Printf.printf "read(%d, 0x%08Lx, %d)" fd buf count;
 	       self#sys_read fd buf count;
@@ -1526,24 +1572,22 @@ object(self)
 		 Printf.printf "write(%d, 0x%08Lx, %d)\n" fd buf count;
 	       let bytes = fm#read_buf buf count in
 		 self#sys_write fd bytes count
-	 | (ARM, 5) -> uh "Check whether ARM open syscall matches x86"
-	 | (X86, 5) -> (* open *)
-	     let (ebx, ecx) = read_2_regs () in
-	     let edx = (if (Int64.logand ecx 0o100L) <> 0L then
-			  get_reg R_EDX
+	 | (_, 5) -> (* open *)
+	     let (arg1, arg2) = read_2_regs () in
+	     let arg3 = (if (Int64.logand arg2 0o100L) <> 0L then
+			  get_reg arg_regs.(2)
 			else
 			  0L) in
-	     let path_buf = ebx and
-		 flags    = Int64.to_int ecx and
-		 mode     = Int64.to_int edx in
+	     let path_buf = arg1 and
+		 flags    = Int64.to_int arg2 and
+		 mode     = Int64.to_int arg3 in
 	     let path = fm#read_cstr path_buf in
 	       if !opt_trace_syscalls then
 		 Printf.printf "open(\"%s\", 0x%x, 0o%o)" path flags mode;
 	       self#sys_open path flags mode
-	 | (ARM, 6) -> uh "Check whether ARM close syscall matches x86"
-	 | (X86, 6) -> (* close *)
-	     let ebx = read_1_reg () in
-	     let fd = Int64.to_int ebx in
+	 | (_, 6) -> (* close *)
+	     let arg1 = read_1_reg () in
+	     let fd = Int64.to_int arg1 in
 	       if !opt_trace_syscalls then
 		 Printf.printf "close(%d)" fd;
 	       self#sys_close fd
@@ -1689,10 +1733,9 @@ object(self)
 	 | (ARM, 44) -> uh "No prof (44) syscall in Linux/ARM (E)ABI"
 	 | (X86, 44) -> (* prof *)
 	     uh "Unhandled Linux system call prof (44)"
-	 | (ARM, 45) -> uh "Check whether ARM brk syscall matches x86"
-	 | (X86, 45) -> (* brk *)
-	     let ebx = read_1_reg () in
-	     let addr = ebx in
+	 | (_, 45) -> (* brk *)
+	     let arg1 = read_1_reg () in
+	     let addr = arg1 in
 	       if !opt_trace_syscalls then
 		 Printf.printf "brk(0x%08Lx)" addr;
 	       self#sys_brk addr
@@ -2042,10 +2085,9 @@ object(self)
 	     uh "Unhandled Linux system call clone (120)"
 	 | (_, 121) -> (* setdomainname *)
 	     uh "Unhandled Linux system call setdomainname (121)"
-	 | (ARM, 122) -> uh "Check whether ARM uname (122) syscall matches x86"
-	 | (X86, 122) -> (* uname *)
-	     let ebx = read_1_reg () in
-	     let buf = ebx in
+	 | (_, 122) -> (* uname *)
+	     let arg1 = read_1_reg () in
+	     let buf = arg1 in
 	       if !opt_trace_syscalls then
 		 Printf.printf "uname(0x%08Lx)" buf;
 	       self#sys_uname buf
@@ -2321,15 +2363,14 @@ object(self)
 	       if !opt_trace_syscalls then
 		 Printf.printf "ugetrlimit(%d, 0x%08Lx)" rsrc buf;
 	       self#sys_ugetrlimit rsrc buf
-	 | (ARM, 192) -> uh "Check whether ARM mmap2 (192) syscall matches x86"
-	 | (X86, 192) -> (* mmap2 *)
-	     let (ebx, ecx, edx, esi, edi, ebp) = read_6_regs () in
-	     let addr     = ebx and
-		 length   = ecx and
-		 prot     = edx and
-		 flags    = esi and
-		 fd       = edi and
-		 pgoffset = Int64.to_int ebp in
+	 | (_, 192) -> (* mmap2 *)
+	     let (arg1, arg2, arg3, arg4, arg5, arg6) = read_6_regs () in
+	     let addr     = arg1 and
+		 length   = arg2 and
+		 prot     = arg3 and
+		 flags    = arg4 and
+		 fd       = arg5 and
+		 pgoffset = Int64.to_int arg6 in
 	       if !opt_trace_syscalls then
 		 Printf.printf "mmap2(0x%08Lx, %Ld, 0x%Lx, 0x%0Lx, %Ld, %d)"
 		   addr length prot flags fd pgoffset;
@@ -2356,11 +2397,10 @@ object(self)
 	       if !opt_trace_syscalls then
 		 Printf.printf "lstat64(\"%s\", 0x%08Lx)" path buf_addr;
 	       self#sys_lstat64 path buf_addr
-	 | (ARM, 197) -> uh "Check whether ARM fstat64 (197) matches x86"
-	 | (X86, 197) -> (* fstat64 *)
-	     let (ebx, ecx) = read_2_regs () in
-	     let fd = Int64.to_int ebx and
-		 buf_addr = ecx in
+	 | (_, 197) -> (* fstat64 *)
+	     let (arg1, arg2) = read_2_regs () in
+	     let fd = Int64.to_int arg1 and
+		 buf_addr = arg2 in
 	       if !opt_trace_syscalls then
 		 Printf.printf "fstat64(%d, 0x%08Lx)" fd buf_addr;
 	       self#sys_fstat64 fd buf_addr
@@ -2576,10 +2616,10 @@ object(self)
 	     uh "Unhandled Linux system call io_cancel"
 	 | (X86, 250) -> (* fadvise64 *)
 	     uh "Unhandled Linux system call fadvise64 (250)"
-	 | (ARM, 248) -> uh "Check whether ARM exit_group syscall matches x86"
+	 | (ARM, 248)    (* exit_group *)
 	 | (X86, 252) -> (* exit_group *)
-	     let ebx = read_1_reg () in
-	     let status = ebx in
+	     let arg1 = read_1_reg () in
+	     let status = arg1 in
 	       if !opt_trace_syscalls then
 		 Printf.printf "exit_group(%Ld) (no return)\n" status;
 	       self#sys_exit_group status
@@ -2949,6 +2989,21 @@ object(self)
 	     uh "Unhandled Linux system call clock_adjtime (343)"
 	 | (X86, 344) -> (* syncfs *)
 	     uh "Unhandled Linux system call syncfs (344)"
+	 
+	 | (ARM, 0xf0001) -> (* breakpoint *)
+	     uh "Unhandled Linux/ARM pseudo-syscall breakpoint (0xf0001)"
+	 | (ARM, 0xf0002) -> (* cacheflush *)
+	     uh "Unhandled Linux/ARM pseudo-syscall cacheflush (0xf0002)"
+	 | (ARM, 0xf0003) -> (* usr26 *)
+	     uh "Unhandled Linux/ARM pseudo-syscall usr26 (0xf0003)"
+	 | (ARM, 0xf0004) -> (* usr32 *)
+	     uh "Unhandled Linux/ARM pseudo-syscall usr32 (0xf0004)"
+	 | (ARM, 0xf0005) -> (* set_tls *)
+	     let r0 = read_1_reg () in
+	     let tp_value = r0 in
+	       if !opt_trace_syscalls then
+		 Printf.printf "set_tls(0x%08Lx)" tp_value;
+	     self#sys_set_tls tp_value
 
 	 | (X86, _) ->
 	     Printf.printf "Unknown Linux/x86 system call %d\n" syscall_num;
