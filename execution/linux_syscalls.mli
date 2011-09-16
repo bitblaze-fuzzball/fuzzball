@@ -7,6 +7,8 @@ val linux_initial_break : int64 option ref
 val linux_setup_tcb_seg : Fragment_machine.fragment_machine
     -> int -> int64 -> int64 -> int64 -> unit
 
+val linux_set_up_arm_kuser_page : Fragment_machine.fragment_machine -> unit
+
 val chroot : string -> string
 
 class linux_special_handler : Fragment_machine.fragment_machine ->

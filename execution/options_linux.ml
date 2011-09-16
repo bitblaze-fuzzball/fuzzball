@@ -102,6 +102,7 @@ let apply_linux_cmdline_opts (fm : Fragment_machine.fragment_machine) =
       if !opt_use_ids_from_core then
 	lsh#set_proc_identities !Linux_loader.proc_identities;
       List.iter lsh#add_symbolic_file !opt_symbolic_files;
+      Linux_syscalls.linux_set_up_arm_kuser_page fm;
       fm#add_special_handler (lsh :> Fragment_machine.special_handler)
   else
     fm#add_special_handler

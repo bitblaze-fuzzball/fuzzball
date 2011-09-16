@@ -35,6 +35,37 @@ let linux_setup_tcb_seg (fm : fragment_machine) new_ent new_gdt base limit =
     store_byte descr 7 (Int64.logand
 			  (Int64.shift_right base 24) 0xffL)
 
+let linux_set_up_arm_kuser_page (fm : fragment_machine) =
+    (* See arch/arm/kernel/entry-armv.S in the Linux sources for details *)
+    (* __kuser_memory_barrier: *)
+    fm#store_word_conc 0xffff0fa0L 0xe12fff1eL; (* bx      lr *)
+    fm#store_word_conc 0xffff0fa4L 0xe1a00000L; (* nop *)
+    fm#store_word_conc 0xffff0fa8L 0xe1a00000L; (* nop *)
+    fm#store_word_conc 0xffff0facL 0xe1a00000L; (* nop *)
+    fm#store_word_conc 0xffff0fb0L 0xe1a00000L; (* nop *)
+    fm#store_word_conc 0xffff0fb4L 0xe1a00000L; (* nop *)
+    fm#store_word_conc 0xffff0fb8L 0xe1a00000L; (* nop *)
+    fm#store_word_conc 0xffff0fbcL 0xe1a00000L; (* nop *)
+    (* __kuser_cmpxchg: *)
+    fm#store_word_conc 0xffff0fc0L 0xe5923000L; (* ldr     r3, [r2] *)
+    fm#store_word_conc 0xffff0fc4L 0xe0533000L; (* subs    r3, r3, r0 *)
+    fm#store_word_conc 0xffff0fc8L 0x05821000L; (* streq   r1, [r2] *)
+    fm#store_word_conc 0xffff0fccL 0xe2730000L; (* rsbs    r0, r3, #0 *)
+    fm#store_word_conc 0xffff0fd0L 0xe12fff1eL; (* bx      lr *)
+    fm#store_word_conc 0xffff0fd4L 0xe1a00000L; (* nop *)
+    fm#store_word_conc 0xffff0fd8L 0xe1a00000L; (* nop *)
+    fm#store_word_conc 0xffff0fdcL 0xe1a00000L; (* nop *)
+    (* __kuser_get_tls: *)
+    fm#store_word_conc 0xffff0fe0L 0xe59f0008L; (* ldr  r0, [pc, #8] ; 0xff0 *)
+    fm#store_word_conc 0xffff0fe4L 0xe12fff1eL; (* bx      lr *)
+    fm#store_word_conc 0xffff0fe8L 0x0L; (* pad *)
+    fm#store_word_conc 0xffff0fecL 0x0L; (* pad *)
+    fm#store_word_conc 0xffff0ff0L 0x0L; (* __kuser_get_tls TLS pointer *)
+    fm#store_word_conc 0xffff0ff4L 0x0L; (* pad *)
+    fm#store_word_conc 0xffff0ff8L 0x0L; (* pad *)
+    fm#store_word_conc 0xffff0ffcL 3L; (* __kuser_helper_version *)
+    ()
+
 let chroot s =
   if String.length s >= 1 && String.sub s 0 1 = "/" then
     (match !opt_chroot_path with
@@ -357,7 +388,7 @@ object(self)
       store_word  addr 48 ctime;
       store_word  addr 52 0L;      (* ctime nanosecs *)
 
-  method private write_oc_statbuf_as_stat64 addr oc_buf =
+  method private write_oc_statbuf_as_x86_stat64 addr oc_buf =
     let dev = Int64.of_int oc_buf.Unix.st_dev and
 	ino = Int64.of_int oc_buf.Unix.st_ino and
 	mode = Int64.of_int (oc_buf.Unix.st_perm lor 
@@ -395,6 +426,54 @@ object(self)
       store_word addr 84 0L;      (* ctime nanosecs *)
       store_word addr 88 ino;     (* low bits of 64-bit inode *)
       store_word addr 92 0L;      (* high bits of 64-bit inode *)
+
+  (* Slightly different layout than the x86 version, because the
+     8-byte values are 8- rather than 4-byte aligned *)
+  method private write_oc_statbuf_as_arm_stat64 addr oc_buf =
+    let dev = Int64.of_int oc_buf.Unix.st_dev and
+	ino = Int64.of_int oc_buf.Unix.st_ino and
+	mode = Int64.of_int (oc_buf.Unix.st_perm lor 
+			       (self#oc_kind_to_mode oc_buf.Unix.st_kind)) and
+	nlink = Int64.of_int oc_buf.Unix.st_nlink and
+	uid = Int64.of_int oc_buf.Unix.st_uid and
+	gid = Int64.of_int oc_buf.Unix.st_gid and
+	rdev = Int64.of_int oc_buf.Unix.st_rdev and
+	size = Int64.of_int oc_buf.Unix.st_size and
+	atime = Int64.of_float oc_buf.Unix.st_atime and
+	mtime = Int64.of_float oc_buf.Unix.st_mtime and
+	ctime = Int64.of_float oc_buf.Unix.st_ctime and
+	blksize = 4096L and
+	blocks = Int64.of_int (oc_buf.Unix.st_size/4096)
+    in
+      store_word addr 0 dev;
+      store_word addr 4 0L;       (* high bits of dev *)
+      (* 4 bytes padding *)
+      store_word addr 12 ino;     (* 32-bit inode *)
+      store_word addr 16 mode;
+      store_word addr 20 nlink;
+      store_word addr 24 uid;
+      store_word addr 28 gid;
+      store_word addr 32 rdev;
+      store_word addr 36 0L;      (* high bits of rdev *)
+      (* 4 bytes explicit pad + 4 bytes alignment pad *)
+      store_word addr 48 size;
+      store_word addr 52 0L;      (* high bits of size *)
+      store_word addr 56 blksize;
+      store_word addr 64 blocks;
+      store_word addr 68 0L;      (* high bits of blocks *)
+      store_word addr 72 atime;
+      store_word addr 76 0L;      (* atime nanosecs *)
+      store_word addr 80 mtime;
+      store_word addr 84 0L;      (* mtime naonsecs *)
+      store_word addr 88 ctime;
+      store_word addr 92 0L;      (* ctime nanosecs *)
+      store_word addr 96 ino;     (* low bits of 64-bit inode *)
+      store_word addr 100 0L;      (* high bits of 64-bit inode *)
+
+  method private write_oc_statbuf_as_stat64 addr oc_buf =
+    match !opt_arch with
+      | X86 -> self#write_oc_statbuf_as_x86_stat64 addr oc_buf
+      | ARM -> self#write_oc_statbuf_as_arm_stat64 addr oc_buf
 
   method write_fake_statfs_buf addr =
     (* OCaml's Unix module doesn't provide an interface for this
@@ -1254,72 +1333,64 @@ object(self)
     let pid = self#get_pid in
       put_return (Int64.of_int pid)
 
-  method private set_up_arm_kuser_page =
-    (* See arch/arm/kernel/entry-armv.S in the Linux sources for details *)
-    (* __kuser_memory_barrier: *)
-    store_word 0xffff0fa0L 0 0xe12fff1eL; (* bx      lr *)
-    store_word 0xffff0fa4L 0 0xe1a00000L; (* nop *)
-    store_word 0xffff0fa8L 0 0xe1a00000L; (* nop *)
-    store_word 0xffff0facL 0 0xe1a00000L; (* nop *)
-    store_word 0xffff0fb0L 0 0xe1a00000L; (* nop *)
-    store_word 0xffff0fb4L 0 0xe1a00000L; (* nop *)
-    store_word 0xffff0fb8L 0 0xe1a00000L; (* nop *)
-    store_word 0xffff0fbcL 0 0xe1a00000L; (* nop *)
-    (* __kuser_cmpxchg: *)
-    store_word 0xffff0fc0L 0 0xe5923000L; (* ldr     r3, [r2] *)
-    store_word 0xffff0fc4L 0 0xe0533000L; (* subs    r3, r3, r0 *)
-    store_word 0xffff0fc8L 0 0x05821000L; (* streq   r1, [r2] *)
-    store_word 0xffff0fccL 0 0xe2730000L; (* rsbs    r0, r3, #0 *)
-    store_word 0xffff0fd0L 0 0xe12fff1eL; (* bx      lr *)
-    store_word 0xffff0fd4L 0 0xe1a00000L; (* nop *)
-    store_word 0xffff0fd8L 0 0xe1a00000L; (* nop *)
-    store_word 0xffff0fdcL 0 0xe1a00000L; (* nop *)
-    (* __kuser_get_tls: *)
-    store_word 0xffff0fe0L 0 0xe59f0008L; (* ldr     r0, [pc, #8] ; 0xff0 *)
-    store_word 0xffff0fe4L 0 0xe12fff1eL; (* bx      lr *)
-    store_word 0xffff0fe8L 0 0x0L; (* pad *)
-    store_word 0xffff0fecL 0 0x0L; (* pad *)
-    store_word 0xffff0ff0L 0 0x0L; (* __kuser_get_tls TLS pointer *)
-    store_word 0xffff0ff4L 0 0x0L; (* pad *)
-    store_word 0xffff0ff8L 0 0x0L; (* pad *)
-    store_word 0xffff0ffcL 0 3L; (* __kuser_helper_version *)
-    ()
-
   method sys_set_tls tp_value =
-    self#set_up_arm_kuser_page; (* Take the opportunity to do this now *)
     store_word 0xffff0ff0L 0 tp_value;
     put_return 0L (* success *)
 
   method sys_rt_sigaction signum newbuf oldbuf setlen =
-    (if oldbuf = 0L then () else
-      let (action, mask_low, mask_high, flags) =
-	match signum with
-	  | 1  (* HUP *)
-	  | 2  (* INT *)
-	  | 3  (* QUIT *)
-	  | 4  (* ILL *)
-	  | 7  (* BUS *)
-	  | 8  (* FPE *) 
-          | 11 (* SEGV *)
-	  | 13 (* PIPE *)
-	  | 14 (* ALRM *)
-	  | 15 (* TERM *)
-	  | 17 (* CHLD *)
-	  | 20 (* TSTP *)
-	  | 24 (* XCPU *)
-	  | 25 (* XFSZ *)
-	  | 26 (* VTALRM *)
-	  | 27 (* PROF *)
-	  | 29 (* IO *)
-	    -> (0L, 0L, 0L, 0L)
-	  | _ -> raise (UnhandledSysCall("Unhandled old signal in rt_sigaction"));
-      in
-	store_word oldbuf 0 action;
-	store_word oldbuf 4 flags;
-	store_word oldbuf 8 0L; (* restorer *)
-	store_word oldbuf 12 mask_low;
-	store_word oldbuf 12 mask_high);
-    put_return 0L; (* success *)
+    try
+      (if oldbuf = 0L then () else
+	 let (action, mask_low, mask_high, flags) =
+	   match signum with
+	     | 0 -> raise (Unix.Unix_error(Unix.EINVAL, "rt_sigaction", ""))
+	     | 1  (* HUP *)
+	     | 2  (* INT *)
+	     | 3  (* QUIT *)
+	     | 4  (* ILL *)
+	     | 5  (* TRAP *)
+	     | 6  (* ABRT *)
+	     | 7  (* BUS *)
+	     | 8  (* FPE *) 
+	     | 9  (* KILL *)
+	     | 10 (* USR1 *)
+             | 11 (* SEGV *)
+	     | 12 (* USR2 *)
+	     | 13 (* PIPE *)
+	     | 14 (* ALRM *)
+	     | 15 (* TERM *)
+	     | 16 (* STKFLT *)
+	     | 17 (* CHLD *)
+	     | 18 (* CONT *)
+	     | 19 (* STOP *)
+	     | 20 (* TSTP *)
+	     | 21 (* TTIN *)
+	     | 22 (* TTOU *)
+	     | 23 (* URG *)
+	     | 24 (* XCPU *)
+	     | 25 (* XFSZ *)
+	     | 26 (* VTALRM *)
+	     | 27 (* PROF *)
+	     | 28 (* WINCH *)
+	     | 29 (* IO *)
+	     | 30 (* PWR *)
+	     | 31 (* SYS *)
+	       -> (0L, 0L, 0L, 0L)
+	     | 32 | 33 | 34 | 35 | 36 | 37 | 38 | 39
+	     | 40 | 41 | 42 | 43 | 44 | 45 | 46 | 47
+	     | 48 | 49 | 50 | 51 | 52 | 53 | 54 | 55
+	     | 56 | 57 | 58 | 59 | 60 | 61 | 62 | 63 | 64
+             (* Real-time signals *)
+		 -> (0L, 0L, 0L, 0L) 
+	     | _ -> raise (UnhandledSysCall("Unhandled old signal in rt_sigaction"));
+	 in
+	   store_word oldbuf 0 action;
+	   store_word oldbuf 4 flags;
+	   store_word oldbuf 8 0L; (* restorer *)
+	   store_word oldbuf 12 mask_low;
+	   store_word oldbuf 12 mask_high);
+      put_return 0L; (* success *)
+    with
+      | Unix.Unix_error(err, _, _) -> self#put_errno err
 
   method sys_sigaltstack new_stack_t old_stack_t =
     if old_stack_t <> 0L then
@@ -1423,7 +1494,7 @@ object(self)
     put_return 0L (* success *)
 
   method sys_statfs64 path buf_len struct_buf =
-    assert(buf_len = 84);
+    assert(buf_len = 84 || buf_len = 88); (* Same layout, different padding *)
     self#write_fake_statfs64buf struct_buf;
     put_return 0L (* success *)
 
@@ -1452,29 +1523,30 @@ object(self)
       put_return (Int64.of_int old_mask)
 
   method sys_uname buf =
-    List.iter2
-      (fun i str ->
-	 fm#store_cstr buf (Int64.mul 65L i) str)
-      [0L; 1L; 2L; 3L; 4L; 5L]
-      (match !opt_arch with
-	 | X86 ->
-	     ["Linux"; (* sysname *)
-	      "box"; (* nodename *)
-	      "2.6.26-2-amd64"; (* release *)
-	      "#1 SMP Fri Mar 27 04:02:59 UTC 2009"; (*version*)
-	      "i686"; (* machine *)
-	      "example.com" (* domain *)
-	     ]
-	 | ARM ->
-	     ["Linux"; (* sysname *)
-	      "box"; (* nodename *)
-	      "2.6.32-5-versatile"; (* release *)
-	      "#1 Wed Jun 15 07:34:48 UTC 2011"; (*version*)
-	      "armv5tejl"; (* machine *)
-	      "example.com" (* domain *)
-	     ]
-      );
-    put_return 0L (* success *)
+    let nodename = (Unix.gethostname ()) in
+      List.iter2
+	(fun i str ->
+	   fm#store_cstr buf (Int64.mul 65L i) str)
+	[0L; 1L; 2L; 3L; 4L; 5L]
+	(match !opt_arch with
+	   | X86 ->
+	       ["Linux"; (* sysname *)
+		nodename; (* nodename *)
+		"2.6.26-2-amd64"; (* release *)
+		"#1 SMP Fri Mar 27 04:02:59 UTC 2009"; (* version *)
+		"i686"; (* machine *)
+		"example.com" (* domain *)
+	       ]
+	   | ARM ->
+	       ["Linux"; (* sysname *)
+		nodename; (* nodename *)
+		"2.6.32-5-versatile"; (* release *)
+		"#1 Wed Jun 15 07:34:48 UTC 2011"; (* version *)
+		"armv5tejl"; (* machine *)
+		"example.com" (* domain *)
+	       ]
+	);
+      put_return 0L (* success *)
 
   method sys_unlink path =
     Unix.unlink path;
@@ -1683,11 +1755,10 @@ object(self)
 	 | (ARM, 32) -> uh "No gtty (32) syscall in Linux/ARM (E)ABI"
 	 | (X86, 32) -> (* gtty *)
 	     uh "Unhandled Linux system call gtty (32)"
-	 | (ARM, 33) -> uh "Check whether ARM access syscall matches x86"
-	 | (X86, 33) -> (* access *)
-	     let (ebx, ecx) = read_2_regs () in
-	     let path_buf = ebx and
-		 mode     = Int64.to_int ecx in
+	 | (_, 33) -> (* access *)
+	     let (arg1, arg2) = read_2_regs () in
+	     let path_buf = arg1 and
+		 mode     = Int64.to_int arg2 in
 	     let path = fm#read_cstr path_buf in
 	       if !opt_trace_syscalls then
 		 Printf.printf "access(\"%s\", 0x%x)" path mode;
@@ -1766,12 +1837,11 @@ object(self)
 	 | (ARM, 53) -> uh "No lock (53) syscall in Linux/ARM (E)ABI"
 	 | (X86, 53) -> (* lock *)
 	     uh "Unhandled Linux system call lock (53)"
-	 | (ARM, 54) -> uh "Check whether ARM ioctl syscall matches x86"
-	 | (X86, 54) -> (* ioctl *)
-	     let (ebx, ecx, edx) = read_3_regs () in
-	     let fd   = Int64.to_int ebx and
-		 req  = ecx and
-		 argp = edx in
+	 | (_, 54) -> (* ioctl *)
+	     let (arg1, arg2, arg3) = read_3_regs () in
+	     let fd   = Int64.to_int arg1 and
+		 req  = arg2 and
+		 argp = arg3 in
 	       if !opt_trace_syscalls then
 		 Printf.printf "ioctl(%d, 0x%Lx, 0x%08Lx)" fd req argp;
 	       self#sys_ioctl fd req argp;
@@ -1795,7 +1865,7 @@ object(self)
 	 | (ARM, 59) -> uh "No ulimit (59) syscall in Linux/ARM (E)ABI"
 	 | (X86, 59) -> (* oldolduname *)
 	     uh "Unhandled Linux system call oldolduname (59)"
-	 | (ARM, 60) -> uh "Check whether ARM ioctl syscall matches x86"
+	 | (ARM, 60) -> uh "Check whether ARM umask syscall matches x86"
 	 | (X86, 60) -> (* umask *)
 	     let ebx = read_1_reg () in
 	     let mask = Int64.to_int ebx in
@@ -1856,11 +1926,10 @@ object(self)
 	     uh "Unhandled Linux system call getrlimit (76)"
 	 | (_, 77) -> (* getrusage *)
 	     uh "Unhandled Linux system call getrusage (77)"
-	 | (ARM, 78) -> uh "Check whether ARM gettimeofday syscall matches x86"
-	 | (X86, 78) -> (* gettimeofday *)
-	     let (ebx, ecx) = read_2_regs () in
-	     let timep = ebx and
-		 zonep = ecx in
+	 | (_, 78) -> (* gettimeofday *)
+	     let (arg1, arg2) = read_2_regs () in
+	     let timep = arg1 and
+		 zonep = arg2 in
 	       if !opt_trace_syscalls then
 		 Printf.printf "gettimeofday(0x08%Lx, 0x08%Lx)" timep zonep;
 	       self#sys_gettimeofday timep zonep
@@ -1877,12 +1946,11 @@ object(self)
 	 | (ARM, 84) -> uh "No oldlstat (84) syscall in Linux/ARM (E)ABI"
 	 | (X86, 84) -> (* oldlstat *)
 	     uh "Unhandled Linux system call oldlstat (84)"
-	 | (ARM, 85) -> uh "Check whether ARM readlink syscall matches x86"
-	 | (X86, 85) -> (* readlink *)
-	     let (ebx, ecx, edx) = read_3_regs () in
-	     let path_buf = ebx and
-		 out_buf  = ecx and
-		 buflen   = Int64.to_int edx in
+	 | (_, 85) -> (* readlink *)
+	     let (arg1, arg2, arg3) = read_3_regs () in
+	     let path_buf = arg1 and
+		 out_buf  = arg2 and
+		 buflen   = Int64.to_int arg3 in
 	     let path = fm#read_cstr path_buf in
 	       if !opt_trace_syscalls then
 		 Printf.printf "readlink(\"%s\", 0x%08Lx, %d)"
@@ -1909,11 +1977,10 @@ object(self)
 		 Printf.printf "mmap(0x%08Lx, %Ld, 0x%Lx, 0x%0Lx, %Ld, %d)"
 		   addr length prot flags fd offset;
 	       self#sys_mmap addr length prot flags fd offset
-	 | (ARM, 91) -> uh "Check whether ARM munmap (91) syscall matches x86"
-	 | (X86, 91) -> (* munmap *)
-	     let (ebx, ecx) = read_2_regs () in
-	     let addr = ebx and
-		 len  = ecx in
+	 | (_, 91) -> (* munmap *)
+	     let (arg1, arg2) = read_2_regs () in
+	     let addr = arg1 and
+		 len  = arg2 in
 	       if !opt_trace_syscalls then
 		 Printf.printf "munmap(0x%08Lx, %Ld)" addr len;
 	       self#sys_munmap addr len
@@ -2096,12 +2163,11 @@ object(self)
 	     uh "Unhandled Linux system call modify_ldt (123)"
 	 | (_, 124) -> (* adjtimex *)
 	     uh "Unhandled Linux system call adjtimex (124)"
-	 | (ARM, 125) -> uh "Check whether ARM mprotect syscall matches x86"
-	 | (X86, 125) -> (* mprotect *)
-	     let (ebx, ecx, edx) = read_3_regs () in
-	     let addr = ebx and
-		 len  = ecx and
-		 prot = edx in
+	 | (_, 125) -> (* mprotect *)
+	     let (arg1, arg2, arg3) = read_3_regs () in
+	     let addr = arg1 and
+		 len  = arg2 and
+		 prot = arg3 in
 	       if !opt_trace_syscalls then
 		 Printf.printf "mprotect(0x%08Lx, %Ld, %Ld)" addr len prot;
 	       self#sys_mprotect addr len prot
@@ -2146,14 +2212,13 @@ object(self)
 	     uh "Unhandled Linux system call setfsuid (138)"
 	 | (_, 139) -> (* setfsgid *)
 	     uh "Unhandled Linux system call setfsgid (139)"
-	 | (ARM, 140) -> uh "Check whether ARM _llseek syscall matches x86"
-	 | (X86, 140) -> (* _llseek *)
-	     let (ebx, ecx, edx, esi, edi) = read_5_regs () in
-	     let fd = Int64.to_int ebx and
-		 off_high = ecx and
-		 off_low = edx and
-		 resultp = esi and
-		 whence = Int64.to_int edi in
+	 | (_, 140) -> (* _llseek *)
+	     let (arg1, arg2, arg3, arg4, arg5) = read_5_regs () in
+	     let fd = Int64.to_int arg1 and
+		 off_high = arg2 and
+		 off_low = arg3 and
+		 resultp = arg4 and
+		 whence = Int64.to_int arg5 in
 	     let offset = Int64.logor off_low (Int64.shift_left off_high 32) in
 	       if !opt_trace_syscalls then
 		 Printf.printf "_llseek(%d, %Ld, 0x%08Lx, %d)"
@@ -2186,12 +2251,11 @@ object(self)
 	     uh "Unhandled Linux system call msync (144)"
 	 | (_, 145) -> (* readv *)
 	     uh "Unhandled Linux system call readv (145)"
-	 | (ARM, 146) -> uh "Check whether ARM writev syscall matches x86"
-	 | (X86, 146) -> (* writev *)
-	     let (ebx, ecx, edx) = read_3_regs () in
-	     let fd  = Int64.to_int ebx and
-		 iov = ecx and
-		 cnt = Int64.to_int edx in
+	 | (_, 146) -> (* writev *)
+	     let (arg1, arg2, arg3) = read_3_regs () in
+	     let fd  = Int64.to_int arg1 and
+		 iov = arg2 and
+		 cnt = Int64.to_int arg3 in
 	       if !opt_trace_syscalls then
 		 Printf.printf "writev(%d, 0x%08Lx, %d)" fd iov cnt;
 	       self#sys_writev fd iov cnt
@@ -2263,12 +2327,11 @@ object(self)
 	 | (ARM, 167) -> uh "No query_module syscall in Linux/ARM (E)ABI"
 	 | (X86, 167) -> (* query_module *)
 	     uh "Unhandled Linux system call query_module (167)"
-	 | (ARM, 168) -> uh "Check whether ARM poll syscall matches x86"
-	 | (X86, 168) -> (* poll *)
-	     let (ebx, ecx, edx) = read_3_regs () in
-	     let fds_buf = ebx and
-		 nfds = Int64.to_int ecx and
-		 timeout = edx in
+	 | (_, 168) -> (* poll *)
+	     let (arg1, arg2, arg3) = read_3_regs () in
+	     let fds_buf = arg1 and
+		 nfds = Int64.to_int arg2 and
+		 timeout = arg3 in
 	       if !opt_trace_syscalls then	
 		 Printf.printf "poll(0x%08Lx, %d, %Ld)" fds_buf nfds timeout;
 	       self#sys_poll fds_buf nfds timeout
@@ -2282,24 +2345,22 @@ object(self)
 	     uh "Unhandled Linux system call prctl (172)"
 	 | (_, 173) -> (* rt_sigreturn *)
 	     uh "Unhandled Linux system call rt_sigreturn (173)"
-	 | (ARM, 174) -> uh "Check whether ARM rt_sigaction matches x86"
-	 | (X86, 174) -> (* rt_sigaction *)
-	     let (ebx, ecx, edx, esi) = read_4_regs () in
-	     let signum = Int64.to_int ebx and
-		 newbuf = ecx and
-		 oldbuf = edx and
-		 setlen = Int64.to_int esi in
+	 | (_, 174) -> (* rt_sigaction *)
+	     let (arg1, arg2, arg3, arg4) = read_4_regs () in
+	     let signum = Int64.to_int arg1 and
+		 newbuf = arg2 and
+		 oldbuf = arg3 and
+		 setlen = Int64.to_int arg4 in
 	       if !opt_trace_syscalls then
 		 Printf.printf "rt_sigaction(%d, 0x%08Lx, 0x%08Lx, %d)"
 		   signum newbuf oldbuf setlen;
 	       self#sys_rt_sigaction signum newbuf oldbuf setlen
-	 | (ARM, 175) -> uh "Check whether ARM rt_sigprocmask matches x86"
-	 | (X86, 175) -> (* rt_sigprocmask *)
-	     let (ebx, ecx, edx, esi) = read_4_regs () in
-	     let how    = Int64.to_int ebx and
-		 newset = ecx and
-		 oldset = edx and
-		 setlen = Int64.to_int esi in
+	 | (_, 175) -> (* rt_sigprocmask *)
+	     let (arg1, arg2, arg3, arg4) = read_4_regs () in
+	     let how    = Int64.to_int arg1 and
+		 newset = arg2 and
+		 oldset = arg3 and
+		 setlen = Int64.to_int arg4 in
 	       if !opt_trace_syscalls then
 		 Printf.printf "rt_sigprocmask(%d, 0x%08Lx, 0x%08Lx, %d)"
 		   how newset oldset setlen;
@@ -2355,11 +2416,10 @@ object(self)
 	     uh "Unhandled Linux system call putpmsg (189)"
 	 | (_, 190) -> (* vfork *)
 	     uh "Unhandled Linux system call vfork (190)"
-	 | (ARM, 191) -> uh "Check whether ARM ugetrlimit syscall matches x86"
-	 | (X86, 191) -> (* ugetrlimit *)
-	     let (ebx, ecx) = read_2_regs () in
-	     let rsrc = Int64.to_int ebx and
-		 buf  = ecx in
+	 | (_, 191) -> (* ugetrlimit *)
+	     let (arg1, arg2) = read_2_regs () in
+	     let rsrc = Int64.to_int arg1 and
+		 buf  = arg2 in
 	       if !opt_trace_syscalls then
 		 Printf.printf "ugetrlimit(%d, 0x%08Lx)" rsrc buf;
 	       self#sys_ugetrlimit rsrc buf
@@ -2379,20 +2439,18 @@ object(self)
 	     uh "Unhandled Linux system call truncate64 (193)"
 	 | (_, 194) -> (* ftruncate64 *)
 	     uh "Unhandled Linux system call ftruncate64 (194)"
-	 | (ARM, 195) -> uh "Check whether ARM stat64 (195) matches x86"
-	 | (X86, 195) -> (* stat64 *)
-	     let (ebx, ecx) = read_2_regs () in
-	     let path_buf = ebx and
-		 buf_addr = ecx in
+	 | (_, 195) -> (* stat64 *)
+	     let (arg1, arg2) = read_2_regs () in
+	     let path_buf = arg1 and
+		 buf_addr = arg2 in
 	     let path = fm#read_cstr path_buf in
 	       if !opt_trace_syscalls then
 		 Printf.printf "stat64(\"%s\", 0x%08Lx)" path buf_addr;
 	       self#sys_stat64 path buf_addr
-	 | (ARM, 196) -> uh "Check whether ARM lstat64 (196) matches x86"
-	 | (X86, 196) -> (* lstat64 *)
-	     let (ebx, ecx) = read_2_regs () in
-	     let path_buf = ebx and
-		 buf_addr = ecx in
+	 | (_, 196) -> (* lstat64 *)
+	     let (arg1, arg2) = read_2_regs () in
+	     let path_buf = arg1 and
+		 buf_addr = arg2 in
 	     let path = fm#read_cstr path_buf in
 	       if !opt_trace_syscalls then
 		 Printf.printf "lstat64(\"%s\", 0x%08Lx)" path buf_addr;
@@ -2406,23 +2464,19 @@ object(self)
 	       self#sys_fstat64 fd buf_addr
 	 | (_, 198) -> (* lchown32 *)
 	     uh "Unhandled Linux system call lchown32 (198)"
-	 | (ARM, 199) -> uh "Check whether ARM getuid32 syscall matches x86"
-	 | (X86, 199) -> (* getuid32 *)
+	 | (_, 199) -> (* getuid32 *)
 	     if !opt_trace_syscalls then
 	       Printf.printf "getuid32()";
 	     self#sys_getuid32 ()
-	 | (ARM, 200) -> uh "Check whether ARM getgid32 syscall matches x86"
-	 | (X86, 200) -> (* getgid32 *)
+	 | (_, 200) -> (* getgid32 *)
 	     if !opt_trace_syscalls then
 	       Printf.printf "getgid32()";
 	     self#sys_getgid32 ()
-	 | (ARM, 201) -> uh "Check whether ARM geteuid32 syscall matches x86"
-	 | (X86, 201) -> (* geteuid32 *)
+	 | (_, 201) -> (* geteuid32 *)
 	     if !opt_trace_syscalls then
 	       Printf.printf "geteuid32()";
 	     self#sys_geteuid32 ()
-	 | (ARM, 202) -> uh "Check whether ARM getegid32 syscall matches x86"
-	 | (X86, 202) -> (* getegid32 *)
+	 | (_, 202) -> (* getegid32 *)
 	     if !opt_trace_syscalls then
 	       Printf.printf "getegid32()";
 	     self#sys_getegid32 ()
@@ -2493,9 +2547,10 @@ object(self)
 	     uh "Unhandled Linux system call setfsuid32 (215)"
 	 | (_, 216) -> (* setfsgid32 *)
 	     uh "Unhandled Linux system call setfsgid32 (216)"
-	 | (_, 217) -> (* pivot_root *)
-	     uh "Unhandled Linux system call pivot_root (217)"
-	 | (ARM, 218) -> uh "Check whether ARM mincore syscall matches x86"
+	 | (ARM, 218)
+	 | (X86, 217) -> (* pivot_root *)
+	     uh "Unhandled Linux system call pivot_root"
+	 | (ARM, 219) -> uh "Check whether ARM mincore syscall matches x86"
 	 | (X86, 218) -> (* mincore *)
 	     let (ebx, ecx, edx) = read_3_regs () in
 	     let addr = ebx and
@@ -2504,23 +2559,23 @@ object(self)
 	       if !opt_trace_syscalls then
 		 Printf.printf "mincore(0x%08Lx, %d, 0x%08Lx)" addr length vec;
 	       self#sys_mincore addr length vec
-	 | (_, 219) -> (* madvise *)
-	     uh "Unhandled Linux system call madvise (219)"
-	 | (ARM, 220) -> uh "Check whether ARM getdents64 syscall matches x86"
+	 | (ARM, 220)
+	 | (X86, 219) -> (* madvise *)
+	     uh "Unhandled Linux system call madvise"
+	 | (ARM, 217)
 	 | (X86, 220) -> (* getdents64 *)
-	     let (ebx, ecx, edx) = read_3_regs () in
-	     let fd = Int64.to_int ebx and
-		 dirp = ecx and
-		 count = Int64.to_int edx in
+	     let (arg1, arg2, arg3) = read_3_regs () in
+	     let fd = Int64.to_int arg1 and
+		 dirp = arg2 and
+		 count = Int64.to_int arg3 in
 	       if !opt_trace_syscalls then
 		 Printf.printf "getdents64(%d, 0x%08Lx, %d)" fd dirp count;
 	       self#sys_getdents64 fd dirp count
-	 | (ARM, 221) -> uh "Check whether ARM fcntl64 syscall matches x86"
-	 | (X86, 221) -> (* fcntl64 *)
-	     let (ebx, ecx, edx) = read_3_regs () in
-	     let fd = Int64.to_int ebx and
-		 cmd = Int64.to_int ecx and
-		 arg = edx in
+	 | (_, 221) -> (* fcntl64 *)
+	     let (arg1, arg2, arg3) = read_3_regs () in
+	     let fd = Int64.to_int arg1 and
+		 cmd = Int64.to_int arg2 and
+		 arg = arg3 in
 	       if !opt_trace_syscalls then
 		 Printf.printf "fcntl64(%d, %d, 0x%08Lx)" fd cmd arg;
 	       self#sys_fcntl64 fd cmd arg
@@ -2572,15 +2627,14 @@ object(self)
 	     uh "Unhandled Linux system call tkill (238)"
 	 | (_, 239) -> (* sendfile64 *)
 	     uh "Unhandled Linux system call sendfile64 (239)"
-	 | (ARM, 240) -> uh "Check whether ARM futex syscall matches x86"
-	 | (X86, 240) -> (* futex *)
-	     let (ebx, ecx, edx, esi, edi, ebp) = read_6_regs () in
-	     let uaddr    = ebx and
-		 op       = Int64.to_int ecx and
-		 value    = edx and
-		 timebuf  = esi and
-		 uaddr2   = edi and
-		 val3     = ebp in
+	 | (_, 240) -> (* futex *)
+	     let (arg1, arg2, arg3, arg4, arg5, arg6) = read_6_regs () in
+	     let uaddr    = arg1 and
+		 op       = Int64.to_int arg2 and
+		 value    = arg3 and
+		 timebuf  = arg4 and
+		 uaddr2   = arg5 and
+		 val3     = arg6 in
 	       if !opt_trace_syscalls then
 		 Printf.printf "futex(0x%08Lx, %d, %Ld, 0x%08Lx, 0x%08Lx, %Ld)"
 		   uaddr op value timebuf uaddr2 val3;
@@ -2640,12 +2694,12 @@ object(self)
 	     uh "Unhandled Linux system call remap_file_pages"
 	 | (ARM, 254) -> uh "No set_thread_area (254) syscall in Linux/ARM (E)ABI"
 	 | (ARM, 255) -> uh "No get_thread_area (255) syscall in Linux/ARM (E)ABI"
-	 | (ARM, 256) -> uh "Check whether ARM set_tid_address matches x86"
+	 | (ARM, 256)
 	 | (X86, 258) -> (* set_tid_address *)
-	     let ebx = read_1_reg () in
-	     let addr = ebx in
+	     let arg1 = read_1_reg () in
+	     let addr = arg1 in
 	       if !opt_trace_syscalls then
-		 Printf.printf "set_tid_address(0x08%Lx)" addr;
+		 Printf.printf "set_tid_address(0x%08Lx)" addr;
 	       self#sys_set_tid_address addr
 	 | (ARM, 257)    (* timer_create *)
 	 | (X86, 259) -> (* timer_create *)
@@ -2665,11 +2719,11 @@ object(self)
 	 | (ARM, 262)    (* clock_settime *)
 	 | (X86, 264) -> (* clock_settime *)
 	     uh "Unhandled Linux system call clock_settime"
-	 | (ARM, 263) -> uh "Check whether ARM clock_gettime matches x86"
+	 | (ARM, 263)
 	 | (X86, 265) -> (* clock_gettime *)
-	     let (ebx, ecx) = read_2_regs () in
-	     let clkid = Int64.to_int ebx and
-		 timep = ecx in
+	     let (arg1, arg2) = read_2_regs () in
+	     let clkid = Int64.to_int arg1 and
+		 timep = arg2 in
 	       if !opt_trace_syscalls then
 		 Printf.printf "clock_gettime(%d, 0x08%Lx)" clkid timep;
 	       self#sys_clock_gettime clkid timep
@@ -2684,12 +2738,12 @@ object(self)
 	 | (ARM, 265)    (* clock_nanosleep *)
 	 | (X86, 267) -> (* clock_nanosleep *)
 	     uh "Unhandled Linux system call clock_nanosleep"
-	 | (ARM, 266) -> uh "Check whether ARM statfs64 matches x86"
+	 | (ARM, 266)
 	 | (X86, 268) -> (* statfs64 *)
-	     let (ebx, ecx, edx) = read_3_regs () in
-	     let path_buf = ebx and
-		 buf_len = Int64.to_int ecx and
-		 struct_buf = edx in
+	     let (arg1, arg2, arg3) = read_3_regs () in
+	     let path_buf = arg1 and
+		 buf_len = Int64.to_int arg2 and
+		 struct_buf = arg3 in
 	     let path = fm#read_cstr path_buf in
 	       if !opt_trace_syscalls then
 		 Printf.printf "statfs64(\"%s\", %d, 0x%08Lx)"
@@ -2750,19 +2804,50 @@ object(self)
 	 | (X86, 284) -> (* waitid *)
 	     uh "Unhandled Linux system call waitid"
 	 | (ARM, 281) -> (* socket *)
-	     uh "Unhandled Linux/ARM system call socket (281, split)"
+	     let (arg1, arg2, arg3) = read_3_regs () in
+	     let dom_i = Int64.to_int arg1 and
+		 typ_i = Int64.to_int arg2 and
+		 prot_i = Int64.to_int arg3 in
+	       if !opt_trace_syscalls then
+		 Printf.printf "socket(%d, %d, %d)"
+		   dom_i typ_i prot_i;
+	       self#sys_socket dom_i typ_i prot_i
 	 | (ARM, 282) -> (* bind *)
 	     uh "Unhandled Linux/ARM system call bind (282, split)"
 	 | (ARM, 283) -> (* connect *)
-	     uh "Unhandled Linux/ARM system call connect (283, split)"
+	     let (arg1, arg2, arg3) = read_3_regs () in
+	     let sockfd = Int64.to_int arg1 and
+		 addr = arg2 and
+		 addrlen = Int64.to_int arg3
+	     in
+	       if !opt_trace_syscalls then
+		 Printf.printf "connect(%d, 0x%08Lx, %d)"
+		   sockfd addr addrlen;
+	       self#sys_connect sockfd addr addrlen
 	 | (ARM, 284) -> (* listen *)
 	     uh "Unhandled Linux/ARM system call listen (284, split)"
 	 | (ARM, 285) -> (* accept *)
 	     uh "Unhandled Linux/ARM system call accept (285, split)"
 	 | (ARM, 286) -> (* getsockname *)
-	     uh "Unhandled Linux/ARM system call getsockname (286, split)"
+	     let (arg1, arg2, arg3) = read_3_regs () in
+	     let sockfd = Int64.to_int arg1 and
+		 addr = load_word arg2 and
+		 addrlen_ptr = arg3
+	     in
+	       if !opt_trace_syscalls then
+		 Printf.printf "getsockname(%d, 0x%08Lx, 0x%08Lx)"
+		   sockfd addr addrlen_ptr;
+	       self#sys_getsockname sockfd addr addrlen_ptr
 	 | (ARM, 287) -> (* getpeername *)
-	     uh "Unhandled Linux/ARM system call getpeername (287, split)"
+	     let (arg1, arg2, arg3) = read_3_regs () in
+	     let sockfd = Int64.to_int arg1 and
+		 addr = arg2 and
+		 addrlen_ptr = arg3
+	     in
+	       if !opt_trace_syscalls then
+		 Printf.printf "getpeername(%d, 0x%08Lx, 0x%08Lx)"
+		   sockfd addr addrlen_ptr;
+	       self#sys_getpeername sockfd addr addrlen_ptr
 	 | (ARM, 288) -> (* socketpair *)
 	     uh "Unhandled Linux/ARM system call socketpair (288, split)"
 	 | (ARM, 289) -> (* send *)
@@ -2881,11 +2966,11 @@ object(self)
 	 | (ARM, 337)    (* unshare *)
 	 | (X86, 310) -> (* unshare *)
 	     uh "Unhandled Linux system call unshare"
-	 | (ARM, 338) -> uh "Check whether ARM set_robust_list matches x86"
+	 | (ARM, 338)
 	 | (X86, 311) -> (* set_robust_list *)
-	     let (ebx, ecx) = read_2_regs () in
-	     let addr = ebx and
-		 len  = ecx in
+	     let (arg1, arg2) = read_2_regs () in
+	     let addr = arg1 and
+		 len  = arg2 in
 	       if !opt_trace_syscalls then
 		 Printf.printf "set_robust_list(0x08%Lx, %Ld)" addr len;
 	       self#sys_set_robust_list addr len

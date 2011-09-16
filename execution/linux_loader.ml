@@ -105,25 +105,26 @@ let store_page fm vaddr str =
 
 let load_segment fm ic phr virt_off =
   let i = IO.input_channel ic in
-  let type_str = match (phr.ph_type, phr.ph_flags) with
-    | (1L, 5L) -> "text"
-    | (1L, 6L)
-    | (1L, 7L) -> "data"
-    | (1L, flags) -> (Printf.sprintf "LOAD:%08Lx" flags)
-    | (2L, _) -> "DYNAMIC"
-    | (3L, _) -> "INTERP"
-    | (4L, _) -> "NOTE"
-    | (6L, _) -> "PHDR"
-    | (7L, _) -> "TLS"
-    | (0x6474e550L, _) -> "EH_FRAME"
-    | (0x6474e551L, _) -> "STACK"
-    | (0x6474e552L, _) -> "RELRO"
-    | (ty, flags) -> (Printf.sprintf "??? %08Lx:%08Lx" ty flags)
+  let type_str = match (phr.ph_type, phr.ph_flags, !opt_arch) with
+    | (1L, 5L, _) -> "text"
+    | (1L, 6L, _)
+    | (1L, 7L, _) -> "data"
+    | (1L, flags, _) -> (Printf.sprintf "LOAD:%08Lx" flags)
+    | (2L, _, _) -> "DYNAMIC"
+    | (3L, _, _) -> "INTERP"
+    | (4L, _, _) -> "NOTE"
+    | (6L, _, _) -> "PHDR"
+    | (7L, _, _) -> "TLS"
+    | (0x6474e550L, _, _) -> "EH_FRAME"
+    | (0x6474e551L, _, _) -> "STACK"
+    | (0x6474e552L, _, _) -> "RELRO"
+    | (0x70000001L, _, ARM) -> "ARM_EXIDX"
+    | (ty, flags, _) -> (Printf.sprintf "??? %08Lx:%08Lx" ty flags)
   in
   let partial = Int64.rem phr.filesz 0x1000L in
   let vbase = Int64.add phr.vaddr virt_off in
     if !opt_trace_setup then
-      Printf.printf "Loading %8s segment from %08Lx to %08Lx\n"
+      Printf.printf "Loading %10s segment from %08Lx to %08Lx\n"
 	type_str vbase
 	(Int64.add vbase phr.filesz);
     seek_in ic (Int64.to_int phr.offset);
@@ -141,7 +142,7 @@ let load_segment fm ic phr virt_off =
     if phr.memsz > phr.filesz && type_str = "data" then
       (* E.g., a BSS region. Zero fill to avoid uninit-value errors. *)
       (if !opt_trace_setup then
-	 Printf.printf "            Zero filling from %08Lx to %08Lx\n"
+	 Printf.printf "              Zero filling from %08Lx to %08Lx\n"
 	   (Int64.add vbase phr.filesz) (Int64.add vbase phr.memsz);
        let va = ref (Int64.add vbase phr.filesz) in
        let first_full = (Int64.logand (Int64.add !va 4095L)
@@ -165,7 +166,7 @@ let load_segment fm ic phr virt_off =
 	 let last_aligned = (Int64.logand (Int64.add !va 4095L)
 			       (Int64.lognot 4095L)) in
 	   if !opt_trace_setup then
-	     Printf.printf "      Extra zero filling from %08Lx to %08Lx\n"
+	     Printf.printf "        Extra zero filling from %08Lx to %08Lx\n"
 	       !va last_aligned;
 	   (if last_aligned < 0xb7f00000L then
 	      match !linux_initial_break with 
