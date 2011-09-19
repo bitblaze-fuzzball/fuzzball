@@ -216,6 +216,12 @@ let build_startup_state fm eh load_base ldso argv =
     esp := Int64.sub !esp 4L;
     fm#store_word_conc !esp i
   in
+  let zero_pad_to new_sp =
+    let old_sp = !esp in
+    let size = Int64.sub old_sp new_sp in
+      fm#zero_fill new_sp (Int64.to_int size);
+      esp := new_sp
+  in    
   let env_keys = Vine_util.list_unique
     (Hashtbl.fold (fun k v l -> k :: l) opt_extra_env []) @
     ["DISPLAY"; "EDITOR"; "HOME"; "LANG"; "LOGNAME"; "PAGER"; "PATH";
@@ -273,9 +279,9 @@ let build_startup_state fm eh load_base ldso argv =
   let ptrs_len = 4 * (2 * ((List.length auxv) + ((List.length auxv) mod 2))
 		      + 1 + (List.length env_locs)
 		      + 1 + (List.length argv) + 1) in
-    esp := Int64.logand !esp (Int64.lognot 0xfL); (* 16-bit align *)
+    zero_pad_to (Int64.logand !esp (Int64.lognot 0xfL)); (* 16-byte align *)
     let pad_to = Int64.logand (Int64.sub !esp 0x2000L) (Int64.lognot 0xfffL) in
-      esp := Int64.add pad_to (Int64.of_int ptrs_len);
+      zero_pad_to (Int64.add pad_to (Int64.of_int ptrs_len));
       if (List.length auxv) mod 2 = 1 then
 	(push_word 0L; push_word 0L);
       List.iter (fun (k, v) -> push_word v; push_word k) auxv;
