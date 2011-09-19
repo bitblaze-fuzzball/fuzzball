@@ -103,7 +103,7 @@ struct
 	Hashtbl.replace measured_values key ((fm#get_path_cond, e) :: old)
 
     method take_measure_eip e =
-      let eip = fm#get_word_var R_EIP in
+      let eip = fm#get_eip in
       let str = Printf.sprintf "eip 0x%08Lx" eip in
 	self#take_measure str e
 
@@ -525,7 +525,7 @@ struct
     val unique_measurements = Hashtbl.create 30
 
     method measure_point_influence name e = 
-      let eip = fm#get_word_var R_EIP in
+      let eip = fm#get_eip in
       let loc = Printf.sprintf "%s %s:%08Lx:%Ld" name
 		(fm#get_hist_str) eip fm#get_loop_cnt in
 	if Hashtbl.mem unique_measurements loc then
@@ -541,7 +541,7 @@ struct
 	     ignore(self#measure_influence e))
 
     method maybe_measure_influence_deref e =
-      let eip = fm#get_word_var R_EIP in
+      let eip = fm#get_eip in
 	match !opt_measure_deref_influence_at with
 	  | Some addr when addr = eip ->
 	      self#take_measure_eip e;
@@ -555,6 +555,7 @@ struct
 	      self#measure_point_influence "deref" e
 
     method measure_influence_rep =
+      assert(!opt_arch = X86);
       let count = fm#get_word_var_d R_ECX in
 	try ignore(D.to_concrete_32 count)
 	with NotConcrete _ ->	    
