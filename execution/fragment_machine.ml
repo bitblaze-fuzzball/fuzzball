@@ -338,6 +338,7 @@ struct
 	reg R_ZF (D.from_concrete_1 0);
 	reg R_CF (D.from_concrete_1 0);
 	reg R_VF (D.from_concrete_1 0);
+	reg R_ITSTATE (D.from_concrete_32 0x00000000L);
 	()
 
     method make_regs_zero =
@@ -473,6 +474,7 @@ struct
 	reg R_ZF (form_man#fresh_symbolic_1  "initial_zf");
 	reg R_CF (form_man#fresh_symbolic_1  "initial_cf");
 	reg R_VF (form_man#fresh_symbolic_1  "initial_vf");
+	reg R_ITSTATE (form_man#fresh_symbolic_32  "initial_itstate");
 	()
 
     method make_regs_symbolic =

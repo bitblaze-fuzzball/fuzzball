@@ -3,6 +3,8 @@
   Security Inc.  All rights reserved.
 *)
 
+let opt_thumb = ref false
+
 module SRFM = Sym_region_frag_machine.SymRegionFragMachineFunctor
   (Symbolic_domain.SymbolicDomain)
 
@@ -33,7 +35,11 @@ let main argv =
 		  @ Exec_set_options.concrete_state_cmdline_opts
 		  @ Exec_set_options.symbolic_state_cmdline_opts
 		  @ Options_solver.solver_cmdline_opts
-		  @ Exec_set_options.trace_replay_cmdline_opts))
+		  @ Exec_set_options.trace_replay_cmdline_opts
+		  @ 
+		  [("-thumb", Arg.Set(opt_thumb),
+		    " ARM instruction is a Thumb instruction")]
+		 ))
       (fun s -> bytes_arg := !bytes_arg @ (parse_hex_to_bytes s))
       "test_insn [options]* 0xfe 0xed 0x42 ...\n";
     let dt = ((new Linear_decision_tree.linear_decision_tree)
@@ -49,8 +55,11 @@ let main argv =
       Exec_set_options.apply_cmdline_opts_nonlinux fm;
       Options_solver.apply_solver_cmdline_opts fm;
       Exec_set_options.apply_cmdline_opts_late fm;
+      if !opt_thumb then assert(!Exec_options.opt_arch = Exec_options.ARM);
       let bytes_l = List.map Char.chr !bytes_arg in
-      let code_addr = 0x08048000L in
+      let code_addr = Int64.logor 0x08048000L 
+	(if !opt_thumb then 1L else 0L)
+      in
       let bytes_a = Array.of_list bytes_l in
 	Array.iteri
 	  (fun i b -> fm#store_byte_conc (Int64.add code_addr (Int64.of_int i))
