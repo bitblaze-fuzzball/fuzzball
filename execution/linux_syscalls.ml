@@ -586,7 +586,7 @@ object(self)
 	(if (mode land 0x4)!=0 then [Unix.R_OK] else []) 
     in
       try
-	Unix.access path oc_mode;
+	Unix.access (chroot path) oc_mode;
 	put_return 0L
       with
 	| Unix.Unix_error(err, _, _) -> self#put_errno err
@@ -1429,7 +1429,7 @@ object(self)
 
   method sys_stat path buf_addr =
     try
-      let oc_buf = Unix.stat path in
+      let oc_buf = Unix.stat (chroot path) in
 	self#write_oc_statbuf_as_stat buf_addr oc_buf;
 	put_return 0L (* success *)
     with
@@ -1437,7 +1437,7 @@ object(self)
 
   method sys_lstat path buf_addr =
     try
-      let oc_buf = Unix.lstat path in
+      let oc_buf = Unix.lstat (chroot path) in
 	self#write_oc_statbuf_as_stat buf_addr oc_buf;
 	put_return 0L (* success *)
     with
@@ -1457,7 +1457,7 @@ object(self)
 
   method sys_stat64 path buf_addr =
     try
-      let oc_buf = Unix.stat path in
+      let oc_buf = Unix.stat (chroot path) in
 	self#write_oc_statbuf_as_stat64 buf_addr oc_buf;
 	put_return 0L (* success *)
     with
@@ -1465,7 +1465,7 @@ object(self)
 
   method sys_lstat64 path buf_addr =
     try
-      let oc_buf = Unix.lstat path in
+      let oc_buf = Unix.lstat (chroot path) in
 	self#write_oc_statbuf_as_stat64 buf_addr oc_buf;
 	put_return 0L (* success *)
     with
@@ -1714,8 +1714,7 @@ object(self)
 	       if !opt_trace_syscalls then
 		 Printf.printf "lseek(%d, %Ld, %d)" fd offset whence;
 	       self#sys_lseek fd offset whence
-	 | (ARM, 20) -> uh "Check whether ARM getpid syscall matches x86"
-	 | (X86, 20) -> (* getpid *)
+	 | (_, 20) -> (* getpid *)
 	     if !opt_trace_syscalls then
 	       Printf.printf "getpid()";
 	     self#sys_getpid ()
