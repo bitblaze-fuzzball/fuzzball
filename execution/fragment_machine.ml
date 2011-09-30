@@ -339,6 +339,8 @@ struct
 	reg R_CF (D.from_concrete_1 0);
 	reg R_VF (D.from_concrete_1 0);
 	reg R_ITSTATE (D.from_concrete_32 0x00000000L);
+	reg R_TPIDRURO (D.from_concrete_32 0x00000000L);
+	reg R_FPSCR (D.from_concrete_32 0x00000000L);
 	()
 
     method make_regs_zero =
@@ -557,7 +559,9 @@ struct
       self#print_reg1 "NF" R_NF;
       self#print_reg1 "ZF" R_ZF;
       self#print_reg1 "CF" R_CF;
-      self#print_reg1 "VF" R_VF
+      self#print_reg1 "VF" R_VF;
+      self#print_reg32 " IT" R_ITSTATE;
+      ()
 
     method print_regs =
       match !opt_arch with	
