@@ -17,6 +17,7 @@ exception ReachedInfluenceBound
 exception ReachedMeasurePoint
 exception Signal of string
 exception Simplify_failure of string
+exception SimulatedAbort
 exception SimulatedExit of int64
 exception SolverFailure
 exception SymbolicJump

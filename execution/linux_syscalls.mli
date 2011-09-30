@@ -130,6 +130,7 @@ object
   method sys_statfs64 : string -> int -> int64 -> unit
   method sys_time : int64 -> unit
   method sys_times : int64 -> unit
+  method sys_tgkill : int -> int -> int -> unit
   method sys_umask : int -> unit
   method sys_uname : int64 -> unit
   method sys_unlink : string -> unit

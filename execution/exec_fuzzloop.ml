@@ -121,6 +121,7 @@ let fuzz start_eip fuzz_start_eip end_eips
 		    (fun a -> List.mem a end_eips);
 		with
 		  | SimulatedExit(_) -> stop "when program called exit()"
+		  | SimulatedAbort -> stop "when program called abort()"
 		  | KnownPath -> stop "on previously-explored path"
 		      (* KnownPath currently shouldn't happen *)
 		  | DeepPath -> stop "on too-deep path"

@@ -1335,6 +1335,7 @@ object(self)
 
   method sys_set_tls tp_value =
     store_word 0xffff0ff0L 0 tp_value;
+    put_reg R_TPIDRURO tp_value;
     put_return 0L (* success *)
 
   method sys_rt_sigaction signum newbuf oldbuf setlen =
@@ -1394,7 +1395,9 @@ object(self)
 
   method sys_sigaltstack new_stack_t old_stack_t =
     if old_stack_t <> 0L then
-      raise (UnhandledSysCall("Query in sigaltstack"));
+      (store_word old_stack_t 0 0L; (* base address *)
+       store_word old_stack_t 4 2L; (* flags: SS_DISABLE *)
+       store_word old_stack_t 8 0L); (* size *)
     put_return 0L; (* success *)
 
   method sys_rt_sigprocmask how newset oldset setlen =
@@ -1497,6 +1500,12 @@ object(self)
     assert(buf_len = 84 || buf_len = 88); (* Same layout, different padding *)
     self#write_fake_statfs64buf struct_buf;
     put_return 0L (* success *)
+
+  method sys_tgkill tgid tid signal : unit =
+    let my_pid = self#get_pid in
+      if tgid = my_pid && tid = my_pid && signal = 6 then
+	raise SimulatedAbort;
+      failwith "Unhandled args to tgkill (not abort())"
 
   method sys_time addr =
     let time = Int64.of_float (Unix.time ()) in
@@ -2396,11 +2405,10 @@ object(self)
 	       self#sys_capget hdrp datap
 	 | (_, 185) -> (* capset *)
 	     uh "Unhandled Linux system call capset (185)"
-	 | (ARM, 186) -> uh "Check whether ARM sigaltstack syscall matches x86"
-	 | (X86, 186) -> (* sigaltstack *)
-	     let (ebx, ecx) = read_2_regs () in
-	     let new_stack_t = ebx and
-		 old_stack_t = ecx in
+	 | (_, 186) -> (* sigaltstack *)
+	     let (arg1, arg2) = read_2_regs () in
+	     let new_stack_t = arg1 and
+		 old_stack_t = arg2 in
 	       if !opt_trace_syscalls then
 		 Printf.printf "sigaltstack(0x%08Lx, 0x%08Lx)"
 		   new_stack_t old_stack_t;
@@ -2753,7 +2761,14 @@ object(self)
 	     uh "Unhandled Linux system call fstatfs64"
 	 | (ARM, 268)    (* tgkill *)
 	 | (X86, 270) -> (* tgkill *)
-	     uh "Unhandled Linux system call tgkill"
+	     let (arg1, arg2, arg3) = read_3_regs () in
+	     let tgid = Int64.to_int arg1 and
+		 tid = Int64.to_int arg2 and
+		 signal = Int64.to_int arg3 in
+	       if !opt_trace_syscalls then
+		 Printf.printf "tgkill(%d, %d, %d)"
+		   tgid tid signal;
+	       self#sys_tgkill tgid tid signal
 	 | (ARM, 269)    (* utimes *)
 	 | (X86, 271) -> (* utimes *)
 	     uh "Unhandled Linux system call utimes"
