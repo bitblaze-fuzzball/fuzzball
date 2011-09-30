@@ -32,6 +32,7 @@ let label_to_eip s =
 let known_unknowns = (
   let h = Hashtbl.create 11 in
     Hashtbl.replace h "Unknown: GetI" ();
+    Hashtbl.replace h "NegF64" ();
     Hashtbl.replace h "Floating point binop" ();
     Hashtbl.replace h "Floating point triop" ();
     Hashtbl.replace h "floatcast" ();
