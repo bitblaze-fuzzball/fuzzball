@@ -227,6 +227,7 @@ struct
     val unique_eips = Hashtbl.create 1001
 
     method eip_hook eip =
+      self#simplify_regs;
       if !opt_trace_registers then
 	self#print_regs;
       if !opt_trace_eip then
@@ -513,15 +514,13 @@ struct
 	Printf.printf "%s: " str;
 	Printf.printf "%s\n"
 	  (D.to_string_32 
-	     (form_man#simplify32
-		(self#get_int_var (Hashtbl.find reg_to_var r))))
+	     (self#get_int_var (Hashtbl.find reg_to_var r)))
      
     method private print_reg1 str r = 
 	Printf.printf "%s: " str;
 	Printf.printf "%s\n"
 	  (D.to_string_1 
-	     (form_man#simplify1
-		(self#get_int_var (Hashtbl.find reg_to_var r))))
+	     (self#get_int_var (Hashtbl.find reg_to_var r)))
 
     method private print_x86_regs =
       self#print_reg32 "%eax" R_EAX;
@@ -567,6 +566,60 @@ struct
       match !opt_arch with	
 	| X86 -> self#print_x86_regs
 	| ARM -> self#print_arm_regs
+
+    method private simplify_reg32 r =
+      let var = Hashtbl.find reg_to_var r in
+	self#set_int_var var (form_man#simplify32 (self#get_int_var var))
+
+    method private simplify_reg1 r =
+      let var = Hashtbl.find reg_to_var r in
+	self#set_int_var var (form_man#simplify1 (self#get_int_var var))
+
+    method private simplify_x86_regs =
+      self#simplify_reg32 R_EAX;
+      self#simplify_reg32 R_EBX;
+      self#simplify_reg32 R_ECX;
+      self#simplify_reg32 R_EDX;
+      self#simplify_reg32 R_ESI;
+      self#simplify_reg32 R_EDI;
+      self#simplify_reg32 R_ESP;
+      self#simplify_reg32 R_EBP;
+      self#simplify_reg1 R_CF;
+      self#simplify_reg1 R_PF;
+      self#simplify_reg1 R_AF;
+      self#simplify_reg1 R_ZF;
+      self#simplify_reg1 R_SF;
+      self#simplify_reg1 R_OF;
+      ()
+
+    method private simplify_arm_regs =
+      self#simplify_reg32 R0;
+      self#simplify_reg32 R1;
+      self#simplify_reg32 R2;
+      self#simplify_reg32 R3;
+      self#simplify_reg32 R4;
+      self#simplify_reg32 R5;
+      self#simplify_reg32 R6;
+      self#simplify_reg32 R7;
+      self#simplify_reg32 R8;
+      self#simplify_reg32 R9;
+      self#simplify_reg32 R10;
+      self#simplify_reg32 R11;
+      self#simplify_reg32 R12;
+      self#simplify_reg32 R13;
+      self#simplify_reg32 R14;
+      self#simplify_reg32 R15;
+      self#simplify_reg1 R_NF;
+      self#simplify_reg1 R_ZF;
+      self#simplify_reg1 R_CF;
+      self#simplify_reg1 R_VF;
+      self#simplify_reg32 R_ITSTATE;
+      ()
+
+    method private simplify_regs =
+      match !opt_arch with	
+	| X86 -> self#simplify_x86_regs
+	| ARM -> self#simplify_arm_regs
 
     method store_byte  addr b = mem#store_byte  addr b
     method store_short addr s = mem#store_short addr s
