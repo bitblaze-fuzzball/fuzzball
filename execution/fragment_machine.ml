@@ -127,7 +127,7 @@ struct
   module GM = GranularMemoryFunctor(D)
   module FormMan = FormulaManagerFunctor(D)
 
-  let change_some_short_bytes d bytes construct =
+  let change_some_short_bytes form_man d bytes construct =
     assert(Array.length bytes = 2);
     let select old = function
       | None -> old
@@ -137,9 +137,9 @@ struct
 	o1 = D.extract_8_from_16 d 1in
     let b0 = select o0 bytes.(0) and
 	b1 = select o1 bytes.(1) in
-      D.reassemble16 b0 b1
+      form_man#simplify16 (D.reassemble16 b0 b1)
 
-  let change_some_word_bytes d bytes construct =
+  let change_some_word_bytes form_man d bytes construct =
     assert(Array.length bytes = 4);
     let select old = function
       | None -> old
@@ -153,9 +153,10 @@ struct
 	b1 = select o1 bytes.(1) and
 	b2 = select o2 bytes.(2) and
 	b3 = select o3 bytes.(3) in
-      D.reassemble32 (D.reassemble16 b0 b1) (D.reassemble16 b2 b3)
+      form_man#simplify32
+	(D.reassemble32 (D.reassemble16 b0 b1) (D.reassemble16 b2 b3))
 
-  let change_some_long_bytes d bytes construct =
+  let change_some_long_bytes form_man d bytes construct =
     assert(Array.length bytes = 8);
     let select old = function
       | None -> old
@@ -177,9 +178,10 @@ struct
 	b5 = select o5 bytes.(5) and
 	b6 = select o6 bytes.(6) and
 	b7 = select o7 bytes.(7) in
-      D.reassemble64
-	(D.reassemble32 (D.reassemble16 b0 b1) (D.reassemble16 b2 b3))
-	(D.reassemble32 (D.reassemble16 b4 b5) (D.reassemble16 b6 b7))
+      form_man#simplify64
+	(D.reassemble64
+	   (D.reassemble32 (D.reassemble16 b0 b1) (D.reassemble16 b2 b3))
+	   (D.reassemble32 (D.reassemble16 b4 b5) (D.reassemble16 b6 b7)))
 
   class frag_machine = object(self)
     val mem = (new GM.granular_second_snapshot_memory
@@ -227,7 +229,9 @@ struct
     val unique_eips = Hashtbl.create 1001
 
     method eip_hook eip =
-      self#simplify_regs;
+      (* Shouldn't be needed; we instead simplify the registers when
+	 writing to them: *)
+      (* self#simplify_regs; *)
       if !opt_trace_registers then
 	self#print_regs;
       if !opt_trace_eip then
@@ -753,15 +757,18 @@ struct
     method set_word_var_low_short reg v =
       let var = Hashtbl.find reg_to_var reg in
       let high = D.extract_16_from_32 (self#get_int_var var) 2 in
-      let newv = D.assemble32 (D.from_concrete_16 v) high in
+      let newv = form_man#simplify32
+	(D.assemble32 (D.from_concrete_16 v) high)
+      in
 	self#set_int_var var newv
 
     method set_word_var_low_byte reg v =
       let var = Hashtbl.find reg_to_var reg in
       let high_s = D.extract_16_from_32 (self#get_int_var var) 2 in
       let second_b = D.extract_8_from_32 (self#get_int_var var) 1 in
-      let newv = D.assemble32
-	(D.assemble16 (D.from_concrete_8 v) second_b) high_s
+      let newv = form_man#simplify32
+	(D.assemble32
+	   (D.assemble16 (D.from_concrete_8 v) second_b) high_s)
       in
 	self#set_int_var var newv
 
@@ -769,8 +776,9 @@ struct
       let var = Hashtbl.find reg_to_var reg in
       let high_s = D.extract_16_from_32 (self#get_int_var var) 2 in
       let low_b = D.extract_8_from_32 (self#get_int_var var) 0 in
-      let newv = D.assemble32
-	(D.assemble16 low_b (D.from_concrete_8 v)) high_s
+      let newv = form_man#simplify32
+	(D.assemble32
+	   (D.assemble16 low_b (D.from_concrete_8 v)) high_s)
       in
 	self#set_int_var var newv
 
@@ -1241,9 +1249,9 @@ struct
 
     method set_reg_conc_bytes reg byte_array =
       let change_func = match Array.length byte_array with
-	| 2 -> change_some_short_bytes
-	| 4 -> change_some_word_bytes
-	| 8 -> change_some_long_bytes
+	| 2 -> change_some_short_bytes form_man
+	| 4 -> change_some_word_bytes form_man
+	| 8 -> change_some_long_bytes form_man
 	| _ -> failwith "Unsupported length in set_reg_conc_bytes"
       in
       let var = Hashtbl.find reg_to_var reg in
@@ -1255,9 +1263,9 @@ struct
 
     method set_reg_concolic_mem_bytes reg byte_array =
       let change_func = match Array.length byte_array with
-	| 2 -> change_some_short_bytes
-	| 4 -> change_some_word_bytes
-	| 8 -> change_some_long_bytes
+	| 2 -> change_some_short_bytes form_man
+	| 4 -> change_some_word_bytes form_man
+	| 8 -> change_some_long_bytes form_man
 	| _ -> failwith "Unsupported length in set_reg_concolic_mem_bytes"
       in
       let var = Hashtbl.find reg_to_var reg in

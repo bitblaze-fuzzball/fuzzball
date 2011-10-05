@@ -476,12 +476,16 @@ struct
       D.inside_symbolic
 	(fun e ->
 	   let e' = simplify_rec e in
+	     (* We're supposed to simplify expressions as we build
+		them, so something is going wrong if they get way to big
+		at once: *)
+	     (* assert(expr_size e' < 1000); *)
 	     if expr_size e' < 10 then
 	       e'
 	     else
 	       V.Lval(V.Temp(self#make_temp_var e' ty))
 	) v
-	      
+
     method simplify1  e = self#simplify e V.REG_1
     method simplify8  e = self#simplify e V.REG_8
     method simplify16 e = self#simplify e V.REG_16
