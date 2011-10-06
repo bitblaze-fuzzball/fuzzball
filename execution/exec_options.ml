@@ -34,6 +34,7 @@ let input_string_mem_prefix = ref None
 let next_periodic_influence : int ref = ref (-1)
 
 let opt_trace_temps = ref false
+let opt_trace_temps_encoded = ref false
 let opt_use_tags = ref false
 let opt_print_callrets = ref false
 let opt_fail_offset_heuristic = ref true

@@ -468,6 +468,8 @@ struct
  	      Hashtbl.replace temp_var_num_to_subexpr var_num
 		(e_enc, used_vars);
 	      VarWeak.add temp_vars_weak var;
+	      if !opt_trace_temps_encoded then
+		Printf.printf "%s = %s\n" s (encode_printable_exp e);
 	      if !opt_trace_temps then
 		Printf.printf "%s = %s\n" s (V.exp_to_string e);
 	      var

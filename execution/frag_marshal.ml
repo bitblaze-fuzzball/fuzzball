@@ -26,59 +26,75 @@ let free_var (n,s,t) =
 
 let canon_vars = VarWeak.create 1001
 
-let encode_exp e =
+let encode_exp_flags e printable =
   let chars = ref [] in
   let vars = ref [] in
   let push c = chars := c :: !chars in
+  let push_printable_str s = String.iter push s in
   let push_int64 i =
+    let push_char c =
+      if printable then
+	push_printable_str (Printf.sprintf "(0x%x)" (Char.code c))
+      else
+	push c
+    in
     let push_short s =
-      let lb = s land 0xff and
-	  hb = s asr 8 in
-	push (Char.chr hb);
-	push (Char.chr lb)
+      if printable then
+	push_printable_str (Printf.sprintf "(0x%x)" s)
+      else
+	let lb = s land 0xff and
+	    hb = s asr 8 in
+	  push (Char.chr hb);
+	  push (Char.chr lb)
     in
     let push_word i =
-      push_short (Int64.to_int (Int64.shift_right i 16));
-      push_short (Int64.to_int (Int64.logand i 0xffffL))
+      if printable then
+	push_printable_str (Printf.sprintf "(0x%Lx)" i)
+      else
+	(push_short (Int64.to_int (Int64.shift_right i 16));
+	 push_short (Int64.to_int (Int64.logand i 0xffffL)))
     in
-    match i with
-      | (0L|1L|2L|3L|4L|5L|6L|7L|8L|9L) ->
-	  push (Char.chr((Char.code '0') + (Int64.to_int i)))
-      | i when i >= 10L && i < 36L ->
-	  push (Char.chr((Char.code 'a') + (Int64.to_int i) - 10))
-      | -1L -> push '-'
-      | i when i >= 0L && i < 256L ->
-	  push 'C';
-	  push (Char.chr (Int64.to_int i))
-      | i when i >= -128L && i < 0L ->
-	  push 'D';
-	  push (Char.chr (-(Int64.to_int i)))
-      | i when i >= 0xffffff00L && i <= 0xffffffffL ->
-	  push 'E';
-	  push (Char.chr (Int64.to_int i land 0xff))
-      | i when i >= 0L && i < 65536L ->
-	  push 'S';
-	  push_short (Int64.to_int i)
-      | i when i >= -32768L && i < 0L ->
-	  push 'T';
-	  push_short (- (Int64.to_int i))
-      | i when i >= 0L && i < 0x100000000L ->
-	  push 'I';
-	  push_word i;
-      | i when i >= 2147483648L && i < 0L ->
-	  push 'J';
-	  push_word (Int64.neg i);
-      | _ ->
-	  push 'L';
-	  push_word (Int64.shift_right i 32);
-	  push_word (Int64.logand i 0xffffffffL);
+      match i with
+	| (0L|1L|2L|3L|4L|5L|6L|7L|8L|9L) ->
+	    push (Char.chr((Char.code '0') + (Int64.to_int i)))
+	| i when i >= 10L && i < 36L ->
+	    push (Char.chr((Char.code 'a') + (Int64.to_int i) - 10))
+	| -1L -> push '-'
+	| i when i >= 0L && i < 256L ->
+	    push 'C';
+	    push_char (Char.chr (Int64.to_int i))
+	| i when i >= -128L && i < 0L ->
+	    push 'D';
+	    push_char (Char.chr (-(Int64.to_int i)))
+	| i when i >= 0xffffff00L && i <= 0xffffffffL ->
+	    push 'E';
+	    push_char (Char.chr (Int64.to_int i land 0xff))
+	| i when i >= 0L && i < 65536L ->
+	    push 'S';
+	    push_short (Int64.to_int i)
+	| i when i >= -32768L && i < 0L ->
+	    push 'T';
+	    push_short (- (Int64.to_int i))
+	| i when i >= 0L && i < 0x100000000L ->
+	    push 'I';
+	    push_word i;
+	| i when i >= 2147483648L && i < 0L ->
+	    push 'J';
+	      push_word (Int64.neg i);
+	| _ ->
+	    push 'L';
+	    push_word (Int64.shift_right i 32);
+	    push_word (Int64.logand i 0xffffffffL);
   in
   let push_string s =
     assert(String.length s < 250);
-    push (Char.chr (String.length s));
-    for i = 0 to (String.length s) - 1 do
-      push s.[i]
-    done
+    if printable then
+	push_printable_str (Printf.sprintf "(%s)" (String.escaped s))
+    else
+      (push (Char.chr (String.length s));
+       for i = 0 to (String.length s) - 1 do
+	 push s.[i]
+       done)
   in
   let push_var ((n,s,t) as var) =
     let c =
@@ -93,10 +109,13 @@ let encode_exp e =
 	     Printf.printf "Bad type: %s\n" (V.type_to_string t);
 	     failwith "Unexpected variable type in encode_exp") in
       push c;
-      push_int64 (Int64.of_int n);
-      Hashtbl.replace var_num_to_name n s;
-      ignore(VarWeak.merge canon_vars var);
-      vars := var :: !vars
+      if printable then
+	push_printable_str (Printf.sprintf "(%s)" s)
+      else
+	(push_int64 (Int64.of_int n);
+	 Hashtbl.replace var_num_to_name n s;
+	 ignore(VarWeak.merge canon_vars var);
+	 vars := var :: !vars)
   in
   let rec loop e = match e with
     | V.BinOp(V.LT, V.BinOp(V.PLUS, e1, V.Constant(V.Int(V.REG_32, 1L))), e2)
@@ -208,6 +227,11 @@ let encode_exp e =
 	l := List.tl !l
       done;
       (str, !vars)
+
+let encode_exp e = encode_exp_flags e false
+
+let encode_printable_exp e =
+  let (s, _) = encode_exp_flags e true in s
 
 let decode_exp s =
   let parse_short i =

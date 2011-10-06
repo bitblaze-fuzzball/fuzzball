@@ -344,6 +344,8 @@ let cmdline_opts =
      " Print symbolic address values");
     ("-trace-temps", Arg.Set(opt_trace_temps),
      " Print intermediate formulas");
+    ("-trace-temps-encoded", Arg.Set(opt_trace_temps_encoded),
+     " -trace-temps in a line-noise-like format");
     ("-gc-stats", Arg.Set(opt_gc_stats),
      " Print memory usage statistics");
     ("-time-stats", Arg.Set(opt_time_stats),

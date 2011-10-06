@@ -19,6 +19,7 @@ val input_string_mem_prefix : string option ref
 val next_periodic_influence : int ref
 
 val opt_trace_temps : bool ref
+val opt_trace_temps_encoded : bool ref
 val opt_use_tags : bool ref
 val opt_print_callrets : bool ref
 val opt_fail_offset_heuristic : bool ref
