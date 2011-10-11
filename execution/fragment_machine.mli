@@ -134,6 +134,7 @@ sig
     method set_word_reg_symbolic : register_name -> string -> unit
     method set_word_reg_concolic : register_name -> string -> int64 -> unit
     method set_word_reg_fresh_symbolic : register_name -> string -> unit
+    method set_word_reg_fresh_region : register_name -> string -> unit
 
     method private handle_load : Vine.exp -> Vine.typ -> (D.t * Vine.typ)
     method private handle_store : Vine.exp -> Vine.typ -> Vine.exp -> unit
@@ -332,6 +333,7 @@ class virtual fragment_machine : object
   method virtual set_word_reg_concolic :
     register_name -> string -> int64 -> unit
   method virtual set_word_reg_fresh_symbolic : register_name -> string -> unit
+  method virtual set_word_reg_fresh_region : register_name -> string -> unit
 
   method virtual run_sl : (string -> bool) -> Vine.stmt list -> string
 		  

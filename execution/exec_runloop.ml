@@ -11,6 +11,10 @@ open Fragment_machine
 open Exec_run_common
 
 let call_replacements fm last_eip eip =
+  let ret_reg = match !opt_arch with
+    | X86 -> R_EAX
+    | ARM -> R0
+  in
   let lookup targ l =
     List.fold_left
       (fun ret (addr, retval) -> 
@@ -19,19 +23,24 @@ let call_replacements fm last_eip eip =
   in
     match ((lookup eip      !opt_skip_func_addr),
 	   (lookup eip      !opt_skip_func_addr_symbol),
+	   (lookup eip      !opt_skip_func_addr_region),
 	   (lookup last_eip !opt_skip_call_addr),
-	   (lookup last_eip !opt_skip_call_addr_symbol))
-      
+	   (lookup last_eip !opt_skip_call_addr_symbol),
+	   (lookup last_eip !opt_skip_call_addr_region))
     with
-      | (None, None, None, None) -> None
-      | (Some sfa_val, None, None, None) ->
-	  Some (fun () -> fm#set_word_var R_EAX sfa_val)
-      | (None, Some sfas_sym, None, None) ->
-	  Some (fun () -> fm#set_word_reg_fresh_symbolic R_EAX sfas_sym)
-      | (None, None, Some cfa_val, None) ->
-	  Some (fun () -> fm#set_word_var R_EAX cfa_val)
-      | (None, None, None, Some cfas_sym) ->
-	  Some (fun () -> fm#set_word_reg_fresh_symbolic R_EAX cfas_sym)
+      | (None, None, None, None, None, None) -> None
+      | (Some sfa_val, None, None, None, None, None) ->
+	  Some (fun () -> fm#set_word_var ret_reg sfa_val)
+      | (None, Some sfas_sym, None, None, None, None) ->
+	  Some (fun () -> fm#set_word_reg_fresh_symbolic ret_reg sfas_sym)
+      | (None, None, Some sfar_sym, None, None, None) ->
+	  Some (fun () -> fm#set_word_reg_fresh_region ret_reg sfar_sym)
+      | (None, None, None, Some cfa_val, None, None) ->
+	  Some (fun () -> fm#set_word_var ret_reg cfa_val)
+      | (None, None, None, None, Some cfas_sym, None) ->
+	  Some (fun () -> fm#set_word_reg_fresh_symbolic ret_reg cfas_sym)
+      | (None, None, None, None, None, Some cfar_sym) ->
+	  Some (fun () -> fm#set_word_reg_fresh_region ret_reg cfar_sym)
       | _ -> failwith "Contradictory replacement options"
 
 let loop_detect = Hashtbl.create 1000

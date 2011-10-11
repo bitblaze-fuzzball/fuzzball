@@ -179,6 +179,12 @@ let symbolic_state_cmdline_opts =
     ("-skip-func-ret-symbol", Arg.String
        (add_delimited_num_str_pair opt_skip_func_addr_symbol '='),
      "addr=symname Like -s-f-r, but return a fresh symbol");
+    ("-skip-call-ret-region", Arg.String
+       (add_delimited_num_str_pair opt_skip_call_addr_region '='),
+     "addr=symname Like -s-c-r-s, but hint the symbol is a mem region");
+    ("-skip-func-ret-region", Arg.String
+       (add_delimited_num_str_pair opt_skip_func_addr_region '='),
+     "addr=symname Like -s-f-r-s, but hint the symbol is a mem region");
   ]
 
 let concolic_state_cmdline_opts =
@@ -190,6 +196,17 @@ let concolic_state_cmdline_opts =
     ("-concolic-cstring", Arg.String
        (add_delimited_num_escstr_pair opt_concolic_cstrings '='),
      "base=\"str\" Make a C string with given size, concrete \\0");
+    ("-concolic-cstring-file", Arg.String
+       (fun s ->
+	  let (s1, s2) = split_string '=' s in
+	  let ic = open_in s2 in
+	  let len = in_channel_length ic in
+	  let str = String.create len in
+	    really_input ic str 0 len;
+	    close_in ic;
+	    opt_concolic_cstrings :=
+	      ((Int64.of_string s1), str) :: !opt_concolic_cstrings),
+     "base=file As above, but read contents from a file");
   ]
 
 let explore_cmdline_opts =
@@ -233,6 +250,11 @@ let explore_cmdline_opts =
      "strategy Strategy for offset concretization: uniform, biased-small");
     ("-follow-path", Arg.Set_string(opt_follow_path),
      "string String of 0's and 1's signifying the specific path decisions to make.");
+    ("-branch-preference", Arg.String
+       (fun s -> let (s1, s2) = split_string ':' s in
+	  Hashtbl.add opt_branch_preference (Int64.of_string s1)
+	    (Int64.of_string s2)),
+     "eip:(0|1) Prefer given direction for a symbolic branch");
     ("-random-seed", Arg.Set_int opt_random_seed,
      "N Use given seed for path choice");
     ("-save-decision-tree-interval",

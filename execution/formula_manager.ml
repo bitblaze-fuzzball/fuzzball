@@ -132,6 +132,13 @@ struct
     method make_concolic_32 s v = self#make_concolic V.REG_32 s v
     method make_concolic_64 s v = self#make_concolic V.REG_64 s v
 
+    method fresh_region_base_concolic s v =
+      assert(not (Hashtbl.mem region_base_vars s));
+      let var = self#fresh_symbolic_var s V.REG_32 in
+	Hashtbl.replace region_base_vars s var;
+	ignore(self#make_concolic_32 s v);
+	D.from_symbolic (V.Lval(V.Temp(var)))
+
     method make_concolic_mem_8 str addr v_int =
       let v = Int64.of_int v_int in
       let var =

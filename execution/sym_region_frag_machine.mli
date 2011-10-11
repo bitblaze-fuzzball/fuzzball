@@ -168,6 +168,8 @@ sig
       Fragment_machine.register_name -> string -> int64 -> unit
     method set_word_reg_fresh_symbolic :
       Fragment_machine.register_name -> string -> unit
+    method set_word_reg_fresh_region : 
+      Fragment_machine.register_name -> string -> unit
     method eval_int_exp_ty : Vine.exp -> (D.t * Vine.typ)	    
     method private eval_int_exp : Vine.exp -> D.t
     method private eval_int_exp_simplify : Vine.exp -> D.t

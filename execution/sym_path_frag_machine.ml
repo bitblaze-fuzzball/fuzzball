@@ -295,7 +295,11 @@ struct
 		  self#eval_bool_exp_conc_path e
 		else 
 		  (dt#start_new_query_binary;
-		   let b = self#extend_pc_random e true in
+		   let choice = None in
+		   let b = match choice with
+		     | None -> self#extend_pc_random e true
+		     | Some bit -> self#extend_pc_known e true bit
+		   in
 		   let choices = dt#check_last_choices in
 		     dt#count_query;
 		     (b, choices))
@@ -315,7 +319,14 @@ struct
 
     method private cjmp_choose targ1 targ2 =
       let eip = self#get_eip in
-	(self#call_cjmp_heuristic eip targ1 targ2 None)
+	try let pref = Hashtbl.find opt_branch_preference eip in
+	  match pref with
+	    | 0L -> Some false
+	    | 1L -> Some true
+	    | _ -> failwith "Unsupported branch preference"
+	with
+	  | Not_found ->
+	      (self#call_cjmp_heuristic eip targ1 targ2 None)
 
     method eval_cjmp exp targ1 targ2 =
       let eip = self#get_eip in

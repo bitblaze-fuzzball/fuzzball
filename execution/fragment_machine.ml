@@ -796,6 +796,17 @@ struct
       self#set_word_reg_symbolic reg (s ^ "_" ^ (string_of_int symbol_uniq)); 
       symbol_uniq <- symbol_uniq + 1
 
+    method set_word_reg_fresh_region reg s =
+      let name = s ^ "_" ^ (string_of_int symbol_uniq) in
+      (* Make up a fake value for things like null and alignment checks,
+	 in case this run is concolic. *)
+      let addr = Int64.add 0x70000000L
+	(Int64.mul 0x10000L (Int64.of_int symbol_uniq))
+      in
+	self#set_int_var (Hashtbl.find reg_to_var reg)
+	  (form_man#fresh_region_base_concolic name addr);
+	symbol_uniq <- symbol_uniq + 1
+
     method private handle_load addr_e ty =
       let addr = self#eval_addr_exp addr_e in
       let v =
@@ -1086,12 +1097,14 @@ struct
 		 | V.Jmp(l) -> jump (self#eval_label_exp l)
 		 | V.CJmp(cond, V.Name(l1), V.Name(l2))
 		     when
-		       (String.length l1 > 5) &&
-			 ((String.sub l1 0 5) = "pc_0x") &&
-			 (String.length l2 > 5) &&
-			 ((String.sub l2 0 5) = "pc_0x") ->
-		     let a1 = Vine.label_to_addr l1 and
-			 a2 = Vine.label_to_addr l2 in
+		       ((String.length l1 > 5) &&
+			  ((String.sub l1 0 5) = "pc_0x")) ||
+			 ((String.length l2 > 5) &&
+			    ((String.sub l2 0 5) = "pc_0x")) ->
+		     let a1 = try Vine.label_to_addr l1
+		     with V.VineError(_) -> self#get_eip and
+			 a2 = try Vine.label_to_addr l2
+		     with V.VineError(_) -> self#get_eip in
 		       if (self#eval_cjmp cond a1 a2) then
 			 jump l1
 		       else
@@ -1536,6 +1549,7 @@ class virtual fragment_machine = object
   method virtual set_word_reg_concolic :
     register_name -> string -> int64 -> unit
   method virtual set_word_reg_fresh_symbolic : register_name -> string -> unit
+  method virtual set_word_reg_fresh_region : register_name -> string -> unit
 
   method virtual run_sl : (string -> bool) -> Vine.stmt list -> string
 		  

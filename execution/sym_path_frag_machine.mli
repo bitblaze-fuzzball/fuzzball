@@ -143,6 +143,8 @@ sig
       Fragment_machine.register_name -> string -> int64 -> unit
     method set_word_reg_fresh_symbolic :
       Fragment_machine.register_name -> string -> unit
+    method set_word_reg_fresh_region : 
+      Fragment_machine.register_name -> string -> unit
     method private handle_load : Vine.exp -> Vine.typ -> (D.t * Vine.typ)
     method private handle_store : Vine.exp -> Vine.typ -> Vine.exp -> unit
     method private maybe_concretize_binop :

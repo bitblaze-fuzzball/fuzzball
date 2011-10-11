@@ -30,6 +30,7 @@ val opt_solver_slow_time : float ref
 val opt_save_solver_files : bool ref
 val opt_stp_path : string ref
 val opt_follow_path : string ref
+val opt_branch_preference : (int64, int64) Hashtbl.t
 val opt_iteration_limit : int64 ref
 val opt_watch_expr_str : string option ref
 val opt_watch_expr : Vine.exp option ref
@@ -80,6 +81,8 @@ val opt_skip_call_addr : (int64 * int64) list ref
 val opt_skip_func_addr : (int64 * int64) list ref
 val opt_skip_call_addr_symbol : (int64 * string) list ref
 val opt_skip_func_addr_symbol : (int64 * string) list ref
+val opt_skip_call_addr_region : (int64 * string) list ref
+val opt_skip_func_addr_region : (int64 * string) list ref
 val opt_trace_eip : bool ref
 val opt_trace_unique_eips : bool ref
 val opt_trace_ir : bool ref
