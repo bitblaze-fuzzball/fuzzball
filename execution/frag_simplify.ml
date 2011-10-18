@@ -606,6 +606,8 @@ let lets_to_moves (dl, sl) =
 
 let simplify_frag (orig_dl, orig_sl) =
   (* V.pp_program print_string (orig_dl, orig_sl); *)
+  (* let extra_dl = Asmir.decls_for_arch (Exec_options.asmir_arch ()) in
+    Vine_typecheck.typecheck (orig_dl @ extra_dl, orig_sl); *)
   let (dl, sl) = (orig_dl, orig_sl) in
   let (dl, sl) = lets_to_moves (dl, sl) in
   let sl = rm_unused_stmts sl in
