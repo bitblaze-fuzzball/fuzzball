@@ -15,10 +15,15 @@ let call_replacements fm last_eip eip =
     | X86 -> R_EAX
     | ARM -> R0
   in
+  let canon_eip eip =
+    match !opt_arch with
+      | X86 -> eip
+      | ARM -> Int64.logand 0xfffffffeL eip (* undo Thumb encoding *)
+  in
   let lookup targ l =
     List.fold_left
       (fun ret (addr, retval) -> 
-	 if (addr = targ) then Some (retval) else ret)
+	 if ((canon_eip addr) = (canon_eip targ)) then Some (retval) else ret)
       None l
   in
     match ((lookup eip      !opt_skip_func_addr),
@@ -112,7 +117,13 @@ let rec runloop (fm : fragment_machine) eip asmir_gamma until =
 	| None -> prog
 	| Some thunk ->
 	    thunk ();
-	    decode_insn asmir_gamma eip [|'\xc3'|] (* fake "ret" *)
+	    let fake_ret = match (!opt_arch, (Int64.logand eip 1L)) with
+	      | (X86, _) -> [|'\xc3'|] (* ret *)
+	      | (ARM, 0L) -> [|'\x1e'; '\xff'; '\x2f'; '\xe1'|] (* bx lr *)
+	      | (ARM, 1L) -> [|'\x70'; '\x47'|] (* bx lr (Thumb) *)
+	      | (ARM, _) -> failwith "Can't happen (logand with 1)"
+	    in
+	      decode_insn asmir_gamma eip fake_ret
       in
 	if !opt_trace_insns then
 	  print_insns eip prog' None '\n';
