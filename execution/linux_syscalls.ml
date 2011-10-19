@@ -134,10 +134,13 @@ object(self)
     in loop 0
 
   method get_fd vt_fd =
-    match unix_fds.(vt_fd) with
-      | Some fd -> fd
-      | None -> raise
-	  (Unix.Unix_error(Unix.EBADF, "Bad (virtual) file handle", ""))
+    if vt_fd < 0 || vt_fd >= (Array.length unix_fds) then
+      raise (Unix.Unix_error(Unix.EBADF, "Bad (virtual) file handle", ""))
+    else
+      match unix_fds.(vt_fd) with
+	| Some fd -> fd
+	| None -> raise
+	    (Unix.Unix_error(Unix.EBADF, "Bad (virtual) file handle", ""))
 
   val fd_info = Array.init 1024 (fun _ -> { dirp_offset = 0; fname = "" })
 
@@ -684,6 +687,15 @@ object(self)
       put_return 0L (* success *)
     with
       | Unix.Unix_error(err, _, _) -> self#put_errno err
+
+  method sys_dup old_vt_fd =
+    let old_oc_fd = self#get_fd old_vt_fd in
+    let new_oc_fd = Unix.dup old_oc_fd in
+    let new_vt_fd = self#fresh_fd () in
+      Array.set unix_fds new_vt_fd (Some new_oc_fd);
+      fd_info.(new_vt_fd).fname <- fd_info.(old_vt_fd).fname;
+      fd_info.(new_vt_fd).dirp_offset <- fd_info.(old_vt_fd).dirp_offset;
+      put_return (Int64.of_int new_vt_fd)
 
   method sys_exit status =
     raise (SimulatedExit(status))
@@ -1794,7 +1806,11 @@ object(self)
 	 | (_, 40) -> (* rmdir *)
 	     uh "Unhandled Linux system call rmdir (40)"
 	 | (_, 41) -> (* dup *)
-	     uh "Unhandled Linux system call dup (41)"
+	     let reg1 = read_1_reg () in
+	     let fd = Int64.to_int reg1 in
+	       if !opt_trace_syscalls then
+		 Printf.printf "dup(%d)" fd;
+	       self#sys_dup fd
 	 | (ARM, 42) -> uh "Check whether ARM pipe syscall matches x86"
 	 | (X86, 42) -> (* pipe *)
 	     let ebx = read_1_reg () in

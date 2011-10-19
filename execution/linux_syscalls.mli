@@ -56,6 +56,7 @@ object
   method sys_clock_gettime : int -> int64 -> unit
   method sys_close : int -> unit
   method sys_connect : int -> int64 -> int -> unit
+  method sys_dup : int -> unit
   method sys_exit : int64 -> unit
   method sys_exit_group : int64 -> unit
   method sys_fcntl : int -> int -> int64 -> unit
