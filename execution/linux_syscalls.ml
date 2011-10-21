@@ -1579,7 +1579,25 @@ object(self)
     in
       Unix.utimes path actime modtime;
       put_return 0L (* success *)
-    
+
+  method sys_utimensat dirfd path_buf timespec_buf flags =
+    let path = match (dirfd, path_buf, flags) with
+      | (_, 0L, 0) when dirfd <> -100 ->
+	  fd_info.(dirfd).fname
+      | _ -> failwith "Unsupported args to utimensat"
+    in
+    let field off = load_word (lea timespec_buf 0 0 off) in
+    let float off = Int64.to_float (field off) in
+    let actime  = (float 0) +. (float 4)  /. 1000000000.0 and
+	modtime = (float 8) +. (float 12) /. 1000000000.0
+    in
+      assert((field  4) <> 0x3fffffffL); (* UTIME_NOW *)
+      assert((field  4) <> 0x3ffffffeL); (* UTIME_OMIT *)
+      assert((field 12) <> 0x3fffffffL); (* UTIME_NOW *)
+      assert((field 12) <> 0x3ffffffeL); (* UTIME_OMIT *)
+      Unix.utimes path actime modtime;
+      put_return 0L (* success *)      
+
   method sys_write fd bytes count =
     self#do_write fd bytes count
 
@@ -1806,8 +1824,8 @@ object(self)
 	 | (_, 40) -> (* rmdir *)
 	     uh "Unhandled Linux system call rmdir (40)"
 	 | (_, 41) -> (* dup *)
-	     let reg1 = read_1_reg () in
-	     let fd = Int64.to_int reg1 in
+	     let arg1 = read_1_reg () in
+	     let fd = Int64.to_int arg1 in
 	       if !opt_trace_syscalls then
 		 Printf.printf "dup(%d)" fd;
 	       self#sys_dup fd
@@ -3030,7 +3048,15 @@ object(self)
 	     uh "Unhandled Linux system call epoll_pwait"
 	 | (ARM, 348)    (* utimensat *)
 	 | (X86, 320) -> (* utimensat *)
-	     uh "Unhandled Linux system call utimensat"
+	     let (arg1, arg2, arg3, arg4) = read_4_regs () in
+	     let dirfd = Int64.to_int arg1 and
+		 path_buf = arg2 and
+		 times = arg3 and
+		 flags = Int64.to_int arg4 in
+	       if !opt_trace_syscalls then
+		 Printf.printf "utimensat(%d, 0x%08Lx, 0x%08Lx, %d)"
+		   dirfd path_buf times flags;
+	       self#sys_utimensat dirfd path_buf times flags
 	 | (ARM, 349)    (* signalfd *)
 	 | (X86, 321) -> (* signalfd *)
 	     uh "Unhandled Linux system call signalfd"

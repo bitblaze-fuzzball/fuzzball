@@ -136,6 +136,7 @@ object
   method sys_uname : int64 -> unit
   method sys_unlink : string -> unit
   method sys_utime : string -> int64 -> unit
+  method sys_utimensat : int -> int64 -> int64 -> int -> unit
   method sys_write : int -> char array -> int -> unit
   method sys_writev : int -> int64 -> int -> unit
 end
