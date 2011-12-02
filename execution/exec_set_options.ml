@@ -477,6 +477,12 @@ let apply_cmdline_opts_early (fm : Fragment_machine.fragment_machine) dl =
      :> Fragment_machine.special_handler)
 
 let apply_cmdline_opts_late (fm : Fragment_machine.fragment_machine) =
+  (* If the user specified both a -state file and -symbolic-regs, we
+     want the symbolic register values to override the concrete values
+     from the state. It would be nice to find a more elegant way of
+     achieving this. *)
+  if !opt_symbolic_regs then
+    fm#make_regs_symbolic;
   (match !opt_initial_eax with
      | Some v -> fm#set_word_var Fragment_machine.R_EAX v
 	 | None -> ());
