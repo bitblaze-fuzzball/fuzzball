@@ -9,13 +9,93 @@ module FM = Fragment_machine;;
 open Exec_exceptions;;
 open Exec_options;;
 
+let match_nopped_insn eip insn_bytes =
+  match (!opt_arch, !opt_nop_system_insns) with
+    | (_,  false) -> None 
+    | (ARM, true) -> None (* nothing implemented *)
+    | (X86, true) ->
+	(* Pretend to decode, but just to a no-op or a trap, some
+	   system instructions that a VEX-based LibASMIR doesn't handle. *)
+	(assert((Array.length insn_bytes) >= 1);
+	 let maybe_byte i =
+	   if (Array.length insn_bytes) <= i then
+	     -1
+	   else
+	     Char.code (insn_bytes.(i))
+	 in
+	 let b0 = Char.code (insn_bytes.(0)) and
+	     b1 = maybe_byte 1 and
+	     b2 = maybe_byte 2 and
+	     b3 = maybe_byte 3 in
+	 let modrm_reg b = (b lsr 3) land 0x7 in
+	 let modrm_has_sib = function
+	   | 0x04 | 0x0c | 0x14 | 0x1c | 0x24 | 0x2c | 0x34 | 0x3c
+	   | 0x44 | 0x4c | 0x54 | 0x5c | 0x64 | 0x6c | 0x74 | 0x7c
+	   | 0x84 | 0x8c | 0x94 | 0x9c | 0xa4 | 0xac | 0xb4 | 0xbc
+	       -> true
+	   | _ -> false
+	 in
+	 (* Compute the total number of bytes used by the ModR/M byte,
+	    the SIB byte if present, and the displacement they specify if
+	    present, given the values of the ModR/M byte and the SIB byte
+	    (if present) *)
+	 let modrm_len mr sib = 
+	   1 + 
+	     (if 0x40 <= mr && mr <= 0x7f then 1
+	      else if 0x80 <= mr && mr <= 0xbf then 4
+	      else if mr >= 0xc0 then 0
+	      else if modrm_has_sib mr then
+		1 + (if sib land 0x7 = 5 then 4 else 0)
+	      else if (mr land 7) = 5 then 4
+	      else 0)
+	 in
+	 let (comment, maybe_len) = match (b0, b1) with
+	   | (0x0f, 0x00) when (modrm_reg b2) = 0 ->
+	       ("sldt", 2 + (modrm_len b2 b3))
+	   | (0x0f, 0x00) when (modrm_reg b2) = 1 ->
+	       ("str", 2 + (modrm_len b2 b3))
+	   | (0x0f, 0x01) when (modrm_reg b2) = 0 ->
+	       ("sgdt", 2 + (modrm_len b2 b3))
+	   | (0x0f, 0x01) when (modrm_reg b2) = 1 ->
+	       ("sidt", 2 + (modrm_len b2 b3))
+	   | (0x0f, 0x0b) -> ("ud2",          2)
+	   | (0x0f, 0x20) -> ("mov from %cr", 3)
+	   | (0x0f, 0x21) -> ("mov from %db", 3)
+	   | (0x0f, 0x22) -> ("mov to %cr",   3)
+	   | (0x0f, 0x23) -> ("mov to %db",   3)
+	   | (0xcd, 0x2d) -> ("int $0x2d",   -1)
+	       (* Windows Debug Service Handler *)
+	   | (0xf4, _)    -> ("hlt",         -1)
+	   | (0xfa, _)    -> ("cli",          1)
+	   | (0xfb, _)    -> ("sti",          1)
+	   | _ -> ("", 0)
+	 in
+	 let maybe_sl =
+	   match maybe_len with
+	     | 0 -> None
+	     | -1 -> 
+		 Some [V.Special("trap")]
+	     | len ->
+		 let new_eip = Int64.add eip (Int64.of_int len) in
+		   Some [V.Jmp(V.Name(V.addr_to_label new_eip))]
+	 in
+	   match maybe_sl with
+	     | None -> None
+	     | Some sl -> Some [V.Block([], [V.Label(V.addr_to_label eip);
+					     V.Comment("fake " ^ comment)] @
+					  sl)]
+	)
+
 let decode_insn asmir_gamma eip insn_bytes =
   (* It's important to flush buffers here because VEX will also
      print error messages to stdout, but its buffers are different from
      OCaml's. *)
   flush stdout;
   let arch = asmir_arch_of_execution_arch !opt_arch in
-  let sl = Asmir.asm_bytes_to_vine asmir_gamma arch eip insn_bytes in
+  let sl = match match_nopped_insn eip insn_bytes with
+    | Some sl -> sl
+    | _ -> Asmir.asm_bytes_to_vine asmir_gamma arch eip insn_bytes
+  in
     match sl with 
       | [V.Block(dl', sl')] ->
 	  if !opt_trace_orig_ir then

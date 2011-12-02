@@ -113,6 +113,7 @@ let opt_pid = ref (-1)
 let opt_translation_cache_size = ref None
 let opt_prefix_out = ref false
 let opt_omit_pf_af = ref false
+let opt_nop_system_insns = ref false
 let opt_symbolic_syscall_error = ref None
 let opt_chroot_path = ref None
 let opt_finish_on_nonfalse_cond = ref false

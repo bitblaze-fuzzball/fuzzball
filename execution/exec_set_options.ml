@@ -396,6 +396,8 @@ let cmdline_opts =
      "cond Add an extra constraint for solving");
     ("-omit-pf-af", Arg.Set(opt_omit_pf_af),
      " Omit computation of the (rarely used) PF and AF flags");
+    ("-nop-system-insns", Arg.Set(opt_nop_system_insns),
+     " Treat some unhandled system instructions as no-ops");
   ]
 
 let trace_replay_cmdline_opts =
