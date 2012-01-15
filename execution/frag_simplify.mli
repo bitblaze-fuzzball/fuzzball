@@ -6,6 +6,8 @@ val constant_fold_rec : Vine.exp -> Vine.exp
 
 val simplify_rec : Vine.exp -> Vine.exp
 
+val simplify_fp : Vine.exp -> Vine.exp
+
 val expr_size : Vine.exp -> int
 val stmt_size : Vine.stmt -> int
 

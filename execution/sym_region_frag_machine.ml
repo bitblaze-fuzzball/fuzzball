@@ -599,10 +599,10 @@ struct
       let (r, addr) = self#eval_addr_exp_region addr_e in
       let v =
 	(match ty with
-	   | V.REG_8 -> self#load_byte_region r addr
-	   | V.REG_16 -> self#load_short_region r addr
-	   | V.REG_32 -> self#load_word_region r addr
-	   | V.REG_64 -> self#load_long_region r addr
+	   | V.REG_8  -> form_man#simplify8  (self#load_byte_region  r addr)
+	   | V.REG_16 -> form_man#simplify16 (self#load_short_region r addr)
+	   | V.REG_32 -> form_man#simplify32 (self#load_word_region  r addr)
+	   | V.REG_64 -> form_man#simplify64 (self#load_long_region  r addr)
 	   | _ -> failwith "Unsupported memory type") in
 	(if !opt_trace_loads then
 	  (Printf.printf "Load from %s "

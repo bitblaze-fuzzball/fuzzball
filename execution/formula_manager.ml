@@ -484,7 +484,7 @@ struct
     method private simplify (v:D.t) ty =
       D.inside_symbolic
 	(fun e ->
-	   let e' = simplify_rec e in
+	   let e' = simplify_fp e in
 	     (* We're supposed to simplify expressions as we build
 		them, so something is going wrong if they get way to big
 		at once: *)

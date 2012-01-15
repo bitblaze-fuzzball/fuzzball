@@ -24,8 +24,24 @@ and constant_fold_rec_lv lv =
     | V.Mem(v, e, ty) -> V.Mem(v, constant_fold_rec e, ty)
     | _ -> lv
 
+let push_down e =
+  let rec loop = function
+    | V.Cast((V.CAST_LOW|V.CAST_HIGH) as ct, ty,
+	     V.BinOp((V.BITAND|V.BITOR|V.XOR) as op, e1, e2)) ->
+	V.BinOp(op, V.Cast(ct, ty, (loop e1)), V.Cast(ct, ty, (loop e2)))
+    | e -> e
+  in
+    loop e
+
 let rec simplify_rec e =
-  match e with
+  match (push_down e) with
+    (* An 8-bit value is never equal to -1:reg32_t. Simplifying away
+       this condition helps a lot for C programs that read input using
+       fgetc() *)
+    | V.BinOp(V.EQ, V.Cast(V.CAST_UNSIGNED, V.REG_32, e8),
+	      V.Constant(V.Int(V.REG_32, 0xffffffffL)))
+	when (Vine_typecheck.infer_type None e8) = V.REG_8
+	  -> V.Constant(V.Int(V.REG_1, 0L))
     | V.BinOp(V.EQ, V.BinOp(V.PLUS, e1, (V.Constant(_) as c)),
 	      V.Constant(V.Int(ty, 0L))) ->
 	V.BinOp(V.EQ, (simplify_rec e1), (simplify_rec (V.UnOp(V.NEG, c))))
@@ -44,6 +60,13 @@ and simplify_rec_lv lv =
   match lv with
     | V.Mem(v, e, ty) -> V.Mem(v, simplify_rec e, ty)
     | _ -> lv
+
+let rec simplify_fp e =
+  let e' = simplify_rec e in
+    if e = e' then
+      e'
+    else
+      simplify_fp e'
 
 let rec expr_size e =
   match e with
