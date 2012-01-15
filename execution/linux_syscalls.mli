@@ -38,6 +38,9 @@ object
   method write_ftime_as_words : float -> int64 -> float -> unit
 
   method add_symbolic_file : string -> unit
+  method make_snap : unit
+  method reset : unit
+
   method set_proc_identities : (int * int * int * int) option -> unit
 
   method get_pid : int

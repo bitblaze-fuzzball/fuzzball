@@ -5,6 +5,8 @@
 
 class virtual special_handler : object
   method virtual handle_special : string -> Vine.stmt list option
+  method virtual make_snap : unit
+  method virtual reset : unit
 end
 
 type register_name = 
@@ -90,6 +92,7 @@ sig
     method load_word_concolic  : int64 -> int64
     method load_long_concolic  : int64 -> int64
 
+    method maybe_start_symbolic : (unit -> unit) -> unit
     method start_symbolic : unit
 
     method make_snap : unit -> unit
@@ -300,6 +303,7 @@ class virtual fragment_machine : object
   method virtual load_word_concolic  : int64 -> int64
   method virtual load_long_concolic  : int64 -> int64
 
+  method virtual maybe_start_symbolic : (unit -> unit) -> unit
   method virtual start_symbolic : unit
 
   method virtual make_snap : unit -> unit

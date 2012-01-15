@@ -77,6 +77,7 @@ let chroot s =
 type fd_extra_info = {
   mutable dirp_offset : int;
   mutable fname : string;
+  mutable snap_pos : int option;
 }
 
 class linux_special_handler (fm : fragment_machine) =
@@ -142,7 +143,8 @@ object(self)
 	| None -> raise
 	    (Unix.Unix_error(Unix.EBADF, "Bad (virtual) file handle", ""))
 
-  val fd_info = Array.init 1024 (fun _ -> { dirp_offset = 0; fname = "" })
+  val fd_info = Array.init 1024
+    (fun _ -> { dirp_offset = 0; fname = ""; snap_pos = None })
 
   method errno err =
     match err with
@@ -581,6 +583,26 @@ object(self)
   method add_symbolic_file s =
     Hashtbl.replace symbolic_fnames s ()
 
+  method private save_sym_fd_positions = 
+    Hashtbl.iter
+      (fun fd _ -> fd_info.(fd).snap_pos <- 
+	 Some (Unix.lseek (self#get_fd fd) 0 Unix.SEEK_CUR))
+      symbolic_fds
+
+  method private reset_sym_fd_positions = 
+    Hashtbl.iter
+      (fun fd _ ->
+	 match fd_info.(fd).snap_pos with
+	   | Some pos -> ignore(Unix.lseek (self#get_fd fd) pos Unix.SEEK_SET)
+	   | None -> ())
+      symbolic_fds
+
+  method make_snap = 
+    self#save_sym_fd_positions
+
+  method reset = 
+    self#reset_sym_fd_positions
+
   method sys_access path mode =
     let oc_mode =
       (if   (mode land 0x7)= 0 then [Unix.F_OK] else []) @
@@ -676,7 +698,7 @@ object(self)
       if (fd <> 1 && fd <> 2) then
 	Unix.close oc_fd;
       Array.set unix_fds fd None;
-      Hashtbl.remove symbolic_fds oc_fd;
+      Hashtbl.remove symbolic_fds fd;
       put_return 0L (* success *)
     with
       | Unix.Unix_error(err, _, _) -> self#put_errno err
@@ -1186,7 +1208,7 @@ object(self)
 	fd_info.(vt_fd).dirp_offset <- 0;
 	(* XXX: canonicalize filename here? *)
 	if Hashtbl.mem symbolic_fnames path then
-	  Hashtbl.replace symbolic_fds oc_fd ();
+	  Hashtbl.replace symbolic_fds vt_fd ();
 	put_return (Int64.of_int vt_fd)
     with
       | Unix.Unix_error(err, _, _) -> self#put_errno err
@@ -1253,8 +1275,11 @@ object(self)
       let str = self#string_create count in
       let oc_fd = self#get_fd fd in
       let num_read = Unix.read oc_fd str 0 count in
-	if Hashtbl.mem symbolic_fds oc_fd then
-	  fm#make_symbolic_region buf num_read
+	if num_read > 0 && Hashtbl.mem symbolic_fds fd then    
+	  fm#maybe_start_symbolic
+	    (fun () -> (fm#make_symbolic_region buf num_read;
+			max_input_string_length :=
+			  max (!max_input_string_length) num_read))
 	else
 	  fm#store_str buf 0L (String.sub str 0 num_read);
 	put_return (Int64.of_int num_read)

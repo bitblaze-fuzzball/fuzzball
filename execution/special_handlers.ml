@@ -22,6 +22,9 @@ object(self)
       | "int 0x80" -> self#unhandle_syscall str
       | "sysenter" -> self#unhandle_syscall str
       | _ -> None
+
+  method make_snap : unit = ()
+  method reset : unit = ()
 end
 
 class trap_special_nonhandler (fm : fragment_machine) =
@@ -30,6 +33,8 @@ object(self)
     match str with
       | "trap" -> raise UnhandledTrap
       | _ -> None
+  method make_snap : unit = ()
+  method reset : unit = ()
 end
 
 class cpuid_special_handler (fm : fragment_machine)
@@ -55,5 +60,7 @@ object(self)
 	    Some ([])
 	)
       | _ -> None
+  method make_snap : unit = ()
+  method reset : unit = ()
 end
   

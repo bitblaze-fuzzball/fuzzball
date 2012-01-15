@@ -105,6 +105,7 @@ sig
     method load_short_concolic : int64 -> int
     method load_word_concolic  : int64 -> int64
     method load_long_concolic  : int64 -> int64
+    method maybe_start_symbolic : (unit -> unit) -> unit
     method start_symbolic : unit
     method make_snap : unit -> unit
     method add_special_handler : Fragment_machine.special_handler -> unit

@@ -76,7 +76,7 @@ let periodic_stats fm at_end force =
        !solver_unsats;
      Printf.printf "Solver failed %Ld time(s)\n" !solver_fails)
 
-let fuzz start_eip fuzz_start_eip end_eips
+let fuzz start_eip opt_fuzz_start_eip end_eips
     (fm : fragment_machine) asmir_gamma symbolic_init reset_cb =
   if !opt_trace_setup then
     (Printf.printf "Initial registers:\n";
@@ -84,14 +84,22 @@ let fuzz start_eip fuzz_start_eip end_eips
   flush stdout;
   if !opt_gc_stats then
     at_exit final_check_memory_usage;
-  (if start_eip <> fuzz_start_eip then
-     (if !opt_trace_setup then Printf.printf "Pre-fuzzing execution...\n";
-      flush stdout;
-      runloop fm start_eip asmir_gamma (fun a -> a = fuzz_start_eip)));
+  let fuzz_start_eip = ref opt_fuzz_start_eip
+  and extra_setup = ref (fun () -> ()) in
+  (try 
+     if start_eip <> opt_fuzz_start_eip then
+       (if !opt_trace_setup then Printf.printf "Pre-fuzzing execution...\n";
+	flush stdout;
+	runloop fm start_eip asmir_gamma (fun a -> a = opt_fuzz_start_eip))
+   with
+     | StartSymbolic(eip, setup) ->
+	 fuzz_start_eip := eip;
+	 extra_setup := setup);
   fm#start_symbolic;
   if !opt_trace_setup then
     (Printf.printf "Setting up symbolic values:\n"; flush stdout);
   symbolic_init ();
+  !extra_setup ();
   fm#make_snap ();
   if !opt_trace_setup then
     (Printf.printf "Took snapshot\n"; flush stdout);
@@ -117,7 +125,7 @@ let fuzz start_eip fuzz_start_eip end_eips
 	     in
 	       fm#set_iter_seed (Int64.to_int iter);
 	       (try
-		  runloop fm fuzz_start_eip asmir_gamma
+		  runloop fm !fuzz_start_eip asmir_gamma
 		    (fun a -> List.mem a end_eips);
 		with
 		  | SimulatedExit(_) -> stop "when program called exit()"

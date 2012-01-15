@@ -24,6 +24,8 @@ let move_hash src dest =
 
 class virtual special_handler = object(self)
   method virtual handle_special : string -> V.stmt list option
+  method virtual make_snap : unit
+  method virtual reset : unit
 end
 
 type register_name = 
@@ -228,10 +230,17 @@ struct
 
     val unique_eips = Hashtbl.create 1001
 
+    val mutable deferred_start_symbolic = None
+
     method eip_hook eip =
       (* Shouldn't be needed; we instead simplify the registers when
 	 writing to them: *)
       (* self#simplify_regs; *)
+      (match deferred_start_symbolic with
+	 | Some setup ->
+	     deferred_start_symbolic <- None;
+	     raise (StartSymbolic(eip, setup))
+	 | None -> ());
       if !opt_trace_registers then
 	self#print_regs;
       if !opt_trace_eip then
@@ -656,19 +665,31 @@ struct
     method load_long_concolic  addr =
       form_man#concolic_eval_64 (mem#load_long  addr)
 
-    method start_symbolic = mem#inner_make_snap ()
+    val mutable started_symbolic = false
+
+    method maybe_start_symbolic setup =
+      if not started_symbolic then
+	deferred_start_symbolic <- Some setup (* takes effect at end of insn *)
+      else
+	setup ()
+
+    method start_symbolic =
+      mem#inner_make_snap ();
+      started_symbolic <- true
+
+    val mutable special_handler_list = ([] : #special_handler list)
 
     method make_snap () =
       mem#make_snap ();
-      snap <- (V.VarHash.copy reg_store, V.VarHash.copy temps)
+      snap <- (V.VarHash.copy reg_store, V.VarHash.copy temps);
+      List.iter (fun h -> h#make_snap) special_handler_list
 
     method reset () =
       mem#reset ();
-      match snap with (r, t) ->
-	move_hash r reg_store;
-	move_hash t temps;
-
-    val mutable special_handler_list = ([] : #special_handler list)
+      (match snap with (r, t) ->
+	 move_hash r reg_store;
+	 move_hash t temps);
+      List.iter (fun h -> h#reset) special_handler_list
 
     method add_special_handler (h:special_handler) =
       special_handler_list <- h :: special_handler_list
@@ -1516,6 +1537,7 @@ class virtual fragment_machine = object
   method virtual load_word_concolic  : int64 -> int64
   method virtual load_long_concolic  : int64 -> int64
 
+  method virtual maybe_start_symbolic : (unit -> unit) -> unit
   method virtual start_symbolic : unit
 
   method virtual make_snap : unit -> unit

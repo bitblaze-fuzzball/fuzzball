@@ -20,6 +20,7 @@ exception Simplify_failure of string
 exception SimulatedAbort
 exception SimulatedExit of int64
 exception SolverFailure
+exception StartSymbolic of int64 * (unit -> unit)
 exception SymbolicJump
 exception SymbolicSyscall
 exception TooManyIterations
