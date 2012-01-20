@@ -465,8 +465,9 @@ struct
 		 eip e_str str_addr str)
 	!opt_string_tracepoints;
       infl_man#eip_hook eip;
-      (match !opt_check_condition_at with
-	 | Some (eip', expr) when eip' = eip ->
+      List.iter
+	(fun (eip', expr) ->
+	   if eip' = eip then
 	     let (_, choices) = self#eval_bool_exp_tristate expr in
 	       Printf.printf "At 0x%08Lx, condition %s %s\n"
 		 eip (V.exp_to_string expr)
@@ -475,8 +476,8 @@ struct
 		    | Some false -> "is false"
 		    | None -> "can be true or false");
 	       if !opt_finish_on_nonfalse_cond && choices <> Some false then
-		 raise LastIteration
-	 | _ -> ());
+		 raise LastIteration)
+	!opt_check_condition_at;
       List.iter
 	(fun (_, t_eip) -> 
 	   if t_eip = eip then

@@ -35,7 +35,7 @@ let opt_symbolic_regions = ref []
 let opt_concolic_cstrings = ref []
 let opt_sink_regions = ref []
 let opt_measure_expr_influence_at_strings = ref None
-let opt_check_condition_at_strings = ref None
+let opt_check_condition_at_strings = ref []
 let opt_extra_condition_strings = ref []
 let opt_tracepoint_strings = ref []
 let opt_string_tracepoint_strings = ref []
@@ -386,7 +386,7 @@ let cmdline_opts =
     ("-check-condition-at", Arg.String
        (fun s -> let (eip_s, expr_s) = split_string ':' s in
 	  opt_check_condition_at_strings :=
-	    Some (eip_s, expr_s)),
+	    (eip_s, expr_s) :: !opt_check_condition_at_strings),
      "eip:expr Check boolean assertion at address");
     ("-finish-on-nonfalse-cond", Arg.Set(opt_finish_on_nonfalse_cond),
      " Finish exploration if -c-c-a condition could be true");
@@ -453,12 +453,11 @@ let apply_cmdline_opts_early (fm : Fragment_machine.fragment_machine) dl =
 	   Some ((Int64.of_string eip_s),
 		 (Vine_parser.parse_exp_from_string dl expr_s))
      | None -> ());
-  (match !opt_check_condition_at_strings with
-     | Some (eip_s, expr_s) ->
-	 opt_check_condition_at :=
-	   Some ((Int64.of_string eip_s),
-		 (Vine_parser.parse_exp_from_string dl expr_s))
-     | None -> ());
+  opt_check_condition_at :=
+    List.map (fun (eip_s, expr_s) ->
+		((Int64.of_string eip_s),
+		 (Vine_parser.parse_exp_from_string dl expr_s)))
+      !opt_check_condition_at_strings;
   opt_tracepoints := List.map
     (fun (eip, s) ->
        (eip, s, (Vine_parser.parse_exp_from_string dl s)))
