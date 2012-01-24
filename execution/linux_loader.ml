@@ -51,8 +51,8 @@ let read_ui32 i =
 let read_elf_header ic =
   let i = IO.input_channel ic in
   let ident = IO.really_nread i 16 in
-    assert(ident = 
-	"\x7fELF\001\001\001\000\000\000\000\000\000\000\000\000");
+    assert(ident = "\x7fELF\001\001\001\000\000\000\000\000\000\000\000\000" ||
+	   ident = "\x7fELF\001\001\001\003\000\000\000\000\000\000\000\000");
     (* OCaml structure initialization isn't guaranteed to happen
        left to right, so we need to use a bunch of lets here: *)
     let eh_type = IO.read_ui16 i in
