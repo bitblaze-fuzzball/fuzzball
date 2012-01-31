@@ -28,6 +28,10 @@ let asmir_arch_of_execution_arch = function
   | X86 -> Asmir.arch_i386
   | ARM -> Asmir.arch_arm
 
+let libasmir_arch_of_execution_arch = function
+  | X86 -> Libasmir.Bfd_arch_i386
+  | ARM -> Libasmir.Bfd_arch_arm
+
 let max_input_string_length = ref 0
 let input_string_mem_prefix = ref None
 
@@ -118,6 +122,9 @@ let opt_symbolic_syscall_error = ref None
 let opt_chroot_path = ref None
 let opt_finish_on_nonfalse_cond = ref false
 let opt_total_timeout = ref None
+let opt_x87_emulator = ref None
+let opt_x87_entry_point = ref None
+let opt_trace_fpu = ref false
 
 let opt_symbolic_memory = ref false
 let opt_zero_memory = ref false

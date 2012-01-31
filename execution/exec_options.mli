@@ -12,6 +12,8 @@ type execution_arch = X86 | ARM
 val execution_arch_of_string : string -> execution_arch
 
 val asmir_arch_of_execution_arch : execution_arch -> Asmir.arch
+val libasmir_arch_of_execution_arch : execution_arch ->
+  Libasmir.bfd_architecture
 
 val max_input_string_length : int ref
 val input_string_mem_prefix : string option ref
@@ -103,6 +105,9 @@ val opt_symbolic_syscall_error : int64 option ref
 val opt_chroot_path : string option ref
 val opt_finish_on_nonfalse_cond : bool ref
 val opt_total_timeout : float option ref
+val opt_x87_emulator : string option ref
+val opt_x87_entry_point : int64 option ref
+val opt_trace_fpu : bool ref
 
 val opt_symbolic_memory : bool ref
 val opt_zero_memory : bool ref

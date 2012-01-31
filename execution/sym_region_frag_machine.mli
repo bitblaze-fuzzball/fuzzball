@@ -179,6 +179,8 @@ sig
     method run_sl : (string -> bool) -> Vine.stmt list -> string
     method run : unit -> string
     method run_to_jump : unit -> string
+    method fake_call_to_from : int64 -> int64 -> Vine.stmt list
+    method disasm_insn_at : int64 -> string
     method measure_mem_size : int * int * int
     method measure_form_man_size : int * int
     method measure_dt_size : int

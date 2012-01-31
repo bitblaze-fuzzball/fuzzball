@@ -9,8 +9,9 @@ module FM = Fragment_machine;;
 open Exec_exceptions;;
 open Exec_options;;
 
-let match_nopped_insn eip insn_bytes =
-  match (!opt_arch, !opt_nop_system_insns) with
+let match_faked_insn eip insn_bytes =
+  match (!opt_arch,
+	 !opt_nop_system_insns || (!opt_x87_entry_point <> None)) with
     | (_,  false) -> None 
     | (ARM, true) -> None (* nothing implemented *)
     | (X86, true) ->
@@ -49,32 +50,37 @@ let match_nopped_insn eip insn_bytes =
 	      else if (mr land 7) = 5 then 4
 	      else 0)
 	 in
-	 let (comment, maybe_len) = match (b0, b1) with
-	   | (0x0f, 0x00) when (modrm_reg b2) = 0 ->
-	       ("sldt", 2 + (modrm_len b2 b3))
-	   | (0x0f, 0x00) when (modrm_reg b2) = 1 ->
-	       ("str", 2 + (modrm_len b2 b3))
-	   | (0x0f, 0x01) when (modrm_reg b2) = 0 ->
-	       ("sgdt", 2 + (modrm_len b2 b3))
-	   | (0x0f, 0x01) when (modrm_reg b2) = 1 ->
-	       ("sidt", 2 + (modrm_len b2 b3))
-	   | (0x0f, 0x0b) -> ("ud2",          2)
-	   | (0x0f, 0x20) -> ("mov from %cr", 3)
-	   | (0x0f, 0x21) -> ("mov from %db", 3)
-	   | (0x0f, 0x22) -> ("mov to %cr",   3)
-	   | (0x0f, 0x23) -> ("mov to %db",   3)
-	   | (0xcd, 0x2d) -> ("int $0x2d",   -1)
-	       (* Windows Debug Service Handler *)
-	   | (0xf4, _)    -> ("hlt",         -1)
-	   | (0xfa, _)    -> ("cli",          1)
-	   | (0xfb, _)    -> ("sti",          1)
-	   | _ -> ("", 0)
+	 let (comment, maybe_len) =
+	   match (b0, b1,
+		  !opt_nop_system_insns, (!opt_x87_entry_point <> None))
+	   with
+	     | (0x0f, 0x00, true, _) when (modrm_reg b2) = 0 ->
+		 ("sldt", 2 + (modrm_len b2 b3))
+	     | (0x0f, 0x00, true, _) when (modrm_reg b2) = 1 ->
+		 ("str", 2 + (modrm_len b2 b3))
+	     | (0x0f, 0x01, true, _) when (modrm_reg b2) = 0 ->
+		 ("sgdt", 2 + (modrm_len b2 b3))
+	     | (0x0f, 0x01, true, _) when (modrm_reg b2) = 1 ->
+		 ("sidt", 2 + (modrm_len b2 b3))
+	     | (0x0f, 0x0b, true, _) -> ("ud2",          2)
+	     | (0x0f, 0x20, true, _) -> ("mov from %cr", 3)
+	     | (0x0f, 0x21, true, _) -> ("mov from %db", 3)
+	     | (0x0f, 0x22, true, _) -> ("mov to %cr",   3)
+	     | (0x0f, 0x23, true, _) -> ("mov to %db",   3)
+	     | (0xcd, 0x2d, true, _) -> ("int $0x2d",   -1)
+		 (* Windows Debug Service Handler *)
+	     | (0xf4, _, true, _)    -> ("hlt",         -1)
+	     | (0xfa, _, true, _)    -> ("cli",          1)
+	     | (0xfb, _, true, _)    -> ("sti",          1)
+	     | ((0xd8|0xd9|0xda|0xdb|0xdc|0xdd|0xde|0xdf), _, _, true) ->
+		 ("x87 FPU insn", -2)
+	     | _ -> ("", 0)
 	 in
 	 let maybe_sl =
 	   match maybe_len with
 	     | 0 -> None
-	     | -1 -> 
-		 Some [V.Special("trap")]
+	     | -1 -> Some [V.Special("trap")]
+	     | -2 -> Some [V.Special("x87 emulator trap")]
 	     | len ->
 		 let new_eip = Int64.add eip (Int64.of_int len) in
 		   Some [V.Jmp(V.Name(V.addr_to_label new_eip))]
@@ -92,7 +98,7 @@ let decode_insn asmir_gamma eip insn_bytes =
      OCaml's. *)
   flush stdout;
   let arch = asmir_arch_of_execution_arch !opt_arch in
-  let sl = match match_nopped_insn eip insn_bytes with
+  let sl = match match_faked_insn eip insn_bytes with
     | Some sl -> sl
     | _ -> Asmir.asm_bytes_to_vine asmir_gamma arch eip insn_bytes
   in

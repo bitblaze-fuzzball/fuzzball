@@ -64,3 +64,24 @@ object(self)
   method reset : unit = ()
 end
   
+class x87_emulator_special_handler (fm : fragment_machine) =
+object(self)
+  method handle_special str : V.stmt list option =
+    match str with
+      | "x87 emulator trap" ->
+	  (* This is like a call, but with the return to the current
+	     address, which is the first FPU instruction *)
+	  assert(!opt_arch = X86);
+	  let this_addr = fm#get_eip and
+	      emu_addr = match !opt_x87_entry_point with
+		| Some addr -> addr
+		| None -> failwith "Missing x87_entry_point in special handler"
+	  in
+	    if !opt_trace_fpu then
+	      Printf.printf "Triggering x87 emulator at 0x%08Lx: %s\n"
+		this_addr (fm#disasm_insn_at this_addr);
+	    Some (fm#fake_call_to_from emu_addr this_addr)
+      | _ -> None
+  method make_snap : unit = ()
+  method reset : unit = ()
+end

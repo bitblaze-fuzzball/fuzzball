@@ -340,6 +340,8 @@ let cmdline_opts =
      "N-M As above, but only for an eip range");
     ("-trace-eip", Arg.Set(opt_trace_eip),
      " Print PC of each insn executed");
+    ("-trace-fpu", Arg.Set(opt_trace_fpu),
+     " Print floating point operations");
     ("-trace-unique-eips", Arg.Set(opt_trace_unique_eips),
      " Print PC of each new insn executed");
     ("-trace-insns", Arg.Set(opt_trace_insns),
@@ -398,6 +400,8 @@ let cmdline_opts =
      " Omit computation of the (rarely used) PF and AF flags");
     ("-nop-system-insns", Arg.Set(opt_nop_system_insns),
      " Treat some unhandled system instructions as no-ops");
+    ("-x87-emulator", Arg.String (fun s -> opt_x87_emulator := Some s),
+     "emulator.so Enable x87 emulation with given code");
   ]
 
 let trace_replay_cmdline_opts =

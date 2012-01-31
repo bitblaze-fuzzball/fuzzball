@@ -199,6 +199,7 @@ struct
     val reg_store = V.VarHash.create 100
     val reg_to_var = Hashtbl.create 100
     val temps = V.VarHash.create 100
+    val mutable mem_var = V.newvar "mem" (V.TMem(V.REG_32, V.Little))
     val mutable frag = ([], [])
     val mutable insns = []
 
@@ -207,7 +208,9 @@ struct
     method init_prog (dl, sl) =
       List.iter
 	(fun ((n,s,t) as v) ->
-	   if s <> "mem" then
+	   if s = "mem" then
+	     mem_var <- v
+	   else
 	     (V.VarHash.add reg_store v (D.uninit);
 	      Hashtbl.add reg_to_var (regstr_to_reg s) v)) dl;
       self#set_frag (dl, sl);
@@ -1102,7 +1105,7 @@ struct
 	    | None -> lab
 	    | Some sl ->
 		self#run_sl do_jump sl
-		  
+
     method run_sl do_jump sl =
       let jump lab =
 	if do_jump lab then
@@ -1190,6 +1193,27 @@ struct
 
     method run_to_jump () =
       self#run_sl (fun lab -> (String.sub lab 0 3) <> "pc_") insns
+
+    method fake_call_to_from func_addr ret_addr =
+      match !opt_arch with
+	| X86 ->
+	    let esp = Hashtbl.find reg_to_var R_ESP in
+	      [V.Move(V.Temp(esp),
+		      V.BinOp(V.MINUS, V.Lval(V.Temp(esp)),
+			      V.Constant(V.Int(V.REG_32, 4L))));
+	       V.Move(V.Mem(mem_var, V.Lval(V.Temp(esp)), V.REG_32),
+		      V.Constant(V.Int(V.REG_32, ret_addr)));
+	       V.Jmp(V.Constant(V.Int(V.REG_32, func_addr)))]
+	| _ -> failwith "Unsupported arch in fake_call_to_from"
+
+    method disasm_insn_at eip = 
+      let bytes = Array.init 16
+	(fun i -> Char.chr (self#load_byte_conc
+			      (Int64.add eip (Int64.of_int i))))
+      in
+	Libasmir.sprintf_disasm_rawbytes
+	  (libasmir_arch_of_execution_arch !opt_arch)
+	  false eip bytes
 
     method measure_mem_size = mem#measure_size
     method measure_form_man_size = form_man#measure_size
@@ -1577,6 +1601,8 @@ class virtual fragment_machine = object
 		  
   method virtual run : unit -> string
   method virtual run_to_jump : unit -> string
+  method virtual fake_call_to_from : int64 -> int64 -> Vine.stmt list
+  method virtual disasm_insn_at : int64 -> string
 
   method virtual measure_mem_size : int * int * int
   method virtual measure_form_man_size : int * int

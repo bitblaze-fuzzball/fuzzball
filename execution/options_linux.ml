@@ -108,6 +108,13 @@ let apply_linux_cmdline_opts (fm : Fragment_machine.fragment_machine) =
     fm#add_special_handler
       ((new Special_handlers.linux_special_nonhandler fm)
        :> Fragment_machine.special_handler);
+  (match !opt_x87_emulator with
+     | Some emulator_path -> 
+	 opt_x87_entry_point :=
+	   Some (Linux_loader.load_x87_emulator fm emulator_path);
+	 let fpu_sh = new Special_handlers.x87_emulator_special_handler fm in
+	   fm#add_special_handler (fpu_sh :> Fragment_machine.special_handler)
+     | None -> ());
   (match !opt_tls_base with
      | Some base -> Linux_loader.setup_tls_segment fm 0x60000000L base
      | None -> ())

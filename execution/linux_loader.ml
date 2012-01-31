@@ -205,6 +205,20 @@ let load_ldso fm dso vaddr =
     close_in ic;
     Int64.add vaddr dso_eh.entry
 
+let load_x87_emulator fm emulator =
+  let ic = open_in emulator in
+  let eh = read_elf_header ic in
+    if !opt_trace_setup then
+      Printf.printf "Loading from x87 emulator %s\n" emulator;
+    assert(eh.eh_type = 2);
+    List.iter
+      (fun phr ->
+	 if phr.ph_type = 1L || phr.memsz <> 0L then
+	   load_segment fm ic phr 0L)
+      (read_program_headers ic eh);
+    close_in ic;
+    eh.entry
+
 let build_startup_state fm eh load_base ldso argv =
   let esp = ref 0xc0000000L in
   let push_cstr s =

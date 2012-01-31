@@ -20,3 +20,10 @@ class cpuid_special_handler : Fragment_machine.fragment_machine -> object
   method make_snap : unit
   method reset : unit
 end
+
+class x87_emulator_special_handler : Fragment_machine.fragment_machine ->
+object
+  method handle_special : string -> Vine.stmt list option
+  method make_snap : unit
+  method reset : unit
+end

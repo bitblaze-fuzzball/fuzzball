@@ -163,6 +163,8 @@ sig
 		  
     method run : unit -> string
     method run_to_jump : unit -> string
+    method fake_call_to_from : int64 -> int64 -> Vine.stmt list
+    method disasm_insn_at : int64 -> string
 
     method measure_mem_size : int * int * int
     method measure_form_man_size : int * int
@@ -342,7 +344,9 @@ class virtual fragment_machine : object
   method virtual run_sl : (string -> bool) -> Vine.stmt list -> string
 		  
   method virtual run : unit -> string
-  method virtual run_to_jump : unit -> string
+  method virtual run_to_jump : unit -> string 
+  method virtual fake_call_to_from : int64 -> int64 -> Vine.stmt list
+  method virtual disasm_insn_at : int64 -> string
 
   method virtual measure_mem_size : int * int * int
   method virtual measure_form_man_size : int * int
