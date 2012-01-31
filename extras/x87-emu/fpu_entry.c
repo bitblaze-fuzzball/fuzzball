@@ -138,9 +138,15 @@ union thread_xstate i387_state;
 
 struct pt_regs inline_call_pt_regs;
 
+int done_finit = 0;
+
 void inline_call_math_emulate(void) {
     struct math_emu_info info;
     info.regs = &inline_call_pt_regs;
+    if (!done_finit) {
+	finit();
+	done_finit = 1;
+    }
     math_emulate(&info);
 }
 

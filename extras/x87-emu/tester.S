@@ -14,7 +14,6 @@ main:
 	.cfi_def_cfa_register 5
 	andl	$-16, %esp
 	subl	$32, %esp
-	call	finit
 	call	inline_x87
 	fldpi
 	fstpl	4(%esp)
