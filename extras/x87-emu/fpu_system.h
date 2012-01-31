@@ -58,10 +58,10 @@
 #else
 #define get_user(x, ptr) ((x) = (*(ptr)))
 #define put_user(x, ptr) (*(ptr) = (x))
-#define __copy_to_user   memmove
-#define __copy_from_user memmove
-#define copy_to_user     memmove
-#define copy_from_user   memmove
+#define __copy_to_user(d,s,n)   (memmove((d),(s),(n)),0)
+#define __copy_from_user(d,s,n) (memmove((d),(s),(n)),0)
+#define copy_to_user(d,s,n)     (memmove((d),(s),(n)),0)
+#define copy_from_user(d,s,n)   (memmove((d),(s),(n)),0)
 
 struct pt_regs {
     unsigned long bx;      /*  0 */
