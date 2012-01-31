@@ -624,6 +624,8 @@ void math_emulate(struct math_emu_info *info)
 	if (FPU_lookahead
 #ifdef KERNEL
 	    && !need_resched()
+#else
+	    && 0
 #endif
 	    ) {
 		FPU_ORIG_EIP = FPU_EIP - code_base;

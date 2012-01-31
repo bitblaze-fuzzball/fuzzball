@@ -16,6 +16,7 @@ main:
 	subl	$32, %esp
 	call	inline_x87
 	fldpi
+	call	inline_x87
 	fstpl	4(%esp)
 	movl	$.LC1, %eax
 	movl	%eax, (%esp)
