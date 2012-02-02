@@ -71,6 +71,7 @@ struct
       | V.Lval(V.Mem(_, _, V.REG_8))  ->  8
       | V.Lval(V.Mem(_, _, V.REG_16)) -> 16
       | V.Lval(V.Mem(_, _, V.REG_32)) -> 32
+      | V.BinOp((V.EQ|V.NEQ|V.LT|V.LE|V.SLT|V.SLE), _, _) -> 1
       | _ -> 64
 
   let split_terms e form_man =
@@ -172,9 +173,9 @@ struct
 	  -> ExprOffset(e)
       | V.BinOp(V.LSHIFT, _, _)
 	  -> ExprOffset(e)
-      | V.BinOp(V.BITAND, _, _)
-      | V.BinOp(V.BITOR, _, _) (* XXX happens in Windows 7, don't know why *)
-	  -> ExprOffset(e)
+(*       | V.BinOp(V.BITAND, _, _) *)
+(*       | V.BinOp(V.BITOR, _, _) (* XXX happens in Windows 7, don't know why *) *)
+(* 	  -> ExprOffset(e) *)
       | V.Lval(_) -> Symbol(e)
       | _ -> if (!opt_fail_offset_heuristic) then (
 	  failwith ("Strange term "^(V.exp_to_string e)^" in address")
@@ -278,15 +279,22 @@ struct
       let bits = ref 0L in
 	self#restore_path_cond
 	  (fun () ->
-	     for b = (V.bits_of_width ty) - 1 downto 0 do
-	       let bit = self#extend_pc_random
-		 (V.Cast(V.CAST_LOW, V.REG_1,
-			 (V.BinOp(V.ARSHIFT, e,
-				  (byte b))))) false
-	       in
-		 bits := (Int64.logor (Int64.shift_left !bits 1)
-			    (if bit then 1L else 0L));
-	     done);
+	     if ty = V.REG_1 then
+	       (* This special case avoids shifting REG_1s, which appears
+		  to be legal in Vine IR but tickles bugs in multiple of
+		  our solver backends. *)		  
+	       let bit = self#extend_pc_random e false in
+		 bits := (if bit then 1L else 0L)
+	     else
+	       for b = (V.bits_of_width ty) - 1 downto 0 do
+		 let bit = self#extend_pc_random
+		   (V.Cast(V.CAST_LOW, V.REG_1,
+			   (V.BinOp(V.ARSHIFT, e,
+				    (byte b))))) false
+		 in
+		   bits := (Int64.logor (Int64.shift_left !bits 1)
+			      (if bit then 1L else 0L));
+	       done);
 	!bits
 
     method private choose_conc_offset_biased ty e =
