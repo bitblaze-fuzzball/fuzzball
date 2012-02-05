@@ -35,16 +35,113 @@ let push_down e =
 
 let rec simplify_rec e =
   match (push_down e) with
-    (* An 8-bit value is never equal to -1:reg32_t. Simplifying away
-       this condition helps a lot for C programs that read input using
-       fgetc() *)
+    (* Simplify comparison of a zero-extended byte. These come up a
+       lot in input processing, including comparison to -1:reg32_t for
+       fgetc() and related interfaces, which hits the always-false
+       "else" case. *)
     | V.BinOp(V.EQ, V.Cast(V.CAST_UNSIGNED, V.REG_32, e8),
-	      V.Constant(V.Int(V.REG_32, 0xffffffffL)))
+	      V.Constant(V.Int(V.REG_32, k)))
 	when (Vine_typecheck.infer_type None e8) = V.REG_8
-	  -> V.Constant(V.Int(V.REG_1, 0L))
-    | V.BinOp(V.EQ, V.BinOp(V.PLUS, e1, (V.Constant(_) as c)),
-	      V.Constant(V.Int(ty, 0L))) ->
-	V.BinOp(V.EQ, (simplify_rec e1), (simplify_rec (V.UnOp(V.NEG, c))))
+	  -> if (Int64.logand k 0xffffff00L) = 0x00000000L then
+	    V.BinOp(V.EQ, (simplify_rec e8),
+		    V.Constant(V.Int(V.REG_8, (Int64.logand k 0xffL))))
+	  else
+	    V.Constant(V.Int(V.REG_1, 0L))
+    (* Analogously for < *)
+    | V.BinOp(V.LT, V.Cast(V.CAST_UNSIGNED, V.REG_32, e8),
+	      V.Constant(V.Int(V.REG_32, k)))
+	when (Vine_typecheck.infer_type None e8) = V.REG_8
+	  -> if (Int64.logand k 0xffffff00L) = 0x00000000L then
+	    V.BinOp(V.LT, (simplify_rec e8),
+		    V.Constant(V.Int(V.REG_8, (Int64.logand k 0xffL))))
+	  else
+	    V.Constant(V.Int(V.REG_1, 1L))
+    (* Analogously for > *)
+    | V.BinOp(V.LT, V.Constant(V.Int(V.REG_32, k)),
+	      V.Cast(V.CAST_UNSIGNED, V.REG_32, e8))
+	when (Vine_typecheck.infer_type None e8) = V.REG_8
+	  -> if (Int64.logand k 0xffffff00L) = 0x00000000L then
+	    V.BinOp(V.LT, V.Constant(V.Int(V.REG_8, (Int64.logand k 0xffL))),
+		    (simplify_rec e8))
+	  else
+	    V.Constant(V.Int(V.REG_1, 0L))
+    (* Byte addition disguised as word addition, 0xff ver. *)
+    | V.BinOp(V.BITAND,
+	      V.BinOp(V.PLUS, V.Cast(V.CAST_UNSIGNED, V.REG_32, e8),
+		      V.Constant(V.Int(V.REG_32, k))),
+	      V.Constant(V.Int(V.REG_32, 0xffL)))
+	when (Vine_typecheck.infer_type None e8) = V.REG_8
+	  ->
+	let narrow_k = Int64.logand k 0xffL in
+	  V.Cast(V.CAST_UNSIGNED, V.REG_32,
+		 (simplify_rec
+		    (V.BinOp(V.PLUS, e8,
+			     V.Constant(V.Int(V.REG_8, narrow_k))))))
+    (* Byte addition disguised as word addition, cast()L:reg8_t ver. *)
+    | V.Cast(V.CAST_LOW, V.REG_8,
+	      V.BinOp(V.PLUS, V.Cast(V.CAST_UNSIGNED, V.REG_32, e8),
+		      V.Constant(V.Int(V.REG_32, k))))
+	when (Vine_typecheck.infer_type None e8) = V.REG_8
+	  ->
+	let narrow_k = Int64.logand k 0xffL in
+	  (simplify_rec
+	     (V.BinOp(V.PLUS, e8,
+		      V.Constant(V.Int(V.REG_8, narrow_k)))))
+    (* Bit extraction using word operators *)
+    | V.BinOp(V.EQ, V.Constant(V.Int(V.REG_32, 1L)),
+	      V.BinOp(V.BITAND, e,
+		      V.Constant(V.Int(V.REG_32, 1L))))
+      ->
+	(simplify_rec (V.Cast(V.CAST_LOW, V.REG_1, e)))
+    (* Bit 7 is the high bit of the low byte *)
+    | V.Cast(V.CAST_LOW, V.REG_1,
+	     V.BinOp(V.RSHIFT, e, V.Constant(V.Int(_, 7L))))
+	->
+	V.Cast(V.CAST_HIGH, V.REG_1,
+	       (simplify_rec (V.Cast(V.CAST_LOW, V.REG_8, e))))
+    (* Bit 31 is the high bit of the low word *)
+    | V.Cast(V.CAST_LOW, V.REG_1,
+	     V.BinOp(V.RSHIFT, e, V.Constant(V.Int(_, 31L))))
+	->
+	V.Cast(V.CAST_HIGH, V.REG_1,
+	       (simplify_rec (V.Cast(V.CAST_LOW, V.REG_32, e))))
+    (* Combine half-open range inclusion with remaining endpoint, byte ver. *)
+    | V.BinOp(V.BITOR,
+	      V.BinOp(V.LT,
+		      V.BinOp(V.PLUS, e1,
+			      V.Constant(V.Int(V.REG_8, k1))),
+		      V.Constant(V.Int(V.REG_8, k2))),
+	      V.BinOp(V.EQ, e2, V.Constant(V.Int(V.REG_8, k3))))
+	when e1 = e2 && (Int64.logand 0xffL (Int64.sub k2 k1)) = k3
+	  ->
+	(simplify_rec
+	   (V.BinOp(V.LE, V.BinOp(V.PLUS, e1,
+				  V.Constant(V.Int(V.REG_8, k1))),
+		    V.Constant(V.Int(V.REG_8, k2)))))
+    (* Dual to the previous *)
+    | V.BinOp(V.BITOR,
+	      V.BinOp(V.LT, V.Constant(V.Int(V.REG_8, k2)),
+		      V.BinOp(V.PLUS, e1,
+			      V.Constant(V.Int(V.REG_8, k1)))),
+	      V.BinOp(V.EQ, e2, V.Constant(V.Int(V.REG_8, k3))))
+	when e1 = e2 && (Int64.logand 0xffL (Int64.sub k2 k1)) = k3
+	  ->
+	(simplify_rec
+	   (V.BinOp(V.LE, V.Constant(V.Int(V.REG_8, k2)),
+		    V.BinOp(V.PLUS, e1,
+			    V.Constant(V.Int(V.REG_8, k1))))))
+    (* -x = k <=> x = -k *)
+    | V.BinOp(V.EQ, V.UnOp(V.NEG, e), (V.Constant(_) as k)) ->
+	simplify_rec (V.BinOp(V.EQ, e, (V.UnOp(V.NEG, k))))
+    (* x + k1 = k2 <=> x = (k2 - k1) *)
+    | V.BinOp(V.EQ, V.BinOp(V.PLUS, e1, (V.Constant(_) as k1)),
+	      (V.Constant(_) as k2)) ->
+	simplify_rec (V.BinOp(V.EQ, e1, (V.BinOp(V.MINUS, k2, k1))))
+    (* cast(-x + y)H:reg1_t => y - x < 0 => y < x *)
+    | V.Cast(V.CAST_HIGH, V.REG_1,
+	     V.BinOp(V.PLUS, V.UnOp(V.NEG, x), y))
+      ->
+	V.BinOp(V.LT, y, x)
     | V.BinOp(op, e1, e2) ->
 	Vine_opt.constant_fold_more (fun _ -> None)
 	  (V.BinOp(op, simplify_rec e1, simplify_rec e2))
