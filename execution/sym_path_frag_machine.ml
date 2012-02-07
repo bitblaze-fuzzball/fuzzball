@@ -240,10 +240,17 @@ struct
 	  r
 
     method extend_pc_random cond verbose =
-      let (result, cond') = (self#query_with_pc_choice cond verbose
-			       (fun () -> self#follow_or_random)) in
-	self#add_to_path_cond cond';
-	result
+      if !opt_concrete_path_simulate ||
+	(match !opt_concolic_prob with
+	   | Some p -> (dt#random_float < p)
+	   | None -> false)
+      then
+	self#extend_pc_known cond verbose ((form_man#eval_expr cond) <> 0L)
+      else
+	let (result, cond') = (self#query_with_pc_choice cond verbose
+				 (fun () -> self#follow_or_random)) in
+	  self#add_to_path_cond cond';
+	  result
 
     method extend_pc_known cond verbose b =
       let (result, cond') = (self#query_with_pc_choice cond verbose

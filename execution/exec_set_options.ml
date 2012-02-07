@@ -207,6 +207,9 @@ let concolic_state_cmdline_opts =
 	    opt_concolic_cstrings :=
 	      ((Int64.of_string s1), str) :: !opt_concolic_cstrings),
      "base=file As above, but read contents from a file");
+    ("-concolic-prob", Arg.String
+       (fun s -> (opt_concolic_prob := Some (float_of_string s))),
+     "frac Take concolic branch with probability 0 <= FRAC <= 1");
   ]
 
 let explore_cmdline_opts =
@@ -551,6 +554,8 @@ let make_symbolic_init (fm:Fragment_machine.fragment_machine)
 		    new_max (Int64.of_int (String.length str));
 		    fm#store_concolic_cstr base str)
 	 !opt_concolic_cstrings;
+       if !opt_concolic_prob <> None then
+	 opt_concrete_path_simulate := true;
        List.iter (fun (base, len) ->
 		    new_max (Int64.mul 2L len);
 		    fm#store_symbolic_wcstr base (Int64.to_int len))

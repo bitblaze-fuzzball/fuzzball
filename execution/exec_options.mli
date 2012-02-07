@@ -71,6 +71,8 @@ val opt_extra_conditions : Vine.exp list ref
 val opt_tracepoints : (int64 * string * Vine.exp) list ref
 val opt_string_tracepoints : (int64 * string * Vine.exp) list ref
 val opt_concrete_path : bool ref
+val opt_concrete_path_simulate : bool ref
+val opt_concolic_prob : float option ref
 val opt_solve_path_conditions : bool ref
 val opt_trace_regions : bool ref
 val opt_check_for_null : bool ref
