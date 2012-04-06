@@ -269,6 +269,15 @@ let explore_cmdline_opts =
     ("-total-timeout", Arg.String
        (fun s -> opt_total_timeout := Some (float_of_string s)),
      "SECS Finish exploration after a given time has elapsed");
+    ("-target-string", Arg.String
+       (fun s -> let (s1, s2) = split_string '=' s in
+	  opt_target_region_start := Some (Int64.of_string s1);
+	  opt_target_region_string := s2),
+     "base=string Try to make a buffer have the given contents");
+    ("-trace-target", Arg.Set(opt_trace_target),
+     " Print targeting checks");
+    ("-finish-on-target-match", Arg.Set(opt_finish_on_target_match),
+     " Finish exploration on -target-string match");
   ]
 
 

@@ -127,6 +127,10 @@ let opt_total_timeout = ref None
 let opt_x87_emulator = ref None
 let opt_x87_entry_point = ref None
 let opt_trace_fpu = ref false
+let opt_target_region_start = ref None
+let opt_target_region_string = ref ""
+let opt_trace_target = ref false
+let opt_finish_on_target_match = ref false
 
 let opt_symbolic_memory = ref false
 let opt_zero_memory = ref false
