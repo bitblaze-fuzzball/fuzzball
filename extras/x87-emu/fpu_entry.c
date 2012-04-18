@@ -24,6 +24,7 @@
  | entry points for wm-FPU-emu.                                              |
  +---------------------------------------------------------------------------*/
 
+#ifdef KERNEL
 #include <linux/signal.h>
 #include <linux/regset.h>
 
@@ -31,6 +32,11 @@
 #include <asm/desc.h>
 #include <asm/user.h>
 #include <asm/i387.h>
+#else
+#include <stdlib.h>
+#include <signal.h>
+#include <stdio.h>
+#endif
 
 #include "fpu_system.h"
 #include "fpu_emu.h"
@@ -128,6 +134,16 @@ static u_char const type_table[64] = {
 u_char emulating = 0;
 #endif /* RE_ENTRANT_CHECKING */
 
+union thread_xstate i387_state;
+
+struct pt_regs inline_call_pt_regs;
+
+void inline_call_math_emulate(void) {
+    struct math_emu_info info;
+    info.regs = &inline_call_pt_regs;
+    math_emulate(&info);
+}
+
 static int valid_prefix(u_char *Byte, u_char __user ** fpu_eip,
 			overrides * override);
 
@@ -145,14 +161,18 @@ void math_emulate(struct math_emu_info *info)
 	struct address entry_sel_off;
 	unsigned long code_base = 0;
 	unsigned long code_limit = 0;	/* Initialized to stop compiler warnings */
+#ifdef KERNEL
 	struct desc_struct code_descriptor;
+#endif
 
+#ifdef KERNEL
 	if (!used_math()) {
 		if (init_fpu(current)) {
 			do_group_exit(SIGKILL);
 			return;
 		}
 	}
+#endif
 
 #ifdef RE_ENTRANT_CHECKING
 	if (emulating) {
@@ -165,6 +185,7 @@ void math_emulate(struct math_emu_info *info)
 
 	FPU_ORIG_EIP = FPU_EIP;
 
+#ifdef KERNEL
 	if ((FPU_EFLAGS & 0x00020000) != 0) {
 		/* Virtual 8086 mode */
 		addr_modes.default_mode = VM86;
@@ -201,6 +222,9 @@ void math_emulate(struct math_emu_info *info)
 		if (code_limit < code_base)
 			code_limit = 0xffffffff;
 	}
+#else
+	addr_modes.default_mode = 0;
+#endif
 
 	FPU_lookahead = !(FPU_EFLAGS & X86_EFLAGS_TF);
 
@@ -269,9 +293,11 @@ void math_emulate(struct math_emu_info *info)
 			FPU_EIP = FPU_ORIG_EIP;	/* Point to current FPU instruction. */
 
 			RE_ENTRANT_CHECK_OFF;
+#ifdef KERNEL
 			current->thread.trap_no = 16;
 			current->thread.error_code = 0;
 			send_sig(SIGFPE, current, 1);
+#endif
 			return;
 		}
 	}
@@ -566,7 +592,11 @@ void math_emulate(struct math_emu_info *info)
 	RE_ENTRANT_CHECK_ON;
 #endif /* DEBUG */
 
-	if (FPU_lookahead && !need_resched()) {
+	if (FPU_lookahead
+#ifdef KERNEL
+	    && !need_resched()
+#endif
+	    ) {
 		FPU_ORIG_EIP = FPU_EIP - code_base;
 		if (valid_prefix(&byte1, (u_char __user **) & FPU_EIP,
 				 &addr_modes.override))
@@ -661,7 +691,8 @@ static int valid_prefix(u_char *Byte, u_char __user **fpu_eip,
 
 void math_abort(struct math_emu_info *info, unsigned int signal)
 {
-	FPU_EIP = FPU_ORIG_EIP;
+#ifdef KERRNEL
+        FPU_EIP = FPU_ORIG_EIP;
 	current->thread.trap_no = 16;
 	current->thread.error_code = 0;
 	send_sig(signal, current, 1);
@@ -670,12 +701,16 @@ void math_abort(struct math_emu_info *info, unsigned int signal)
 #ifdef PARANOID
 	printk("ERROR: wm-FPU-emu math_abort failed!\n");
 #endif /* PARANOID */
+#else
+	abort();
+#endif
 }
 
 #define S387 ((struct i387_soft_struct *)s387)
 #define sstatus_word() \
   ((S387->swd & ~SW_Top & 0xffff) | ((S387->ftop << SW_Top_Shift) & SW_Top))
 
+#ifdef KERNEL
 int fpregs_soft_set(struct task_struct *target,
 		    const struct user_regset *regset,
 		    unsigned int pos, unsigned int count,
@@ -765,3 +800,4 @@ int fpregs_soft_get(struct task_struct *target,
 
 	return ret;
 }
+#endif

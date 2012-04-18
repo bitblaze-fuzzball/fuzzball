@@ -17,10 +17,15 @@
  |    other processes using the emulator while swapping is in progress.      |
  +---------------------------------------------------------------------------*/
 
+#ifdef KERNEL
 #include <linux/stddef.h>
 
 #include <asm/uaccess.h>
 #include <asm/desc.h>
+#else
+#include <signal.h>
+#include <stddef.h>
+#endif
 
 #include "fpu_system.h"
 #include "exception.h"
@@ -136,6 +141,7 @@ static unsigned long vm86_segment(u_char segment, struct address *addr)
 static long pm_address(u_char FPU_modrm, u_char segment,
 		       struct address *addr, long offset)
 {
+#ifdef KERNEL
 	struct desc_struct descriptor;
 	unsigned long base_address, limit, address, seg_top;
 
@@ -187,6 +193,9 @@ static long pm_address(u_char FPU_modrm, u_char segment,
 		access_limit = 0;
 	}
 	return address;
+#else
+	return offset;
+#endif
 }
 
 /*

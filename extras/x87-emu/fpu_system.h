@@ -12,9 +12,11 @@
 
 /* system dependent definitions */
 
+#ifdef KERNEL
 #include <linux/sched.h>
 #include <linux/kernel.h>
 #include <linux/mm.h>
+#endif
 
 /* s is always from a cpu register, and the cpu does bounds checking
  * during register load --> no further bounds checks needed */
@@ -30,8 +32,111 @@
 #define SEG_WRITE_PERM(s)	(((s).b & ((1 << 11) | (1 << 9))) == (1 << 9))
 #define SEG_EXPAND_DOWN(s)	(((s).b & ((1 << 11) | (1 << 10))) \
 				 == (1 << 10))
-
+#ifdef KERNEL
 #define I387			(current->thread.fpu.state)
+#else
+
+#define X86_EFLAGS_CF   0x00000001 /* Carry Flag */
+#define X86_EFLAGS_PF   0x00000004 /* Parity Flag */
+#define X86_EFLAGS_AF   0x00000010 /* Auxiliary carry Flag */
+#define X86_EFLAGS_ZF   0x00000040 /* Zero Flag */
+#define X86_EFLAGS_SF   0x00000080 /* Sign Flag */
+#define X86_EFLAGS_TF   0x00000100 /* Trap Flag */
+#define X86_EFLAGS_IF   0x00000200 /* Interrupt Flag */
+#define X86_EFLAGS_DF   0x00000400 /* Direction Flag */
+#define X86_EFLAGS_OF   0x00000800 /* Overflow Flag */
+#define X86_EFLAGS_IOPL 0x00003000 /* IOPL mask */
+#define X86_EFLAGS_NT   0x00004000 /* Nested Task */
+#define X86_EFLAGS_RF   0x00010000 /* Resume Flag */
+#define X86_EFLAGS_VM   0x00020000 /* Virtual Mode */
+#define X86_EFLAGS_AC   0x00040000 /* Alignment Check */
+#define X86_EFLAGS_VIF  0x00080000 /* Virtual Interrupt Flag */
+#define X86_EFLAGS_VIP  0x00100000 /* Virtual Interrupt Pending */
+#define X86_EFLAGS_ID   0x00200000 /* CPUID detect */
+
+#ifdef __ASSEMBLY__
+#else
+#define printk printf
+#define get_user(x, ptr) ((x) = (*(ptr)))
+#define put_user(x, ptr) (*(ptr) = (x))
+#define __copy_to_user memmove
+#define __copy_from_user memmove
+#define copy_to_user memmove
+#define copy_from_user memmove
+
+struct pt_regs {
+    unsigned long bx;      /*  0 */
+    unsigned long cx;      /*  4 */
+    unsigned long dx;      /*  8 */
+    unsigned long si;      /*  c */
+    unsigned long di;      /* 10 */
+    unsigned long bp;      /* 14 */
+    unsigned long ax;      /* 18 */
+    unsigned long ds;      /* 1c */
+    unsigned long es;      /* 20 */
+    unsigned long fs;      /* 24 */
+    unsigned long gs;      /* 28 */
+    unsigned long orig_ax; /* 2c */
+    unsigned long ip;      /* 30 */
+    unsigned long cs;      /* 34 */
+    unsigned long flags;   /* 38 */
+    unsigned long sp;      /* 3c */
+    unsigned long ss;      /* 40 */
+};
+
+struct kernel_vm86_regs {
+/*
+ * normal regs, with special meaning for the segment descriptors..
+ */
+        struct pt_regs pt;
+/*
+ * these are specific to v86 mode:
+ */
+        unsigned short es, __esh;
+        unsigned short ds, __dsh;
+        unsigned short fs, __fsh;
+        unsigned short gs, __gsh;
+};
+
+struct math_emu_info {
+        long ___orig_eip;
+        union {
+                struct pt_regs *regs;
+	        struct kernel_vm86_regs *vm86;
+        };
+};
+
+typedef unsigned char u8;
+typedef unsigned int u32;
+
+struct i387_soft_struct {
+        u32                     cwd;
+        u32                     swd;
+        u32                     twd;
+        u32                     fip;
+        u32                     fcs;
+        u32                     foo;
+        u32                     fos;
+        /* 8*10 bytes for each FP-reg = 80 bytes: */
+        u32                     st_space[20];
+        u8                      ftop;
+        u8                      changed;
+        u8                      lookahead;
+        u8                      no_update;
+        u8                      rm;
+        u8                      alimit;
+        struct math_emu_info    *info;
+        u32                     entry_eip;
+};
+
+union thread_xstate {
+    struct i387_soft_struct soft;
+};
+
+extern union thread_xstate i387_state;
+#endif
+#define I387                    (&i387_state)
+#endif
 #define FPU_info		(I387->soft.info)
 
 #define FPU_CS			(*(unsigned short *) &(FPU_info->regs->cs))
@@ -62,11 +167,15 @@
 #define instruction_address	(*(struct address *)&I387->soft.fip)
 #define operand_address		(*(struct address *)&I387->soft.foo)
 
+#ifdef KERNEL
 #define FPU_access_ok(x,y,z)	if ( !access_ok(x,y,z) ) \
 				math_abort(FPU_info,SIGSEGV)
+#else
+#define FPU_access_ok(x,y,z)    /* always OK */
+#endif
 #define FPU_abort		math_abort(FPU_info, SIGSEGV)
 
-#undef FPU_IGNORE_CODE_SEGV
+#define FPU_IGNORE_CODE_SEGV
 #ifdef FPU_IGNORE_CODE_SEGV
 /* access_ok() is very expensive, and causes the emulator to run
    about 20% slower if applied to the code. Anyway, errors due to bad

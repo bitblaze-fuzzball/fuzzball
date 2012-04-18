@@ -25,7 +25,7 @@ static void fchs(FPU_REG *st0_ptr, u_char st0tag)
 		FPU_stack_underflow();
 }
 
-static void fabs(FPU_REG *st0_ptr, u_char st0tag)
+static void fabs_(FPU_REG *st0_ptr, u_char st0tag)
 {
 	if (st0tag ^ TAG_Empty) {
 		setpositive(st0_ptr);
@@ -120,7 +120,7 @@ static void fxam(FPU_REG *st0_ptr, u_char st0tag)
 }
 
 static FUNC_ST0 const fp_etc_table[] = {
-	fchs, fabs, (FUNC_ST0) FPU_illegal, (FUNC_ST0) FPU_illegal,
+	fchs, fabs_, (FUNC_ST0) FPU_illegal, (FUNC_ST0) FPU_illegal,
 	ftst_, fxam, (FUNC_ST0) FPU_illegal, (FUNC_ST0) FPU_illegal
 };
 

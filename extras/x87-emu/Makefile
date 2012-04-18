@@ -7,6 +7,8 @@ DEBUG	=
 PARANOID = -DPARANOID
 EXTRA_CFLAGS	:= $(PARANOID) $(DEBUG) -fno-builtin $(MATH_EMULATION)
 EXTRA_AFLAGS	:= $(PARANOID)
+CC := gcc -m32
+CFLAGS := $(PARANOID) $(DEBUG) -g -Wall
 
 # From 'C' language sources:
 C_OBJS =fpu_entry.o errors.o \
@@ -21,9 +23,20 @@ A_OBJS =reg_u_add.o reg_u_div.o reg_u_mul.o reg_u_sub.o \
 	div_small.o reg_norm.o reg_round.o \
 	wm_shrx.o wm_sqrt.o \
 	div_Xsig.o polynom_Xsig.o round_Xsig.o \
-	shr_Xsig.o mul_Xsig.o
+	shr_Xsig.o mul_Xsig.o \
+	inline_call.o
 
 obj-y =$(C_OBJS) $(A_OBJS)
 
-proto:
-	cproto -e -DMAKING_PROTO *.c >fpu_proto.h
+tester: tester.o $(obj-y)
+
+tester.o: tester.S
+
+%.o: %.S
+	$(CC) -D__ASSEMBLY__ $< -c -o $@
+
+clean:
+	rm -f *.o tester
+
+#proto:
+#	cproto -e -DMAKING_PROTO *.c >fpu_proto.h

@@ -17,9 +17,15 @@
  |    other processes using the emulator while swapping is in progress.      |
  +---------------------------------------------------------------------------*/
 
+#ifdef KERNEL
 #include <linux/signal.h>
 
 #include <asm/uaccess.h>
+#else
+#include <signal.h>
+#include <stddef.h>
+#include <stdio.h>
+#endif
 
 #include "fpu_emu.h"
 #include "fpu_system.h"
@@ -89,6 +95,7 @@ void FPU_printall(void)
 
 	RE_ENTRANT_CHECK_OFF;
 	/* No need to check access_ok(), we have previously fetched these bytes. */
+#ifdef KERNEL
 	printk("At %p:", (void *)address);
 	if (FPU_CS == __USER_CS) {
 #define MAX_PRINTED_BYTES 20
@@ -201,7 +208,7 @@ void FPU_printall(void)
 		}
 		printk("%s\n", tag_desc[(int)(unsigned)tagi]);
 	}
-
+#endif
 	RE_ENTRANT_CHECK_ON;
 
 }

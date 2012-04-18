@@ -18,7 +18,12 @@
  |    other processes using the emulator while swapping is in progress.      |
  +---------------------------------------------------------------------------*/
 
+#ifdef KERNEL
 #include <asm/uaccess.h>
+#else
+#include <signal.h>
+#include <stddef.h>
+#endif
 
 #include "fpu_system.h"
 #include "exception.h"

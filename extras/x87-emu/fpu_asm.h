@@ -10,7 +10,16 @@
 #ifndef _FPU_ASM_H_
 #define _FPU_ASM_H_
 
+#ifdef KERNEL
 #include <linux/linkage.h>
+#else
+#define __ALIGN         .align 4,0x90
+#define ALIGN __ALIGN
+#define ENTRY(name) \
+  .globl name; \
+  ALIGN; \
+  name:
+#endif
 
 #define	EXCEPTION	FPU_exception
 

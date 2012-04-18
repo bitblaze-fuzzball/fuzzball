@@ -71,9 +71,15 @@
 
 #include "fpu_system.h"
 
+#ifdef KERNEL
 #include <asm/sigcontext.h>	/* for struct _fpstate */
 #include <asm/math_emu.h>
 #include <linux/linkage.h>
+#else
+#define asmlinkage /**/
+#define __user
+typedef unsigned char u_char;
+#endif
 
 /*
 #define RE_ENTRANT_CHECKING
