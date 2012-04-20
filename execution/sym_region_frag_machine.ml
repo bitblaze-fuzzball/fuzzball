@@ -679,6 +679,8 @@ struct
 			      | Some false -> "known mismatch"
 			      | None -> "possible") b;
 		       if not b then raise DisqualifiedPath;
+		       if !opt_target_guidance then
+			 dt#set_heur offset;
 		       if !opt_finish_on_target_match && b &&
 			 offset = (String.length !opt_target_region_string) - 1
 		       then

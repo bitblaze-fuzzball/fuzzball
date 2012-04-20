@@ -29,6 +29,8 @@ class virtual decision_tree : object
     (bool -> Vine.exp -> bool) -> (bool -> unit) -> (unit -> bool) 
     -> (bool * Vine.exp)
 
+  method virtual set_heur : int -> unit
+  method virtual heur_preference : bool option
   method virtual mark_all_seen : unit
 
   method virtual check_last_choices : bool option

@@ -278,6 +278,8 @@ let explore_cmdline_opts =
      " Print targeting checks");
     ("-finish-on-target-match", Arg.Set(opt_finish_on_target_match),
      " Finish exploration on -target-string match");
+    ("-target-guidance", Arg.Set(opt_target_guidance),
+     " Greedily prefer better target matches");
   ]
 
 

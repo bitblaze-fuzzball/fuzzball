@@ -30,6 +30,8 @@ class binary_decision_tree : object
     (bool -> Vine.exp -> bool) -> (bool -> unit) -> (unit -> bool) 
     -> (bool * Vine.exp)
 
+  method set_heur : int -> unit
+  method heur_preference : bool option
   method mark_all_seen : unit
 
   method check_last_choices : bool option

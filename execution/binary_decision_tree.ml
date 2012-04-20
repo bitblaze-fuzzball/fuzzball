@@ -15,6 +15,8 @@ type decision_tree_node = {
   mutable all_seen : bool;
   mutable query_children : int option;
   mutable query_counted : bool;
+  mutable heur_min : int;
+  mutable heur_max : int;
   mutable ident : int }
 and
   dt_node_ref = int
@@ -47,26 +49,31 @@ let dt_node_to_string n =
   let flags_int = (if n.all_seen then 1 else 0) +
     (if n.query_counted then 2 else 0)
   in
-  let s = Printf.sprintf "%08x%c%08x%08x%04x"
+  let s = Printf.sprintf "%08x%c%08x%08x%08x%08x%04x"
     (parent_int land mask_32bits_int) (Char.chr (0x40 + flags_int))
     (f_child_int land mask_32bits_int) (t_child_int land mask_32bits_int)
+    (n.heur_min land mask_32bits_int) (n.heur_max land mask_32bits_int)
     (query_children_int land 0xffff) in
-    assert(String.length s = 29);
+    assert(String.length s = 45);
     s
 
 let string_to_dt_node ident_arg s =
-  assert(String.length s = 29);
+  assert(String.length s = 45);
   let parent_str = String.sub s 0 8 and
       flags_char = s.[8] and
       f_child_str = String.sub s 9 8 and
       t_child_str = String.sub s 17 8 and
-      query_children_str = String.sub s 25 4
+      heur_min_str = String.sub s 25 8 and
+      heur_max_str = String.sub s 33 8 and
+      query_children_str = String.sub s 41 4
   in
   let int_of_hex_string s = int_of_string ("0x" ^ s) in
   let parent_int = int_of_hex_string parent_str and
       flags_int = (Char.code flags_char) - 0x40 and
       f_child_int = int_of_hex_string f_child_str and
       t_child_int = int_of_hex_string t_child_str and
+      heur_min_int = int_of_hex_string heur_min_str and
+      heur_max_int = int_of_hex_string heur_max_str and
       query_children_int = int_of_hex_string query_children_str
   in
   let parent_o = match parent_int with
@@ -84,12 +91,19 @@ let string_to_dt_node ident_arg s =
     | 0xffff -> None
     | i -> Some i
   in
+  let maybe_negative_one i =
+    if i land mask_32bits_int = mask_32bits_int then
+      -1
+    else i
+  in
   let all_seen_bool = (flags_int land 1) <> 0 and
       query_counted_bool = (flags_int land 2) <> 0
   in
     {parent = parent_o;
      f_child = f_child_oo; t_child = t_child_oo;
      query_children = query_children_o; query_counted = query_counted_bool;
+     heur_min = maybe_negative_one heur_min_int;
+     heur_max = maybe_negative_one heur_max_int;
      all_seen = all_seen_bool; ident = ident_arg}
 
 let next_dt_ident = ref 0
@@ -111,13 +125,13 @@ let nodes_fd () =
 
 let ident_to_node i =
   if !opt_decision_tree_use_file then
-    ((let off = Unix.lseek (nodes_fd ()) (30 * (i-1)) Unix.SEEK_SET in
-	assert(off = 30 * (i-1)));
-     let buf = String.create 30 in
-     let len = Unix.read (nodes_fd ()) buf 0 30 in
-       assert(len = 30);
-       assert(String.sub buf 29 1 = "\n");
-       string_to_dt_node i (String.sub buf 0 29))
+    ((let off = Unix.lseek (nodes_fd ()) (46 * (i-1)) Unix.SEEK_SET in
+	assert(off = 46 * (i-1)));
+     let buf = String.create 46 in
+     let len = Unix.read (nodes_fd ()) buf 0 46 in
+       assert(len = 46);
+       assert(String.sub buf 45 1 = "\n");
+       string_to_dt_node i (String.sub buf 0 45))
   else
     let i3 = i land 1023 and
 	i2 = (i asr 10) land 1023 and
@@ -166,6 +180,10 @@ let print_node chan n =
     Printf.fprintf chan "%s " (kid_to_string (get_t_child n));
     Printf.fprintf chan "%s " (if n.all_seen then "*" else "?");
     Printf.fprintf chan "%s " (kid_to_string (Some (get_parent n)));
+    if n.heur_min <= n.heur_max then
+      Printf.fprintf chan "(%d %d) " n.heur_min n.heur_max
+    else
+      Printf.fprintf chan "(X) ";
     Printf.fprintf chan "%s\n"
       (match n.query_children with
 	 | None -> "[]"
@@ -223,6 +241,7 @@ let new_dt_node the_parent =
 		   | Some nr -> Some (ref_dt_node nr));
        f_child = None; t_child = None;
        query_children = None; query_counted = false;
+       heur_min = 0x3fffffff; heur_max = -1;
        all_seen = false; ident = i}
     in
       update_dt_node node;
@@ -267,6 +286,7 @@ class binary_decision_tree = object(self)
   val mutable path_hash = Int64.to_int32 0x811c9dc5L
   val mutable iteration_count = 0
   val mutable randomness = Random.State.make [|!opt_random_seed; 0|]
+  val mutable cur_heur = -1
 
   method init =
     let root = get_dt_node root_ident in
@@ -281,6 +301,7 @@ class binary_decision_tree = object(self)
   method reset =
     cur <- get_dt_node root_ident;
     cur_query <- get_dt_node root_ident;
+    cur_heur <- -1;
     depth <- 0;
     path_hash <- Int64.to_int32 0x811c9dc5L;
     iteration_count <- iteration_count + 1;
@@ -698,7 +719,45 @@ class binary_decision_tree = object(self)
     then
       self#mark_all_seen_node n
 
-  method mark_all_seen = self#mark_all_seen_node cur
+  method set_heur i =
+    cur_heur <- i
+
+  method private propagate_heur node =
+    let rec loop n = 
+      n.heur_min <- min cur_heur n.heur_min;
+      n.heur_max <- max cur_heur n.heur_max;
+      update_dt_node n;
+      if !opt_trace_decision_tree then	
+	Printf.printf "DT: propagate_heur %d (%d %d) at %d\n" cur_heur
+	  n.heur_min n.heur_max n.ident;
+      match get_parent n with
+	| None -> ()
+	| Some p -> loop p
+    in
+      loop node
+
+  method heur_preference =
+    match (get_f_child cur, get_t_child cur) with
+      | (Some Some kid_f, Some Some kid_t) ->
+	  let f_min = kid_f.heur_min and
+	      f_max = kid_f.heur_max and
+	      t_min = kid_t.heur_min and
+	      t_max = kid_t.heur_max in
+	    if f_min > f_max || t_min > t_max then
+	      None
+	    else if f_max <> t_max then
+	      ( (*Printf.printf "Preference based on max\n"; *)
+	       Some (t_max > f_max))
+	    else if f_min <> t_min then
+	      ( (*Printf.printf "Preference based on min\n"; *)
+	       Some (t_min > f_min))
+	    else
+	      None
+      | _ -> None
+
+  method mark_all_seen =
+    self#mark_all_seen_node cur;
+    self#propagate_heur cur
 
   method try_again_p = not (get_dt_node root_ident).all_seen
 

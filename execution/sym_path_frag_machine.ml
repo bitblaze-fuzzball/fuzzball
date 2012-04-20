@@ -201,14 +201,23 @@ struct
 	let currpath_str = dt#get_hist_str in
 	let followplen = String.length !opt_follow_path and
 	    currplen = String.length currpath_str in
-	  if followplen > currplen then
+	let pref =
+          if followplen > currplen then
 	    let follow_prefix = String.sub !opt_follow_path 0 currplen in
-	      if follow_prefix = currpath_str then
-		(String.sub !opt_follow_path currplen 1) = "1"
+	      if follow_prefix = currpath_str
+	      then
+		Some ((String.sub !opt_follow_path currplen 1) = "1")
 	      else 
-		dt#random_bit
-	  else
-	    dt#random_bit
+		None
+          else
+            None
+	in
+	  match pref with
+	    | Some b -> b
+	    | None ->
+		match dt#heur_preference with
+		  | Some b -> b
+		  | None -> dt#random_bit
 
     method query_with_pc_choice cond verbose choice =
       let trans_func b =
@@ -333,7 +342,9 @@ struct
 	    | _ -> failwith "Unsupported branch preference"
 	with
 	  | Not_found ->
-	      (self#call_cjmp_heuristic eip targ1 targ2 None)
+	      match dt#heur_preference with
+		| Some b -> Some b
+		| None -> (self#call_cjmp_heuristic eip targ1 targ2 None)
 
     method eval_cjmp exp targ1 targ2 =
       let eip = self#get_eip in

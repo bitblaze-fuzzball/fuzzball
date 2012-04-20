@@ -71,6 +71,8 @@ class linear_decision_tree = object(self)
       self#extend b;
       (b, c)
 
+  method set_heur i = ()
+  method heur_preference = (None : bool option)
   method mark_all_seen = ()
 
   method try_again_p = false
