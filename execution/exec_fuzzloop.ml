@@ -103,7 +103,13 @@ let fuzz start_eip opt_fuzz_start_eip end_eips
 	if start_eip <> opt_fuzz_start_eip then
 	  (if !opt_trace_setup then Printf.printf "Pre-fuzzing execution...\n";
 	   flush stdout;
-	   runloop fm start_eip asmir_gamma (fun a -> a = opt_fuzz_start_eip))
+	   runloop fm start_eip asmir_gamma
+	     (fun a ->
+		if a = opt_fuzz_start_eip then
+		  (decr opt_fuzz_start_addr_count;
+		   !opt_fuzz_start_addr_count = 0)
+		else
+		  false))
       with
 	| StartSymbolic(eip, setup) ->
 	    fuzz_start_eip := eip;

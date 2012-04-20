@@ -217,6 +217,8 @@ let explore_cmdline_opts =
     ("-fuzz-start-addr", Arg.String
        (fun s -> opt_fuzz_start_addr := Some(Int64.of_string s)),
      "addr Code address to start fuzzing");
+    ("-fuzz-start-addr-count", Arg.Set_int(opt_fuzz_start_addr_count),
+     "count Start at nth occurrence (vs. 1st)");
     ("-fuzz-end-addr", Arg.String
        (fun s -> opt_fuzz_end_addrs :=
 	  (Int64.of_string s) :: !opt_fuzz_end_addrs),

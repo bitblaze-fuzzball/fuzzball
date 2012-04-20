@@ -137,6 +137,7 @@ let opt_symbolic_memory = ref false
 let opt_zero_memory = ref false
 let opt_random_memory = ref false
 
+let opt_fuzz_start_addr_count = ref 1
 let opt_fuzz_end_addrs = ref []
 
 let opt_check_read_operands = ref false
