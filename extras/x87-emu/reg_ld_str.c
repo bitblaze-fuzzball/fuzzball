@@ -23,7 +23,8 @@
 #include <asm/uaccess.h>
 #else
 #include <signal.h>
-#include <string.h>
+void *memmove(void *dest, const void *src, size_t n);
+/*#include <string.h>*/
 #endif
 
 #include "fpu_system.h"

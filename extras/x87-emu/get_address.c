@@ -59,6 +59,7 @@ static int reg_offset_vm86[] = {
 #define VM86_REG_(x) (*(unsigned short *) \
 		(reg_offset_vm86[((unsigned)x)] + (u_char *)FPU_info->regs))
 
+#ifdef KERNEL
 static int reg_offset_pm[] = {
 	offsetof(struct pt_regs, cs),
 	offsetof(struct pt_regs, ds),
@@ -71,6 +72,7 @@ static int reg_offset_pm[] = {
 
 #define PM_REG_(x) (*(unsigned short *) \
 		(reg_offset_pm[((unsigned)x)] + (u_char *)FPU_info->regs))
+#endif
 
 /* Decode the SIB byte. This function assumes mod != 0 */
 static int sib(int mod, unsigned long *fpu_eip)

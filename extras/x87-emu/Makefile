@@ -8,7 +8,7 @@ PARANOID = -DPARANOID
 EXTRA_CFLAGS	:= $(PARANOID) $(DEBUG) -fno-builtin $(MATH_EMULATION)
 EXTRA_AFLAGS	:= $(PARANOID)
 CC := gcc -m32
-CFLAGS := $(PARANOID) $(DEBUG) -g -Wall
+CFLAGS := $(PARANOID) $(DEBUG) -O3 -fno-strict-aliasing -g -Wall
 
 # From 'C' language sources:
 C_OBJS =fpu_entry.o errors.o \
@@ -27,6 +27,9 @@ A_OBJS =reg_u_add.o reg_u_div.o reg_u_mul.o reg_u_sub.o \
 	inline_call.o
 
 obj-y =$(C_OBJS) $(A_OBJS)
+
+math-emu.so: $(obj-y)
+	$(CC) -Wl,--entry,inline_x87 -Wl,-Ttext-segment,0xc1048000 $(obj-y) -nostdlib -o $@
 
 tester: tester.o $(obj-y)
 

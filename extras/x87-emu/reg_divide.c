@@ -62,6 +62,7 @@ int FPU_div(int flags, int rm, int control_w)
 			tagb = FPU_gettagi(rm);
 		}
 	}
+	(void)st_ptr;
 
 	signa = getsign(a);
 	signb = getsign(b);
@@ -70,6 +71,7 @@ int FPU_div(int flags, int rm, int control_w)
 
 	dest = &st(deststnr);
 	saved_sign = getsign(dest);
+	(void)saved_sign;
 
 	if (!(taga | tagb)) {
 		/* Both regs Valid, this should be the most common case. */

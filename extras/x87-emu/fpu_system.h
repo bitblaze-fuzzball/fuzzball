@@ -56,13 +56,12 @@
 
 #ifdef __ASSEMBLY__
 #else
-#define printk printf
 #define get_user(x, ptr) ((x) = (*(ptr)))
 #define put_user(x, ptr) (*(ptr) = (x))
-#define __copy_to_user memmove
+#define __copy_to_user   memmove
 #define __copy_from_user memmove
-#define copy_to_user memmove
-#define copy_from_user memmove
+#define copy_to_user     memmove
+#define copy_from_user   memmove
 
 struct pt_regs {
     unsigned long bx;      /*  0 */

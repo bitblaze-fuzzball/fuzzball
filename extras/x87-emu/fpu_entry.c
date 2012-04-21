@@ -144,6 +144,27 @@ void inline_call_math_emulate(void) {
     math_emulate(&info);
 }
 
+/* From the dietlibc version */
+void *memmove(void *dest, const void *src, size_t n) {
+    char *a = dest;
+    const char *b = src;
+    if (src > dest) {
+	while (n--) *a++ = *b++;
+    } else {
+	a += n - 1;
+	b += n - 1;
+	while (n--) *a-- = *b--;
+    }
+    return dest;
+}
+
+void __attribute__((noreturn)) abort(void) {
+    asm("int3");
+#if (__GNUC__ >= 4 && __GNUC_MINOR__ >= 5)
+    __builtin_unreachable();
+#endif
+}
+
 static int valid_prefix(u_char *Byte, u_char __user ** fpu_eip,
 			overrides * override);
 
@@ -231,10 +252,12 @@ void math_emulate(struct math_emu_info *info)
 	if (!valid_prefix(&byte1, (u_char __user **) & FPU_EIP,
 			  &addr_modes.override)) {
 		RE_ENTRANT_CHECK_OFF;
+#ifdef KERNEL
 		printk
 		    ("FPU emulator: Unknown prefix byte 0x%02x, probably due to\n"
 		     "FPU emulator: self-modifying code! (emulation impossible)\n",
 		     byte1);
+#endif
 		RE_ENTRANT_CHECK_ON;
 		EXCEPTION(EX_INTERNAL | 0x126);
 		math_abort(FPU_info, SIGILL);

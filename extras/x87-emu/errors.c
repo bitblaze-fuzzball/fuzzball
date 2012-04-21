@@ -95,6 +95,8 @@ void FPU_printall(void)
 
 	RE_ENTRANT_CHECK_OFF;
 	/* No need to check access_ok(), we have previously fetched these bytes. */
+	(void)address; (void)FPU_modrm; (void)byte1; (void)tag_desc;
+	(void)i;
 #ifdef KERNEL
 	printk("At %p:", (void *)address);
 	if (FPU_CS == __USER_CS) {
@@ -348,16 +350,19 @@ asmlinkage void FPU_exception(int n)
 			    exception_names[i].type)
 				break;
 
-		if (exception_names[i].type) {
 #ifdef PRINT_MESSAGES
+		if (exception_names[i].type) {
 			printk("FP Exception: %s!\n", exception_names[i].name);
-#endif /* PRINT_MESSAGES */
 		} else
 			printk("FPU emulator: Unknown Exception: 0x%04x!\n", n);
+#endif /* PRINT_MESSAGES */
 
+		(void)int_type;
 		if (n == EX_INTERNAL) {
+#ifdef PRINT_MESSAGES
 			printk("FPU emulator: Internal error type 0x%04x\n",
 			       int_type);
+#endif /* PRINT_MESSAGES */
 			FPU_printall();
 		}
 #ifdef PRINT_MESSAGES

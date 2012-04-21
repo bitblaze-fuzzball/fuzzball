@@ -612,6 +612,7 @@ static int f_cos(FPU_REG *st0_ptr, u_char tag)
 	u_char st0_sign;
 
 	st0_sign = getsign(st0_ptr);
+	(void)st0_sign;
 
 	if (tag == TAG_Valid) {
 		int q;
@@ -880,6 +881,7 @@ static void do_fprem(FPU_REG *st0_ptr, u_char st0_tag, int round)
 			/* N is 'a number between 32 and 63' (p26-113) */
 			reg_copy(&st0, &tmp);
 			tmptag = st0_tag;
+			(void)tmptag;
 			N = (expdif & 0x0000001f) + 32;	/* This choice gives results
 							   identical to an AMD 486 */
 			setexponent16(&tmp, N);
