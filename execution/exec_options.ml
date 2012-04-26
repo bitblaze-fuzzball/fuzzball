@@ -132,6 +132,8 @@ let opt_target_region_string = ref ""
 let opt_trace_target = ref false
 let opt_finish_on_target_match = ref false
 let opt_target_guidance = ref false
+let opt_trace_tables = ref false
+let opt_table_limit = ref 0
 
 let opt_symbolic_memory = ref false
 let opt_zero_memory = ref false

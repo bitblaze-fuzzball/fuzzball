@@ -216,7 +216,9 @@ let encode_exp_flags e printable =
 	  push ty_char;
 	  loop e1
     | V.Unknown(s) -> push 'U'; push_string s
-    | _ -> failwith "Unexpected expr type in encode_exp"
+    | _ -> 
+	Printf.printf "Offending exp: %s\n" (V.exp_to_string e);
+	failwith "Unexpected expr type in encode_exp"
   in
     loop e;
     let len = List.length !chars and

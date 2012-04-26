@@ -74,6 +74,33 @@ struct
       | V.BinOp((V.EQ|V.NEQ|V.LT|V.LE|V.SLT|V.SLE), _, _) -> 1
       | _ -> 64
 
+  let map_n fn n =
+    let l = ref [] in
+      for i = n downto 0 do
+	l := (fn i) :: !l
+      done;
+      !l
+
+  let rec lookup_tree form_man e bits ty expr_list = 
+    let rec nth_tail n l = match (n, l) with
+      | (0, l) -> l
+      | (_, []) -> failwith "List too short in nth_tail"
+      | (n, l) -> nth_tail (n-1) (List.tl l)
+    in
+      assert((List.length expr_list) >= (1 lsl bits));
+      if bits = 0 then
+	List.hd expr_list
+      else
+	let shift_amt = Int64.of_int (bits - 1) in
+	let cond_e = V.Cast(V.CAST_LOW, V.REG_1,
+			    V.BinOp(V.RSHIFT, e, 
+				    V.Constant(V.Int(V.REG_8, shift_amt))))
+	in
+	let half_two = nth_tail (1 lsl (bits - 1)) expr_list in
+	  form_man#make_ite (D.from_symbolic cond_e) ty
+	    (lookup_tree form_man e (bits - 1) ty half_two)
+	    (lookup_tree form_man e (bits - 1) ty expr_list)
+
   let split_terms e form_man =
     let rec loop e =
       match e with
@@ -450,12 +477,46 @@ struct
 	in
 	  dt#count_query;
 	  (region, offset)
-	    
-    method eval_addr_exp_region exp =
+
+    method private eval_addr_exp_region_conc_path e =
       let term_is_known_base = function
 	| V.Lval(V.Temp(var)) -> form_man#known_region_base var
 	| _ -> false
       in
+      let terms = split_terms e form_man in
+      let (known_bases, rest) =
+	List.partition term_is_known_base terms in
+	match known_bases with
+	  | [] ->
+	      let a = form_man#eval_expr e in
+		if !opt_trace_sym_addrs then
+		  Printf.printf "Computed concrete value 0x%08Lx\n" a;
+		if !opt_solve_path_conditions then
+		  (let cond = V.BinOp(V.EQ, e,
+				      V.Constant(V.Int(V.REG_32, a)))
+		   in
+		   let sat = self#extend_pc_known cond false true in
+		     assert(sat));
+		(Some 0, a)
+	  | [V.Lval(V.Temp(var)) as vexp] ->
+	      let sum = sum_list rest in
+	      let a = form_man#eval_expr sum in
+	      let a_const = V.Constant(V.Int(V.REG_32, a)) in
+		if !opt_trace_sym_addrs then
+		  Printf.printf
+		    "Computed concrete offset %s + 0x%08Lx\n" 
+		    (V.var_to_string var) a;
+		if !opt_solve_path_conditions && 
+		  (sum <> a_const)
+		then
+		  (let cond = V.BinOp(V.EQ, sum, a_const) in
+		   let sat = self#extend_pc_known cond false true in
+		     assert(sat));
+		(Some(self#region_for vexp), a)
+	  | [_] -> failwith "known_base invariant failure"
+	  | _ -> failwith "multiple bases"
+
+    method eval_addr_exp_region exp =
       let v = self#eval_int_exp_simplify exp in
 	try
 	  (Some 0, D.to_concrete_32 v)
@@ -466,38 +527,7 @@ struct
 	      Printf.printf "Symbolic address %s @ (0x%Lx)\n"
 		(V.exp_to_string e) eip;
 	    if !opt_concrete_path then
-	      let terms = split_terms e form_man in
-	      let (known_bases, rest) =
-		List.partition term_is_known_base terms in
-		match known_bases with
-		  | [] ->
-		      let a = form_man#eval_expr e in
-			if !opt_trace_sym_addrs then
-			  Printf.printf "Computed concrete value 0x%08Lx\n" a;
-			if !opt_solve_path_conditions then
-			  (let cond = V.BinOp(V.EQ, e,
-					      V.Constant(V.Int(V.REG_32, a)))
-			   in
-			   let sat = self#extend_pc_known cond false true in
-			     assert(sat));
-			(Some 0, a)
-		  | [V.Lval(V.Temp(var)) as vexp] ->
-		      let sum = sum_list rest in
-		      let a = form_man#eval_expr sum in
-		      let a_const = V.Constant(V.Int(V.REG_32, a)) in
-			if !opt_trace_sym_addrs then
-			  Printf.printf
-			    "Computed concrete offset %s + 0x%08Lx\n" 
-			    (V.var_to_string var) a;
-			if !opt_solve_path_conditions && 
-			  (sum <> a_const)
-			then
-			  (let cond = V.BinOp(V.EQ, sum, a_const) in
-			   let sat = self#extend_pc_known cond false true in
-			     assert(sat));
-			(Some(self#region_for vexp), a)
-		  | [_] -> failwith "known_base invariant failure"
-		  | _ -> failwith "multiple bases"
+	      self#eval_addr_exp_region_conc_path e
 	    else
 	      self#region_expr e
 		  
@@ -603,7 +633,63 @@ struct
     method private load_word_region  r addr = (self#region r)#load_word  addr
     method private load_long_region  r addr = (self#region r)#load_long  addr
 
+    val tables = Hashtbl.create 101
+
+    method private maybe_table_load addr_e ty =
+      let e = D.to_symbolic_32 (self#eval_int_exp_simplify addr_e) in
+      let (cbases, coffs, eoffs, syms) = classify_terms e form_man in
+	let cbase = List.fold_left Int64.add 0L cbases in
+	  if cbase = 0L then
+	    None
+	  else
+	    let cloc = Int64.add cbase (List.fold_left Int64.add 0L coffs) in
+	    let off_exp = sum_list (eoffs @ syms) in
+	    let wd = narrow_bitwidth off_exp in
+	      if wd = 0 || wd > !opt_table_limit then
+		None
+	      else
+		(let load_ent addr = match ty with
+		   | V.REG_8  -> (self#region (Some 0))#load_byte  addr
+		   | V.REG_16 -> (self#region (Some 0))#load_short addr
+		   | V.REG_32 -> (self#region (Some 0))#load_word  addr
+		   | V.REG_64 -> (self#region (Some 0))#load_long  addr
+		   | _ -> failwith "Unexpected type in maybe_table_load" 
+		 in
+		 let table = map_n
+		   (fun i -> load_ent (Int64.add cloc (Int64.of_int i)))
+		   (1 lsl wd - 1) in
+		 let table_num = try
+		   Hashtbl.find tables table with
+		     | Not_found ->
+			 let i = Hashtbl.length tables in
+			   Hashtbl.replace tables table i;
+			   if !opt_trace_tables then
+			     (Printf.printf "Table %d is: " i;
+			      List.iter
+				(fun v -> Printf.printf "%s "
+				   (match ty with
+				      | V.REG_1  -> D.to_string_1  v
+				      | V.REG_8  -> D.to_string_8  v
+				      | V.REG_16 -> D.to_string_16 v
+				      | V.REG_32 -> D.to_string_32 v
+				      | V.REG_64 -> D.to_string_64 v
+				      | _ -> failwith "Can't happen"))
+				table;
+			      Printf.printf "\n");
+			   i
+		 in
+		   if !opt_trace_tables then
+		     Printf.printf
+		       "Load with base %08Lx, size 2**%d is table %d\n"
+		       cloc wd table_num;
+		   let v = lookup_tree form_man off_exp wd ty table
+		   in
+		     Some v)
+
     method private handle_load addr_e ty =
+      match self#maybe_table_load addr_e ty with
+	| Some v -> (v, ty)
+	| None ->
       let (r, addr) = self#eval_addr_exp_region addr_e in
       let v =
 	(match ty with

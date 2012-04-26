@@ -282,6 +282,10 @@ let explore_cmdline_opts =
      " Finish exploration on -target-string match");
     ("-target-guidance", Arg.Set(opt_target_guidance),
      " Greedily prefer better target matches");
+    ("-trace-tables", Arg.Set(opt_trace_tables),
+     " Print table lookups");
+    ("-table-limit", Arg.Set_int(opt_table_limit),
+     "BITS Match tables with at most 2**bits entries ");
   ]
 
 

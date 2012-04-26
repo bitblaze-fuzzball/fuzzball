@@ -60,6 +60,8 @@ sig
     method simplify32 : D.t -> D.t
     method simplify64 : D.t -> D.t
 
+    method make_ite : D.t -> Vine.typ -> D.t -> D.t -> D.t
+
     method if_expr_temp_unit : Vine.var -> (Vine.exp option -> unit) -> unit
 
     method walk_temps : (Vine.var -> Vine.exp -> (Vine.var * Vine.exp)) ->
