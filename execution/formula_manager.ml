@@ -513,24 +513,27 @@ struct
 	  v_true'  = self#simplify v_true  ty      and
 	  v_false' = self#simplify v_false ty
       in
-      let mask = match ty with
-	| V.REG_1  ->            cond_v'
-	| V.REG_8  -> D.cast1s8  cond_v'
-	| V.REG_16 -> D.cast1s16 cond_v'
-	| V.REG_32 -> D.cast1s32 cond_v'
-	| V.REG_64 -> D.cast1s64 cond_v'
-	| _ -> failwith "Unexpected type in mask_ite"
-      in
-      let (andop, orop, notop) =
-	match ty with
-	  | V.REG_1  -> (D.bitand1,  D.bitor1,  D.not1)
-	  | V.REG_8  -> (D.bitand8,  D.bitor8,  D.not8)
-	  | V.REG_16 -> (D.bitand16, D.bitor16, D.not16)
-	  | V.REG_32 -> (D.bitand32, D.bitor32, D.not32)
-	  | V.REG_64 -> (D.bitand64, D.bitor64, D.not64)
-	  | _ -> failwith "Unexpected type (2) in mask_ite"
-      in
-	orop (andop mask v_true') (andop (notop mask) v_false')
+	if v_true' = v_false' then
+	  v_true'
+	else
+	  let mask = match ty with
+	    | V.REG_1  ->            cond_v'
+	    | V.REG_8  -> D.cast1s8  cond_v'
+	    | V.REG_16 -> D.cast1s16 cond_v'
+	    | V.REG_32 -> D.cast1s32 cond_v'
+	    | V.REG_64 -> D.cast1s64 cond_v'
+	    | _ -> failwith "Unexpected type in mask_ite"
+	  in
+	  let (andop, orop, notop) =
+	    match ty with
+	      | V.REG_1  -> (D.bitand1,  D.bitor1,  D.not1)
+	      | V.REG_8  -> (D.bitand8,  D.bitor8,  D.not8)
+	      | V.REG_16 -> (D.bitand16, D.bitor16, D.not16)
+	      | V.REG_32 -> (D.bitand32, D.bitor32, D.not32)
+	      | V.REG_64 -> (D.bitand64, D.bitor64, D.not64)
+	      | _ -> failwith "Unexpected type (2) in mask_ite"
+	  in
+	    orop (andop mask v_true') (andop (notop mask) v_false')
 
     method if_expr_temp_unit (n,_,_) (fn_t: V.exp option  -> unit) =
       (* The slightly weird structure here is because we *don't*

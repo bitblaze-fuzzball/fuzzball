@@ -10,7 +10,9 @@ sig
 
   val floor_log2 : int64 -> int
 
-  val narrow_bitwidth : Vine.exp -> int
+  val narrow_bitwidth :
+    Formula_manager.FormulaManagerFunctor(D).formula_manager ->
+    Vine.exp -> int
 
   val split_terms : Vine.exp ->
     Formula_manager.FormulaManagerFunctor(D).formula_manager ->
@@ -21,7 +23,9 @@ sig
 		   | ExprOffset of Vine.exp
 		   | Symbol of Vine.exp
 
-  val classify_term : Vine.exp -> term_kind
+  val classify_term :
+    Formula_manager.FormulaManagerFunctor(D).formula_manager ->
+    Vine.exp -> term_kind
 
   val classify_terms : Vine.exp ->
     Formula_manager.FormulaManagerFunctor(D).formula_manager ->

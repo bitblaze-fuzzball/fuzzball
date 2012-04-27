@@ -114,7 +114,7 @@ val opt_target_region_start : int64 option ref
 val opt_target_region_string : string ref
 val opt_trace_target : bool ref
 val opt_finish_on_target_match : bool ref
-val opt_target_guidance : bool ref
+val opt_target_guidance : float ref
 val opt_trace_tables : bool ref
 val opt_table_limit : int ref
 

@@ -53,26 +53,41 @@ struct
     in
       loop i
 
-  let rec narrow_bitwidth e =
-    match e with
-      | V.Constant(V.Int(ty, v)) -> 1 + floor_log2 v
-      | V.BinOp(V.BITAND, e1, e2) ->
-	  min (narrow_bitwidth e1) (narrow_bitwidth e2)
-      | V.BinOp(V.BITOR, e1, e2) ->
-	  max (narrow_bitwidth e1) (narrow_bitwidth e2)
-      | V.Cast(_, V.REG_32, e1) -> min 32 (narrow_bitwidth e1)
-      | V.Cast(_, V.REG_16, e1) -> min 16 (narrow_bitwidth e1)
-      | V.Cast(_, V.REG_8, e1)  -> min 8  (narrow_bitwidth e1)
-      | V.Cast(_, V.REG_1, e1)  -> min 1  (narrow_bitwidth e1)
-      | V.Lval(V.Temp(_, _, V.REG_1))  ->  1
-      | V.Lval(V.Temp(_, _, V.REG_8))  ->  8
-      | V.Lval(V.Temp(_, _, V.REG_16)) -> 16
-      | V.Lval(V.Temp(_, _, V.REG_32)) -> 32
-      | V.Lval(V.Mem(_, _, V.REG_8))  ->  8
-      | V.Lval(V.Mem(_, _, V.REG_16)) -> 16
-      | V.Lval(V.Mem(_, _, V.REG_32)) -> 32
-      | V.BinOp((V.EQ|V.NEQ|V.LT|V.LE|V.SLT|V.SLE), _, _) -> 1
-      | _ -> 64
+  let narrow_bitwidth form_man e =
+    let rec loop e = 
+      match e with
+	| V.Constant(V.Int(ty, v)) -> 1 + floor_log2 v
+	| V.BinOp(V.BITAND, e1, e2) -> min (loop e1) (loop e2)
+	| V.BinOp(V.BITOR, e1, e2) -> max (loop e1) (loop e2)
+	| V.BinOp(V.PLUS, e1, e2) -> 1 + (max (loop e1) (loop e2))
+	| V.Cast(_, V.REG_32, e1) -> min 32 (loop e1)
+	| V.Cast(_, V.REG_16, e1) -> min 16 (loop e1)
+	| V.Cast(_, V.REG_8, e1)  -> min 8  (loop e1)
+	| V.Cast(_, V.REG_1, e1)  -> min 1  (loop e1)
+	| V.Lval(V.Temp((_, _,  V.REG_1) as var)) ->
+	    FormMan.if_expr_temp form_man var
+	      (fun e' -> min 1  (loop e'))  1 (fun v -> ())
+	| V.Lval(V.Temp((_, _,  V.REG_8) as var)) ->
+	    FormMan.if_expr_temp form_man var
+	      (fun e' -> min 8  (loop e'))  8 (fun v -> ())
+	| V.Lval(V.Temp((_, _, V.REG_16) as var)) ->
+	    FormMan.if_expr_temp form_man var
+	      (fun e' -> min 16 (loop e')) 16 (fun v -> ())
+	| V.Lval(V.Temp((_, _, V.REG_32) as var)) ->
+	    FormMan.if_expr_temp form_man var
+	      (fun e' -> min 32 (loop e')) 32 (fun v -> ())
+	| V.Lval(V.Temp((_, _, V.REG_64) as var)) ->
+	    FormMan.if_expr_temp form_man var
+	      (fun e' -> min 64 (loop e')) 64 (fun v -> ())
+	| V.Lval(V.Mem(_, _, V.REG_8))  ->  8
+	| V.Lval(V.Mem(_, _, V.REG_16)) -> 16
+	| V.Lval(V.Mem(_, _, V.REG_32)) -> 32
+	| V.BinOp((V.EQ|V.NEQ|V.LT|V.LE|V.SLT|V.SLE), _, _) -> 1
+	| V.BinOp(V.LSHIFT, e1, V.Constant(V.Int(_, v))) ->
+	    (loop e1) + (Int64.to_int v)
+	| _ -> 64
+    in
+      loop e
 
   let map_n fn n =
     let l = ref [] in
@@ -148,7 +163,7 @@ struct
 		   | ExprOffset of V.exp
 		   | Symbol of V.exp
 
-  let classify_term e =
+  let classify_term form_man e =
     match e with
       | V.Constant(V.Int(V.REG_32, off))
 	  when (Int64.abs (fix_s32 off)) < 0x4000L
@@ -192,7 +207,7 @@ struct
 	  -> ExprOffset(e)
       | V.BinOp(V.TIMES, _, _)
 	  -> ExprOffset(e)
-      | e when (narrow_bitwidth e) < 23
+      | e when (narrow_bitwidth form_man e) < 23
 	  -> ExprOffset(e)
       | V.BinOp(V.ARSHIFT, _, _)
 	  -> ExprOffset(e)
@@ -209,7 +224,7 @@ struct
 	) else ExprOffset(e)
 	  
   let classify_terms e form_man =
-    let l = List.map classify_term (split_terms e form_man) in
+    let l = List.map (classify_term form_man) (split_terms e form_man) in
     let (cbases, coffs, eoffs, syms) = (ref [], ref [], ref [], ref []) in
       List.iter
 	(function
@@ -635,6 +650,8 @@ struct
 
     val tables = Hashtbl.create 101
 
+    val table_trees_cache = Hashtbl.create 101
+
     method private maybe_table_load addr_e ty =
       let e = D.to_symbolic_32 (self#eval_int_exp_simplify addr_e) in
       let (cbases, coffs, eoffs, syms) = classify_terms e form_man in
@@ -644,9 +661,13 @@ struct
 	  else
 	    let cloc = Int64.add cbase (List.fold_left Int64.add 0L coffs) in
 	    let off_exp = sum_list (eoffs @ syms) in
-	    let wd = narrow_bitwidth off_exp in
+	    let wd = narrow_bitwidth form_man off_exp in
 	      if wd = 0 || wd > !opt_table_limit then
-		None
+		(if wd > 0 && !opt_trace_tables then
+		   Printf.printf
+		     "Load with base %08Lx, offset %s of size 2**%d is not a table\n"
+		     cloc (V.exp_to_string off_exp) wd;
+		 None)
 	      else
 		(let load_ent addr = match ty with
 		   | V.REG_8  -> (self#region (Some 0))#load_byte  addr
@@ -679,10 +700,22 @@ struct
 			   i
 		 in
 		   if !opt_trace_tables then
-		     Printf.printf
-		       "Load with base %08Lx, size 2**%d is table %d\n"
-		       cloc wd table_num;
-		   let v = lookup_tree form_man off_exp wd ty table
+		     (Printf.printf
+			"Load with base %08Lx, size 2**%d is table %d\n"
+			cloc wd table_num;
+		      flush stdout);
+		   let v = try
+		     let v = 
+		       Hashtbl.find table_trees_cache (table_num, off_exp) in
+		       if !opt_trace_tables then
+			 Printf.printf "Hit table trees cache\n";
+		       v
+		   with
+		     | Not_found ->
+			 let v = lookup_tree form_man off_exp wd ty table in
+			   Hashtbl.replace table_trees_cache
+			     (table_num, off_exp) v;
+			   v
 		   in
 		     Some v)
 
@@ -765,7 +798,7 @@ struct
 			      | Some false -> "known mismatch"
 			      | None -> "possible") b;
 		       if not b then raise DisqualifiedPath;
-		       if !opt_target_guidance then
+		       if !opt_target_guidance <> 0.0 then
 			 dt#set_heur offset;
 		       if !opt_finish_on_target_match && b &&
 			 offset = (String.length !opt_target_region_string) - 1

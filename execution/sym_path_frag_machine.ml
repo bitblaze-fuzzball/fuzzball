@@ -216,7 +216,11 @@ struct
 	    | Some b -> b
 	    | None ->
 		match dt#heur_preference with
-		  | Some b -> b
+		  | Some b -> 
+		      if dt#random_float < !opt_target_guidance then
+			b
+		      else
+			dt#random_bit
 		  | None -> dt#random_bit
 
     method query_with_pc_choice cond verbose choice =
