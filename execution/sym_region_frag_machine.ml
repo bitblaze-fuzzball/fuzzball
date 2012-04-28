@@ -407,21 +407,26 @@ struct
 
     val mutable sink_read_count = 0L
 
+    method private check_cond cond_e = 
+      dt#start_new_query_binary;
+      let choices = ref None in 
+	self#restore_path_cond
+	  (fun () ->
+	     let b = self#extend_pc_random cond_e false in
+	       choices := dt#check_last_choices;
+	       dt#count_query;
+	       ignore(b));
+	!choices
+
     method private region_expr e =
       if !opt_check_for_null then
-	(dt#start_new_query;
-	 self#restore_path_cond
-	   (fun () ->
-	      ignore(self#extend_pc_random
-		       (V.BinOp(V.EQ, e, V.Constant(V.Int(V.REG_32, 0L))))
-		       false));
-	 let choices = dt#check_last_choices in
-	   dt#count_query;
-	   match choices with
-	     | Some true -> Printf.printf "Can be null.\n"
-	     | Some false -> Printf.printf "Cannot be null.\n"
-	     | None -> Printf.printf "Cannot be null or non-null\n");
-      infl_man#maybe_measure_influence_deref e;
+	(match
+	   self#check_cond (V.BinOp(V.EQ, e, V.Constant(V.Int(V.REG_32, 0L))))
+	 with
+	   | Some true -> Printf.printf "Can be null.\n"
+	   | Some false -> Printf.printf "Cannot be null.\n"
+	   | None -> Printf.printf "Can be null or non-null\n";
+	       infl_man#maybe_measure_influence_deref e);
       dt#start_new_query;
       let (cbases, coffs, eoffs, syms) = classify_terms e form_man in
 	if !opt_trace_sym_addr_details then
@@ -648,6 +653,33 @@ struct
     method private load_word_region  r addr = (self#region r)#load_word  addr
     method private load_long_region  r addr = (self#region r)#load_long  addr
 
+    method private query_bitwidth e ty =
+      let rec loop min max =
+	assert(min <= max);
+	if min = max then
+	  min
+	else
+	  let mid = (min + max) / 2 in
+	  let mask = Int64.shift_right_logical (-1L) (64-mid) in
+	  let cond_e = V.BinOp(V.LE, e, V.Constant(V.Int(ty, mask))) in
+	  let in_bounds = self#check_cond cond_e in
+	    if !opt_trace_tables then
+	      Printf.printf "(%s) < 2**%d: %s\n" (V.exp_to_string e) mid
+		(match in_bounds with
+		   | Some true -> "valid"
+		   | Some false -> "unsat"
+		   | None -> "invalid" (* though satisfiable *));
+	    if in_bounds = Some true then
+	      loop min mid
+	    else
+	      loop (mid + 1) max
+      in
+      let max_wd = V.bits_of_width ty in
+      let wd = loop 0 max_wd in
+	if !opt_trace_tables then
+	  Printf.printf "Bit width based on queries is %d\n" wd;
+	wd
+      
     val tables = Hashtbl.create 101
 
     val table_trees_cache = Hashtbl.create 101
@@ -661,14 +693,26 @@ struct
 	  else
 	    let cloc = Int64.add cbase (List.fold_left Int64.add 0L coffs) in
 	    let off_exp = sum_list (eoffs @ syms) in
-	    let wd = narrow_bitwidth form_man off_exp in
-	      if wd = 0 || wd > !opt_table_limit then
-		(if wd > 0 && !opt_trace_tables then
-		   Printf.printf
-		     "Load with base %08Lx, offset %s of size 2**%d is not a table\n"
-		     cloc (V.exp_to_string off_exp) wd;
-		 None)
+	    let fast_wd = narrow_bitwidth form_man off_exp in
+	    let wd_opt =
+	      if fast_wd = 0 then
+		None
+	      else if fast_wd > !opt_table_limit then
+		let slow_wd = self#query_bitwidth off_exp ty in
+		  assert(slow_wd <= fast_wd);
+		  if slow_wd > !opt_table_limit then
+		    (if !opt_trace_tables then
+		       Printf.printf
+			 ("Load with base %08Lx, offset %s of size 2**%d "
+			  ^^ "is not a table\n")
+			 cloc (V.exp_to_string off_exp) slow_wd;
+		     None)
+		  else
+		    Some slow_wd
 	      else
+		Some fast_wd
+	    in
+	      match wd_opt with None -> None | Some wd ->
 		(let load_ent addr = match ty with
 		   | V.REG_8  -> (self#region (Some 0))#load_byte  addr
 		   | V.REG_16 -> (self#region (Some 0))#load_short addr
@@ -700,18 +744,20 @@ struct
 			   i
 		 in
 		   if !opt_trace_tables then
-		     (Printf.printf
-			"Load with base %08Lx, size 2**%d is table %d\n"
-			cloc wd table_num;
-		      flush stdout);
+		     Printf.printf
+		       "Load with base %08Lx, size 2**%d is table %d"
+		       cloc wd table_num;
 		   let v = try
 		     let v = 
 		       Hashtbl.find table_trees_cache (table_num, off_exp) in
 		       if !opt_trace_tables then
-			 Printf.printf "Hit table trees cache\n";
+			 (Printf.printf " (hit cache)\n";
+			  flush stdout);
 		       v
 		   with
 		     | Not_found ->
+			 Printf.printf "\n";
+			 flush stdout;
 			 let v = lookup_tree form_man off_exp wd ty table in
 			   Hashtbl.replace table_trees_cache
 			     (table_num, off_exp) v;
@@ -745,6 +791,21 @@ struct
 	  raise NullDereference;
 	(v, ty)
 
+    method private push_cond_prefer_true cond_v = 
+      try
+	if (D.to_concrete_1 cond_v) = 1 then
+	  (true, Some true)
+	else
+	  (false, Some false)
+      with
+	  NotConcrete _ ->
+	    let e = D.to_symbolic_1 cond_v in
+	      (dt#start_new_query_binary;
+	       let b = self#extend_pc_known e true true in
+	       let choices = dt#check_last_choices in
+		 dt#count_query;
+		 (b, choices))
+
     method private handle_store addr_e ty rhs_e =
       let (r, addr) = self#eval_addr_exp_region addr_e and
 	  value = self#eval_int_exp_simplify rhs_e in
@@ -774,23 +835,9 @@ struct
 		       Printf.printf
 			 "Store to target string offset %d: %s (vs '%c'): "
 			 offset (D.to_string_32 value) c;
-		     let cond_e = D.eq8 value (D.from_concrete_8 (Char.code c))
+		     let cond_v = D.eq8 value (D.from_concrete_8 (Char.code c))
 		     in
-		     let (b, choices) =
-		       try
-			 if (D.to_concrete_1 cond_e) = 1 then
-			   (true, Some true)
-			 else
-			   (false, Some false)
-		       with
-			   NotConcrete _ ->
-			     let e = D.to_symbolic_1 cond_e in
-			       (dt#start_new_query_binary;
-				let b = self#extend_pc_known e true true in
-				let choices = dt#check_last_choices in
-				  dt#count_query;
-				  (b, choices))
-		     in
+		     let (b, choices) = self#push_cond_prefer_true cond_v in
 		       if !opt_trace_target then
 			 Printf.printf "%s, %b\n"
 			   (match choices with
