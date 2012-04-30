@@ -697,8 +697,10 @@ struct
 	    let wd_opt =
 	      if fast_wd = 0 then
 		None
+	      else if !opt_table_limit = 0 then
+		None
 	      else if fast_wd > !opt_table_limit then
-		let slow_wd = self#query_bitwidth off_exp ty in
+		let slow_wd = self#query_bitwidth off_exp V.REG_32 in
 		  assert(slow_wd <= fast_wd);
 		  if slow_wd > !opt_table_limit then
 		    (if !opt_trace_tables then
