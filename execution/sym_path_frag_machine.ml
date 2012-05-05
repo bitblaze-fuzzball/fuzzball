@@ -481,8 +481,14 @@ struct
 	     let str_addr = self#eval_addr_exp expr in
 	     let str = if str_addr = 0L then
 	       "(null)" else try 
-		 "\"" ^ (self#read_cstr str_addr) ^ "\"" with
-		     NotConcrete _ -> "<not concrete>" in
+		 let bytes = self#read_cstr str_addr in
+		   (try
+		      let line1 = String.sub bytes 0 (String.index bytes '\n')
+		      in
+			"\"" ^ (String.escaped line1) ^ "\\n\"" with
+			  | Not_found -> "\"" ^ (String.escaped bytes) ^ "\"")
+	       with
+		   NotConcrete _ -> "<not concrete>" in
 	       Printf.printf "At %08Lx, %s (%08Lx) is %s\n"
 		 eip e_str str_addr str)
 	!opt_string_tracepoints;
