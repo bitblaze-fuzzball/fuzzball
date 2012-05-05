@@ -809,6 +809,22 @@ struct
 		 (b, choices))
 
     method private handle_store addr_e ty rhs_e =
+      let target_solve offset cond_v wd =
+	let (b, choices) = self#push_cond_prefer_true cond_v in
+	  if !opt_trace_target then
+	    Printf.printf "%s, %b\n"
+	      (match choices with
+		 | Some true -> "known equal"
+		 | Some false -> "known mismatch"
+		 | None -> "possible") b;
+	  if not b then raise DisqualifiedPath;
+	  if !opt_target_guidance <> 0.0 then
+	    dt#set_heur offset;
+	  if !opt_finish_on_target_match && b &&
+	    offset = (String.length !opt_target_region_string) - wd
+	  then
+	    raise LastIteration
+      in
       let (r, addr) = self#eval_addr_exp_region addr_e and
 	  value = self#eval_int_exp_simplify rhs_e in
 	if r = Some 0 && (Int64.abs (fix_s32 addr)) < 4096L then
@@ -824,35 +840,47 @@ struct
 	     (if !opt_use_tags then
 		Printf.printf " (%Ld @ %08Lx)" (D.get_tag value) location_id);
 	     Printf.printf "\n");
-	(match (!opt_target_region_start, r, ty) with
-	   | (Some from, Some 0, V.REG_8) ->
+	(match (self#started_symbolic, !opt_target_region_start, r, ty) with
+	   | (true, Some from, Some 0, V.REG_8) ->
 	       if addr >= from &&
 		 addr < (Int64.add from
 			   (Int64.of_int
 			      (String.length !opt_target_region_string)))
 	       then
-		   let offset = Int64.to_int (Int64.sub addr from) in
-		   let c = (!opt_target_region_string).[offset] in
-		     if !opt_trace_target then
-		       Printf.printf
-			 "Store to target string offset %d: %s (vs '%c'): "
-			 offset (D.to_string_32 value) c;
-		     let cond_v = D.eq8 value (D.from_concrete_8 (Char.code c))
-		     in
-		     let (b, choices) = self#push_cond_prefer_true cond_v in
-		       if !opt_trace_target then
-			 Printf.printf "%s, %b\n"
-			   (match choices with
-			      | Some true -> "known equal"
-			      | Some false -> "known mismatch"
-			      | None -> "possible") b;
-		       if not b then raise DisqualifiedPath;
-		       if !opt_target_guidance <> 0.0 then
-			 dt#set_heur offset;
-		       if !opt_finish_on_target_match && b &&
-			 offset = (String.length !opt_target_region_string) - 1
-		       then
-			 raise LastIteration
+		 let offset = Int64.to_int (Int64.sub addr from) in
+		 let c = (!opt_target_region_string).[offset] in
+		   if !opt_trace_target then
+		     Printf.printf
+		       "Store to target string offset %d: %s (vs '%c'): "
+		       offset (D.to_string_32 value) c;
+		   let cond_v = D.eq8 value (D.from_concrete_8 (Char.code c))
+		   in
+		     target_solve offset cond_v 1
+	   | (true, Some from, Some 0, V.REG_32) ->
+	       if addr >= from &&
+		 addr < (Int64.add from
+			   (Int64.of_int
+			      (String.length !opt_target_region_string)))
+	       then
+		 let offset = Int64.to_int (Int64.sub addr from) in
+		 let c0 = (!opt_target_region_string).[offset] and
+		     c1 = (!opt_target_region_string).[offset + 1] and
+		     c2 = (!opt_target_region_string).[offset + 2] and
+		     c3 = (!opt_target_region_string).[offset + 3]
+		 in
+		 let s0 = (Char.code c0) lor ((Char.code c1) lsl 8) and
+		     s2 = (Char.code c2) lor ((Char.code c3) lsl 8)
+		 in
+		 let w = Int64.logor (Int64.of_int s0)
+		   (Int64.shift_left (Int64.of_int s2) 16)
+		 in
+		   if !opt_trace_target then
+		     Printf.printf
+		       "Store to target string offset %d: %s (vs 0x%08Lx): "
+		       offset (D.to_string_32 value) w;
+		   let cond_v = D.eq32 value (D.from_concrete_32 w)
+		   in
+		     target_solve offset cond_v 4
 	   | _ -> ());
 	(match ty with
 	   | V.REG_8 -> self#store_byte_region r addr value

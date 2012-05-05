@@ -670,6 +670,8 @@ struct
 
     val mutable started_symbolic = false
 
+    method started_symbolic = started_symbolic
+
     method maybe_start_symbolic setup =
       if not started_symbolic then
 	deferred_start_symbolic <- Some setup (* takes effect at end of insn *)
@@ -1561,6 +1563,7 @@ class virtual fragment_machine = object
   method virtual load_word_concolic  : int64 -> int64
   method virtual load_long_concolic  : int64 -> int64
 
+  method virtual started_symbolic : bool
   method virtual maybe_start_symbolic : (unit -> unit) -> unit
   method virtual start_symbolic : unit
 

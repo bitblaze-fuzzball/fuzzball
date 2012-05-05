@@ -92,6 +92,7 @@ sig
     method load_word_concolic  : int64 -> int64
     method load_long_concolic  : int64 -> int64
 
+    method started_symbolic : bool
     method maybe_start_symbolic : (unit -> unit) -> unit
     method start_symbolic : unit
 
@@ -305,6 +306,7 @@ class virtual fragment_machine : object
   method virtual load_word_concolic  : int64 -> int64
   method virtual load_long_concolic  : int64 -> int64
 
+  method virtual started_symbolic : bool
   method virtual maybe_start_symbolic : (unit -> unit) -> unit
   method virtual start_symbolic : unit
 
