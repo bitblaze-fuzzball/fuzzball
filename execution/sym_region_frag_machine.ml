@@ -732,17 +732,23 @@ struct
 			   Hashtbl.replace tables table i;
 			   if !opt_trace_tables then
 			     (Printf.printf "Table %d is: " i;
-			      List.iter
-				(fun v -> Printf.printf "%s "
-				   (match ty with
-				      | V.REG_1  -> D.to_string_1  v
-				      | V.REG_8  -> D.to_string_8  v
-				      | V.REG_16 -> D.to_string_16 v
-				      | V.REG_32 -> D.to_string_32 v
-				      | V.REG_64 -> D.to_string_64 v
-				      | _ -> failwith "Can't happen"))
-				table;
-			      Printf.printf "\n");
+			      let cnt = ref 0 in
+				List.iter
+				  (fun v ->
+				     incr cnt;
+				     if !cnt < 100 then
+				       Printf.printf "%s "
+					 (match ty with
+					    | V.REG_1  -> D.to_string_1  v
+					    | V.REG_8  -> D.to_string_8  v
+					    | V.REG_16 -> D.to_string_16 v
+					    | V.REG_32 -> D.to_string_32 v
+					    | V.REG_64 -> D.to_string_64 v
+					    | _ -> failwith "Can't happen"))
+				  table;
+				if !cnt > 100 then
+				  Printf.printf "...";
+				Printf.printf "\n");
 			   i
 		 in
 		   if !opt_trace_tables then
@@ -758,8 +764,9 @@ struct
 		       v
 		   with
 		     | Not_found ->
-			 Printf.printf "\n";
-			 flush stdout;
+			 if !opt_trace_tables then
+			   (Printf.printf "\n";
+			    flush stdout);
 			 let v = lookup_tree form_man off_exp wd ty table in
 			   Hashtbl.replace table_trees_cache
 			     (table_num, off_exp) v;
