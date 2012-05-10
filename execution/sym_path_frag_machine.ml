@@ -309,8 +309,8 @@ struct
 	    NotConcrete _ ->
 	      let e = D.to_symbolic_1 v in
 		if !opt_trace_conditions then 
-		  Printf.printf "Symbolic branch condition %s\n"
-		    (V.exp_to_string e);
+		  Printf.printf "Symbolic branch condition (0x%08Lx) %s\n"
+		    (self#get_eip) (V.exp_to_string e);
 		if !opt_concrete_path then
 		  self#eval_bool_exp_conc_path e
 		else 
@@ -363,8 +363,8 @@ struct
 	else
 	  let e = D.to_symbolic_1 v in
 	    if !opt_trace_conditions then 
-	      Printf.printf "Symbolic branch condition %s\n"
-		(V.exp_to_string e);
+	      Printf.printf "Symbolic branch condition (0x%08Lx) %s\n"
+		(self#get_eip) (V.exp_to_string e);
 	    if !opt_concrete_path then
 	      let (b, _) = self#eval_bool_exp_conc_path e in
 		b
