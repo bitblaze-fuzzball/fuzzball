@@ -422,6 +422,10 @@ let cmdline_opts =
      " Treat some unhandled system instructions as no-ops");
     ("-x87-emulator", Arg.String (fun s -> opt_x87_emulator := Some s),
      "emulator.so Enable x87 emulation with given code");
+    ("-final-pc", Arg.Set(opt_final_pc),
+     " Print final path condition at end of trace");
+    ("-solve-final-pc", Arg.Set(opt_solve_final_pc),
+     " Solve final path condition");
   ]
 
 let trace_replay_cmdline_opts =
@@ -443,10 +447,6 @@ let trace_replay_cmdline_opts =
     ("-progress-interval", Arg.String
        (fun s -> opt_progress_interval := Some (Int64.of_string s)),
      "insns Print every INSNsth instruction");
-    ("-final-pc", Arg.Set(opt_final_pc),
-     " Print final path condition at end of trace");
-    ("-solve-final-pc", Arg.Set(opt_solve_final_pc),
-     " Solve final path condition");
     ("-skip-untainted", Arg.Set(opt_skip_untainted),
      " Skip replaying instructions that are not tainted");
   ]
