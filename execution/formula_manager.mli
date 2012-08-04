@@ -46,6 +46,8 @@ sig
 
     method eval_expr : Vine.exp -> int64
 
+    method eval_expr_from_ce : (string * int64) list -> Vine.exp -> int64
+
     method concolic_eval_1  : D.t -> int
     method concolic_eval_8  : D.t -> int
     method concolic_eval_16 : D.t -> int
@@ -59,6 +61,9 @@ sig
     method simplify16 : D.t -> D.t
     method simplify32 : D.t -> D.t
     method simplify64 : D.t -> D.t
+
+    method simplify_with_callback :
+      (Vine.exp -> Vine.typ -> Vine.exp option) -> D.t -> Vine.typ -> D.t
 
     method make_ite : D.t -> Vine.typ -> D.t -> D.t -> D.t
 

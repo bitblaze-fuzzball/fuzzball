@@ -134,6 +134,8 @@ let opt_finish_on_target_match = ref false
 let opt_target_guidance = ref 0.0
 let opt_trace_tables = ref false
 let opt_table_limit = ref 0
+let opt_implied_value_conc = ref false
+let opt_trace_ivc = ref false
 
 let opt_symbolic_memory = ref false
 let opt_zero_memory = ref false

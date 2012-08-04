@@ -32,6 +32,8 @@ sig
     method query_with_path_cond : Vine.exp -> bool
       -> (bool * (string * int64) list)
 
+    method query_unique_value : Vine.exp -> Vine.typ -> int64 option
+
     method follow_or_random : bool 
 
     method query_with_pc_choice : Vine.exp -> bool -> (unit -> bool)
@@ -154,7 +156,7 @@ sig
       (D.t * D.t)
     method eval_int_exp_ty : Vine.exp -> (D.t * Vine.typ)	    
     method private eval_int_exp : Vine.exp -> D.t
-    method private eval_int_exp_simplify : Vine.exp -> D.t
+    method eval_int_exp_simplify : Vine.exp -> D.t
     method eval_label_exp : Vine.exp -> string
     method jump : (string -> bool) -> string -> string
     method run_sl : (string -> bool) -> Vine.stmt list -> string

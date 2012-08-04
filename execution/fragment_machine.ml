@@ -1066,7 +1066,7 @@ struct
       let (v, _) = self#eval_int_exp_ty exp in
 	v
 
-    method private eval_int_exp_simplify exp =
+    method eval_int_exp_simplify exp =
       match self#eval_int_exp_ty exp with
 	| (v, V.REG_1) -> form_man#simplify1 v
 	| (v, V.REG_8) -> form_man#simplify8 v

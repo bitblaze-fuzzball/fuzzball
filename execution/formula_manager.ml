@@ -29,6 +29,13 @@ let list_unique l =
   in
     (loop l)
 
+let cf_eval e =
+  match Vine_opt.constant_fold (fun _ -> None) e with
+    | V.Constant(V.Int(_, _)) as c -> c
+    | e ->
+	Printf.printf "Left with %s\n" (V.exp_to_string e);
+	failwith "cf_eval failed in eval_expr"
+
 module FormulaManagerFunctor =
   functor (D : Exec_domain.DOMAIN) ->
 struct
@@ -350,13 +357,6 @@ struct
     val temp_var_num_evaled = Hashtbl.create 1001
 
     method eval_expr e =
-      let cf_eval e =
-	match Vine_opt.constant_fold (fun _ -> None) e with
-	  | V.Constant(V.Int(_, _)) as c -> c
-	  | e ->
-	      Printf.printf "Left with %s\n" (V.exp_to_string e);
-	      failwith "cf_eval failed in eval_expr"
-      in
       let rec loop e =
 	match e with
 	  | V.BinOp(op, e1, e2) -> cf_eval (V.BinOp(op, loop e1, loop e2))
@@ -417,6 +417,52 @@ struct
 
     method concolic_eval_64 d =
       self#eval_expr (D.to_symbolic_64 d)
+
+    method private eval_var_from_ce ce lv =
+      match lv with
+	| V.Temp(_, s, ty) ->
+	    let v = try List.assoc s ce 
+	    with Not_found ->
+	      0L 
+	      (* Printf.printf "Missing var %s in counterexample\n" s;
+	      List.iter (fun (s,v) -> Printf.printf "  %s = 0x%Lx\n" s v) ce;
+	      failwith "eval_var_from_ce failed on missing value" *)
+	    in
+	      V.Constant(V.Int(ty, v))
+	| _ ->
+	    Printf.printf "Bad lvalue: %s\n" (V.lval_to_string lv);
+	    failwith "Unhandled lvalue type in eval_var_from_ce"	    
+
+    method eval_expr_from_ce ce e =
+      let memo = Hashtbl.create 100 in
+      let rec loop e =
+	match e with
+	  | V.BinOp(op, e1, e2) -> cf_eval (V.BinOp(op, loop e1, loop e2))
+	  | V.UnOp(op, e1) -> cf_eval (V.UnOp(op, loop e1))
+	  | V.Cast(op, ty, e1) -> cf_eval (V.Cast(op, ty, loop e1))
+	  | V.Constant(V.Int(_, _)) -> e
+	  | V.Lval(V.Temp(n,s,t))
+	      when Hashtbl.mem temp_var_num_to_subexpr n ->
+	      (try Hashtbl.find memo n
+	       with
+		 | Not_found ->
+		     let (e_enc, _) = Hashtbl.find temp_var_num_to_subexpr n in
+		     let e' = loop (decode_exp e_enc)
+		     in
+		       Hashtbl.replace memo n e';
+		       e')
+	  | V.Lval(V.Mem(_, _, _)) -> loop (self#rewrite_mem_expr e)
+	  | V.Lval(lv) -> self#eval_var_from_ce ce lv
+	  | _ ->
+	      Printf.printf "Can't evaluate %s\n" (V.exp_to_string e);
+	      failwith "Unexpected expr in eval_expr_from_ce"
+      in
+	match loop e with
+	  | V.Constant(V.Int(_, i64)) -> i64
+	  | e ->
+	      Printf.printf "Left with %s\n" (V.exp_to_string e);
+	      failwith "Constant invariant failed in eval_expr"
+      
 
     val temp_var_num_has_loop_var = Hashtbl.create 1001
 
@@ -507,6 +553,19 @@ struct
     method simplify16 e = self#simplify e V.REG_16
     method simplify32 e = self#simplify e V.REG_32
     method simplify64 e = self#simplify e V.REG_64
+
+    method simplify_with_callback f (v:D.t) ty =
+      D.inside_symbolic
+	(fun e ->
+	   let e2 = simplify_fp e in
+	     if expr_size e2 < 10 then
+	       e2
+	     else
+	       match (f e2 ty) with
+		 | Some e3 -> e3
+		 | None ->
+		     V.Lval(V.Temp(self#make_temp_var e2 ty))
+	) v     
 
     method make_ite cond_v ty v_true v_false =
       let cond_v'  = self#tempify  cond_v  V.REG_1 and

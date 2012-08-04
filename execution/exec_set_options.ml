@@ -285,7 +285,11 @@ let explore_cmdline_opts =
     ("-trace-tables", Arg.Set(opt_trace_tables),
      " Print table lookups");
     ("-table-limit", Arg.Set_int(opt_table_limit),
-     "BITS Match tables with at most 2**bits entries ");
+     "BITS Match tables with at most 2**bits entries");
+    ("-implied-value-conc", Arg.Set(opt_implied_value_conc),
+     " Concretize based on path condition");
+    ("-trace-ivc", Arg.Set(opt_trace_ivc),
+     " Print operations of -implied-value-conc");
   ]
 
 

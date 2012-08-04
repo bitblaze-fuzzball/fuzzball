@@ -197,6 +197,44 @@ struct
 	    infl_man#maybe_periodic_influence;
 	    (is_sat, ce)
 
+    method query_unique_value exp ty =
+      let taut = V.BinOp(V.EQ, exp, exp) in
+      let (is_sat, ce) = self#query_with_path_cond taut !opt_trace_ivc in
+	assert(is_sat);
+	if !opt_trace_ivc then
+	  Printf.printf "QUV of %s\n" (V.exp_to_string exp);
+	let v = form_man#eval_expr_from_ce ce exp in
+	  if !opt_trace_ivc then
+	    Printf.printf "Sat value is 0x%Lx\n" v;
+	  let const_e = V.Constant(V.Int(ty, v)) in
+	  let another_exp = V.BinOp(V.NEQ, exp, const_e) in
+	  let (is_another, ce2) =
+	    self#query_with_path_cond another_exp !opt_trace_ivc
+	  in
+	    if is_another then
+	      let v2 = form_man#eval_expr_from_ce ce2 exp in
+		assert(v2 <> v);
+		if !opt_trace_ivc then
+		  Printf.printf "Not unique, another is 0x%Lx\n" v2;
+		None
+	    else
+	      (if !opt_trace_ivc then
+		 Printf.printf "Unique!\n";
+	       Some v)
+
+    method eval_int_exp_simplify exp =
+      let (d, ty) = self#eval_int_exp_ty exp in
+	form_man#simplify_with_callback
+	  (fun e2 ty ->
+	     if !opt_implied_value_conc then
+	       match self#query_unique_value e2 ty with
+		 | Some v ->
+		     Some (V.Constant(V.Int(ty, v)))
+		 | None -> None
+	     else
+	       None)
+	  d ty
+
     method follow_or_random =
 	let currpath_str = dt#get_hist_str in
 	let followplen = String.length !opt_follow_path and

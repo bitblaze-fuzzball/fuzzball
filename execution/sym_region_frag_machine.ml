@@ -365,13 +365,16 @@ struct
 	if Hashtbl.mem concrete_cache e then
 	  (Hashtbl.find concrete_cache e, "Reused")
 	else
-	  let bits = 
-	    match !opt_offset_strategy with
-	      | UniformStrat -> self#choose_conc_offset_uniform ty e
-	      | BiasedSmallStrat -> self#choose_conc_offset_biased ty e
-	  in
-	    Hashtbl.replace concrete_cache e bits;
-	    (bits, "Picked") in
+	  (let bits = 
+	     (* match self#query_unique_value e ty with
+	       | Some v -> v
+	       | None -> *)
+		   match !opt_offset_strategy with
+		     | UniformStrat -> self#choose_conc_offset_uniform ty e
+		     | BiasedSmallStrat -> self#choose_conc_offset_biased ty e
+	   in
+	     Hashtbl.replace concrete_cache e bits;
+	     (bits, "Picked")) in
 	if !opt_trace_sym_addrs then
 	  Printf.printf "%s concrete value 0x%Lx for %s\n"
 	    verb bits (V.exp_to_string e);
