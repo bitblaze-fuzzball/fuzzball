@@ -330,6 +330,10 @@ struct
 	reg R_DFLAG (D.from_concrete_32 1L);
 	reg R_IDFLAG (D.from_concrete_32 0L);
 	reg R_ACFLAG (D.from_concrete_32 0L);
+	reg R_CC_OP   (D.from_concrete_32 0L);
+	reg R_CC_DEP1 (D.from_concrete_32 0L);
+	reg R_CC_DEP2 (D.from_concrete_32 0L);
+	reg R_CC_NDEP (D.from_concrete_32 0L);
 
     method private make_arm_regs_zero =
       let reg r v =
