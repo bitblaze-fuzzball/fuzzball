@@ -786,8 +786,8 @@ object(self)
 	 put_return (Int64.of_int len))
 
   method sys_getdents fd dirp buf_sz =
-    let dirname = fd_info.(fd).fname in
-    let dirh = Unix.opendir (chroot dirname) in
+    let dirname = chroot fd_info.(fd).fname in
+    let dirh = Unix.opendir dirname in
     let written = ref 0 in
       for i = 0 to fd_info.(fd).dirp_offset do
 	ignore(Unix.readdir dirh)
@@ -817,8 +817,8 @@ object(self)
       put_return (Int64.of_int !written)
 
   method sys_getdents64 fd dirp buf_sz =
-    let dirname = fd_info.(fd).fname in
-    let dirh = Unix.opendir (chroot dirname) in
+    let dirname = chroot fd_info.(fd).fname in
+    let dirh = Unix.opendir dirname in
     let written = ref 0 in
       for i = 0 to fd_info.(fd).dirp_offset do
 	ignore(Unix.readdir dirh)
@@ -1310,6 +1310,9 @@ object(self)
     put_return 0L (* SCHED_OTHER *)
 
   method sys_select nfds readfds writefds exceptfds timeout =
+    (* Our default behavior of saying that nothing ever happens works
+       for some uses of select(), but causes others to go into an
+       infinite loop. *)
     put_return 0L (* no events *)
 
   method sys_send sockfd buf len flags =
