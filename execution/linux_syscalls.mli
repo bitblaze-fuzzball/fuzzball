@@ -87,6 +87,7 @@ object
   method sys_getppid : unit -> unit
   method sys_getsid : unit -> unit
   method sys_gettid : unit
+  method sys_getrusage : int -> int64 -> unit
   method sys_getpeername : int -> int64 -> int64 -> unit
   method sys_getsockname : int -> int64 -> int64 -> unit
   method sys_gettimeofday : int64 -> int64 -> unit
@@ -106,6 +107,7 @@ object
   method sys_poll : int64 -> int -> int64 -> unit
   method sys_read : int -> int64 -> int -> unit
   method sys_readlink : string -> int64 -> int -> unit
+  method sys_recv : int -> int64 -> int -> int -> unit
   method sys_sched_getparam : int -> int64 -> unit
   method sys_sched_get_priority_max : int -> unit
   method sys_sched_get_priority_min : int -> unit

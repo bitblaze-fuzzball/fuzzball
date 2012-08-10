@@ -941,7 +941,29 @@ object(self)
     (* On Linux, thread id is the process id *)
     let tid = Int64.of_int (self#get_pid) in
       put_return tid
-    
+
+  method sys_getrusage who buf =
+    ignore(who);
+    store_word buf  0 0L; (* utime secs *)
+    store_word buf  4 0L; (* utime usecs *)
+    store_word buf  8 0L; (* stime secs *)
+    store_word buf 12 0L; (* stime usecs *)
+    store_word buf 16 0L; (* maxrss *)
+    store_word buf 20 0L; (* ixrss *)
+    store_word buf 24 0L; (* idrss *)
+    store_word buf 28 0L; (* isrss *)
+    store_word buf 32 0L; (* minflt *)
+    store_word buf 36 0L; (* majflt *)
+    store_word buf 40 0L; (* nswap *)
+    store_word buf 44 0L; (* inblock *)
+    store_word buf 48 0L; (* outblock *)
+    store_word buf 52 0L; (* msgsnd *)
+    store_word buf 56 0L; (* msgrcv *)
+    store_word buf 60 0L; (* nsignals *)
+    store_word buf 64 0L; (* nvcsw *)
+    store_word buf 68 0L; (* nivcsw *)
+    put_return 0L (* success *)
+
   method sys_getpeername sockfd addr addrlen_ptr =
     try
       let socka_oc = Unix.getpeername (self#get_fd sockfd) in
@@ -1292,6 +1314,26 @@ object(self)
       fm#store_str out_buf 0L (String.sub real 0 written);
       put_return (Int64.of_int written);
 
+  method sys_recv sockfd buf len flags =
+    try
+      let str = self#string_create len in
+      let flags = (if (flags land 1) <> 0 then [Unix.MSG_OOB] else []) @
+		  (if (flags land 2) <> 0 then [Unix.MSG_PEEK] else [])
+      in
+      let num_read =
+	Unix.recv (self#get_fd sockfd) str 0 len flags
+      in
+	if num_read > 0 && Hashtbl.mem symbolic_fds sockfd then    
+	  fm#maybe_start_symbolic
+	    (fun () -> (fm#make_symbolic_region buf num_read;
+			max_input_string_length :=
+			  max (!max_input_string_length) num_read))
+	else
+	  fm#store_str buf 0L (String.sub str 0 num_read);
+	put_return (Int64.of_int num_read) (* success *)
+    with
+      | Unix.Unix_error(err, _, _) -> self#put_errno err
+
   method sys_sched_getparam pid buf =
     ignore(pid); (* Pretend all processes are SCHED_OTHER *)
     store_word buf 0 0L; (* sched_priority = 0 *)
@@ -1310,10 +1352,41 @@ object(self)
     put_return 0L (* SCHED_OTHER *)
 
   method sys_select nfds readfds writefds exceptfds timeout =
-    (* Our default behavior of saying that nothing ever happens works
-       for some uses of select(), but causes others to go into an
-       infinite loop. *)
-    put_return 0L (* no events *)
+    let read_bitmap addr =
+      if addr = 0L then
+	[]
+      else
+	let l = ref [] in
+	  for i = 0 to nfds - 1 do
+	    let w = load_word (lea addr (i / 32) 4 0) and
+		b = i mod 32 in
+	      if (Int64.logand (Int64.shift_right w b) 1L) = 1L then
+		l := i :: !l
+	  done;
+	  !l
+    in
+    let rec format_fds l =
+      match l with
+	| [] -> ""
+	| [x] -> string_of_int x
+	| x :: rest -> (string_of_int x) ^ ", " ^ (format_fds rest)
+    in
+    let rl = read_bitmap readfds and
+	wl = read_bitmap writefds and
+	el = read_bitmap exceptfds in
+      if !opt_trace_syscalls then
+	Printf.printf "\nselect(%d, [%s], [%s], [%s], 0x%08Lx)"
+	  nfds (format_fds rl) (format_fds wl) (format_fds el) timeout;
+      match (rl, wl, el) with
+	| ([fd], [], []) when fd_info.(fd).fname = "/dev/urandom" ->
+	    put_return 1L (* assume /dev/urandom is always readable *)
+	| _ ->
+	    (* Our default behavior of saying that nothing ever
+	       happens works for some uses of select(), but causes others
+	       to go into an infinite loop. It would be nice to characterize
+	       what cases a 0 return works well for, and make any other
+	       cases failwith to be easier to debug. *)
+	    put_return 0L (* no events *)
 
   method sys_send sockfd buf len flags =
     try
@@ -1995,7 +2068,12 @@ object(self)
 	 | (_, 76) -> (* getrlimit *)
 	     uh "Unhandled Linux system call getrlimit (76)"
 	 | (_, 77) -> (* getrusage *)
-	     uh "Unhandled Linux system call getrusage (77)"
+	     let (ebx, ecx) = read_2_regs () in
+	     let who = Int64.to_int ebx and
+		 buf = ecx in
+	       if !opt_trace_syscalls then
+		 Printf.printf "getrusage(%d, 0x%08Lx)" who buf;
+	       self#sys_getrusage who buf
 	 | (_, 78) -> (* gettimeofday *)
 	     let (arg1, arg2) = read_2_regs () in
 	     let timep = arg1 and
@@ -2149,7 +2227,16 @@ object(self)
 			  Printf.printf "send(%d, 0x%08Lx, %d, %d)"
 			    sockfd buf len flags;
 			self#sys_send sockfd buf len flags
-		  | 10 -> uh"Unhandled Linux system call recv (102:10)"
+		  | 10 ->
+		      let sockfd = Int64.to_int (load_word args) and
+			  buf = load_word (lea args 0 0 4) and
+			  len = Int64.to_int (load_word (lea args 0 0 8)) and
+			  flags = Int64.to_int (load_word (lea args 0 0 12))
+		      in
+			if !opt_trace_syscalls then
+			  Printf.printf "recv(%d, 0x%08Lx, %d, %d)"
+			    sockfd buf len flags;
+			self#sys_recv sockfd buf len flags
 		  | 11 -> uh"Unhandled Linux system call sendto (102:11)"
 		  | 12 -> uh"Unhandled Linux system call recvfrom (102:12)"
 		  | 13 -> uh"Unhandled Linux system call shutdown (102:13)"
