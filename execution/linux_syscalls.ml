@@ -616,6 +616,13 @@ object(self)
       with
 	| Unix.Unix_error(err, _, _) -> self#put_errno err
 
+  method sys_bind sockfd addr addrlen =
+    try
+      Unix.bind (self#get_fd sockfd) (self#read_sockaddr addr addrlen);
+      put_return 0L (* success *)
+    with
+      | Unix.Unix_error(err, _, _) -> self#put_errno err
+
   method sys_brk addr =
     let cur_break = match !the_break with
       | Some b -> b
@@ -719,6 +726,17 @@ object(self)
       fd_info.(new_vt_fd).dirp_offset <- fd_info.(old_vt_fd).dirp_offset;
       put_return (Int64.of_int new_vt_fd)
 
+  method sys_eventfd2 initval flags =
+    ignore(initval);
+    let oc_flags = Unix.O_RDWR ::
+      (if (flags land 0o4000) <> 0 then [Unix.O_NONBLOCK] else [])
+    in
+    let oc_fd = Unix.openfile "/dev/null" oc_flags 0o666 in
+    let vt_fd = self#fresh_fd () in
+      Array.set unix_fds vt_fd (Some oc_fd);
+      fd_info.(vt_fd).fname <- "/dev/fake/eventfd";
+      put_return (Int64.of_int vt_fd)
+
   method sys_exit status =
     raise (SimulatedExit(status))
 
@@ -786,72 +804,78 @@ object(self)
 	 put_return (Int64.of_int len))
 
   method sys_getdents fd dirp buf_sz =
-    let dirname = chroot fd_info.(fd).fname in
-    let dirh = Unix.opendir dirname in
-    let written = ref 0 in
-      for i = 0 to fd_info.(fd).dirp_offset do
-	ignore(Unix.readdir dirh)
-      done;
-      try
-	while true do
-	  let fname = Unix.readdir dirh in
-	  let reclen = 10 + (String.length fname) + 1 in
-	  let next_pos = !written + reclen in
-	    if next_pos >= buf_sz then
-	      raise End_of_file
-	    else
-	      let oc_st = Unix.stat (dirname ^ "/" ^ fname) in
-	      let d_ino = oc_st.Unix.st_ino in
-		store_word dirp !written (Int64.of_int d_ino);
-		written := !written + 4;
-		store_word dirp !written (Int64.of_int next_pos);
-		written := !written + 4;
-		fm#store_short_conc (lea dirp 0 0 !written) reclen;
-		written := !written + 2;
-		fm#store_cstr dirp (Int64.of_int !written) fname;
-		written := !written + (String.length fname) + 1;
-		fd_info.(fd).dirp_offset <- fd_info.(fd).dirp_offset + 1;
+    try
+      let dirname = chroot fd_info.(fd).fname in
+      let dirh = Unix.opendir dirname in
+      let written = ref 0 in
+	for i = 0 to fd_info.(fd).dirp_offset do
+	  ignore(Unix.readdir dirh)
 	done;
-      with End_of_file -> ();
-      Unix.closedir dirh;
-      put_return (Int64.of_int !written)
+	try
+	  while true do
+	    let fname = Unix.readdir dirh in
+	    let reclen = 10 + (String.length fname) + 1 in
+	    let next_pos = !written + reclen in
+	      if next_pos >= buf_sz then
+		raise End_of_file
+	      else
+		let oc_st = Unix.stat (dirname ^ "/" ^ fname) in
+		let d_ino = oc_st.Unix.st_ino in
+		  store_word dirp !written (Int64.of_int d_ino);
+		  written := !written + 4;
+		  store_word dirp !written (Int64.of_int next_pos);
+		  written := !written + 4;
+		  fm#store_short_conc (lea dirp 0 0 !written) reclen;
+		  written := !written + 2;
+		  fm#store_cstr dirp (Int64.of_int !written) fname;
+		  written := !written + (String.length fname) + 1;
+		  fd_info.(fd).dirp_offset <- fd_info.(fd).dirp_offset + 1;
+	  done;
+	with End_of_file -> ();
+	  Unix.closedir dirh;
+	  put_return (Int64.of_int !written)
+    with
+      | Unix.Unix_error(err, _, _) -> self#put_errno err
 
   method sys_getdents64 fd dirp buf_sz =
-    let dirname = chroot fd_info.(fd).fname in
-    let dirh = Unix.opendir dirname in
-    let written = ref 0 in
-      for i = 0 to fd_info.(fd).dirp_offset do
-	ignore(Unix.readdir dirh)
-      done;
-      try
-	while true do
-	  let fname = Unix.readdir dirh in
-	  let reclen = 19 + (String.length fname) + 1 in
-	  let next_pos = !written + reclen in
-	    if next_pos >= buf_sz then
-	      raise End_of_file
-	    else
-	      let oc_st = Unix.stat (dirname ^ "/" ^ fname) in
-	      let d_ino = oc_st.Unix.st_ino in
-		store_word dirp !written (Int64.of_int d_ino);
-		written := !written + 4;
-		store_word dirp !written 0L; (* high bits of d_ino *)
-		written := !written + 4;
-		store_word dirp !written (Int64.of_int next_pos);
-		written := !written + 4;
-		store_word dirp !written 0L; (* high bits of d_off *)
-		written := !written + 4;
-		fm#store_short_conc (lea dirp 0 0 !written) reclen;
-		written := !written + 2;
-		fm#store_byte_conc (lea dirp 0 0 !written) 0; (* d_type *)
-		written := !written + 1;
-		fm#store_cstr dirp (Int64.of_int !written) fname;
-		written := !written + (String.length fname) + 1;
-		fd_info.(fd).dirp_offset <- fd_info.(fd).dirp_offset + 1;
+    try
+      let dirname = chroot fd_info.(fd).fname in
+      let dirh = Unix.opendir dirname in
+      let written = ref 0 in
+	for i = 0 to fd_info.(fd).dirp_offset do
+	  ignore(Unix.readdir dirh)
 	done;
-      with End_of_file -> ();
-      Unix.closedir dirh;
-      put_return (Int64.of_int !written)
+	try
+	  while true do
+	    let fname = Unix.readdir dirh in
+	    let reclen = 19 + (String.length fname) + 1 in
+	    let next_pos = !written + reclen in
+	      if next_pos >= buf_sz then
+		raise End_of_file
+	      else
+		let oc_st = Unix.stat (dirname ^ "/" ^ fname) in
+		let d_ino = oc_st.Unix.st_ino in
+		  store_word dirp !written (Int64.of_int d_ino);
+		  written := !written + 4;
+		  store_word dirp !written 0L; (* high bits of d_ino *)
+		  written := !written + 4;
+		  store_word dirp !written (Int64.of_int next_pos);
+		  written := !written + 4;
+		  store_word dirp !written 0L; (* high bits of d_off *)
+		  written := !written + 4;
+		  fm#store_short_conc (lea dirp 0 0 !written) reclen;
+		  written := !written + 2;
+		  fm#store_byte_conc (lea dirp 0 0 !written) 0; (* d_type *)
+		  written := !written + 1;
+		  fm#store_cstr dirp (Int64.of_int !written) fname;
+		  written := !written + (String.length fname) + 1;
+		  fd_info.(fd).dirp_offset <- fd_info.(fd).dirp_offset + 1;
+	  done;
+	with End_of_file -> ();
+	  Unix.closedir dirh;
+	  put_return (Int64.of_int !written)
+    with
+      | Unix.Unix_error(err, _, _) -> self#put_errno err
 
   method sys_ugetrlimit rsrc buf =
     store_word buf 0 0xffffffffL; (* infinity *)
@@ -1122,6 +1146,12 @@ object(self)
 	  put_return 0L (* success *)
       | _ -> 	  raise (UnhandledSysCall ("Unhandled ioctl sub-call"))
 
+  method sys_listen sockfd backlog =
+    try
+      Unix.listen (self#get_fd sockfd) backlog;
+      put_return 0L (* success *)
+    with
+      | Unix.Unix_error(err, _, _) -> self#put_errno err
 
   method sys_lseek (fd: int) (offset: Int64.t) (whence: int) =
     try
@@ -1516,9 +1546,13 @@ object(self)
   method sys_rt_sigprocmask how newset oldset setlen =
     (if oldset = 0L then () else
        ((* report an empty old mask *)
-	 assert(setlen = 8);
-	 store_word oldset 0 0L;
-	 store_word oldset 4 0L));
+	 match setlen with
+	   | 4 -> 
+	       store_word oldset 0 0L;
+	   | 8 ->
+	       store_word oldset 0 0L;
+	       store_word oldset 4 0L
+	   | _ -> failwith "Unexpected set size in (rt_)sigprocmask"));
     put_return 0L (* success *)
 
   method sys_socket dom_i typ_i prot_i =
@@ -1671,8 +1705,11 @@ object(self)
       put_return 0L (* success *)
 
   method sys_unlink path =
-    Unix.unlink path;
-    put_return 0L (* success *)
+    try
+      Unix.unlink path;
+      put_return 0L (* success *)
+    with
+      | Unix.Unix_error(err, _, _) -> self#put_errno err
 
   method sys_utime path times_buf =
     let actime = Int64.to_float (load_word (lea times_buf 0 0 0)) and
@@ -2079,7 +2116,7 @@ object(self)
 	     let timep = arg1 and
 		 zonep = arg2 in
 	       if !opt_trace_syscalls then
-		 Printf.printf "gettimeofday(0x08%Lx, 0x08%Lx)" timep zonep;
+		 Printf.printf "gettimeofday(0x%08Lx, 0x%08Lx)" timep zonep;
 	       self#sys_gettimeofday timep zonep
 	 | (_, 79) -> (* settimeofday *)
 	     uh "Unhandled Linux system call settimeofday (79)"
@@ -2186,7 +2223,15 @@ object(self)
 			  Printf.printf "socket(%d, %d, %d)"
 			    dom_i typ_i prot_i;
 			self#sys_socket dom_i typ_i prot_i
-		  | 2 -> uh"Unhandled Linux system call bind (102:2)"
+		  | 2 ->
+		      let sockfd = Int64.to_int (load_word args) and
+			  addr = load_word (lea args 0 0 4) and
+			  addrlen = Int64.to_int (load_word (lea args 0 0 8))
+		      in
+			if !opt_trace_syscalls then
+			  Printf.printf "bind(%d, 0x%08Lx, %d)"
+			    sockfd addr addrlen;
+			self#sys_bind sockfd addr addrlen
 		  | 3 -> 
 		      let sockfd = Int64.to_int (load_word args) and
 			  addr = load_word (lea args 0 0 4) and
@@ -2196,7 +2241,13 @@ object(self)
 			  Printf.printf "connect(%d, 0x%08Lx, %d)"
 			    sockfd addr addrlen;
 			self#sys_connect sockfd addr addrlen
-		  | 4 -> uh"Unhandled Linux system call listen (102:4)"
+		  | 4 -> 
+		      let sockfd = Int64.to_int (load_word args) and
+			  backlog = Int64.to_int (load_word (lea args 0 0 4))
+		      in
+			if !opt_trace_syscalls then
+			  Printf.printf "listen(%d, %d)" sockfd backlog;
+			self#sys_listen sockfd backlog
 		  | 5 -> uh"Unhandled Linux system call accept (102:5)"
 		  | 6 ->
 		      let sockfd = Int64.to_int (load_word args) and
@@ -2329,7 +2380,14 @@ object(self)
 		 Printf.printf "mprotect(0x%08Lx, %Ld, %Ld)" addr len prot;
 	       self#sys_mprotect addr len prot
 	 | (_, 126) -> (* sigprocmask *)
-	     uh "Unhandled Linux system call sigprocmask (126)"
+	     let (arg1, arg2, arg3) = read_3_regs () in
+	     let how    = Int64.to_int arg1 and
+		 newset = arg2 and
+		 oldset = arg3 in
+	       if !opt_trace_syscalls then
+		 Printf.printf "sigprocmask(%d, 0x%08Lx, 0x%08Lx)"
+		   how newset oldset;
+	       self#sys_rt_sigprocmask how newset oldset 4
 	 | (ARM, 127) -> uh "No create_module syscall in Linux/ARM (E)ABI"
 	 | (X86, 127) -> (* create_module *)
 	     uh "Unhandled Linux system call create_module (127)"
@@ -2881,7 +2939,7 @@ object(self)
 	     let clkid = Int64.to_int arg1 and
 		 timep = arg2 in
 	       if !opt_trace_syscalls then
-		 Printf.printf "clock_gettime(%d, 0x08%Lx)" clkid timep;
+		 Printf.printf "clock_gettime(%d, 0x%08Lx)" clkid timep;
 	       self#sys_clock_gettime clkid timep
 	 | (ARM, 264) -> uh "Check whether ARM clock_getres matches x86"
 	 | (X86, 266) -> (* clock_getres *)
@@ -2889,7 +2947,7 @@ object(self)
 	     let clkid = Int64.to_int ebx and
 		 timep = ecx in
 	       if !opt_trace_syscalls then
-		 Printf.printf "clock_getres(%d, 0x08%Lx)" clkid timep;
+		 Printf.printf "clock_getres(%d, 0x%08Lx)" clkid timep;
 	       self#sys_clock_getres clkid timep
 	 | (ARM, 265)    (* clock_nanosleep *)
 	 | (X86, 267) -> (* clock_nanosleep *)
@@ -3135,7 +3193,7 @@ object(self)
 	     let addr = arg1 and
 		 len  = arg2 in
 	       if !opt_trace_syscalls then
-		 Printf.printf "set_robust_list(0x08%Lx, %Ld)" addr len;
+		 Printf.printf "set_robust_list(0x%08Lx, %Ld)" addr len;
 	       self#sys_set_robust_list addr len
 	 | (ARM, 339)    (* get_robust_list *)
 	 | (X86, 312) -> (* get_robust_list *)
@@ -3195,7 +3253,12 @@ object(self)
 	     uh "Unhandled Linux system call signalfd4"
 	 | (ARM, 356)    (* eventfd2 *)
 	 | (X86, 328) -> (* eventfd2 *)
-	     uh "Unhandled Linux system call eventfd2"
+	     let (arg1, arg2) = read_2_regs () in
+	     let initval = arg1 and
+		 flags = Int64.to_int arg2 in
+	       if !opt_trace_syscalls then
+		 Printf.printf "eventfd2(%Ld, %d)" initval flags;
+	       self#sys_eventfd2 initval flags
 	 | (ARM, 357)    (* epoll_create1 *)
 	 | (X86, 329) -> (* epoll_create1 *)
 	     uh "Unhandled Linux system call epoll_create1"

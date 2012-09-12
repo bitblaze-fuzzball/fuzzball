@@ -49,6 +49,7 @@ object
   method get_sid : int
 
   method sys_access : string -> int -> unit
+  method sys_bind : int -> int64 -> int -> unit
   method sys_brk : int64 -> unit
   method sys_capget : int64 -> int64 -> unit
   method sys_chdir : string -> unit
@@ -60,6 +61,7 @@ object
   method sys_close : int -> unit
   method sys_connect : int -> int64 -> int -> unit
   method sys_dup : int -> unit
+  method sys_eventfd2 : int64 -> int -> unit
   method sys_exit : int64 -> unit
   method sys_exit_group : int64 -> unit
   method sys_fcntl : int -> int -> int64 -> unit
@@ -93,6 +95,7 @@ object
   method sys_gettimeofday : int64 -> int64 -> unit
   method sys_getxattr : string -> string -> int64 -> int -> unit
   method sys_ioctl : int -> int64 -> int64 -> unit
+  method sys_listen : int -> int -> unit
   method sys_lseek : int -> int64 -> int -> unit
   method sys__llseek : int -> int64 -> int64 -> int -> unit
   method sys_mincore : int64 -> int -> int64 -> unit
