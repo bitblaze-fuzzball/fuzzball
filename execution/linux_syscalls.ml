@@ -290,9 +290,9 @@ object(self)
 	      *)
 	      let path' = fm#read_cstr (Int64.add buf 1L)
 	      in
-		Unix.ADDR_UNIX(path')
+		Unix.ADDR_UNIX(chroot path')
 	    else
-	      Unix.ADDR_UNIX(path)
+	      Unix.ADDR_UNIX(chroot path)
 	| 2 -> 
 	    assert(len = 6);
 	    let port_be = load_short buf and
@@ -1191,7 +1191,7 @@ object(self)
 
   method sys_mkdir path mode =
     try
-      Unix.mkdir path mode;
+      Unix.mkdir (chroot path) mode;
       put_return 0L
     with
       | Unix.Unix_error(err, _, _) -> self#put_errno err
