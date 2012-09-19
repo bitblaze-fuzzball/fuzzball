@@ -1,5 +1,5 @@
 (*
-  Copyright (C) BitBlaze, 2009-2010. All rights reserved.
+  Copyright (C) BitBlaze, 2009-2012. All rights reserved.
 *)
 
 val load_x87_emulator : Fragment_machine.fragment_machine -> string -> int64

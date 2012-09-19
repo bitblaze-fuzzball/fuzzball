@@ -1,5 +1,6 @@
 (*
-  Copyright (C) 2010 Ensighta Security Inc.  All rights reserved.
+  Copyright (C) BitBlaze, 2010-2012, and copyright (C) 2010 Ensighta
+  Security Inc.  All rights reserved.
 *)
 
 class linear_decision_tree : object

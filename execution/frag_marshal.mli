@@ -1,5 +1,6 @@
 (*
-  Copyright (C) 2010 Ensighta Security Inc.  All rights reserved.
+  Copyright (C) BitBlaze, 2010-2011, and copyright (C) 2010 Ensighta
+  Security Inc.  All rights reserved.
 *)
 
 module VarByInt :

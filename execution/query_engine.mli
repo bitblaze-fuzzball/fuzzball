@@ -1,5 +1,5 @@
 (*
-  Copyright (C) BitBlaze, 2009-2010. All rights reserved.
+  Copyright (C) BitBlaze, 2009-2011. All rights reserved.
 *)
 
 class virtual query_engine : object
