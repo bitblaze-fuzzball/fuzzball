@@ -127,7 +127,8 @@ let fuzz start_eip opt_fuzz_start_eip end_eips
 	  (fun iter ->
 	     let old_tcs = Hashtbl.length trans_cache in
 	     let stop str = if !opt_trace_stopping then
-	       Printf.printf "Stopping %s\n" str
+	       let stop_eip = fm#get_eip in
+	         Printf.printf "Stopping %s at 0x%08Lx\n" str stop_eip
 	     in
 	       fm#set_iter_seed (Int64.to_int iter);
 	       (try
