@@ -51,36 +51,14 @@ let loop_w_stats count fn =
     if !opt_gc_stats then
       Gc.full_major () (* for the benefit of leak checking *)
 
-let last_dt_print_time = ref 0.0
-
-let print_tree fm =
-  let now = Unix.gettimeofday () in
-  let interval = match !opt_save_decision_tree_interval with
-    | Some i -> i | None -> failwith "missing interval in print_tree" in
-    if now -. !last_dt_print_time > interval then
-      let chan = open_out "fuzz.tree" in
-	fm#print_tree chan;
-	close_out chan;
-	last_dt_print_time := Unix.gettimeofday ()
-
-let periodic_stats fm at_end force = 
-  if !opt_save_decision_tree_interval <> None || force then
-    print_tree fm;
-  if !opt_gc_stats || force then
-    check_memory_usage fm trans_cache;
-  if !opt_gc_stats || force then
-    Gc.print_stat stdout;
-  if (!opt_solver_stats && at_end) || force then
-    (Printf.printf "Solver returned satisfiable %Ld time(s)\n" !solver_sats;
-     Printf.printf "Solver returned unsatisfiable %Ld time(s)\n"
-       !solver_unsats;
-     Printf.printf "Solver failed %Ld time(s)\n" !solver_fails)
-
 let fuzz start_eip opt_fuzz_start_eip end_eips
     (fm : fragment_machine) asmir_gamma symbolic_init reset_cb =
   if !opt_trace_setup then
     (Printf.printf "Initial registers:\n";
      fm#print_regs);
+  (match !opt_periodic_stats with
+     | Some p -> add_periodic_hook fm p
+     | None -> ());
   flush stdout;
   if !opt_gc_stats then
     at_exit final_check_memory_usage;

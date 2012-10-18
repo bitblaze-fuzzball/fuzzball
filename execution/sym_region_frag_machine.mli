@@ -97,6 +97,8 @@ sig
     method eval_bool_exp : Vine.exp -> bool
     method on_missing_random : unit
     method on_missing_zero : unit
+    method add_extra_eip_hook :
+      (Fragment_machine.fragment_machine -> int64 -> unit) -> unit
     method eip_hook : int64 -> unit	  
     method finish_path : bool
     method print_tree : out_channel -> unit

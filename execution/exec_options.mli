@@ -119,6 +119,7 @@ val opt_trace_tables : bool ref
 val opt_table_limit : int ref
 val opt_implied_value_conc : bool ref
 val opt_trace_ivc : bool ref
+val opt_periodic_stats : int64 option ref
 
 val opt_symbolic_memory : bool ref
 val opt_zero_memory : bool ref

@@ -3,6 +3,9 @@
   Security Inc.  All rights reserved.
 *)
 
+open Exec_options;;
+open Sym_path_frag_machine;;
+
 module V = Vine;;
 
 let check_memory_size () =
@@ -45,4 +48,40 @@ let final_check_memory_usage () =
   Printf.printf "/proc size is %s\n" (check_memory_size ());
   flush stdout;
   Gc.print_stat stdout
-  
+
+let last_dt_print_time = ref 0.0
+
+let print_tree fm =
+  let now = Unix.gettimeofday () in
+  let interval = match !opt_save_decision_tree_interval with
+    | Some i -> i | None -> failwith "missing interval in print_tree" in
+    if now -. !last_dt_print_time > interval then
+      let chan = open_out "fuzz.tree" in
+	fm#print_tree chan;
+	close_out chan;
+	last_dt_print_time := Unix.gettimeofday ()
+
+let periodic_stats fm at_end force = 
+  if !opt_save_decision_tree_interval <> None || force then
+    print_tree fm;
+  if !opt_gc_stats || force then
+    check_memory_usage fm Exec_run_common.trans_cache;
+  if !opt_gc_stats || force then
+    Gc.print_stat stdout;
+  if (!opt_solver_stats && at_end) || force then
+    (Printf.printf "Solver returned satisfiable %Ld time(s)\n" !solver_sats;
+     Printf.printf "Solver returned unsatisfiable %Ld time(s)\n"
+       !solver_unsats;
+     Printf.printf "Solver failed %Ld time(s)\n" !solver_fails)
+
+let add_periodic_hook fm period =
+  let insn_count = ref 0L in
+  let hook fm eip =
+    insn_count := Int64.succ !insn_count;
+    if Int64.rem !insn_count period = 0L then
+      (Printf.printf "%Ld instructions executed\r" !insn_count;
+       periodic_stats fm false false;
+       flush stdout)
+  in
+    fm#add_extra_eip_hook hook
+

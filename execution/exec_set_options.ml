@@ -398,6 +398,9 @@ let cmdline_opts =
      " Print memory usage statistics");
     ("-time-stats", Arg.Set(opt_time_stats),
      " Print running time statistics");
+    ("-periodic-stats", Arg.String
+       (fun s -> opt_periodic_stats := Some (Int64.of_string s)),
+     "period Trigger statistics every PERIOD instructions");
     ("-watch-expr", Arg.String
        (fun s -> opt_watch_expr_str := Some s),
      "expr Print Vine expression on each instruction");

@@ -36,6 +36,191 @@ type register_name =
 val reg_to_regstr : register_name -> string
 val regstr_to_reg : string -> register_name
 
+(* This virtual class is the outside interface to a fragment machine,
+   hiding internal methods. It's also convenient that it hides the domain
+   functors. *)
+class virtual fragment_machine : object
+  method virtual init_prog : Vine.program -> unit
+  method virtual set_frag : Vine.program -> unit
+  method virtual concretize_misc : unit
+  method virtual add_extra_eip_hook :
+    (fragment_machine -> int64 -> unit) -> unit
+  method virtual eip_hook : int64 -> unit
+  method virtual get_eip : int64
+  method virtual set_eip : int64 -> unit
+  method virtual run_eip_hooks : unit
+  
+  method virtual set_cjmp_heuristic :
+    (int64 -> int64 -> int64 -> float -> bool option -> bool option) -> unit
+
+  method virtual on_missing_zero : unit
+  method virtual on_missing_random : unit
+  method virtual on_missing_symbol : unit
+
+  method virtual make_regs_zero : unit
+  method virtual make_regs_symbolic : unit
+  method virtual load_x86_user_regs : Temu_state.userRegs -> unit
+  method virtual print_regs : unit
+
+  method virtual store_byte_conc  : int64 -> int   -> unit
+  method virtual store_short_conc : int64 -> int   -> unit
+  method virtual store_word_conc  : int64 -> int64 -> unit
+  method virtual store_long_conc  : int64 -> int64 -> unit
+
+  method virtual store_page_conc  : int64 -> string -> unit
+
+  method virtual load_byte_conc  : int64 -> int
+  method virtual load_short_conc : int64 -> int
+  method virtual load_word_conc  : int64 -> int64
+  method virtual load_long_conc  : int64 -> int64
+
+  method virtual load_byte_concolic  : int64 -> int
+  method virtual load_short_concolic : int64 -> int
+  method virtual load_word_concolic  : int64 -> int64
+  method virtual load_long_concolic  : int64 -> int64
+
+  method virtual started_symbolic : bool
+  method virtual maybe_start_symbolic : (unit -> unit) -> unit
+  method virtual start_symbolic : unit
+
+  method virtual make_snap : unit -> unit
+  method virtual reset : unit -> unit
+
+  method virtual add_special_handler : special_handler -> unit
+
+  method virtual get_bit_var   : register_name -> int
+  method virtual get_byte_var  : register_name -> int
+  method virtual get_short_var : register_name -> int
+  method virtual get_word_var  : register_name -> int64
+  method virtual get_long_var  : register_name -> int64
+
+  method virtual get_bit_var_concolic   : register_name -> int
+  method virtual get_byte_var_concolic  : register_name -> int
+  method virtual get_short_var_concolic : register_name -> int
+  method virtual get_word_var_concolic  : register_name -> int64
+  method virtual get_long_var_concolic  : register_name -> int64
+
+  method virtual set_bit_var   : register_name -> int   -> unit
+  method virtual set_byte_var  : register_name -> int   -> unit
+  method virtual set_short_var : register_name -> int   -> unit
+  method virtual set_word_var  : register_name -> int64 -> unit
+  method virtual set_long_var  : register_name -> int64 -> unit
+
+  method virtual set_word_var_low_short   : register_name -> int -> unit
+  method virtual set_word_var_low_byte    : register_name -> int -> unit
+  method virtual set_word_var_second_byte : register_name -> int -> unit
+
+  method virtual set_word_reg_symbolic : register_name -> string -> unit
+  method virtual set_word_reg_concolic :
+    register_name -> string -> int64 -> unit
+  method virtual set_word_reg_fresh_symbolic : register_name -> string -> unit
+  method virtual set_word_reg_fresh_region : register_name -> string -> unit
+
+  method virtual run_sl : (string -> bool) -> Vine.stmt list -> string
+		  
+  method virtual run : unit -> string
+  method virtual run_to_jump : unit -> string 
+  method virtual fake_call_to_from : int64 -> int64 -> Vine.stmt list
+  method virtual disasm_insn_at : int64 -> string
+
+  method virtual measure_mem_size : int * int * int
+  method virtual measure_form_man_size : int * int
+  method virtual measure_dt_size : int
+  method virtual measure_size : int * int
+
+  method virtual store_byte_idx : int64 -> int -> int -> unit
+
+  method virtual store_str : int64 -> int64 -> string -> unit
+
+  method virtual make_symbolic_region : int64 -> int -> unit
+
+  method virtual store_symbolic_cstr : int64 -> int -> bool -> unit
+  method virtual store_concolic_cstr : int64 -> string -> unit
+
+  method virtual store_symbolic_wcstr : int64 -> int -> unit
+
+  method virtual store_symbolic_byte  : int64 -> string -> unit
+  method virtual store_symbolic_short : int64 -> string -> unit
+  method virtual store_symbolic_word  : int64 -> string -> unit
+  method virtual store_symbolic_long  : int64 -> string -> unit
+
+  method virtual store_concolic_mem_byte :
+    int64 -> string -> int64 -> int -> unit
+
+  method virtual store_concolic_byte  : int64 -> string -> int   -> unit
+  method virtual store_concolic_short : int64 -> string -> int   -> unit
+  method virtual store_concolic_word  : int64 -> string -> int64 -> unit
+  method virtual store_concolic_long  : int64 -> string -> int64 -> unit
+
+  method virtual set_reg_conc_bytes : register_name 
+    -> (int option array) -> unit
+  method virtual set_reg_concolic_mem_bytes : register_name 
+    -> ((string * int64 * int) option array) -> unit
+
+  method virtual store_concolic_exp : int64 -> Vine.exp ->
+    (string * int) list -> (string * int) list ->
+    (string * int64) list -> (string * int64) list -> unit
+  method virtual set_word_reg_concolic_exp : register_name -> Vine.exp ->
+    (string * int) list -> (string * int) list ->
+    (string * int64) list -> (string * int64) list -> unit
+
+  method virtual mem_byte_has_loop_var  : int64 -> bool
+  method virtual mem_short_has_loop_var : int64 -> bool
+  method virtual mem_word_has_loop_var  : int64 -> bool
+  method virtual mem_long_has_loop_var  : int64 -> bool
+  method virtual word_reg_has_loop_var : register_name -> bool
+
+  method virtual parse_symbolic_expr : string -> Vine.exp
+
+  method virtual store_cstr : int64 -> int64 -> string -> unit
+
+  method virtual read_buf : int64 -> int -> char array
+
+  method virtual read_cstr : int64 -> string
+
+  method virtual zero_fill : int64 -> int -> unit
+
+  method virtual print_backtrace : unit
+
+  method virtual eval_expr_to_int64 : Vine.exp -> int64
+
+  method virtual eval_expr_to_symbolic_expr : Vine.exp -> Vine.exp
+
+  method virtual watchpoint : unit
+
+  method virtual mem_val_as_string : int64 -> Vine.typ -> string
+
+  method virtual get_path_cond : Vine.exp list
+
+  method virtual set_query_engine : Query_engine.query_engine -> unit
+
+  method virtual query_with_path_cond : Vine.exp -> bool
+    -> (bool * (string * int64) list)
+
+  method virtual match_input_var : string -> int option
+
+  method virtual print_tree : out_channel -> unit
+
+  method virtual set_iter_seed : int -> unit
+
+  method virtual finish_path : bool
+
+  method virtual after_exploration : unit
+
+  method virtual make_x86_segtables_symbolic : unit
+  method virtual store_word_special_region :
+    register_name -> int64 -> int64 -> unit
+
+  method virtual get_word_var_concretize :
+    register_name -> bool -> string -> int64
+
+  method virtual load_byte_concretize  : int64 -> bool -> string -> int
+  method virtual load_short_concretize : int64 -> bool -> string -> int
+  method virtual load_word_concretize  : int64 -> bool -> string -> int64
+
+  method virtual make_sink_region : string -> int64 -> unit
+end
+
 module FragmentMachineFunctor :
   functor (D : Exec_domain.DOMAIN) ->
 sig
@@ -43,6 +228,7 @@ sig
     method init_prog : Vine.program -> unit
     method set_frag : Vine.program -> unit
     method concretize_misc : unit
+    method add_extra_eip_hook : (fragment_machine -> int64 -> unit) -> unit
     method eip_hook : int64 -> unit
     method get_eip : int64
     method set_eip : int64 -> unit
@@ -263,187 +449,4 @@ sig
     method load_word_concretize  : int64 -> bool -> string -> int64
     method make_sink_region : string -> int64 -> unit
   end
-end
-
-(* This virtual class is the outside interface to a fragment machine,
-   hiding internal methods. It's also convenient that it hides the domain
-   functors. *)
-class virtual fragment_machine : object
-  method virtual init_prog : Vine.program -> unit
-  method virtual set_frag : Vine.program -> unit
-  method virtual concretize_misc : unit
-  method virtual eip_hook : int64 -> unit
-  method virtual get_eip : int64
-  method virtual set_eip : int64 -> unit
-  method virtual run_eip_hooks : unit
-  
-  method virtual set_cjmp_heuristic :
-    (int64 -> int64 -> int64 -> float -> bool option -> bool option) -> unit
-
-  method virtual on_missing_zero : unit
-  method virtual on_missing_random : unit
-  method virtual on_missing_symbol : unit
-
-  method virtual make_regs_zero : unit
-  method virtual make_regs_symbolic : unit
-  method virtual load_x86_user_regs : Temu_state.userRegs -> unit
-  method virtual print_regs : unit
-
-  method virtual store_byte_conc  : int64 -> int   -> unit
-  method virtual store_short_conc : int64 -> int   -> unit
-  method virtual store_word_conc  : int64 -> int64 -> unit
-  method virtual store_long_conc  : int64 -> int64 -> unit
-
-  method virtual store_page_conc  : int64 -> string -> unit
-
-  method virtual load_byte_conc  : int64 -> int
-  method virtual load_short_conc : int64 -> int
-  method virtual load_word_conc  : int64 -> int64
-  method virtual load_long_conc  : int64 -> int64
-
-  method virtual load_byte_concolic  : int64 -> int
-  method virtual load_short_concolic : int64 -> int
-  method virtual load_word_concolic  : int64 -> int64
-  method virtual load_long_concolic  : int64 -> int64
-
-  method virtual started_symbolic : bool
-  method virtual maybe_start_symbolic : (unit -> unit) -> unit
-  method virtual start_symbolic : unit
-
-  method virtual make_snap : unit -> unit
-  method virtual reset : unit -> unit
-
-  method virtual add_special_handler : special_handler -> unit
-
-  method virtual get_bit_var   : register_name -> int
-  method virtual get_byte_var  : register_name -> int
-  method virtual get_short_var : register_name -> int
-  method virtual get_word_var  : register_name -> int64
-  method virtual get_long_var  : register_name -> int64
-
-  method virtual get_bit_var_concolic   : register_name -> int
-  method virtual get_byte_var_concolic  : register_name -> int
-  method virtual get_short_var_concolic : register_name -> int
-  method virtual get_word_var_concolic  : register_name -> int64
-  method virtual get_long_var_concolic  : register_name -> int64
-
-  method virtual set_bit_var   : register_name -> int   -> unit
-  method virtual set_byte_var  : register_name -> int   -> unit
-  method virtual set_short_var : register_name -> int   -> unit
-  method virtual set_word_var  : register_name -> int64 -> unit
-  method virtual set_long_var  : register_name -> int64 -> unit
-
-  method virtual set_word_var_low_short   : register_name -> int -> unit
-  method virtual set_word_var_low_byte    : register_name -> int -> unit
-  method virtual set_word_var_second_byte : register_name -> int -> unit
-
-  method virtual set_word_reg_symbolic : register_name -> string -> unit
-  method virtual set_word_reg_concolic :
-    register_name -> string -> int64 -> unit
-  method virtual set_word_reg_fresh_symbolic : register_name -> string -> unit
-  method virtual set_word_reg_fresh_region : register_name -> string -> unit
-
-  method virtual run_sl : (string -> bool) -> Vine.stmt list -> string
-		  
-  method virtual run : unit -> string
-  method virtual run_to_jump : unit -> string 
-  method virtual fake_call_to_from : int64 -> int64 -> Vine.stmt list
-  method virtual disasm_insn_at : int64 -> string
-
-  method virtual measure_mem_size : int * int * int
-  method virtual measure_form_man_size : int * int
-  method virtual measure_dt_size : int
-  method virtual measure_size : int * int
-
-  method virtual store_byte_idx : int64 -> int -> int -> unit
-
-  method virtual store_str : int64 -> int64 -> string -> unit
-
-  method virtual make_symbolic_region : int64 -> int -> unit
-
-  method virtual store_symbolic_cstr : int64 -> int -> bool -> unit
-  method virtual store_concolic_cstr : int64 -> string -> unit
-
-  method virtual store_symbolic_wcstr : int64 -> int -> unit
-
-  method virtual store_symbolic_byte  : int64 -> string -> unit
-  method virtual store_symbolic_short : int64 -> string -> unit
-  method virtual store_symbolic_word  : int64 -> string -> unit
-  method virtual store_symbolic_long  : int64 -> string -> unit
-
-  method virtual store_concolic_mem_byte :
-    int64 -> string -> int64 -> int -> unit
-
-  method virtual store_concolic_byte  : int64 -> string -> int   -> unit
-  method virtual store_concolic_short : int64 -> string -> int   -> unit
-  method virtual store_concolic_word  : int64 -> string -> int64 -> unit
-  method virtual store_concolic_long  : int64 -> string -> int64 -> unit
-
-  method virtual set_reg_conc_bytes : register_name 
-    -> (int option array) -> unit
-  method virtual set_reg_concolic_mem_bytes : register_name 
-    -> ((string * int64 * int) option array) -> unit
-
-  method virtual store_concolic_exp : int64 -> Vine.exp ->
-    (string * int) list -> (string * int) list ->
-    (string * int64) list -> (string * int64) list -> unit
-  method virtual set_word_reg_concolic_exp : register_name -> Vine.exp ->
-    (string * int) list -> (string * int) list ->
-    (string * int64) list -> (string * int64) list -> unit
-
-  method virtual mem_byte_has_loop_var  : int64 -> bool
-  method virtual mem_short_has_loop_var : int64 -> bool
-  method virtual mem_word_has_loop_var  : int64 -> bool
-  method virtual mem_long_has_loop_var  : int64 -> bool
-  method virtual word_reg_has_loop_var : register_name -> bool
-
-  method virtual parse_symbolic_expr : string -> Vine.exp
-
-  method virtual store_cstr : int64 -> int64 -> string -> unit
-
-  method virtual read_buf : int64 -> int -> char array
-
-  method virtual read_cstr : int64 -> string
-
-  method virtual zero_fill : int64 -> int -> unit
-
-  method virtual print_backtrace : unit
-
-  method virtual eval_expr_to_int64 : Vine.exp -> int64
-
-  method virtual eval_expr_to_symbolic_expr : Vine.exp -> Vine.exp
-
-  method virtual watchpoint : unit
-
-  method virtual mem_val_as_string : int64 -> Vine.typ -> string
-
-  method virtual get_path_cond : Vine.exp list
-
-  method virtual set_query_engine : Query_engine.query_engine -> unit
-
-  method virtual query_with_path_cond : Vine.exp -> bool
-    -> (bool * (string * int64) list)
-
-  method virtual match_input_var : string -> int option
-
-  method virtual print_tree : out_channel -> unit
-
-  method virtual set_iter_seed : int -> unit
-
-  method virtual finish_path : bool
-
-  method virtual after_exploration : unit
-
-  method virtual make_x86_segtables_symbolic : unit
-  method virtual store_word_special_region :
-    register_name -> int64 -> int64 -> unit
-
-  method virtual get_word_var_concretize :
-    register_name -> bool -> string -> int64
-
-  method virtual load_byte_concretize  : int64 -> bool -> string -> int
-  method virtual load_short_concretize : int64 -> bool -> string -> int
-  method virtual load_word_concretize  : int64 -> bool -> string -> int64
-
-  method virtual make_sink_region : string -> int64 -> unit
 end
