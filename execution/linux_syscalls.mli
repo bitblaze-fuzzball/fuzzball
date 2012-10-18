@@ -53,8 +53,10 @@ object
   method sys_brk : int64 -> unit
   method sys_capget : int64 -> int64 -> unit
   method sys_chdir : string -> unit
+  method sys_chmod : string -> int -> unit
   method sys_fchdir : int -> unit
   method sys_fchmod : int -> int -> unit
+  method sys_chown : string -> int -> int -> unit
   method sys_fchown32 : int -> int -> int -> unit
   method sys_clock_getres : int -> int64 -> unit
   method sys_clock_gettime : int -> int64 -> unit
@@ -94,6 +96,7 @@ object
   method sys_getsockname : int -> int64 -> int64 -> unit
   method sys_gettimeofday : int64 -> int64 -> unit
   method sys_getxattr : string -> string -> int64 -> int -> unit
+  method sys_lgetxattr : string -> string -> int64 -> int -> unit
   method sys_ioctl : int -> int64 -> int64 -> unit
   method sys_listen : int -> int -> unit
   method sys_lseek : int -> int64 -> int -> unit
@@ -111,6 +114,7 @@ object
   method sys_read : int -> int64 -> int -> unit
   method sys_readlink : string -> int64 -> int -> unit
   method sys_recv : int -> int64 -> int -> int -> unit
+  method sys_rename : string -> string -> unit
   method sys_sched_getparam : int -> int64 -> unit
   method sys_sched_get_priority_max : int -> unit
   method sys_sched_get_priority_min : int -> unit

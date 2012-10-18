@@ -665,13 +665,30 @@ object(self)
     with
       | Unix.Unix_error(err, _, _) -> self#put_errno err
 
+  method sys_chmod path mode =
+    try
+      Unix.chmod (chroot path) mode;
+      put_return 0L (* success *)
+    with
+      | Unix.Unix_error(err, _, _) -> self#put_errno err
+
   method sys_fchmod fd mode =
     Unix.fchmod (self#get_fd fd) mode;
     put_return 0L (* success *)
 
+  method sys_chown path user group =
+    try
+      Unix.chown path user group;
+      put_return 0L (* success *)
+    with
+      | Unix.Unix_error(err, _, _) -> self#put_errno err
+
   method sys_fchown32 fd user group =
-    Unix.fchown (self#get_fd fd) user group;
-    put_return 0L (* success *)
+    try
+      Unix.fchown (self#get_fd fd) user group;
+      put_return 0L (* success *)
+    with
+      | Unix.Unix_error(err, _, _) -> self#put_errno err
 
   method sys_clock_getres clkid timep =
     match clkid with
@@ -808,7 +825,7 @@ object(self)
       let dirname = chroot fd_info.(fd).fname in
       let dirh = Unix.opendir dirname in
       let written = ref 0 in
-	for i = 0 to fd_info.(fd).dirp_offset do
+	for i = 0 to fd_info.(fd).dirp_offset - 1 do
 	  ignore(Unix.readdir dirh)
 	done;
 	try
@@ -842,7 +859,7 @@ object(self)
       let dirname = chroot fd_info.(fd).fname in
       let dirh = Unix.opendir dirname in
       let written = ref 0 in
-	for i = 0 to fd_info.(fd).dirp_offset do
+	for i = 0 to fd_info.(fd).dirp_offset - 1 do
 	  ignore(Unix.readdir dirh)
 	done;
 	try
@@ -851,7 +868,7 @@ object(self)
 	    let reclen = 19 + (String.length fname) + 1 in
 	    let next_pos = !written + reclen in
 	      if next_pos >= buf_sz then
-		raise End_of_file
+		 raise End_of_file
 	      else
 		let oc_st = Unix.stat (dirname ^ "/" ^ fname) in
 		let d_ino = oc_st.Unix.st_ino in
@@ -1018,6 +1035,10 @@ object(self)
     ignore(path); ignore(name); ignore(value_ptr); ignore(size);
     put_return (Int64.of_int (-61)) (* ENODATA *)
  
+  method sys_lgetxattr path name value_ptr size =
+    ignore(path); ignore(name); ignore(value_ptr); ignore(size);
+    put_return (Int64.of_int (-61)) (* ENODATA *)
+
   method sys_ioctl fd req argp =
     match req with
       | 0x5401L -> (* TCGETS *)
@@ -1339,10 +1360,13 @@ object(self)
       | Unix.Unix_error(err, _, _) -> self#put_errno err
 	  
   method sys_readlink path out_buf buflen =
-    let real = Unix.readlink path in
-    let written = min buflen (String.length real) in
-      fm#store_str out_buf 0L (String.sub real 0 written);
-      put_return (Int64.of_int written);
+    try
+      let real = Unix.readlink (chroot path) in
+      let written = min buflen (String.length real) in
+	fm#store_str out_buf 0L (String.sub real 0 written);
+	put_return (Int64.of_int written);
+    with
+      | Unix.Unix_error(err, _, _) -> self#put_errno err
 
   method sys_recv sockfd buf len flags =
     try
@@ -1361,6 +1385,13 @@ object(self)
 	else
 	  fm#store_str buf 0L (String.sub str 0 num_read);
 	put_return (Int64.of_int num_read) (* success *)
+    with
+      | Unix.Unix_error(err, _, _) -> self#put_errno err
+
+  method sys_rename oldpath newpath =
+    try
+      Unix.rename (chroot oldpath) (chroot newpath);
+      put_return 0L (* success *)
     with
       | Unix.Unix_error(err, _, _) -> self#put_errno err
 
@@ -1873,7 +1904,12 @@ object(self)
 	 | (_, 14) -> (* mknod *)
 	     uh "Unhandled Linux system call mknod (14)"
 	 | (_, 15) -> (* chmod *)
-	     uh "Unhandled Linux system call chmod (15)"
+	     let (arg1, arg2) = read_2_regs () in
+	     let path = fm#read_cstr arg1 and
+		 mode = Int64.to_int arg2 in
+	       if !opt_trace_syscalls then
+		 Printf.printf "chmod(\"%s\", 0o%o)" path mode;
+	       self#sys_chmod path mode
 	 | (_, 16) -> (* lchown *)
 	     uh "Unhandled Linux system call lchown (16)"
 	 | (ARM, 17) -> uh "No break (17) syscall in Linux/ARM (E)ABI"
@@ -1949,7 +1985,12 @@ object(self)
 	 | (_, 37) -> (* kill *)
 	     uh "Unhandled Linux system call kill (37)"
 	 | (_, 38 )-> (* rename *)
-	     uh "Unhandled Linux system call rename (38)"
+	     let (arg1, arg2) = read_2_regs () in
+	     let oldpath = fm#read_cstr arg1 and
+		 newpath = fm#read_cstr arg2 in
+	       if !opt_trace_syscalls then
+		 Printf.printf "rename(\"%s\", \"%s\")" oldpath newpath;
+	       self#sys_rename oldpath newpath
 	 | (ARM, 39) -> uh "Check whether ARM mkdir syscall matches x86"
 	 | (X86, 39) -> (* mkdir *)
 	     let (ebx, ecx) = read_2_regs () in
@@ -2351,7 +2392,18 @@ object(self)
 	 | (_, 116) -> (* sysinfo *)
 	     uh "Unhandled Linux system call sysinfo (116)"
 	 | (_, 117) -> (* ipc *)
-	     uh "Unhandled Linux system call ipc (117)"
+	     let (arg1, arg2, arg3, arg4, arg5, arg6) = read_6_regs () in
+	     let call = Int64.to_int arg1 and
+		 first = Int64.to_int arg2 and
+		 second = Int64.to_int arg3 and
+		 third = Int64.to_int arg4 and
+		 ptr = arg5 and
+		 fifth = arg6
+	     in
+	       if !opt_trace_syscalls then
+		 Printf.printf "ipc(%d, %d, %d, %d, 0x%08Lx, 0x%Lx)"
+		   call first second third ptr fifth;
+	       self#put_errno Unix.ENOSYS
 	 | (_, 118) -> (* fsync *)
 	     uh "Unhandled Linux system call fsync (118)"
 	 | (_, 119) -> (* sigreturn *)
@@ -2742,7 +2794,13 @@ object(self)
 		 rgid_ptr egid_ptr sgid_ptr;
 	     self#sys_getresgid32 rgid_ptr egid_ptr sgid_ptr;
 	 | (_, 212) -> (* chown32 *)
-	     uh "Unhandled Linux system call chown32 (212)"
+	     let (arg1, arg2, arg3) = read_3_regs () in
+	     let path = fm#read_cstr arg1 and
+		 uid = Int64.to_int arg2 and
+		 gid = Int64.to_int arg3 in
+	       if !opt_trace_syscalls then
+		 Printf.printf "chown32(\"%s\", %d, %d)" path uid gid;
+	       self#sys_chown path uid gid
 	 | (ARM, 213) -> uh "Check whether ARM setuid32 syscall matches x86"
 	 | (X86, 213) -> (* setuid32 *)
 	     let ebx = read_1_reg () in
@@ -2822,7 +2880,17 @@ object(self)
 		   path name value_ptr size;
 	       self#sys_getxattr path name value_ptr size
 	 | (_, 230) -> (* lgetxattr *)
-	     uh "Unhandled Linux system call lgetxattr (230)"
+	     let (arg1, arg2, arg3, arg4) = read_4_regs () in
+	     let path_ptr = arg1 and
+		 name_ptr = arg2 and
+		 value_ptr = arg3 and
+		 size = Int64.to_int arg4 in
+	     let path = fm#read_cstr path_ptr and
+		 name = fm#read_cstr name_ptr in
+	       if !opt_trace_syscalls then
+		 Printf.printf "lgetxattr(\"%s\", \"%s\", 0x%08Lx, %d)"
+		   path name value_ptr size;
+	       self#sys_lgetxattr path name value_ptr size
 	 | (_, 231) -> (* fgetxattr *)
 	     uh "Unhandled Linux system call fgetxattr (231)"
 	 | (_, 232) -> (* listxattr *)
