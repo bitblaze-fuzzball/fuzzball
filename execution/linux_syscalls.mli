@@ -98,6 +98,7 @@ object
   method sys_getxattr : string -> string -> int64 -> int -> unit
   method sys_lgetxattr : string -> string -> int64 -> int -> unit
   method sys_ioctl : int -> int64 -> int64 -> unit
+  method sys_link: string -> string -> unit
   method sys_listen : int -> int -> unit
   method sys_lseek : int -> int64 -> int -> unit
   method sys__llseek : int -> int64 -> int64 -> int -> unit

@@ -1167,6 +1167,13 @@ object(self)
 	  put_return 0L (* success *)
       | _ -> 	  raise (UnhandledSysCall ("Unhandled ioctl sub-call"))
 
+  method sys_link oldpath newpath =
+    try
+      Unix.link (chroot oldpath) (chroot newpath);
+      put_return 0L (* success *)
+    with
+      | Unix.Unix_error(err, _, _) -> self#put_errno err
+
   method sys_listen sockfd backlog =
     try
       Unix.listen (self#get_fd sockfd) backlog;
@@ -1877,7 +1884,12 @@ object(self)
 	 | (_, 8) -> (* creat *)
 	     uh "Unhandled Linux system call creat (8)"
 	 | (_, 9) -> (* link *)
-	     uh "Unhandled Linux system call link (9)"
+	     let (arg1, arg2) = read_2_regs () in
+	     let oldpath = fm#read_cstr arg1 and
+		 newpath = fm#read_cstr arg2 in
+	       if !opt_trace_syscalls then
+		 Printf.printf "link(\"%s\", \"%s\")" oldpath newpath;
+	       self#sys_link oldpath newpath
 	 | (ARM, 10) -> uh "Check whether ARM unlink syscall matches x86"
 	 | (X86, 10) -> (* unlink *)
 	     let ebx = read_1_reg () in
