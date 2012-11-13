@@ -105,6 +105,13 @@ let rec simplify_rec e =
 	->
 	V.Cast(V.CAST_HIGH, V.REG_1,
 	       (simplify_rec (V.Cast(V.CAST_LOW, V.REG_32, e))))
+    (* x < y || x == y => x <= y *)
+    | V.BinOp(V.BITOR,
+	      V.BinOp(V.LT, x1, y1),
+	      V.BinOp(V.EQ, x2, y2))
+	when x1 = x2 && y1 = y2
+	  ->
+	V.BinOp(V.LE, x1, y1)
     (* Combine half-open range inclusion with remaining endpoint, byte ver. *)
     | V.BinOp(V.BITOR,
 	      V.BinOp(V.LT,
