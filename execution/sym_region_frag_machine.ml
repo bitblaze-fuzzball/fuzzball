@@ -59,11 +59,27 @@ struct
 	| V.Constant(V.Int(ty, v)) -> 1 + floor_log2 v
 	| V.BinOp(V.BITAND, e1, e2) -> min (loop e1) (loop e2)
 	| V.BinOp(V.BITOR, e1, e2) -> max (loop e1) (loop e2)
+	| V.BinOp(V.XOR, e1, e2) -> max (loop e1) (loop e2)
 	| V.BinOp(V.PLUS, e1, e2) -> 1 + (max (loop e1) (loop e2))
-	| V.Cast(_, V.REG_32, e1) -> min 32 (loop e1)
-	| V.Cast(_, V.REG_16, e1) -> min 16 (loop e1)
-	| V.Cast(_, V.REG_8, e1)  -> min 8  (loop e1)
-	| V.Cast(_, V.REG_1, e1)  -> min 1  (loop e1)
+	| V.BinOp(V.TIMES, e1, e2) -> (loop e1) + (loop e2)
+	| V.BinOp(V.MOD, e1, e2) -> min (loop e1) (loop e2)
+	| V.Cast((V.CAST_UNSIGNED|V.CAST_LOW), V.REG_32, e1)
+	  -> min 32 (loop e1)
+	| V.Cast((V.CAST_UNSIGNED|V.CAST_LOW), V.REG_16, e1)
+	  -> min 16 (loop e1)
+	| V.Cast((V.CAST_UNSIGNED|V.CAST_LOW), V.REG_8, e1)
+	  -> min 8  (loop e1)
+	| V.Cast((V.CAST_UNSIGNED|V.CAST_LOW), V.REG_1, e1)
+	  -> min 1  (loop e1)
+	| V.Cast(V.CAST_SIGNED, V.REG_32, e1) -> 32
+	| V.Cast(V.CAST_SIGNED, V.REG_16, e1) -> 16
+	| V.Cast(V.CAST_SIGNED, V.REG_8,  e1) -> 8
+	| V.Cast(V.CAST_SIGNED, V.REG_1,  e1) -> 1
+        (* High casts could be improved by treating like an RSHIFT *)
+	| V.Cast(V.CAST_HIGH, V.REG_32, e1) -> 32
+	| V.Cast(V.CAST_HIGH, V.REG_16, e1) -> 16
+	| V.Cast(V.CAST_HIGH, V.REG_8,  e1) -> 8
+	| V.Cast(V.CAST_HIGH, V.REG_1,  e1) -> 1
 	| V.Lval(V.Temp((_, _,  V.REG_1) as var)) ->
 	    FormMan.if_expr_temp form_man var
 	      (fun e' -> min 1  (loop e'))  1 (fun v -> ())
@@ -86,6 +102,80 @@ struct
 	| V.BinOp(V.LSHIFT, e1, V.Constant(V.Int(_, v))) ->
 	    (loop e1) + (Int64.to_int v)
 	| _ -> 64
+    in
+      loop e
+
+  let ctz i =
+    let rec loop = function
+      | 0L -> 64
+      | i when Int64.logand i 1L = 1L -> 0
+      | i when Int64.logand i 0xffffffffL = 0L ->
+	  32 + loop (Int64.shift_right i 32)
+      | i when Int64.logand i 0xffffL = 0L ->
+	  16 + loop (Int64.shift_right i 16)
+      | i when Int64.logand i 0xffL = 0L -> 8  + loop (Int64.shift_right i  8)
+      | i when Int64.logand i  0xfL = 0L -> 4  + loop (Int64.shift_right i  4)
+      | i when Int64.logand i    3L = 0L -> 2  + loop (Int64.shift_right i  2)
+      | i when Int64.logand i    1L = 0L -> 1  + loop (Int64.shift_right i  1)
+      | _ -> failwith "Unexpected else case in ctz"
+    in
+      loop i
+
+  let bitshift form_man e =
+    let rec loop e =
+      match e with
+	| V.Constant(V.Int(ty, v)) -> ctz v
+	| V.BinOp(V.BITAND, e1, e2) -> max (loop e1) (loop e2)
+	| V.BinOp(V.BITOR, e1, e2) -> min (loop e1) (loop e2)
+	| V.BinOp(V.LSHIFT, e1, V.Constant(V.Int(_, v))) ->
+	    (loop e1) + (Int64.to_int v)
+	| V.BinOp(V.TIMES, e1, e2) -> (loop e1) + (loop e2)
+	| V.BinOp(V.PLUS, e1, e2) -> min (loop e1) (loop e2)
+	| V.Lval(V.Temp((_, _,  V.REG_1) as var)) ->
+	    FormMan.if_expr_temp form_man var
+	      (fun e' -> min 1  (loop e')) 0 (fun v -> ())
+	| V.Lval(V.Temp((_, _,  V.REG_8) as var)) ->
+	    FormMan.if_expr_temp form_man var
+	      (fun e' -> min 8  (loop e')) 0 (fun v -> ())
+	| V.Lval(V.Temp((_, _, V.REG_16) as var)) ->
+	    FormMan.if_expr_temp form_man var
+	      (fun e' -> min 16 (loop e')) 0 (fun v -> ())
+	| V.Lval(V.Temp((_, _, V.REG_32) as var)) ->
+	    FormMan.if_expr_temp form_man var
+	      (fun e' -> min 32 (loop e')) 0 (fun v -> ())
+	| V.Lval(V.Temp((_, _, V.REG_64) as var)) ->
+	    FormMan.if_expr_temp form_man var
+	      (fun e' -> min 64 (loop e')) 0 (fun v -> ())
+	| V.Cast(_, V.REG_32, e1) -> min 32 (loop e1)
+	| V.Cast(_, V.REG_16, e1) -> min 16 (loop e1)
+	| V.Cast(_, V.REG_8, e1)  -> min 8  (loop e1)
+	| V.Cast(_, V.REG_1, e1)  -> min 1  (loop e1)
+	| _ -> 0
+    in
+      loop e
+
+  (* OCaml's standard library has this for big ints but not regular ones *)
+  let rec gcd a b =
+    match (a, b) with
+      | (0, b) -> b
+      | (a, 0) -> a
+      | (a, b) when a > b -> gcd b (a mod b)
+      | _ -> gcd a (b mod a)
+
+  let stride form_man e =
+    let rec loop e =
+      match e with
+	| V.Lval(V.Temp((_, _, _) as var)) ->
+	    FormMan.if_expr_temp form_man var loop 1 (fun v -> ())
+	| V.BinOp((V.PLUS|V.MINUS), e1, e2) -> gcd (loop e1) (loop e2)
+	| V.BinOp(V.TIMES, e1, e2) -> (loop e1) * (loop e2)
+	| V.BinOp(V.LSHIFT, e1, V.Constant(V.Int(_, v)))
+	    when v < 0x3fffffffL
+	      -> (loop e1) lsl (Int64.to_int v)
+	| V.Constant(V.Int(_, k))
+	    when k < 0x3fffffffL
+	      -> Int64.to_int k
+	| e -> 1 lsl (bitshift form_man e)
     in
       loop e
 
@@ -161,9 +251,10 @@ struct
   type term_kind = | ConstantBase of int64
 		   | ConstantOffset of int64
 		   | ExprOffset of V.exp
+		   | AmbiguousExpr of V.exp
 		   | Symbol of V.exp
 
-  let classify_term form_man e =
+  let rec classify_term form_man e =
     match e with
       | V.Constant(V.Int(V.REG_32, off))
 	  when (Int64.abs (fix_s32 off)) < 0x4000L
@@ -215,6 +306,40 @@ struct
 	  -> ExprOffset(e)
       | V.BinOp(V.LSHIFT, _, _)
 	  -> ExprOffset(e)
+      | V.BinOp(V.BITOR, 
+		V.BinOp(V.BITAND, V.Cast(V.CAST_SIGNED, _, _), x),
+		V.BinOp(V.BITAND, V.UnOp(V.NOT, V.Cast(V.CAST_SIGNED, _, _)),
+			y))
+      | V.BinOp(V.BITOR, 
+		V.BinOp(V.BITAND, x, V.Cast(V.CAST_SIGNED, _, _)),
+		V.BinOp(V.BITAND, V.UnOp(V.NOT, V.Cast(V.CAST_SIGNED, _, _)),
+			y))
+      | V.BinOp(V.BITOR, 
+		V.BinOp(V.BITAND, V.Cast(V.CAST_SIGNED, _, _), x),
+		V.BinOp(V.BITAND, y,
+			V.UnOp(V.NOT, V.Cast(V.CAST_SIGNED, _, _))))
+      | V.BinOp(V.BITOR, 
+		V.BinOp(V.BITAND, x, V.Cast(V.CAST_SIGNED, _, _)),
+		V.BinOp(V.BITAND, y,
+			V.UnOp(V.NOT, V.Cast(V.CAST_SIGNED, _, _))))
+	->
+	  (* ITE expression "_ ? x : y" *)
+	  (match (classify_term form_man x), (classify_term form_man y) with
+	     | (ExprOffset(_)|ConstantOffset(_)),
+	       (ExprOffset(_)|ConstantOffset(_)) ->
+		 ExprOffset(e)
+	     | _ -> AmbiguousExpr(e)
+	  )
+      (* Occurs as an optimized ITE: *)
+      | V.BinOp(V.BITAND, x, V.UnOp(V.NOT, V.Cast(V.CAST_SIGNED, _, _)))
+      | V.BinOp(V.BITAND, V.UnOp(V.NOT, V.Cast(V.CAST_SIGNED, _, _)), x)
+      | V.BinOp(V.BITAND, x, V.Cast(V.CAST_SIGNED, _, _))
+      | V.BinOp(V.BITAND, V.Cast(V.CAST_SIGNED, _, _), x) ->
+	  (match (classify_term form_man x) with
+	     | (ExprOffset(_)|ConstantOffset(_)) -> ExprOffset(e)
+	     | _ -> AmbiguousExpr(e)
+	  )
+
 (*       | V.BinOp(V.BITAND, _, _) *)
 (*       | V.BinOp(V.BITOR, _, _) (* XXX happens in Windows 7, don't know why *) *)
 (* 	  -> ExprOffset(e) *)
@@ -225,15 +350,17 @@ struct
 	  
   let classify_terms e form_man =
     let l = List.map (classify_term form_man) (split_terms e form_man) in
-    let (cbases, coffs, eoffs, syms) = (ref [], ref [], ref [], ref []) in
+    let (cbases, coffs, eoffs, ambig, syms) =
+      (ref [], ref [], ref [], ref [], ref []) in
       List.iter
 	(function
 	   | ConstantBase(o) ->  cbases := o :: !cbases
 	   | ConstantOffset(o) -> coffs := o :: !coffs
 	   | ExprOffset(e) ->     eoffs := e :: !eoffs
+	   | AmbiguousExpr(e) ->  ambig := e :: !ambig
 	   | Symbol(v) ->          syms := v :: !syms)
 	l;
-      (!cbases, !coffs, !eoffs, !syms)
+      (!cbases, !coffs, !eoffs, !ambig, !syms)
 
   let select_one l rand_func =
     let split_list l =
@@ -431,7 +558,7 @@ struct
 	   | None -> Printf.printf "Can be null or non-null\n";
 	       infl_man#maybe_measure_influence_deref e);
       dt#start_new_query;
-      let (cbases, coffs, eoffs, syms) = classify_terms e form_man in
+      let (cbases, coffs, eoffs, ambig, syms) = classify_terms e form_man in
 	if !opt_trace_sym_addr_details then
 	  (Printf.printf "Concrete base terms: %s\n"
 	     (String.concat " "
@@ -442,14 +569,18 @@ struct
 	   Printf.printf "Offset expression terms: %s\n"
 	     (String.concat " "
 		(List.map V.exp_to_string eoffs));
+	   Printf.printf "Ambiguous expression terms: %s\n"
+	     (String.concat " "
+		(List.map V.exp_to_string ambig));
 	   Printf.printf "Ambiguous symbol terms: %s\n"
 	     (String.concat " "
 		(List.map V.exp_to_string syms)));
 	let cbase = List.fold_left Int64.add 0L cbases in
-	let (base, off_syms) = match (cbase, syms) with
-	  | (0L, []) -> raise NullDereference
-	  | (0L, [v]) -> (Some(self#region_for v), [])
-	  | (0L, vl) ->
+	let (base, off_syms) = match (cbase, syms, ambig) with
+	  | (0L, [], []) -> raise NullDereference
+	  | (0L, [], el) -> (Some 0, el)
+	  | (0L, [v], _) -> (Some(self#region_for v), ambig)
+	  | (0L, vl, _) ->
 	      let (bvar, rest_vars) =
 		let (known_regions, not_known) =
 		  List.partition (fun e -> self#is_region_base e) vl
@@ -464,9 +595,9 @@ struct
 		if !opt_trace_sym_addrs then
 		  Printf.printf "Choosing %s as the base address\n"
 		    (V.exp_to_string bvar);
-		(Some(self#region_for bvar), rest_vars)
-	  | (off, vl) ->
-	      (Some 0, vl)
+		(Some(self#region_for bvar), rest_vars @ ambig)
+	  | (off, vl, _) ->
+	      (Some 0, vl @ ambig)
 	in
 	let (region, offset) =
 	  (match base with
@@ -656,6 +787,12 @@ struct
     method private load_word_region  r addr = (self#region r)#load_word  addr
     method private load_long_region  r addr = (self#region r)#load_long  addr
 
+    method private query_valid e =
+      let (is_sat, _) = 
+	self#query_with_path_cond (V.UnOp(V.NOT, e)) false
+      in
+	not is_sat
+
     method private query_bitwidth e ty =
       let rec loop min max =
 	assert(min <= max);
@@ -665,14 +802,11 @@ struct
 	  let mid = (min + max) / 2 in
 	  let mask = Int64.shift_right_logical (-1L) (64-mid) in
 	  let cond_e = V.BinOp(V.LE, e, V.Constant(V.Int(ty, mask))) in
-	  let in_bounds = self#check_cond cond_e in
+	  let in_bounds = self#query_valid cond_e in
 	    if !opt_trace_tables then
 	      Printf.printf "(%s) < 2**%d: %s\n" (V.exp_to_string e) mid
-		(match in_bounds with
-		   | Some true -> "valid"
-		   | Some false -> "unsat"
-		   | None -> "invalid" (* though satisfiable *));
-	    if in_bounds = Some true then
+		(if in_bounds then "valid" else "invalid");
+	    if in_bounds then
 	      loop min mid
 	    else
 	      loop (mid + 1) max
@@ -682,100 +816,207 @@ struct
 	if !opt_trace_tables then
 	  Printf.printf "Bit width based on queries is %d\n" wd;
 	wd
-      
+
+    val bitwidth_cache = Hashtbl.create 101
+
+    method private decide_wd op_name off_exp cloc = 
+      let fast_wd = narrow_bitwidth form_man off_exp in
+      let compute_wd off_exp =
+	if !opt_table_limit = 0 then
+	  None
+	else if fast_wd > !opt_table_limit then
+	  let slow_wd = self#query_bitwidth off_exp V.REG_32 in
+	    assert(slow_wd <= fast_wd);
+	    if slow_wd > !opt_table_limit then
+	      (if !opt_trace_tables then
+		 Printf.printf
+		   ("%s with base %08Lx, offset %s of size 2**%d "
+		    ^^ "is not a table\n")
+		   op_name cloc (V.exp_to_string off_exp) slow_wd;
+	       None)
+	    else
+	      Some slow_wd
+	else
+	  Some fast_wd
+      in
+	if fast_wd = 0 then
+	  None
+	else
+	  let key = (off_exp, dt#get_hist_str) in
+	    try
+	      let wd = Hashtbl.find bitwidth_cache key in
+		if !opt_trace_tables then
+		  Printf.printf "Reusing cached width %d for %s at [%s]\n"
+		    (match wd with Some w -> w | None -> -1)
+		    (V.exp_to_string off_exp) dt#get_hist_str;
+		wd
+	    with Not_found ->
+	      let wd = compute_wd off_exp in
+		Hashtbl.replace bitwidth_cache key wd;
+		wd
+
+    method private query_maxval e ty =
+      let rec loop min max =
+	assert(min <= max);
+	if min = max then
+	  min
+	else
+	  let mid = 
+	    if min = 0L && max > 0x1000L then
+	      Int64.div max 256L (* reduce size faster to start *)
+	    else
+	      Int64.div (Int64.add min max) 2L
+	  in
+	  let cond_e = V.BinOp(V.LE, e, V.Constant(V.Int(ty, mid))) in
+	  let in_bounds = self#query_valid cond_e in
+	    if !opt_trace_tables then
+	      Printf.printf "(%s) < %Ld: %s\n" (V.exp_to_string e) mid
+		(if in_bounds then "valid" else "invalid");
+	    if in_bounds then
+	      loop min mid
+	    else
+	      loop (Int64.succ mid) max
+      in
+      let wd = narrow_bitwidth form_man e in
+      let max_limit = Int64.shift_right_logical (-1L) (64-wd)
+      in
+      let limit = loop 0L max_limit in
+	if !opt_trace_tables then
+	  Printf.printf "Largest value based on queries is %Ld\n" limit;
+	limit
+
+    val maxval_cache = Hashtbl.create 101
+
+    method private decide_maxval op_name off_exp cloc =
+      let compute_maxval off_exp =
+	if !opt_table_limit = 0 then
+	  None
+	else
+	  let maxval = self#query_maxval off_exp V.REG_32 in
+	    if maxval > Int64.shift_left 1L !opt_table_limit then
+	      (if !opt_trace_tables then
+		 Printf.printf
+		   ("%s with base %08Lx, offset %s of size %Ld "
+		    ^^ "is not a table\n")
+		   op_name cloc (V.exp_to_string off_exp) maxval;
+	       None)
+	    else
+	      Some maxval
+      in
+	match off_exp with
+	  | V.Constant(V.Int(_, 0L)) -> None
+	  | V.Constant(V.Int(_, v)) -> Some v
+	  | _ ->
+	      let key = (off_exp, dt#get_hist_str) in
+		try
+		  let limit = Hashtbl.find maxval_cache key in
+		    if !opt_trace_tables then
+		      Printf.printf ("Reusing cached maxval %Ld "
+				     ^^ "for %s at [%s]\n")
+			(match limit with Some l -> l | None -> -1L)
+			(V.exp_to_string off_exp) dt#get_hist_str;
+		    limit
+		with Not_found ->
+		  let limit = compute_maxval off_exp in
+		    Hashtbl.replace maxval_cache key limit;
+		    limit
+
     val tables = Hashtbl.create 101
+
+    method private save_and_print_table table ty = 
+      try Hashtbl.find tables table with
+	| Not_found ->
+	    let i = Hashtbl.length tables in
+	      Hashtbl.replace tables table i;
+	      if !opt_trace_tables then
+		(Printf.printf "Table %d is: " i;
+		 let cnt = ref 0 in
+		   List.iter
+		     (fun v ->
+			incr cnt;
+			if !cnt < 2048 (* 100 *) then
+			  Printf.printf "%s "
+			    (match ty with
+			       | V.REG_1  -> D.to_string_1  v
+			       | V.REG_8  -> D.to_string_8  v
+			       | V.REG_16 -> D.to_string_16 v
+			       | V.REG_32 -> D.to_string_32 v
+			       | V.REG_64 -> D.to_string_64 v
+			       | _ -> failwith "Can't happen"))
+		     table;
+		   if !cnt > 2048 then
+		     Printf.printf "...";
+		   Printf.printf "\n");
+	      i
 
     val table_trees_cache = Hashtbl.create 101
 
+    method private make_table_tree table table_num idx_exp idx_wd ty =
+      try
+	let v = 
+	  Hashtbl.find table_trees_cache (table_num, idx_exp) in
+	  if !opt_trace_tables then
+	    (Printf.printf " (hit cache)\n";
+	     flush stdout);
+	  v
+      with
+	| Not_found ->
+	    if !opt_trace_tables then
+	      (Printf.printf "\n";
+	       flush stdout);
+	    let v = lookup_tree form_man idx_exp idx_wd ty table
+	    in
+	      Hashtbl.replace table_trees_cache (table_num, idx_exp) v;
+	      v
+
     method private maybe_table_load addr_e ty =
       let e = D.to_symbolic_32 (self#eval_int_exp_simplify addr_e) in
-      let (cbases, coffs, eoffs, syms) = classify_terms e form_man in
+      let (cbases, coffs, eoffs, ambig, syms) = classify_terms e form_man in
 	let cbase = List.fold_left Int64.add 0L cbases in
 	  if cbase = 0L then
 	    None
 	  else
 	    let cloc = Int64.add cbase (List.fold_left Int64.add 0L coffs) in
-	    let off_exp = sum_list (eoffs @ syms) in
-	    let fast_wd = narrow_bitwidth form_man off_exp in
-	    let wd_opt =
-	      if fast_wd = 0 then
-		None
-	      else if !opt_table_limit = 0 then
-		None
-	      else if fast_wd > !opt_table_limit then
-		let slow_wd = self#query_bitwidth off_exp V.REG_32 in
-		  assert(slow_wd <= fast_wd);
-		  if slow_wd > !opt_table_limit then
-		    (if !opt_trace_tables then
-		       Printf.printf
-			 ("Load with base %08Lx, offset %s of size 2**%d "
-			  ^^ "is not a table\n")
-			 cloc (V.exp_to_string off_exp) slow_wd;
-		     None)
+	    let off_exp = sum_list (eoffs @ ambig @ syms) in
+	      match self#decide_wd "Load" off_exp cloc
+	      with None -> None | Some wd ->
+		let stride = stride form_man off_exp in
+		let shift = floor_log2 (Int64.of_int stride) in
+		let idx_wd = wd - shift in
+		let num_ents = 1 lsl idx_wd in
+		let idx_exp =
+		  if stride = (1 lsl shift) then
+		    let shift_amt = V.Constant(V.Int(V.REG_8,
+						     (Int64.of_int shift))) in
+		      V.BinOp(V.RSHIFT, off_exp, shift_amt)
 		  else
-		    Some slow_wd
-	      else
-		Some fast_wd
-	    in
-	      match wd_opt with None -> None | Some wd ->
-		(let load_ent addr = match ty with
-		   | V.REG_8  -> (self#region (Some 0))#load_byte  addr
-		   | V.REG_16 -> (self#region (Some 0))#load_short addr
-		   | V.REG_32 -> (self#region (Some 0))#load_word  addr
-		   | V.REG_64 -> (self#region (Some 0))#load_long  addr
-		   | _ -> failwith "Unexpected type in maybe_table_load" 
-		 in
-		 let table = map_n
-		   (fun i -> load_ent (Int64.add cloc (Int64.of_int i)))
-		   (1 lsl wd - 1) in
-		 let table_num = try
-		   Hashtbl.find tables table with
-		     | Not_found ->
-			 let i = Hashtbl.length tables in
-			   Hashtbl.replace tables table i;
-			   if !opt_trace_tables then
-			     (Printf.printf "Table %d is: " i;
-			      let cnt = ref 0 in
-				List.iter
-				  (fun v ->
-				     incr cnt;
-				     if !cnt < 100 then
-				       Printf.printf "%s "
-					 (match ty with
-					    | V.REG_1  -> D.to_string_1  v
-					    | V.REG_8  -> D.to_string_8  v
-					    | V.REG_16 -> D.to_string_16 v
-					    | V.REG_32 -> D.to_string_32 v
-					    | V.REG_64 -> D.to_string_64 v
-					    | _ -> failwith "Can't happen"))
-				  table;
-				if !cnt > 100 then
-				  Printf.printf "...";
-				Printf.printf "\n");
-			   i
-		 in
-		   if !opt_trace_tables then
-		     Printf.printf
-		       "Load with base %08Lx, size 2**%d is table %d"
-		       cloc wd table_num;
-		   let v = try
-		     let v = 
-		       Hashtbl.find table_trees_cache (table_num, off_exp) in
-		       if !opt_trace_tables then
-			 (Printf.printf " (hit cache)\n";
-			  flush stdout);
-		       v
-		   with
-		     | Not_found ->
-			 if !opt_trace_tables then
-			   (Printf.printf "\n";
-			    flush stdout);
-			 let v = lookup_tree form_man off_exp wd ty table in
-			   Hashtbl.replace table_trees_cache
-			     (table_num, off_exp) v;
-			   v
-		   in
-		     Some v)
+		    let stride_amt = V.Constant(V.Int(V.REG_32,
+						      (Int64.of_int stride)))
+		    in
+		      V.BinOp(V.DIVIDE, off_exp, stride_amt)
+		in
+		let load_ent addr = match ty with
+		  | V.REG_8  -> form_man#simplify8
+		      ((self#region (Some 0))#load_byte  addr)
+		  | V.REG_16 -> form_man#simplify16
+		      ((self#region (Some 0))#load_short addr)
+		  | V.REG_32 -> form_man#simplify32
+		      ((self#region (Some 0))#load_word  addr)
+		  | V.REG_64 -> form_man#simplify64
+		      ((self#region (Some 0))#load_long  addr)
+		  | _ -> failwith "Unexpected type in maybe_table_load" 
+		in
+		let table = map_n
+		  (fun i -> load_ent (Int64.add cloc 
+					(Int64.of_int (i * stride))))
+		  (num_ents - 1) in
+		let table_num = self#save_and_print_table table ty in
+		  if !opt_trace_tables then
+		    Printf.printf
+		      "Load with base %08Lx, size 2**%d, stride %d is table %d"
+		      cloc idx_wd stride table_num;
+		  Some
+		    (self#make_table_tree table table_num idx_exp idx_wd ty)
 
     method private handle_load addr_e ty =
       match self#maybe_table_load addr_e ty with
@@ -818,55 +1059,26 @@ struct
 		 dt#count_query;
 		 (b, choices))
 
-    method private handle_store addr_e ty rhs_e =
-      let target_solve offset cond_v wd =
-	let (b, choices) = self#push_cond_prefer_true cond_v in
-	  if !opt_trace_target then
-	    Printf.printf "%s, %b\n"
-	      (match choices with
-		 | Some true -> "known equal"
-		 | Some false -> "known mismatch"
-		 | None -> "possible") b;
-	  if not b then raise DisqualifiedPath;
-	  if !opt_target_guidance <> 0.0 then
-	    dt#set_heur offset;
-	  if !opt_finish_on_target_match && b &&
-	    offset = (String.length !opt_target_region_string) - wd
-	  then
-	    raise LastIteration
-      in
-      let (r, addr) = self#eval_addr_exp_region addr_e and
-	  value = self#eval_int_exp_simplify rhs_e in
-	if r = Some 0 && (Int64.abs (fix_s32 addr)) < 4096L then
-	  raise NullDereference;
-	if !opt_trace_stores then
-	  if not (ty = V.REG_8 && r = None) then
-	    (Printf.printf "Store to %s "
-	       (match r with
-		  | None -> "sink"
-		  | Some 0 -> "conc. mem"
-		  | Some r_num -> "region " ^ (string_of_int r_num));
-	     Printf.printf "%08Lx = %s" addr (D.to_string_32 value);
-	     (if !opt_use_tags then
-		Printf.printf " (%Ld @ %08Lx)" (D.get_tag value) location_id);
-	     Printf.printf "\n");
-	(match (self#started_symbolic, !opt_target_region_start, r, ty) with
-	   | (true, Some from, Some 0, V.REG_8) ->
-	       if addr >= from &&
-		 addr < (Int64.add from
-			   (Int64.of_int
-			      (String.length !opt_target_region_string)))
-	       then
-		 let offset = Int64.to_int (Int64.sub addr from) in
-		 let c = (!opt_target_region_string).[offset] in
-		   if !opt_trace_target then
-		     Printf.printf
-		       "Store to target string offset %d: %s (vs '%c'): "
-		       offset (D.to_string_32 value) c;
-		   let cond_v = D.eq8 value (D.from_concrete_8 (Char.code c))
-		   in
-		     target_solve offset cond_v 1
-	   | (true, Some from, Some 0, V.REG_32) ->
+    method private target_store_condition addr from value ty =
+	match ty with
+	  | V.REG_8 ->
+	      if addr >= from &&
+		addr < (Int64.add from
+			  (Int64.of_int
+			     (String.length !opt_target_region_string)))
+	      then
+		let offset = Int64.to_int (Int64.sub addr from) in
+		let c = (!opt_target_region_string).[offset] in
+		  if !opt_trace_target then
+		    Printf.printf
+		      "Store to target string offset %d: %s (vs '%c'): "
+		      offset (D.to_string_32 value) c;
+		  let cond_v = D.eq8 value (D.from_concrete_8 (Char.code c))
+		  in
+		    Some (offset, cond_v, 1)
+	      else
+		None
+	  | V.REG_32 ->
 	       if addr >= from &&
 		 addr < (Int64.add from
 			   (Int64.of_int
@@ -890,7 +1102,137 @@ struct
 		       offset (D.to_string_32 value) w;
 		   let cond_v = D.eq32 value (D.from_concrete_32 w)
 		   in
-		     target_solve offset cond_v 4
+		     Some (offset, cond_v, 4)
+	       else
+		 None
+	  | _ -> None
+
+    method private target_solve cond_v =
+      let (b, choices) = self#push_cond_prefer_true cond_v in
+	if !opt_trace_target then
+	  Printf.printf "%s, %b\n"
+	    (match choices with
+	       | Some true -> "known equal"
+	       | Some false -> "known mismatch"
+	       | None -> "possible") b;
+	if not b then raise DisqualifiedPath;
+	true
+
+    method private target_solve_single offset cond_v wd =
+      if self#target_solve cond_v then
+	(if !opt_target_guidance <> 0.0 then
+	   dt#set_heur offset;
+	 if !opt_finish_on_target_match &&
+	   offset = (String.length !opt_target_region_string) - wd
+	 then
+	   raise LastIteration)
+
+    method private maybe_table_store addr_e ty value =
+      let load_ent addr = match ty with
+	| V.REG_8  -> form_man#simplify8
+	    ((self#region (Some 0))#load_byte  addr)
+	| V.REG_16 -> form_man#simplify16
+	    ((self#region (Some 0))#load_short addr)
+	| V.REG_32 -> form_man#simplify32
+	    ((self#region (Some 0))#load_word  addr)
+	| V.REG_64 -> form_man#simplify64
+	    ((self#region (Some 0))#load_long  addr)
+	| _ -> failwith "Unexpected type in maybe_table_store" 
+      in
+      let store_ent addr v = match ty with
+	| V.REG_8  -> (self#region (Some 0))#store_byte  addr v
+	| V.REG_16 -> (self#region (Some 0))#store_short addr v
+	| V.REG_32 -> (self#region (Some 0))#store_word  addr v
+	| V.REG_64 -> (self#region (Some 0))#store_long  addr v
+	| _ -> failwith "Unexpected store type in maybe_table_store"
+      in
+      let e = D.to_symbolic_32 (self#eval_int_exp_simplify addr_e) in
+      let (cbases, coffs, eoffs, ambig, syms) = classify_terms e form_man in
+	let cbase = List.fold_left Int64.add 0L cbases in
+	  if cbase = 0L then
+	    false
+	  else
+	    let cloc = Int64.add cbase (List.fold_left Int64.add 0L coffs) in
+	    let off_exp = sum_list (eoffs @ ambig @ syms) in
+	      match self#decide_maxval "Store" off_exp cloc
+	      with None -> false | Some maxval ->
+		let stride = stride form_man off_exp in
+		let stride64 = Int64.of_int stride in
+		let num_ents64 = Int64.div (Int64.succ maxval) stride64 in
+		let num_ents = Int64.to_int num_ents64 in
+		let target_conds = ref [] in
+		  for i = 0 to num_ents - 1 do
+		    let addr = Int64.add cloc (Int64.of_int (i * stride)) in
+		    let old_v = load_ent addr in
+		    let cond_e =
+		      (V.BinOp(V.EQ, e, V.Constant(V.Int(V.REG_32, addr))))
+		    in
+		    let cond_v = D.from_symbolic cond_e in
+		    let ite_v = form_man#make_ite cond_v ty value old_v in
+		      store_ent addr ite_v;
+		      (match (self#started_symbolic, !opt_target_region_start)
+		       with
+			 | (true, Some from) ->			 
+			     (match self#target_store_condition
+				addr from ite_v ty
+			      with
+				| Some (offset, hit_cond, wd) ->
+				    target_conds := (D.to_symbolic_1 hit_cond)
+				    :: !target_conds
+				| None -> ())
+			 | _ -> ())
+		  done;
+		  if !opt_trace_tables then
+		    Printf.printf
+		      "Store with base %08Lx, size %d, stride %d %s"
+		      cloc num_ents stride "has symbolic address\n";
+		  (if !target_conds <> [] then
+		     let any_match = form_man#disjoin !target_conds and
+			 all_match = form_man#conjoin !target_conds in
+		       if !opt_trace_target then
+			 Printf.printf "Checking for any match to target: ";
+		       ignore(self#target_solve (D.from_symbolic any_match));
+		       if !opt_trace_target then
+			 Printf.printf "Checking for full match: ";
+		       (match
+			  self#push_cond_prefer_true
+			    (D.from_symbolic all_match)
+			with
+			  | (_, Some true) -> 		       
+			      if !opt_trace_target then
+				Printf.printf "Must match.\n"
+			  | (_, Some false) ->
+			      if !opt_trace_target then
+				Printf.printf "Cannot match.\n"
+			  | (_, None) ->
+			      if !opt_trace_target then
+				Printf.printf "Can match.\n"
+		       ));
+		  true
+
+    method private handle_store addr_e ty rhs_e =
+      let value = self#eval_int_exp_simplify rhs_e in
+      if not (self#maybe_table_store addr_e ty value) then
+      let (r, addr) = self#eval_addr_exp_region addr_e in
+	if r = Some 0 && (Int64.abs (fix_s32 addr)) < 4096L then
+	  raise NullDereference;
+	if !opt_trace_stores then
+	  if not (ty = V.REG_8 && r = None) then
+	    (Printf.printf "Store to %s "
+	       (match r with
+		  | None -> "sink"
+		  | Some 0 -> "conc. mem"
+		  | Some r_num -> "region " ^ (string_of_int r_num));
+	     Printf.printf "%08Lx = %s" addr (D.to_string_32 value);
+	     (if !opt_use_tags then
+		Printf.printf " (%Ld @ %08Lx)" (D.get_tag value) location_id);
+	     Printf.printf "\n");
+	(match (self#started_symbolic, !opt_target_region_start, r) with
+	   | (true, Some from, Some 0) ->
+	       (match self#target_store_condition addr from value ty with
+		  | Some (offset, cond_v, wd) ->
+		      self#target_solve_single offset cond_v wd
+		  | None -> ())
 	   | _ -> ());
 	(match ty with
 	   | V.REG_8 -> self#store_byte_region r addr value
