@@ -69,9 +69,6 @@ struct
 	  Printf.printf "Symbolic %s is %Ld\n" str (D.get_tag v);
 	v
 
-    method input_dl =
-      Hashtbl.fold (fun k v l -> v :: l) input_vars []
-
     method fresh_symbolic_1  s = self#fresh_symbolic s V.REG_1
     method fresh_symbolic_8  s = self#fresh_symbolic s V.REG_8
     method fresh_symbolic_16 s = self#fresh_symbolic s V.REG_16
@@ -108,6 +105,10 @@ struct
     method fresh_symbolic_mem_16 = self#fresh_symbolic_mem V.REG_16
     method fresh_symbolic_mem_32 = self#fresh_symbolic_mem V.REG_32
     method fresh_symbolic_mem_64 = self#fresh_symbolic_mem V.REG_64
+
+    method input_dl =
+      (Hashtbl.fold (fun k v l -> v :: l) input_vars []) @
+      (Hashtbl.fold (fun k v l -> v :: l) region_vars [])
 
     val seen_concolic = Hashtbl.create 30
     val valuation = Hashtbl.create 30
@@ -452,6 +453,10 @@ struct
 		       Hashtbl.replace memo n e';
 		       e')
 	  | V.Lval(V.Mem(_, _, _)) -> loop (self#rewrite_mem_expr e)
+	  | V.Lval(V.Temp(memvar))
+	      when V.VarHash.mem mem_axioms memvar
+		->
+	      loop (V.VarHash.find mem_axioms memvar)
 	  | V.Lval(lv) -> self#eval_var_from_ce ce lv
 	  | _ ->
 	      Printf.printf "Can't evaluate %s\n" (V.exp_to_string e);
@@ -558,14 +563,17 @@ struct
       D.inside_symbolic
 	(fun e ->
 	   let e2 = simplify_fp e in
-	     if expr_size e2 < 10 then
-	       e2
-	     else
-	       match (f e2 ty) with
-		 | Some e3 -> e3
-		 | None ->
-		     V.Lval(V.Temp(self#make_temp_var e2 ty))
-	) v     
+	     match e2 with
+	       | V.Constant(_) -> e2
+	       | _ -> 
+		   (match (f e2 ty) with
+		      | Some e3 -> e3
+		      | None ->
+			  (if expr_size e2 < 10 then
+			     e2
+			   else
+			     V.Lval(V.Temp(self#make_temp_var e2 ty))))
+	) v
 
     method make_ite cond_v ty v_true v_false =
       let cond_v'  = self#tempify  cond_v  V.REG_1 and
