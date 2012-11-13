@@ -99,6 +99,11 @@ class linux_special_handler (fm : fragment_machine) =
     fm#load_byte_concretize addr !opt_measure_influence_syscall_args
       "syscall arg"
   in
+
+  let read_buf addr len =
+    Array.init len
+      (fun i -> Char.chr (load_byte (Int64.add addr (Int64.of_int i))))
+  in
   let lea base i step off =
     Int64.add base (Int64.add (Int64.mul (Int64.of_int i) (Int64.of_int step))
 		      (Int64.of_int off)) in
@@ -1458,7 +1463,7 @@ object(self)
 
   method sys_send sockfd buf len flags =
     try
-      let str = string_of_char_array (fm#read_buf buf len) in
+      let str = string_of_char_array (read_buf buf len) in
       let flags = (if (flags land 1) <> 0 then [Unix.MSG_OOB] else []) @
 	          (if (flags land 4) <> 0 then [Unix.MSG_DONTROUTE] else []) @
 		  (if (flags land 2) <> 0 then [Unix.MSG_PEEK] else [])
@@ -1781,7 +1786,7 @@ object(self)
     let bytes =
       Array.concat
 	(Vine_util.mapn
-	   (fun i -> fm#read_buf
+	   (fun i -> read_buf
 	      (load_word (lea iov i 8 0)) (* iov_base *)
 	      (Int64.to_int (load_word (lea iov i 8 4))))
 	   (* iov_len *)
@@ -1857,7 +1862,7 @@ object(self)
 		 count = Int64.to_int arg3 in
 	       if !opt_trace_syscalls then
 		 Printf.printf "write(%d, 0x%08Lx, %d)\n" fd buf count;
-	       let bytes = fm#read_buf buf count in
+	       let bytes = read_buf buf count in
 		 self#sys_write fd bytes count
 	 | (_, 5) -> (* open *)
 	     let (arg1, arg2) = read_2_regs () in
