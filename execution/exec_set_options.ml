@@ -20,6 +20,7 @@ let opt_store_shorts = ref []
 let opt_store_words = ref []
 let opt_store_longs = ref []
 let opt_symbolic_regs = ref false
+let opt_symbolic_strings = ref []
 let opt_symbolic_cstrings = ref []
 let opt_symbolic_cstrings_fulllen = ref []
 let opt_symbolic_string16s = ref []
@@ -33,6 +34,7 @@ let opt_symbolic_words_influence = ref []
 let opt_symbolic_longs_influence = ref []
 let opt_symbolic_regions = ref []
 let opt_concolic_cstrings = ref []
+let opt_concolic_strings = ref []
 let opt_sink_regions = ref []
 let opt_measure_expr_influence_at_strings = ref None
 let opt_check_condition_at_strings = ref []
@@ -147,6 +149,9 @@ let symbolic_state_cmdline_opts =
     ("-symbolic-region", Arg.String
        (add_delimited_pair opt_symbolic_regions '+'),
      "base+size Memory region of unknown structure");
+    ("-symbolic-string", Arg.String
+       (add_delimited_pair opt_symbolic_strings '+'),
+     "base+size Make a byte string with given size, no terminator");
     ("-symbolic-cstring", Arg.String
        (add_delimited_pair opt_symbolic_cstrings '+'),
      "base+size Make a C string with given size, concrete \\0");
@@ -193,6 +198,9 @@ let concolic_state_cmdline_opts =
      " Execute only according to concrete values");
     ("-solve-path-conditions", Arg.Set(opt_solve_path_conditions),
      " Solve conditions along a concrete path");
+    ("-concolic-string", Arg.String
+       (add_delimited_num_escstr_pair opt_concolic_strings '='),
+     "base=\"str\" Make a byte string with given size, no terminator");
     ("-concolic-cstring", Arg.String
        (add_delimited_num_escstr_pair opt_concolic_cstrings '='),
      "base=\"str\" Make a C string with given size, concrete \\0");
@@ -568,15 +576,23 @@ let make_symbolic_init (fm:Fragment_machine.fragment_machine)
 	 !opt_symbolic_regions;
        List.iter (fun (base, len) ->
 		    new_max len;
-		    fm#store_symbolic_cstr base (Int64.to_int len) false)
+		    fm#store_symbolic_cstr base (Int64.to_int len) false false)
+	 !opt_symbolic_strings;
+       List.iter (fun (base, len) ->
+		    new_max len;
+		    fm#store_symbolic_cstr base (Int64.to_int len) false true)
 	 !opt_symbolic_cstrings;
        List.iter (fun (base, len) ->
 		    new_max len;
-		    fm#store_symbolic_cstr base (Int64.to_int len) true)
+		    fm#store_symbolic_cstr base (Int64.to_int len) true true)
 	 !opt_symbolic_cstrings_fulllen;
        List.iter (fun (base, str) ->
 		    new_max (Int64.of_int (String.length str));
-		    fm#store_concolic_cstr base str)
+		    fm#store_concolic_cstr base str false)
+	 !opt_concolic_strings;
+       List.iter (fun (base, str) ->
+		    new_max (Int64.of_int (String.length str));
+		    fm#store_concolic_cstr base str true)
 	 !opt_concolic_cstrings;
        if !opt_concolic_prob <> None then
 	 opt_concrete_path_simulate := true;

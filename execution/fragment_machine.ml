@@ -218,8 +218,8 @@ class virtual fragment_machine = object
 
   method virtual make_symbolic_region : int64 -> int -> unit
 
-  method virtual store_symbolic_cstr : int64 -> int -> bool -> unit
-  method virtual store_concolic_cstr : int64 -> string -> unit
+  method virtual store_symbolic_cstr : int64 -> int -> bool -> bool -> unit
+  method virtual store_concolic_cstr : int64 -> string -> bool -> unit
 
   method virtual store_symbolic_wcstr : int64 -> int -> unit
 
@@ -1440,7 +1440,7 @@ struct
 	    (form_man#fresh_symbolic_mem_8 varname (Int64.of_int i))
 	done
 
-    method store_symbolic_cstr base len fulllen =
+    method store_symbolic_cstr base len fulllen terminate =
       let varname = "input" ^ (string_of_int symbolic_string_id) ^ "_" in
 	symbolic_string_id <- symbolic_string_id + 1;
 	for i = 0 to len - 1 do
@@ -1452,9 +1452,10 @@ struct
 			(D.to_symbolic_8 d))
 	      :: !opt_extra_conditions
 	done;
-	self#store_byte_idx base len 0
+	if terminate then
+	  self#store_byte_idx base len 0
 
-    method store_concolic_cstr base str =
+    method store_concolic_cstr base str terminate =
       let len = String.length str in
       let varname = "input" ^ (string_of_int symbolic_string_id) ^ "_" in
 	symbolic_string_id <- symbolic_string_id + 1;
@@ -1463,7 +1464,8 @@ struct
 	    (form_man#make_concolic_8 (varname ^ (string_of_int i))
 	       (Char.code str.[i]))
 	done;
-	self#store_byte_idx base len 0
+	if terminate then
+	  self#store_byte_idx base len 0
 
     method store_symbolic_wcstr base len =
       let varname = "winput" ^ (string_of_int symbolic_string_id) ^ "_" in

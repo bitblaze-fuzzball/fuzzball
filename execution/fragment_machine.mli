@@ -134,8 +134,8 @@ class virtual fragment_machine : object
 
   method virtual make_symbolic_region : int64 -> int -> unit
 
-  method virtual store_symbolic_cstr : int64 -> int -> bool -> unit
-  method virtual store_concolic_cstr : int64 -> string -> unit
+  method virtual store_symbolic_cstr : int64 -> int -> bool -> bool -> unit
+  method virtual store_concolic_cstr : int64 -> string -> bool -> unit
 
   method virtual store_symbolic_wcstr : int64 -> int -> unit
 
@@ -364,8 +364,8 @@ sig
 
     method make_symbolic_region : int64 -> int -> unit
 
-    method store_symbolic_cstr : int64 -> int -> bool -> unit
-    method store_concolic_cstr : int64 -> string -> unit
+    method store_symbolic_cstr : int64 -> int -> bool -> bool -> unit
+    method store_concolic_cstr : int64 -> string -> bool -> unit
 
     method store_symbolic_wcstr : int64 -> int -> unit
 
