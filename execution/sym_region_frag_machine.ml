@@ -1200,13 +1200,17 @@ struct
 			with
 			  | (_, Some true) -> 		       
 			      if !opt_trace_target then
-				Printf.printf "Must match.\n"
+				Printf.printf "Must match.\n";
+			      if !opt_finish_on_target_match then
+				raise LastIteration
 			  | (_, Some false) ->
 			      if !opt_trace_target then
 				Printf.printf "Cannot match.\n"
 			  | (_, None) ->
 			      if !opt_trace_target then
-				Printf.printf "Can match.\n"
+				Printf.printf "Can match.\n";
+			      if !opt_finish_on_target_match then
+				raise LastIteration
 		       ));
 		  true
 
