@@ -156,6 +156,7 @@ struct
 	form_man#one_cond_for_solving cond var_seen_hash
       in
 	query_engine#push;
+	query_engine#start_query;
 	List.iter query_engine#add_free_var decls;
 	List.iter (fun (v,_) -> query_engine#add_temp_var v) assigns;
 	List.iter (fun (v,e) -> query_engine#assert_eq v e) assigns;
