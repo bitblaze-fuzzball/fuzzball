@@ -743,6 +743,10 @@ class binary_decision_tree = object(self)
 	      f_max = kid_f.heur_max and
 	      t_min = kid_t.heur_min and
 	      t_max = kid_t.heur_max in
+	    if !opt_trace_guidance then
+	      Printf.printf
+		"Heuristic choice between F[%d, %d] and T[%d, %d]\n"
+		f_min f_max t_min t_max;
 	    if f_min > f_max || t_min > t_max then
 	      None
 	    else if f_max <> t_max then

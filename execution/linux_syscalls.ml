@@ -101,8 +101,14 @@ class linux_special_handler (fm : fragment_machine) =
   in
 
   let read_buf addr len =
-    Array.init len
-      (fun i -> Char.chr (load_byte (Int64.add addr (Int64.of_int i))))
+    if !opt_stop_on_symbolic_syscall_args then
+      try
+	fm#read_buf addr len (* Works for concrete values only *)
+      with
+	  NotConcrete(_) -> raise SymbolicSyscall
+    else
+      Array.init len
+	(fun i -> Char.chr (load_byte (Int64.add addr (Int64.of_int i))))
   in
   let lea base i step off =
     Int64.add base (Int64.add (Int64.mul (Int64.of_int i) (Int64.of_int step))

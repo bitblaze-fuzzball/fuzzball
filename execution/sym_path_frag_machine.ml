@@ -254,13 +254,9 @@ struct
 	  match pref with
 	    | Some b -> b
 	    | None ->
-		match dt#heur_preference with
-		  | Some b -> 
-		      if dt#random_float < !opt_target_guidance then
-			b
-		      else
-			dt#random_bit
-		  | None -> dt#random_bit
+		(if !opt_trace_guidance then
+		   Printf.printf "No guidance, choosing randomly\n";
+		 dt#random_bit)
 
     method query_with_pc_choice cond verbose choice =
       let trans_func b =
@@ -386,7 +382,18 @@ struct
 	with
 	  | Not_found ->
 	      match dt#heur_preference with
-		| Some b -> Some b
+		| Some b ->
+		    let choice = dt#random_float in
+		      if choice < !opt_target_guidance then
+			(if !opt_trace_guidance then
+			   Printf.printf "On %f, using heuristic choice %b\n"
+			     choice b;
+			 Some b)
+		      else
+			(if !opt_trace_guidance then
+			   Printf.printf "On %f, falling to cjmp_heuristic\n"
+			     choice;
+			 self#call_cjmp_heuristic eip targ1 targ2 None)
 		| None -> (self#call_cjmp_heuristic eip targ1 targ2 None)
 
     method eval_cjmp exp targ1 targ2 =

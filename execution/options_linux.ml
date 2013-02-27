@@ -58,6 +58,9 @@ let linux_cmdline_opts =
     ("-symbolic-syscall-error", Arg.String
        (fun s -> opt_symbolic_syscall_error := Some (Int64.of_string s)),
      "errno Force syscalls with symbolic args to return given value");
+    ("-stop-on-symbolic-syscall-args",
+     Arg.Set(opt_stop_on_symbolic_syscall_args),
+     " Cut of path on symbolic value in system call argument");
     ("-chroot", Arg.String
        (fun s -> opt_chroot_path := Some s),
      "path Prepend PATH to absolute filenames");

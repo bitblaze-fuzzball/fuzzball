@@ -104,6 +104,7 @@ val opt_prefix_out : bool ref
 val opt_omit_pf_af : bool ref
 val opt_nop_system_insns : bool ref
 val opt_symbolic_syscall_error : int64 option ref
+val opt_stop_on_symbolic_syscall_args : bool ref
 val opt_chroot_path : string option ref
 val opt_finish_on_nonfalse_cond : bool ref
 val opt_total_timeout : float option ref
@@ -115,6 +116,7 @@ val opt_target_region_string : string ref
 val opt_trace_target : bool ref
 val opt_finish_on_target_match : bool ref
 val opt_target_guidance : float ref
+val opt_trace_guidance : bool ref
 val opt_trace_tables : bool ref
 val opt_table_limit : int ref
 val opt_implied_value_conc : bool ref

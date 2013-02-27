@@ -290,6 +290,8 @@ let explore_cmdline_opts =
      " Finish exploration on -target-string match");
     ("-target-guidance", Arg.Set_float(opt_target_guidance),
      "PROB Prefer better target matches with given probability");
+    ("-trace-guidance", Arg.Set(opt_trace_guidance),
+     " Print operation of -target-guidance");
     ("-trace-tables", Arg.Set(opt_trace_tables),
      " Print table lookups");
     ("-table-limit", Arg.Set_int(opt_table_limit),
