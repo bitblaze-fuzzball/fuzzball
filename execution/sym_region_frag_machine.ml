@@ -1121,6 +1121,10 @@ struct
     method private target_solve_single offset cond_v wd =
       if self#target_solve cond_v then
 	(if !opt_target_guidance <> 0.0 then
+	   (* We might also prefer shallower paths, as in: *)
+	   (* dt#set_heur (10000 * offset / (100 + dt#get_depth)); *)
+	   (* I haven't yet seen an example where this helps significantly,
+	      though *)
 	   dt#set_heur offset;
 	 if !opt_finish_on_target_match &&
 	   offset = (String.length !opt_target_region_string) - wd
