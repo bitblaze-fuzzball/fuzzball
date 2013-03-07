@@ -147,6 +147,12 @@ let fuzz start_eip opt_fuzz_start_eip end_eips
 	       periodic_stats fm false false;
 	       if not fm#finish_path then raise LastIteration;
 	       if !opt_concrete_path then raise LastIteration;
+	       (match !Fragment_machine.fuzz_finish_reason with
+		  | Some s ->
+		      if !opt_trace_stopping then
+			Printf.printf "Finished, %s\n" s;
+		      raise LastIteration
+		  | None -> ());
 	       if !opt_concrete_path_simulate then
 		 opt_concrete_path_simulate := false; (* First iter. only *)
 	       reset_cb ();

@@ -22,6 +22,14 @@ let move_hash src dest =
   V.VarHash.clear dest;
   V.VarHash.iter (fun a b -> V.VarHash.add dest a b) src
 
+let fuzz_finish_reason = ref None
+
+let finish_fuzz s =
+  assert(!fuzz_finish_reason = None);
+  fuzz_finish_reason := Some s;
+  if !opt_trace_stopping then
+    Printf.printf "Final iteration, %s\n" s
+
 class virtual special_handler = object(self)
   method virtual handle_special : string -> V.stmt list option
   method virtual make_snap : unit

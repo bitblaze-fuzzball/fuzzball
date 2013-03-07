@@ -333,7 +333,7 @@ struct
 	     (if b then e else V.UnOp(V.NOT, e));
 	   (b, Some b))
 
-    method private eval_bool_exp_tristate exp =
+    method private eval_bool_exp_tristate exp choice =
       let v = self#eval_int_exp exp in
 	try
 	  if (D.to_concrete_1 v) = 1 then
@@ -350,7 +350,6 @@ struct
 		  self#eval_bool_exp_conc_path e
 		else 
 		  (dt#start_new_query_binary;
-		   let choice = None in
 		   let b = match choice with
 		     | None -> self#extend_pc_random e true
 		     | Some bit -> self#extend_pc_known e true bit
@@ -360,7 +359,7 @@ struct
 		     (b, choices))
 
     method eval_bool_exp e = 
-      let (b, _) = self#eval_bool_exp_tristate e in
+      let (b, _) = self#eval_bool_exp_tristate e None in
 	b
 
     val mutable cjmp_heuristic = None
@@ -542,7 +541,7 @@ struct
       List.iter
 	(fun (eip', expr) ->
 	   if eip' = eip then
-	     let (_, choices) = self#eval_bool_exp_tristate expr in
+	     let (_, choices) = self#eval_bool_exp_tristate expr (Some true) in
 	       Printf.printf "At 0x%08Lx, condition %s %s\n"
 		 eip (V.exp_to_string expr)
 		 (match choices with
@@ -550,7 +549,7 @@ struct
 		    | Some false -> "is false"
 		    | None -> "can be true or false");
 	       if !opt_finish_on_nonfalse_cond && choices <> Some false then
-		 raise LastIteration)
+		 finish_fuzz "supplied condition non-false")
 	!opt_check_condition_at;
       List.iter
 	(fun (_, t_eip) -> 

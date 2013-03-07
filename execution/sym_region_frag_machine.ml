@@ -1129,7 +1129,7 @@ struct
 	 if !opt_finish_on_target_match &&
 	   offset = (String.length !opt_target_region_string) - wd
 	 then
-	   raise LastIteration)
+	   finish_fuzz "store to final target offset")
 
     method private maybe_table_store addr_e ty value =
       let load_ent addr = match ty with
@@ -1206,7 +1206,7 @@ struct
 			      if !opt_trace_target then
 				Printf.printf "Must match.\n";
 			      if !opt_finish_on_target_match then
-				raise LastIteration
+				finish_fuzz "target full match"
 			  | (_, Some false) ->
 			      if !opt_trace_target then
 				Printf.printf "Cannot match.\n"
@@ -1214,7 +1214,7 @@ struct
 			      if !opt_trace_target then
 				Printf.printf "Can match.\n";
 			      if !opt_finish_on_target_match then
-				raise LastIteration
+				finish_fuzz "target full match"
 		       ));
 		  true
 
