@@ -101,7 +101,7 @@ struct
 	| V.BinOp((V.EQ|V.NEQ|V.LT|V.LE|V.SLT|V.SLE), _, _) -> 1
 	| V.BinOp(V.LSHIFT, e1, V.Constant(V.Int(_, v))) ->
 	    (loop e1) + (Int64.to_int v)
-	| _ -> 64
+	| _ -> V.bits_of_width (Vine_typecheck.infer_type_fast e)
     in
       loop e
 
