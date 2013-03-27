@@ -1071,8 +1071,8 @@ struct
 		let c = (!opt_target_region_string).[offset] in
 		  if !opt_trace_target then
 		    Printf.printf
-		      "Store to target string offset %d: %s (vs '%c'): "
-		      offset (D.to_string_32 value) c;
+		      "Store to target string offset %d: %s (vs '%s'): "
+		      offset (D.to_string_32 value) (Char.escaped c);
 		  let cond_v = D.eq8 value (D.from_concrete_8 (Char.code c))
 		  in
 		    Some (offset, cond_v, 1)

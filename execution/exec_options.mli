@@ -145,6 +145,8 @@ val opt_arch : execution_arch ref
 
 val asmir_arch : unit -> Asmir.arch
 
+val unescape : string -> string
+
 val split_string : char -> string -> (string * string)
 val add_delimited_pair :
   (int64 * int64) list ref -> char -> string -> unit

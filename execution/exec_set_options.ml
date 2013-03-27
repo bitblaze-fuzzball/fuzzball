@@ -282,7 +282,7 @@ let explore_cmdline_opts =
     ("-target-string", Arg.String
        (fun s -> let (s1, s2) = split_string '=' s in
 	  opt_target_region_start := Some (Int64.of_string s1);
-	  opt_target_region_string := s2),
+	  opt_target_region_string := unescape s2),
      "base=string Try to make a buffer have the given contents");
     ("-trace-target", Arg.Set(opt_trace_target),
      " Print targeting checks");
