@@ -720,19 +720,21 @@ class binary_decision_tree = object(self)
       self#mark_all_seen_node n
 
   method set_heur i =
-    cur_heur <- i
+    cur_heur <- i;
+    self#propagate_heur cur
 
   method private propagate_heur node =
     let rec loop n = 
-      n.heur_min <- min cur_heur n.heur_min;
-      n.heur_max <- max cur_heur n.heur_max;
-      update_dt_node n;
-      if !opt_trace_decision_tree then	
-	Printf.printf "DT: propagate_heur %d (%d %d) at %d\n" cur_heur
-	  n.heur_min n.heur_max n.ident;
-      match get_parent n with
-	| None -> ()
-	| Some p -> loop p
+      if (cur_heur < n.heur_min || cur_heur > n.heur_max) then
+	(n.heur_min <- min cur_heur n.heur_min;
+	 n.heur_max <- max cur_heur n.heur_max;
+	 update_dt_node n;
+	 if !opt_trace_decision_tree then	
+	   Printf.printf "DT: propagate_heur %d (%d %d) at %d\n" cur_heur
+	     n.heur_min n.heur_max n.ident;
+	 match get_parent n with
+	   | None -> ()
+	   | Some p -> loop p);
     in
       loop node
 
@@ -752,9 +754,9 @@ class binary_decision_tree = object(self)
 	    else if f_max <> t_max then
 	      ( (*Printf.printf "Preference based on max\n"; *)
 	       Some (t_max > f_max))
-	    else if f_min <> t_min then
+	    (* else if f_min <> t_min then
 	      ( (*Printf.printf "Preference based on min\n"; *)
-	       Some (t_min > f_min))
+	       Some (t_min > f_min)) *)
 	    else
 	      None
       | _ -> None
