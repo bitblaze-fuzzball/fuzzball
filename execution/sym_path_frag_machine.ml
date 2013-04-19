@@ -99,6 +99,19 @@ struct
     val mutable path_cond = []
     val mutable var_seen_hash = V.VarHash.create 101
 
+    method input_depth =
+      let count = ref 0 in
+	V.VarHash.iter
+	  (fun v _ ->
+	     form_man#if_expr_temp_unit v
+	       (function
+		  | Some _ -> ()
+		  | None -> count := !count + 1
+	       )
+	  )
+	  var_seen_hash;
+	!count
+
     method private ensure_extra_conditions =
       if path_cond = [] && !opt_extra_conditions <> [] then
 	List.iter
