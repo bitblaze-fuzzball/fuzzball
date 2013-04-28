@@ -38,7 +38,6 @@ export SOURCES = \
 	binary_decision_tree.mli binary_decision_tree.ml \
 	exec_no_influence.mli exec_no_influence.ml \
 	sym_path_frag_machine.mli sym_path_frag_machine.ml \
-	exec_influence.mli exec_influence.ml \
 	sym_region_frag_machine.mli sym_region_frag_machine.ml \
 	special_handlers.mli special_handlers.ml \
 	linux_syscalls.mli linux_syscalls.ml \
@@ -49,6 +48,7 @@ export SOURCES = \
 	exec_stats.mli exec_stats.ml \
 	exec_fuzzloop.mli exec_fuzzloop.ml \
 	options_solver.mli options_solver.ml \
+	exec_influence.mli exec_influence.ml \
 	options_linux.mli options_linux.ml \
 	exec_set_options.mli exec_set_options.ml
 

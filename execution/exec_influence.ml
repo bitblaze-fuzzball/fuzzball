@@ -8,25 +8,31 @@ module V = Vine;;
 open Exec_options
 open Exec_exceptions
 open Query_engine
+open Options_solver
 open Stpvc_engine
 open Formula_manager
 open Fragment_machine
 open Sym_path_frag_machine
 
-type argparams_t = {
-  mutable _tmp_name : string;
-  mutable _get_val_bounds : bool;
-  mutable _low_bound_to : float;
-  mutable _sample_pts : int;
-  mutable _xor_count : int;
-  mutable _xor_seed : int;
-  mutable _stp_file : string;
-  mutable _ps_file : string;
-} ;;
+let collect_let_vars e =
+  let rec loop e = match e with
+    | V.BinOp(_, e1, e2) -> (loop e1) @ (loop e2)
+    | V.UnOp(_, e1) -> loop e1
+    | V.Constant(_) -> []
+    | V.Lval(_) -> []
+    | V.Name(_) -> []
+    | V.Cast(_, _, e1) -> loop e1
+    | V.Unknown(_) -> []
+    | V.Let(V.Mem(_, _, _), _, _)
+       -> failwith "Let-mem unsupported in collect_let_vars"
+    | V.Let(V.Temp(var), e1, e2) -> var :: (loop e1) @ (loop e2)
+  in
+    loop e
 
-let get_influence (prog: Vine.program) (args: argparams_t) (q: V.exp) =
-  0.0
-;;
+let log2_of_int i =
+  (log (float_of_int i)) /. (log 2.0)
+
+let opt_influence_details = ref false
 
 module InfluenceManagerFunctor =
   functor (D : Exec_domain.DOMAIN) ->
@@ -35,6 +41,8 @@ struct
     (fm : SymPathFragMachineFunctor(D).sym_path_frag_machine) =
   object(self)
     val form_man = fm#get_form_man
+
+    val qe = construct_solver "-influence"
 
     val measured_values = Hashtbl.create 30
       
@@ -52,33 +60,202 @@ struct
       let str = Printf.sprintf "expr %s" (V.exp_to_string key_expr) in
 	self#take_measure str e
 
-    method measure_influence_common free_decls assigns cond_e target_e =
-      let assigns_sl =
-	List.fold_left
-	  (fun a (lvar, lvexp) -> a @ [V.Move(V.Temp(lvar), lvexp)])
-	  [] assigns in
-      let assign_vars = List.map (fun (v, exp) -> v) assigns in
-      let prog = (free_decls @ assign_vars,
-		  assigns_sl @ [V.Assert(cond_e)]) in
-	(* V.pp_program (fun x -> Printf.printf "%s" x) prog; *)
-	let args = {
-	  _tmp_name = "";
-	  _get_val_bounds = true;
-	  _low_bound_to = 6.0;
-	  _sample_pts = 20;
-	  _xor_count = 0;
-	  _xor_seed = 0;
-	  _stp_file = (if !opt_save_solver_files then "fuzz-valset-stpvc.stp"
-		       else "");
-	  _ps_file = "";
-	} in
-	  get_influence prog args target_e
+    method private check_sat target_eq cond =
+      qe#push;
+      qe#start_query;
+      let (result, ce) = qe#query (V.BinOp(V.BITAND, target_eq, cond)) in
+	match result with
+          | Some false ->
+              if !opt_influence_details then
+		(Printf.printf "Yup, condition is satisfiable, by\n";
+                 print_ce ce);
+              qe#after_query !opt_influence_details;
+              qe#pop;
+              let v = ref 0L in
+		List.iter
+                  (fun (s, i64) -> if s = "influence_target" then
+                     v := i64)
+                  ce;
+		(* It's intentional here that v will be set to zero if
+                   the variable doesn't appear in the counterexample, since
+                   some of the solvers do that. *)
+		if !opt_influence_details then
+                  Printf.printf "Satisfying value is 0x%Lx\n" !v;
+		Some !v
+          | Some true ->
+              if !opt_influence_details then
+		Printf.printf "No, condition is unsat\n";
+              qe#after_query false;
+              qe#pop;
+              None
+          | None ->
+              qe#after_query true;
+              qe#pop;
+              raise SolverFailure
+
+    method private check_valid target_eq cond =
+      qe#push;
+      qe#start_query;
+      let (result, ce) = qe#query
+	(V.BinOp(V.BITAND, target_eq, V.UnOp(V.NOT, cond)))
+      in
+	match result with
+          | Some false ->
+              if !opt_influence_details then
+		(Printf.printf "No, condition is invalid; counterexample:\n";
+                 print_ce ce);
+              qe#after_query !opt_influence_details;
+              qe#pop;
+              false
+          | Some true ->
+              if !opt_influence_details then
+		Printf.printf "Yes, condition is valid\n";
+              qe#after_query false;
+              qe#pop;
+              true
+          | None ->
+              qe#after_query true;
+              qe#pop;
+              raise SolverFailure
+
+    method private find_bound target_eq target_e is_signed is_max =
+      let ty = Vine_typecheck.infer_type None target_e in
+      let le_op = if is_signed then V.SLE else V.LE in
+      let sx v =
+	let bits = 64 - V.bits_of_width ty in
+	  Int64.shift_right (Int64.shift_left v bits) bits
+      in
+      let zx v =
+	let bits = 64 - V.bits_of_width ty in
+	  Int64.shift_right_logical (Int64.shift_left v bits) bits
+      in
+      let midpoint a b =
+	let incr = if is_max then 0L else 1L in
+	  if is_signed then
+	    let (a', b') = ((sx a), (sx b)) in
+	    let sz = Int64.sub b' a' in
+	    let hf_sz = Vine_util.int64_udiv (Int64.add sz incr) 2L in
+	    let mid = Int64.add a' hf_sz in
+	      assert(a' <= mid);
+	      assert(mid <= b');
+	      zx mid
+	  else
+	    let sz = Int64.sub b a in
+	    let hf_sz = Vine_util.int64_udiv (Int64.add sz incr) 2L in
+	    let mid = Int64.add a hf_sz in
+	      assert(Vine_util.int64_ucompare a mid <= 0);
+	      assert(Vine_util.int64_ucompare mid b <= 0);
+	      mid
+      in
+      let rec loop min max =
+	assert(is_signed || min <= max);
+	if !opt_influence_details then
+	  Printf.printf "Binary search in [0x%Lx, 0x%Lx]\n"
+	    min max;
+	if min = max then
+	  min
+	else
+	  let mid = midpoint min max in
+	  let mid_e = V.Constant(V.Int(ty, mid)) in
+	    if is_max then
+	      let cond_e = V.BinOp(le_op, target_e, mid_e) in
+	      let in_bounds = self#check_valid target_eq cond_e in
+		if in_bounds then
+		  loop min mid
+		else
+		  loop (Int64.succ mid) max
+	    else
+	      let cond_e = V.BinOp(le_op, mid_e, target_e) in
+	      let in_bounds = self#check_valid target_eq cond_e in
+		if in_bounds then
+		  loop mid max
+		else
+		  loop min (Int64.pred mid)
+      in
+      let wd = V.bits_of_width ty in
+      let (min_limit, max_limit) =
+	if is_signed then
+	  (Int64.shift_left 1L (wd - 1),
+	   Int64.shift_right_logical (-1L) (64-wd+1))
+	else
+	  (0L, Int64.shift_right_logical (-1L) (64-wd))
+      in
+      let limit = loop min_limit max_limit in
+	limit
+
+    method private pointwise_enum target_eq target_e max_vals =
+      let ty = Vine_typecheck.infer_type None target_e in
+      let neq_exp v =
+	V.BinOp(V.NEQ, target_e, V.Constant(V.Int(ty, v)))
+      in
+      let rec loop vals n =
+	if n = 0 then
+	  vals
+	else
+	  let not_old = form_man#conjoin (List.map neq_exp vals) in
+	    match self#check_sat target_eq not_old with
+	      | None ->
+		  vals
+	      | Some v ->
+		  loop (v :: vals) (n - 1)
+      in
+	loop [] max_vals
+
+    method private influence_strategies target_eq target_e =
+      Printf.printf "Unsigned min is 0x%0Lx\n"
+	(self#find_bound target_eq target_e false false);
+      Printf.printf "Unsigned max is 0x%0Lx\n"
+	(self#find_bound target_eq target_e false true);
+      Printf.printf "Signed min is 0x%0Lx\n"
+	(self#find_bound target_eq target_e true false);
+      Printf.printf "Signed max is 0x%0Lx\n"
+	(self#find_bound target_eq target_e true true);
+      let points_bits = 6 in
+      let points_max = 1 lsl points_bits in
+      let points = self#pointwise_enum target_eq target_e points_max in
+      let points_i = log2_of_int (List.length points) in
+	points_i
+
+    method measure_influence_common decls assigns cond_e target_e =
+      Printf.printf "In measure_influence_common\n";
+      let ty = Vine_typecheck.infer_type None target_e in
+      let temp_vars = List.map (fun (var, e) -> var) assigns in
+      let let_vars = (collect_let_vars target_e) @
+	List.concat (List.map (fun (var, e) -> collect_let_vars e) assigns) in
+      let target_var = V.newvar "influence_target" ty in
+      let free_decls =
+	target_var :: Vine_util.list_difference
+	  (Vine_util.list_difference decls temp_vars)
+	  let_vars
+      in
+      let target_eq = V.BinOp(V.EQ, V.Lval(V.Temp(target_var)), target_e) in
+      let target_e' = V.Lval(V.Temp(target_var)) in
+	Printf.printf "Free variables are";
+	List.iter (fun v -> Printf.printf " %s" (V.var_to_string v))
+	  free_decls;
+	Printf.printf "\n";
+	List.iter qe#add_free_var free_decls;
+	Printf.printf "Temp assignments are:\n";
+	List.iter (fun (v, exp) ->
+		     Printf.printf " %s = %s\n"
+		       (V.var_to_string v) (V.exp_to_string exp))
+	  assigns;
+	List.iter (fun (v, exp) ->
+		     qe#add_temp_var v;
+		     qe#assert_eq v exp)
+	  assigns;
+	Printf.printf "Conditional expr is %s\n" (V.exp_to_string cond_e);
+	qe#add_condition cond_e;
+	Printf.printf "Target expr is %s\n" (V.exp_to_string target_e);
+	let i = self#influence_strategies target_eq target_e' in
+	  qe#reset;
+	  i
 
     method measure_influence (target_expr : V.exp) =
-      let (free_decls, assigns, cond_e, target_e, inputs_influencing) =
+      let (decls, assigns, cond_e, target_e, inputs_influencing) =
 	form_man#collect_for_solving [] fm#get_path_cond target_expr in
       let i =
-	self#measure_influence_common free_decls assigns cond_e target_e in
+	self#measure_influence_common decls assigns cond_e target_e in
 	Printf.printf "Estimated influence on %s is %f\n"
 	  (V.exp_to_string target_expr) i;
 	Printf.printf "Inputs contributing to this target expression: %s\n" 

@@ -8,6 +8,6 @@ val solver_cmdline_opts : (string * Arg.spec * string) list
 val solvers_table : 
   (string, (string -> Query_engine.query_engine option)) Hashtbl.t
 
-val construct_solver : unit -> Query_engine.query_engine
+val construct_solver : string -> Query_engine.query_engine
 
 val apply_solver_cmdline_opts : Fragment_machine.fragment_machine -> unit

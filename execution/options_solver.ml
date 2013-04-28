@@ -46,13 +46,14 @@ let solvers_table =
 	  Some (new Stp_external_engine.stp_external_engine ("fuzz" ^ s)));
      h)
 
-let construct_solver () =
+let construct_solver suffix =
   let checking_solver_opt =
-    try (Hashtbl.find solvers_table !opt_solver_check_against) "-check"
+    try (Hashtbl.find solvers_table !opt_solver_check_against)
+      ("-check" ^ suffix)
     with Not_found -> failwith "Unknown solver for -solver-check-against"
   in
   let main_solver_opt =
-    try (Hashtbl.find solvers_table !opt_solver) ""
+    try (Hashtbl.find solvers_table !opt_solver) suffix
     with Not_found -> failwith "Unknown -solver"
   in
   let main_solver = match main_solver_opt with
@@ -64,6 +65,6 @@ let construct_solver () =
       | Some cs -> new Query_engine.parallel_check_engine main_solver cs
 	  
 let apply_solver_cmdline_opts (fm : Fragment_machine.fragment_machine) =
-  fm#set_query_engine (construct_solver ())
+  fm#set_query_engine (construct_solver "")
 
   
