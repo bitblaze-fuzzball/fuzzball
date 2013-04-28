@@ -3,6 +3,9 @@
   Security Inc.  All rights reserved.
 *)
 
+val conjoin : Vine.exp list -> Vine.exp
+val disjoin : Vine.exp list -> Vine.exp
+
 module FormulaManagerFunctor :
   functor (D : Exec_domain.DOMAIN) ->
 sig
@@ -71,9 +74,6 @@ sig
 
     method walk_temps : (Vine.var -> Vine.exp -> (Vine.var * Vine.exp)) ->
       Vine.exp -> (Vine.var list * (Vine.var * Vine.exp) list)
-
-    method conjoin : Vine.exp list -> Vine.exp
-    method disjoin : Vine.exp list -> Vine.exp
 
     method collect_for_solving : (Vine.var * Vine.exp) list ->
       Vine.exp list -> Vine.exp ->

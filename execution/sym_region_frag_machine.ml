@@ -1198,8 +1198,8 @@ struct
 		      "Store with base %08Lx, size %d, stride %d %s"
 		      cloc num_ents stride "has symbolic address\n";
 		  (if !target_conds <> [] then
-		     let any_match = form_man#disjoin !target_conds and
-			 all_match = form_man#conjoin !target_conds in
+		     let any_match = disjoin !target_conds and
+			 all_match = conjoin !target_conds in
 		       if !opt_trace_target then
 			 Printf.printf "Checking for any match to target: ";
 		       ignore(self#target_solve (D.from_symbolic any_match));

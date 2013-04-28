@@ -1,9 +1,9 @@
 (*
-  Copyright (C) BitBlaze, 2009-2011, and copyright (C) 2010 Ensighta
+  Copyright (C) BitBlaze, 2009-2013, and copyright (C) 2010 Ensighta
   Security Inc.  All rights reserved.
 *)
 
-module V = Vine;;
+module V = Vine
 
 open Exec_options
 open Exec_exceptions
@@ -24,7 +24,7 @@ let collect_let_vars e =
     | V.Cast(_, _, e1) -> loop e1
     | V.Unknown(_) -> []
     | V.Let(V.Mem(_, _, _), _, _)
-       -> failwith "Let-mem unsupported in collect_let_vars"
+	-> failwith "Let-mem unsupported in collect_let_vars"
     | V.Let(V.Temp(var), e1, e2) -> var :: (loop e1) @ (loop e2)
   in
     loop e
@@ -116,33 +116,33 @@ struct
       qe#start_query;
       let (result, ce) = qe#query (V.BinOp(V.BITAND, target_eq, cond)) in
 	match result with
-          | Some false ->
-              if !opt_influence_details then
+	  | Some false ->
+	      if !opt_influence_details then
 		(Printf.printf "Yup, condition is satisfiable, by\n";
-                 print_ce ce);
-              qe#after_query !opt_influence_details;
-              qe#pop;
-              let v = ref 0L in
+		 print_ce ce);
+	      qe#after_query !opt_influence_details;
+	      qe#pop;
+	      let v = ref 0L in
 		List.iter
-                  (fun (s, i64) -> if s = "influence_target" then
-                     v := i64)
-                  ce;
+		  (fun (s, i64) -> if s = "influence_target" then
+		     v := i64)
+		  ce;
 		(* It's intentional here that v will be set to zero if
-                   the variable doesn't appear in the counterexample, since
-                   some of the solvers do that. *)
+		   the variable doesn't appear in the counterexample, since
+		   some of the solvers do that. *)
 		if !opt_influence_details then
-                  Printf.printf "Satisfying value is 0x%Lx\n" !v;
+		  Printf.printf "Satisfying value is 0x%Lx\n" !v;
 		Some !v
-          | Some true ->
-              if !opt_influence_details then
+	  | Some true ->
+	      if !opt_influence_details then
 		Printf.printf "No, condition is unsat\n";
-              qe#after_query false;
-              qe#pop;
-              None
-          | None ->
-              qe#after_query true;
-              qe#pop;
-              raise SolverFailure
+	      qe#after_query false;
+	      qe#pop;
+	      None
+	  | None ->
+	      qe#after_query true;
+	      qe#pop;
+	      raise SolverFailure
 
     method private check_valid target_eq cond =
       qe#push;
@@ -235,7 +235,7 @@ struct
 	if n = 0 then
 	  vals
 	else
-	  let not_old = form_man#conjoin (conds @ (List.map neq_exp vals)) in
+	  let not_old = conjoin (conds @ (List.map neq_exp vals)) in
 	    match self#check_sat target_eq not_old with
 	      | None ->
 		  vals
@@ -450,13 +450,13 @@ struct
 	| (_, e) :: rest  -> Vine_typecheck.infer_type None e
 	| _ -> V.REG_32 in
       let conjoined = List.map
-	(fun (pc, e) -> (fresh_cond_var (), form_man#conjoin pc, e))
+	(fun (pc, e) -> (fresh_cond_var (), conjoin pc, e))
 	measurements in
       let cond_assigns =
 	List.map (fun (lhs, rhs, _) -> (lhs, rhs)) conjoined in
       let cond_vars = List.map (fun (v, _) -> v) cond_assigns in
       let cond_var_exps = List.map (fun v -> V.Lval(V.Temp(v))) cond_vars in
-      let cond = form_man#disjoin cond_var_exps in
+      let cond = disjoin cond_var_exps in
       let expr = List.fold_left
 	(fun e (cond_v, _, v_e) ->
 	   V.exp_ite (V.Lval(V.Temp(cond_v))) vtype v_e e)

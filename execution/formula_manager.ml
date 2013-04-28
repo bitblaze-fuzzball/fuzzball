@@ -36,6 +36,16 @@ let cf_eval e =
 	Printf.printf "Left with %s\n" (V.exp_to_string e);
 	failwith "cf_eval failed in eval_expr"
 
+let conjoin l =
+  match l with
+    | [] -> V.exp_true
+    | e :: el -> List.fold_left (fun a b -> V.BinOp(V.BITAND, a, b)) e el
+	
+let disjoin l =
+  match l with
+    | [] -> V.exp_false
+    | e :: el -> List.fold_left (fun a b -> V.BinOp(V.BITOR, a, b)) e el
+
 module FormulaManagerFunctor =
   functor (D : Exec_domain.DOMAIN) ->
 struct
@@ -646,20 +656,10 @@ struct
 	walk exp;
 	((List.rev !nontemps), (List.rev !temps))
 
-    method conjoin l =
-      match l with
-	| [] -> V.exp_true
-	| e :: el -> List.fold_left (fun a b -> V.BinOp(V.BITAND, a, b)) e el
-
-    method disjoin l =
-      match l with
-	| [] -> V.exp_false
-	| e :: el -> List.fold_left (fun a b -> V.BinOp(V.BITOR, a, b)) e el
-
     method collect_for_solving u_temps conds val_e =
       let val_expr = self#rewrite_for_solver val_e in
       let cond_expr = self#rewrite_for_solver
-	(self#conjoin (List.rev conds)) in
+	(conjoin (List.rev conds)) in
       let (nts1, ts1) = self#walk_temps (fun var e -> (var, e)) cond_expr in
       let (nts2, ts2) = self#walk_temps (fun var e -> (var, e)) val_expr in
       let (nts3, ts3) = List.fold_left 
