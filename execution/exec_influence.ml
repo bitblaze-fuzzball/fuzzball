@@ -32,6 +32,24 @@ let collect_let_vars e =
 let log2_of_int i =
   (log (float_of_int i)) /. (log 2.0)
 
+let log2_of_uint64 i64 =
+  let f = Vine_util.int64_u_to_float i64 in
+    (log f) /. (log 2.0)
+
+let sx ty v =
+  let bits = 64 - V.bits_of_width ty in
+    Int64.shift_right (Int64.shift_left v bits) bits
+
+let zx ty v =
+  let bits = 64 - V.bits_of_width ty in
+    Int64.shift_right_logical (Int64.shift_left v bits) bits
+
+let diff_to_range_i diff =
+  if diff = Int64.max_int then
+    64.0
+  else
+    log2_of_uint64 (Int64.succ diff)
+
 let opt_influence_details = ref false
 
 module InfluenceManagerFunctor =
@@ -121,24 +139,16 @@ struct
     method private find_bound target_eq target_e is_signed is_max =
       let ty = Vine_typecheck.infer_type None target_e in
       let le_op = if is_signed then V.SLE else V.LE in
-      let sx v =
-	let bits = 64 - V.bits_of_width ty in
-	  Int64.shift_right (Int64.shift_left v bits) bits
-      in
-      let zx v =
-	let bits = 64 - V.bits_of_width ty in
-	  Int64.shift_right_logical (Int64.shift_left v bits) bits
-      in
       let midpoint a b =
 	let incr = if is_max then 0L else 1L in
 	  if is_signed then
-	    let (a', b') = ((sx a), (sx b)) in
+	    let (a', b') = ((sx ty a), (sx ty b)) in
 	    let sz = Int64.sub b' a' in
 	    let hf_sz = Vine_util.int64_udiv (Int64.add sz incr) 2L in
 	    let mid = Int64.add a' hf_sz in
 	      assert(a' <= mid);
 	      assert(mid <= b');
-	      zx mid
+	      zx ty mid
 	  else
 	    let sz = Int64.sub b a in
 	    let hf_sz = Vine_util.int64_udiv (Int64.add sz incr) 2L in
@@ -201,20 +211,73 @@ struct
       in
 	loop [] max_vals
 
-    method private influence_strategies target_eq target_e =
-      Printf.printf "Unsigned min is 0x%0Lx\n"
-	(self#find_bound target_eq target_e false false);
-      Printf.printf "Unsigned max is 0x%0Lx\n"
-	(self#find_bound target_eq target_e false true);
-      Printf.printf "Signed min is 0x%0Lx\n"
-	(self#find_bound target_eq target_e true false);
-      Printf.printf "Signed max is 0x%0Lx\n"
-	(self#find_bound target_eq target_e true true);
+    method private random_sample target_eq target_e num_samples =
+      let ty = Vine_typecheck.infer_type None target_e in
+      let rand_val () =
+	match ty with
+	  | V.REG_1 -> if Random.bool () then 1L else 0L
+	  | V.REG_8 -> Int64.of_int (Random.int 256)
+	  | V.REG_16 -> Int64.of_int (Random.int 65536)
+	  | V.REG_32 -> Int64.of_int32 (Random.int32 Int32.max_int)
+	  | V.REG_64 -> Random.int64 Int64.max_int
+	  | _ -> failwith "Unexpected type in rand_val"
+      in
+      let num_hits = ref 0 in
+	for i = 1 to num_samples do
+	  let v = rand_val () in
+	  let cond = V.BinOp(V.EQ, target_e, V.Constant(V.Int(ty, v))) in
+	    match self#check_sat target_eq cond with
+	      | None -> ()
+	      | Some v' ->
+		  assert(v = v');
+		  num_hits := !num_hits + 1
+	done;
+	!num_hits
+
+    method private influence_strategies target_eq target_e ty =
+      (let unsign_min = self#find_bound target_eq target_e false false and
+	   unsign_max = self#find_bound target_eq target_e false true and
+	   signed_min = self#find_bound target_eq target_e true false and
+	   signed_max = self#find_bound target_eq target_e true true
+       in
+       let unsign_range_i = (diff_to_range_i
+			       (Int64.sub unsign_max unsign_min)) and
+	   signed_range_i = (diff_to_range_i
+			       (Int64.sub (sx ty signed_max)
+				  (sx ty signed_min)))
+       in
+	 Printf.printf "Upper bound from unsigned range [0x%Lx, 0x%Lx]: %f\n"
+	   unsign_min unsign_max unsign_range_i;
+	 Printf.printf "Upper bound from signed range [0x%Lx, 0x%Lx]: %f\n"
+	   signed_min signed_max signed_range_i);
       let points_bits = 6 in
-      let points_max = 1 lsl points_bits in
+      let points_max = (1 lsl points_bits) + 1 in
       let points = self#pointwise_enum target_eq target_e points_max in
-      let points_i = log2_of_int (List.length points) in
-	points_i
+      let num_points = List.length points in
+      let points_i = log2_of_int num_points in
+	if num_points < points_max then
+	  (Printf.printf "Exact influence from %d points is %f\n"
+	     num_points points_i;
+	   points_i)
+	else
+	  (Printf.printf "Lower bound from %d points is %f\n"
+	     num_points points_i;
+	   let num_samples = 20 in
+	   let num_hits = self#random_sample target_eq target_e num_samples in
+	     Printf.printf "Random sampling: %d hits out of %d samples\n"
+	       num_hits num_samples;
+	     if num_hits > 1 then
+	       let frac =
+		 (float_of_int num_hits) /. (float_of_int num_samples)
+	       in
+	       let log_frac = (log frac) /. (log 2.0) and
+		   max_bits = float_of_int (V.bits_of_width ty) in
+	       let sampled_i = log_frac +. max_bits in
+		 Printf.printf "Samples influence is %f\n" sampled_i;
+		 sampled_i
+	     else
+	       (* Here's where we need XOR-streamlining *)
+	       points_i)
 
     method measure_influence_common decls assigns cond_e target_e =
       Printf.printf "In measure_influence_common\n";
@@ -247,7 +310,7 @@ struct
 	Printf.printf "Conditional expr is %s\n" (V.exp_to_string cond_e);
 	qe#add_condition cond_e;
 	Printf.printf "Target expr is %s\n" (V.exp_to_string target_e);
-	let i = self#influence_strategies target_eq target_e' in
+	let i = self#influence_strategies target_eq target_e' ty in
 	  qe#reset;
 	  i
 
