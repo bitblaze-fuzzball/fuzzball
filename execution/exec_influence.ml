@@ -50,6 +50,33 @@ let diff_to_range_i diff =
   else
     log2_of_uint64 (Int64.succ diff)
 
+let random_xor_constraint ty target_e num_terms =
+  (* (out & (1 << k)) != 0, k random in [0, bits(out)-1] *)
+  let random_term () = 
+    let k = Random.int (V.bits_of_width ty) in
+    let mask = V.Constant(V.Int(ty, (Int64.shift_left 1L k))) in
+      V.BinOp(V.NEQ,
+	      V.BinOp(V.BITAND, target_e, mask),
+	      V.Constant(V.Int(ty, 0L)))
+  in
+  let rec random_terms k = match k with
+    | 1 -> random_term ()
+    | _ -> V.BinOp(V.XOR, random_term (),
+		   random_terms (k - 1))
+  in
+  let parity = V.Constant(V.Int(V.REG_1, Random.int64 2L)) and
+      terms = random_terms num_terms in
+    V.BinOp(V.EQ, terms, parity)
+
+let random_xor_constraints ty target_e num_terms k = 
+  let rec loop k =
+    match k with
+      | 1 -> random_xor_constraint ty target_e num_terms
+      | _ -> V.BinOp(V.BITAND, (random_xor_constraint ty target_e num_terms),
+		     loop (k - 1))
+  in
+    loop k
+
 let opt_influence_details = ref false
 
 module InfluenceManagerFunctor =
@@ -193,7 +220,7 @@ struct
       let limit = loop min_limit max_limit in
 	limit
 
-    method private pointwise_enum target_eq target_e max_vals =
+    method private pointwise_enum target_eq target_e conds max_vals =
       let ty = Vine_typecheck.infer_type None target_e in
       let neq_exp v =
 	V.BinOp(V.NEQ, target_e, V.Constant(V.Int(ty, v)))
@@ -202,7 +229,7 @@ struct
 	if n = 0 then
 	  vals
 	else
-	  let not_old = form_man#conjoin (List.map neq_exp vals) in
+	  let not_old = form_man#conjoin (conds @ (List.map neq_exp vals)) in
 	    match self#check_sat target_eq not_old with
 	      | None ->
 		  vals
@@ -234,6 +261,68 @@ struct
 	done;
 	!num_hits
 
+    method private xor_walk_simple target_eq target_e count =
+      let ty = Vine_typecheck.infer_type None target_e in
+      let start = float ((V.bits_of_width ty) / 2) in
+      let num_terms = (V.bits_of_width ty) / 4 in
+    
+      let rec loop guess i = if i >= count then
+	guess
+      else
+	let experiment hypo =
+	  let cond = random_xor_constraints ty target_e num_terms hypo in
+	    assert(hypo > 0);
+	    match self#check_sat target_eq cond with
+	      | None    -> false
+              | Some(_) -> true
+	in
+	let delta = 2.0 /. (1.0 +. (float i) /. 5.0) and
+	    fexp = experiment (int_of_float (floor (guess -. 0.5))) and
+	    cexp = experiment (int_of_float (ceil  (guess -. 0.5))) in
+	let new_guess = match (fexp, cexp) with
+	  | (true,  true ) -> guess +. delta
+	  | (false, false) -> guess -. delta
+	  | _ -> guess
+	in
+	  if !opt_influence_details then
+	    Printf.printf "XOR iteration %d estimate is %f +- %f\n"
+	      i new_guess delta;
+	  loop new_guess (i + 1)
+      in
+	loop start 0
+
+    method private xor_then_enum target_eq target_e count =
+      let ty = Vine_typecheck.infer_type None target_e in
+      let num_terms = (V.bits_of_width ty) / 4 in
+      let infty = match ty with
+	| V.REG_1 -> 3
+	| V.REG_8 -> 257
+	| V.REG_16 -> 65537
+	| _ -> 0x3ffffffe
+      in
+      let rec add_xors_loop k =
+	if !opt_influence_details then
+	  Printf.printf "Trying with %d constraints\n" k;
+	let cond = random_xor_constraints ty target_e num_terms k in
+	  match self#check_sat target_eq cond with
+	    | None    -> k
+            | Some(_) -> add_xors_loop (k + 1)
+      in
+      let rec rm_xors_loop k =
+	let cond = random_xor_constraints ty target_e num_terms k in
+	let vals = self#pointwise_enum target_eq target_e [cond] infty in
+	let n = List.length vals in
+	  if !opt_influence_details then
+	    Printf.printf "With %d constraints got %d solutions\n" k n;
+	  if n < count then
+	    rm_xors_loop (k - 1)
+	  else
+	    (float k) +. log2_of_int n
+      in
+      let num_xors = add_xors_loop 1 in
+	Printf.printf "Reached unsat after %d constraints\n" num_xors;
+	rm_xors_loop num_xors
+
     method private influence_strategies target_eq target_e ty =
       (let unsign_min = self#find_bound target_eq target_e false false and
 	   unsign_max = self#find_bound target_eq target_e false true and
@@ -252,7 +341,7 @@ struct
 	   signed_min signed_max signed_range_i);
       let points_bits = 6 in
       let points_max = (1 lsl points_bits) + 1 in
-      let points = self#pointwise_enum target_eq target_e points_max in
+      let points = self#pointwise_enum target_eq target_e [] points_max in
       let num_points = List.length points in
       let points_i = log2_of_int num_points in
 	if num_points < points_max then
@@ -277,7 +366,9 @@ struct
 		 sampled_i
 	     else
 	       (* Here's where we need XOR-streamlining *)
-	       points_i)
+	       (* self#xor_walk_simple target_eq target_e 50 *)
+	       self#xor_then_enum target_eq target_e 50
+	  )
 
     method measure_influence_common decls assigns cond_e target_e =
       Printf.printf "In measure_influence_common\n";
@@ -310,6 +401,7 @@ struct
 	Printf.printf "Conditional expr is %s\n" (V.exp_to_string cond_e);
 	qe#add_condition cond_e;
 	Printf.printf "Target expr is %s\n" (V.exp_to_string target_e);
+	assert(self#check_sat target_eq V.exp_true <> None);
 	let i = self#influence_strategies target_eq target_e' ty in
 	  qe#reset;
 	  i
