@@ -1,0 +1,22 @@
+Index: priv/guest-x86/toIR.c
+===================================================================
+--- priv/guest-x86/toIR.c	(revision 1668)
++++ priv/guest-x86/toIR.c	(working copy)
+@@ -11551,7 +11551,7 @@
+ 
+    case 0x9D: /* POPF */
+       vassert(sz == 2 || sz == 4);
+-      vassert(sz == 4); // until we know a sz==2 test case exists
++      //vassert(sz == 4); // until we know a sz==2 test case exists
+       t1 = newTemp(Ity_I32); t2 = newTemp(Ity_I32);
+       assign(t2, getIReg(4, R_ESP));
+       assign(t1, widenUto32(loadLE(szToITy(sz),mkexpr(t2))));
+@@ -11738,7 +11738,7 @@
+ 
+    case 0x9C: /* PUSHF */ {
+       vassert(sz == 2 || sz == 4);
+-      vassert(sz == 4);  // wait for sz==2 test case
++      //vassert(sz == 4);  // wait for sz==2 test case
+ 
+       t1 = newTemp(Ity_I32);
+       assign( t1, binop(Iop_Sub32,getIReg(4,R_ESP),mkU32(sz)) );

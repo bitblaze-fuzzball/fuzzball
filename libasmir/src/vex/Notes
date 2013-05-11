@@ -1,0 +1,540 @@
+
+======================================================================
+
+Notes (Eric Li)
+
+======================================================================
+
+This file documents some of the decisions we made in the 
+VEX IR (Valgrind) to Vine IR translation module as well as the 
+implementation details and circumstances leading up to those 
+decisions.
+
+I decided to write this so that anyone who decides to work on
+this code after I'm gone will have a place to look up things
+they don't understand about the system. And chances are, they
+will need to because IMHO, the system, due to its nature as a
+bridge between two IR systems that are not really compatible,
+has been engineered into a corner with a series of kludges just
+to get things to work. But then again, a clean ground up re-write
+of a binary to IR system is a sizable and time consuming venture
+which in the end may run into just as many problems as this one,
+as Dave will tell you.
+
+I tried to document as much of the main points as I can. But chances
+are I probably left some stuff out. If it's code related, try looking
+for inline comments. Otherwise, ask me.
+
+In any case, feel free to contact me at erictheli@gmail.com if
+you need help trying to figure something out about the system.
+
+----------------------------------------------------------------------
+Valgrind Version
+----------------------------------------------------------------------
+
+Per a suggestion by Julian Seward, author of Valgrind, we switched
+from using version 3.1.1 to 3.2.0. The reason was that 3.2.0 cleaned
+up some of the Vex translation stuff. 
+
+But because of this, Vine will not work (probably won't even compile
+because of VexTranslateArgs not existing) with Valgrind versions 
+older than 3.2.0.
+
+----------------------------------------------------------------------
+Vexir Module
+----------------------------------------------------------------------
+
+There are two main sub modules in the vex module. The first is vexir,
+which implements the bridge to interface with VEX. Basically, vexir
+provides functions that you can call to translate instructions to 
+VEX IR. 
+
+The reason we cannot directly call VEX is that VEX does not provide
+an interface for translating binary or assembly to IR. It does the 
+translation internally and only provides callbacks for adding 
+custom instrumentation. More specifically, at a high level, VEX does
+the following steps to a binary file that you pass it:
+
+    1. Translate executable to IR
+    2. Optimize IR
+    3. Apply instrumentation to IR
+    4. Optimize again
+    5. Translate IR back to executable
+
+So the translation to IR is only used internally. In order to get a
+handle to the IR, we use the fact that the instrumentation step uses
+callbacks passed in by whoever is calling VEX. So we pass in our own
+function that does not actually instrument the code. VEX passes the
+IR to our function, at which point we save it into a global variable
+that is now visible out side of VEX, after which we can use it as 
+we would like. 
+
+There is a problem with this approach, which is the IR we stole from
+within VEX is backed up by memory that VEX allocated. After we 
+intercept the IR at step 3 above, we cannot just pause the process
+and skip the remaining steps. VEX will run to completion, and
+therefore, it will also free the memory that the IR uses. To fix 
+this, we make a deep copy of the IR data structure into our own
+memory within our instrumentation callback.
+
+----------------------------------------------------------------------
+Vexir Memory Management
+----------------------------------------------------------------------
+
+This section continues the discussion from the above Vexir module
+section but with more detail. In order to make a deep copy of the 
+IRBB struct, we would need a deep copy constructor for IRBB and any
+structs within that. Luckily, VEX provides deep copy constructors
+for all its data structures inside VEX/priv/ir/irdefs.c. They're
+all named dopyFoo where Foo is the structure to be duplicated. Great!
+So we're done! Not quite... 
+
+All the deep copy constructors in VEX use the same memory allocation
+system as the rest of VEX, and the allocated memory is only valid
+inside VEX. So even if we called one of their dopy functions, once
+VEX completes its run, the memory that backs up our deep copy will
+also be gone. To get around this, I copied all of their dopy code
+into a module called vexmem and then renamed all calls within the
+dopy code to VEX's memory allocator so that they now call my own 
+allocator, vx_Alloc, which is also inside vexmem. 
+
+vx_Alloc is a small custom memory allocator that I wrote. I could've
+just called malloc inside vx_Alloc and that would've been a one line
+solution. But there are two reasons why that would not be so good. 
+First, vx_Alloc is used extensively inside the deep copy constructors,
+which are themselves used extensively, i.e. they're called for every
+IRBB and 1 IRBB is created for every instruction. The standard 
+implementation of malloc is actually quite heavy since it has to 
+write headers/footers into the heap as well as split/coalesce 
+adjacent free blocks in order to minimize fragmentation. So it would
+slow down things a lot to use malloc. Second, using malloc would 
+mean that in order to free the memory, we would need a corresponding
+deep copy destructor for every constructor, which VEX does not 
+provide. So we would need to write a lotta freeing code that would
+be just as slow since it relies on free, which does things similar
+to malloc inside.
+
+My solution is to create a huge static char buffer, and then keep
+a single pointer to the start of the next free block within this 
+buffer. Calls to vx_Alloc just updates the pointer to the next free
+block, and then returns a pointer to this free block. This is 
+extremely fast (just 2 assignments). The only problem with this 
+is that we cannot free individual blocks of memory that we previously
+allocated. We can only free the entire block by resetting the 
+next free block pointer back to the beginning of the char buffer.
+But this is not really a problem for us because we never have a need
+to free only individual pieces of the VEX IRBB. This method is 
+called arena allocation and is also what's used inside VEX.
+
+Of course, for large binaries, sometimes, we hit the limit of the 
+size of the static buffer. I put an assert there that fails in case
+we try to allocate more than there is, cuz that would be disastrous
+if it were to fail silently. So far, I haven't had problems with the
+limit since I last increased it. But it is a constant fixed limit that 
+cannot be changed at run time. So a better solution is to allocate 
+that giant block from the heap using 1 malloc call at initialization
+time, and then every time we hit the limit, we can call realloc to 
+double the size of the block. This will make the block scale. I just
+never got around to making this change.
+[No, realloc can move the block, which would break all the
+pointers. Just use malloc to allocate a new block and continue
+there. At the end, free all the large blocks allocated with
+malloc. --aij]
+
+----------------------------------------------------------------------
+IR Optimization Level
+----------------------------------------------------------------------
+
+When initializing lib VEX for use, the level of optimization can be 
+specified. This refers to step 2 in the list of steps that VEX goes
+through during translation in the Vexir module section above. 
+The level of optimization can be either 0, 1, or 2 with 2 meaning
+the most aggressive optimization. 
+
+Basically, VEX first translates all the assembly into IR using fairly
+simple substitution rules. But this results in IR that is redundant
+due to the overabundance of temp variables and dead code. By 
+specifying the optimization level, we can determine how optimized
+the IR that we get is. 0 means leave it the way it was originally
+translated with no optimizations. 2 means optimized aggressively.
+The advantage of 0 is that everything is plain and simple; there's 
+no data flow that could potentially have been hidden by clever 
+optimization. On the other hand, after speaking to J. Seward and 
+through my own experimentation, I've found that level 2 actually
+optimizes away a lot of the helper functions that are not pure IR
+and translates them into pure IR. However, it doesn't do this for
+all of them, and so results in inconsistent ways in which certain
+instructions are translated. 
+
+Currently, the IR opt level is hard coded inside vexir.cpp in 
+translate_init() where vc.iropt_level is set to 0. I chose not to 
+expose this as a settable argument in the irtoir interface because
+we should really be sticking to one particular level of optimization
+at all times for consistency. But in case the issue ever comes up,
+I've documented here what I know about it and why I did what I did.
+
+----------------------------------------------------------------------
+MFence (Memory Fence)
+----------------------------------------------------------------------
+
+This is one of the IR instructions in VEX that we encountered. Some
+x86 assembly instructions like "cpuid" generate MFence IR instructions
+as part of their IR output. For an explanation of what a memory fence
+is, see http://en.wikipedia.org/wiki/Memory_barrier. At the time of
+this writing, we decided to ignore MFence instructions in the VEX IR.
+This is because we assume in order execution for all of our 
+instructions.
+
+----------------------------------------------------------------------
+Register Names
+----------------------------------------------------------------------
+
+In VEX, machine state, which includes all the values of the registers,
+is represented using a contiguous block of memory. So all the common
+x86 registers would appear at various offsets in this block. For 
+example, for IA32, eax occupies bytes 0 through 3. When VEX wants to
+read from or write to machine state, it uses GET(offset) or 
+PUT(offset). If the offset is 0, then it is reading/writing eax or
+a part of it.
+
+In Vine, we use the register names directly. So when translating
+from VEX IR, we look at the offset and translate it to the matching
+register name. But what about sub registers?
+
+In IA32, there are sub registers like ax, al, and ah which are ways 
+to address only parts of eax. VEX differentiates them based on the 
+number of bytes being read/written. For example, a write of 4 bytes
+to offset 0 is a write to eax whereas a write of 2 bytes to offset
+0 is a write to ax. Writing 1 byte to 0 equals writing to al and 
+writing 1 byte to 1 equals writing to ah. To reverse the translation,
+we have to check the size of the expression together with the offset
+to figure out what register it actually is.
+
+----------------------------------------------------------------------
+Unops, Binops, Triops, etc. Completeness
+----------------------------------------------------------------------
+
+In VEX, there are expressions of type Unop, Binop, Triop, and Qop.
+Under each type, there are many different kinds of operations, 
+arithmetic ops, bitwise ops, shifts, rotates, etc. In Vine IR, we 
+have corresponding ops for many of these, but there are also some 
+that cannot be directly translated. Instead of going through and 
+attempting to translate every op, which would've taken up all my time
+here, I opted for a quicker way to produce something useful. I used 
+atphttpd and iwconfig as test binaries and just tried to translate 
+any ops that are present in the IR translation of these two programs. 
+These programs are large enough to cover most of the ops that will 
+appear in typical binaries.
+
+Also, a good fraction of the ops are esoteric ones that never get 
+used but are also very difficult to translate, so there's little 
+point in wasting time on them. With that said, if you run into 
+untranslated ops when using this code, you'll know that it's not 
+because I forgot to translate something. And that you might have to
+just add your own translation for those particular ops.
+
+----------------------------------------------------------------------
+Untranslated Instructions
+----------------------------------------------------------------------
+
+Another thing to note about untranslated statements, expressions,
+ops, or whatever is that any time I can't translate something in the
+code, I will throw an exception which is caught at the top level of
+translation. The exception contains the cause of no translation and 
+that gets wrapped in a Comment statement and inserted into the IR. 
+
+----------------------------------------------------------------------
+Casts
+----------------------------------------------------------------------
+
+Casts were not originally in the Vine IR but were encountered in VEX
+IR. Because there are quite a number of different types of casts and
+it's not possible to disambiguate a cast from its context, we added
+an expression type to Vine IR specifically for casts. 
+
+In the integer to integer casts there are widening and narrowing 
+casts. Widening casts, e.g. 32-bit to 64-bit, can be either sign 
+extending or not. Either way the source operand is always copied to
+the lower part of the destination operand. Narrowing casts, e.g. 
+64-bit to 32-bit, can be either low or high, which means either the
+low half or the high half of the source is put into the destination.
+
+There are also floating point casts, which do not have the above 
+distinctions, as well as casts between integers and floats. There
+are two types of the latter, normal casts and reinterpretations. 
+Normal casts retain the value of the expression while changing 
+the type from int to float or vice versa. Reinterpretations take the
+bit pattern of an int and reinterpret it as a float or vice versa,
+and hence the value changes.
+
+----------------------------------------------------------------------
+Specials
+----------------------------------------------------------------------
+
+There are certain instructions that VEX does not translate. So far
+we've found two of these, i.e. "hlt" and "stmxcsr". They require 
+special handling because they can't be directly translated to 
+anything that exists in Vine IR either, so we created a statement of
+type Special in Vine for these cases. Whenever we encounter one of 
+these special instructions, it gets translated into a Special 
+statement.
+
+"cpuid" has been added as a special as well.
+
+----------------------------------------------------------------------
+Rounding
+----------------------------------------------------------------------
+
+In VEX IR, all the basic arithmetic binary ops, e.g. add, sub, etc.,
+are tri-ops in their floating point versions. This is because floating
+point operations require a rounding mode to be specified which 
+describes how the result is rounded. An example of such a VEX 
+instruction is AddF64(arg1, arg2, arg3) where arg1 specifies the 
+rounding mode while arg2 and arg3 are the 64-bit fp numbers to be 
+added. 
+
+Aside from these, there are also casts such as from a 64-bit fp to
+a 32-bit fp that also require rounding mode to be specified. 
+
+At the time of this writing, we were not sure of the importance or
+the necessity of adding additional mechanism into the IR to handle
+rounding, so for the sake of simplicity, we are temporarily ignoring 
+it. 
+
+----------------------------------------------------------------------
+Jumps
+----------------------------------------------------------------------
+
+Right now, our IR has no notion of addresses for the statements, so
+translating jumps to addresses is a problem. Fortunately, VEX IR has
+an IMark statement at the start of the IR translation of each 
+instruction that describes the address and length of that instruction.
+IMark's were previously skipped during our translation, but now,
+we translate them into labels named by the addresses that they
+represent. Uniqueness is guaranteed by the uniqueness of the
+addresses. Now that we have those labels, jumps to addresses can be
+translated in a straightforward manner. IMark(0xDEADBEEF, 2) becomes 
+L_0xDEADBEEF in Vine IR.
+[Actually, it becomes L_0xdeadbeef. --aij]
+
+----------------------------------------------------------------------
+EFLAGS
+----------------------------------------------------------------------
+
+Oh boy... EFLAGS...
+
+First off, let me tell you how VEX handles EFLAGS. It doesn't.
+
+So now let me tell you how VEX sidesteps EFLAGS. For instructions
+that modify EFLAGS, instead of emitting IR that sets those flags,
+VEX saves all the information necessary to calculate EFLAGS in a 
+4 word thunk. What is a thunk you say? Let me give you an example.
+
+The instruction "add" typically would translate into something 
+like this (this is just some pseudo IR I made up to get the point
+across):
+
+    "add arg1 arg2"
+
+    temp1 = arg1
+    temp2 = arg2
+    temp3 = arg1 + arg2
+    ZF = (temp3 == 0)
+    PF = (parity of number of 1 bits of lsb of temp3)
+    SF = (sign of temp3) 
+    ...
+    and so on for the other flags,
+    then combine them into EFLAGS.
+
+But as you can see, calculating and setting the individual flags
+results in quite a lot of extra IR per flag setting instruction.
+Also, in most cases, the flags are overwritten much more often 
+than they are actually used, i.e. if you have 4 "add"s in a row,
+the flag setting IR of the first 3 "add"s are wasted because they
+get overwritten by the fourth one. 
+
+So VEX decided to not bother with calculating and setting the 
+flags, and every time an instruction sets the flags, it just saves
+all the information that is needed to calculate the flags into 
+4 registers. So using the same example as above, we have:
+
+    "add arg1 arg2"
+
+    temp1 = arg1
+    temp2 = arg2
+    temp3 = arg1 + arg2
+    CC_OP = "add"
+    CC_DEP1 = arg1
+    CC_DEP2 = arg2
+    CC_NDEP = 0 (not used in this case)
+
+Now if an instruction like "jz" comes along later that needs to
+see what the value of the zero flag (ZF) is, it is calculated 
+using a helper function like x86g_calculate_eflags(). So for
+example:
+
+    "jz some_label"
+
+    EFLAGS = x86g_calcualte_eflags(CC_OP, CC_DEP1, CC_DEP2, CC_NDEP)
+    ZF = EFLAGS & ZF_MASK
+    if ( ZF != 0 )
+        jmp to some_label
+
+This is not exactly how it is, but that's the basic idea. OK, so
+now what do we do? We need to reflect changes to EFLAGS, but we
+can't use their system. 
+
+So the suggestion came up to just go through the IR and for every
+instruction that modified EFLAGS, add the corresponding IR that 
+reflects those changes. Originally, I thought I could just add a
+custom IR translation for each such instruction. BTW, you can look
+in the Intel manual for a list of instructions that modify and test
+EFLAGS. But this is no trivial task since aside from the instruction
+itself, there are various addressing modes that must be properly 
+translated as well. For example, 
+
+    "add (%edi), %eax"
+
+would need IR that first fetches edi and loads the memory that edi 
+points to before adding it to eax. So to avoid a whole lotta extra
+code for translating addressing modes and other such aspects, which
+we were trying to avoid in the first place by using Valgrind IR, I 
+decided the easiest way is to look for the places where the EFLAGS
+thunks are set and replace them with just IR that sets EFLAGS. For
+example, for every block I would replace 
+
+    CC_OP = something
+    CC_DEP1 = something
+    etc..
+
+with 
+    
+    ZF = something
+    CF = something
+    etc..
+
+Of course, once the translation is done, I also need to remove the
+original CC_OP = blah thunks since they are now dead code. 
+
+Now for the "get" side, whenever an instruction needs to test EFLAGS,
+VEX IR uses a helper function as I described above. So it's fairly
+straightforward to determine if a helper function is suppose to 
+calculate and return EFLAGS or a condition code or something of that
+sort based on its name. Then I simply replace any expressions of that
+sort with the actual flag itself. 
+
+So the way the EFLAGS are set is dependent on the specific instruction,
+i.e. "add" sets them a certain way, "and/or/xor" and other logic ops
+set them a different way, and so on. So every instruction whose EFLAGS
+modifying code can be translated has been translated. Most of these
+instructions set the CC_OP to a constant which specifies the way that
+it modifies EFLAGS. But there is an exception. The "sar/shld/shrd" 
+instructions, which are shift instructions, are specified by Intel to
+not modify EFLAGS if the shift width is 0. Otherwise, they modify 
+EFLAGS in some normal way. So in VEX IR, this gets translated to 
+if-then-else expressions when setting the EFLAGS thunks. This is 
+troublesome as I cannot directly put in a set of EFLAGS modifications
+for those instructions. As of the day I left, I haven't figured out 
+a good solution to this problem. One straightforward way would be to
+add a if-then-else EFLAGS modifications IR block, but that would be 
+a sizable chunk of extra IR and be a bit nasty to get right. 
+
+If any of what I wrote here doesn't make sense to you, feel free to 
+email and ask me about it. It takes some diving into the code and 
+being familiar with it to get an idea of what's going on. So it's 
+natural for some of this not to click if you're just starting to 
+look at the code. 
+
+----------------------------------------------------------------------
+Expression Shorthands
+----------------------------------------------------------------------
+
+In the process of writing EFLAGS modification expressions, I decided
+to add a bunch of shorthand convenience functions for creating 
+expressions. For example, instead of 
+
+    new BinOp( BinOp::BITAND, arg1, arg2 )
+
+I replaced it with 
+
+    _ex_and(arg1, arg2)
+
+You might think this is not much of an improvement, but when the 
+expressions become more complex, the shorthand simplifies things
+quite a bit. 
+
+There is another important detail to note about creating expressions
+and expression trees. That is that every argument of every expression
+should be its own object even if it represents the same temp register
+or constant. For example, if I have two expressions that refer to the
+same register
+
+    _ex_and( new Temp("EAX"), new Temp("EBX") )
+    _ex_xor( new Temp("EAX"), new Temp("ECX") )
+
+they still have to be separate instances. Because of this, every time
+an argument is used in a compound expression it needs to be duplicated.
+So then I came up with shorthands for automatically duplicating args
+like so:
+
+    ex_and(arg1, arg2)    <---- notice the lack of _ in front
+
+will clone arg1 and arg2 before creating a new bitwise "and" binary op 
+out of them. Well, that's convenient. Yup, it is. So for every 
+expression shorthand, if it starts with an underscore, that means it
+does not duplicate the arguments, and if it does NOT have an underscore in
+front, that means it does clone the arguments. The reason I have these
+two versions of every short hand is that sometimes you get a mix of 
+arguments some of which you want to clone but some of the which you don't.
+So you have to use a mix of cloning and none cloning shorthands. For 
+example, in the following expression:
+
+    _ex_and( ex_and(arg1, arg2), ex_or(arg3, arg4) )
+
+all 4 args are cloned, but the final outter expression does not clone its
+arguments because the internal expressions are already fresh new objects. 
+Becareful with this, because you can easily misuse this in situations like
+this:
+
+    ex_and( _ex_and(arg1, arg2), _ex_or(arg3, arg4) )
+
+You might think this is fine since none of the internal args are cloned
+but the one outter expression will clone everything. BTW, NOTE that when
+I say clone, it is a DEEP copy of the expression tree. But this is wrong
+because _ex_and and _ex_or both return newly created objects. When ex_and
+clones these objects, the originals are leaked. In fact, they can't even
+be deleted because they were never assigned to any variables. 
+
+When using these shorthands, use your common sense with regard to memory
+allocation and management. It's best to have a solid understanding of 
+memory related concepts. AND BE VERY VERY CAREFUL!
+
+----------------------------------------------------------------------
+Memory Leaks
+----------------------------------------------------------------------
+
+As you might have noticed from the above section, some of the memory
+management in this code is hard to work with and because I am only
+one person, it's likely that I made some mistakes that I didn't catch
+somewhere along the way. In any case, I tried to be as careful as I 
+can, but still I appreciate it if you (whoever you are that ends up 
+working on this next) find any leaks and fix them.
+
+----------------------------------------------------------------------
+Weird Nop Translations
+----------------------------------------------------------------------
+
+There is a weird phenomenon in the IR translation that I have not 
+figured out the cause for. I figured I'd document it since I'm leaving
+and it was a very last minute discovery and I don't have the time to 
+figure it out. 
+
+Within the IR, there are a couple of places where there are sequences
+of nop instructions that get translated into a bunch of IR that seems
+to belong to "and", "or", and other such real instructions. It's not
+apparent to me why this should be so. A easy way to fix this is to 
+skip IR translation altogether if a "nop" instruction is encountered. 
+But that doesn't fix the problem as much as brush it under the carpet.
+
+
+

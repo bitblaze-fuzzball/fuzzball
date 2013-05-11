@@ -1,0 +1,182 @@
+Index: priv/guest_x86_toIR.c
+===================================================================
+--- priv/guest_x86_toIR.c	(revision 2701)
++++ priv/guest_x86_toIR.c	(working copy)
+@@ -2826,6 +2826,11 @@
+ 
+    if (epartIsReg(modrm)) {
+       switch (gregOfRM(modrm)) {
++         case 1: /* Undocumented synonym of 1 */
++           /* The Intel docs imply this insn is undefined and binutils
++              agrees.  Unfortunately Core 2 will run it (with who
++              knows what result?)  sandpile.org reckons it's an alias
++              for case 0.  We live dangerously. */
+          case 0: { /* TEST */
+             delta++; d32 = getUDisp(sz, delta); delta += sz;
+             dst1 = newTemp(ty);
+@@ -2837,13 +2842,6 @@
+                                       nameIReg(sz, eregOfRM(modrm)));
+             break;
+          }
+-         case 1: /* UNDEFINED */
+-           /* The Intel docs imply this insn is undefined and binutils
+-              agrees.  Unfortunately Core 2 will run it (with who
+-              knows what result?)  sandpile.org reckons it's an alias
+-              for case 0.  We play safe. */
+-           *decode_OK = False;
+-           break;
+          case 2: /* NOT */
+             delta++;
+             putIReg(sz, eregOfRM(modrm),
+@@ -2897,6 +2895,8 @@
+       delta += len;
+       assign(t1, loadLE(ty,mkexpr(addr)));
+       switch (gregOfRM(modrm)) {
++         case 1: /* Undocumented synonym of 1 */
++           /* See comment above on R case */
+          case 0: { /* TEST */
+             d32 = getUDisp(sz, delta); delta += sz;
+             dst1 = newTemp(ty);
+@@ -2906,10 +2906,6 @@
+             DIP("test%c $0x%x, %s\n", nameISize(sz), d32, dis_buf);
+             break;
+          }
+-         case 1: /* UNDEFINED */
+-           /* See comment above on R case */
+-           *decode_OK = False;
+-           break;
+          case 2: /* NOT */
+             dst1 = newTemp(ty);
+             assign(dst1, unop(mkSizedOp(ty,Iop_Not8), mkexpr(t1)));
+@@ -6142,7 +6138,6 @@
+       mkpair   = Iop_32HLto64;
+       getres   = left_shift ? Iop_64HIto32 : Iop_64to32;
+       shift    = left_shift ? Iop_Shl64 : Iop_Shr64;
+-      mask     = mkU8(31);
+    } else {
+       /* sz == 2 */
+       tmpL     = newTemp(Ity_I32);
+@@ -6151,9 +6146,16 @@
+       mkpair   = Iop_16HLto32;
+       getres   = left_shift ? Iop_32HIto16 : Iop_32to16;
+       shift    = left_shift ? Iop_Shl32 : Iop_Shr32;
+-      mask     = mkU8(15);
+    }
+ 
++   /* Note that we keep 5 bits of the shift amount even for 16-bit
++      operands. The manual says the result is undefined when the
++      shift amount is greater than the operand size, but that means
++      we still need to handle the case of shift_amt = 16 for 16-bit
++      operands. Luckily because we're doing the shift at double width,
++      this is compatible with the primops' restrictions. */
++   mask     = mkU8(31);
++
+    /* Do the shift, calculate the subshift value, and set 
+       the flag thunk. */
+ 
+@@ -7479,7 +7481,8 @@
+ 
+ /* Generate IR to set the guest %EFLAGS from the pushfl-format image
+    in the given 32-bit temporary.  The flags that are set are: O S Z A
+-   C P D ID AC.
++   C P D ID AC, except that ID and AC are not set if this was a 16-bit
++   popw.
+ 
+    In all cases, code to set AC is generated.  However, VEX actually
+    ignores the AC value and so can optionally emit an emulation
+@@ -7493,9 +7496,11 @@
+ static 
+ void set_EFLAGS_from_value ( IRTemp t1, 
+                              Bool   emit_AC_emwarn,
++			     Int    sz,
+                              Addr32 next_insn_EIP )
+ {
+    vassert(typeOfIRTemp(irsb->tyenv,t1) == Ity_I32);
++   vassert(sz == 2 || sz == 4);
+ 
+    /* t1 is the flag word.  Mask out everything except OSZACP and set
+       the flags thunk to X86G_CC_OP_COPY. */
+@@ -7527,6 +7532,7 @@
+                mkU32(1)))
+        );
+ 
++   if (sz > 2) {
+    /* Set the ID flag */
+    stmt( IRStmt_Put( 
+             OFFB_IDFLAG,
+@@ -7565,6 +7571,7 @@
+          )
+       );
+    }
++   }
+ }
+ 
+ 
+@@ -12876,6 +12883,7 @@
+          of iret.  All it really does is: 
+             popl %EIP; popl %CS; popl %EFLAGS.
+          %CS is set but ignored (as it is in (eg) popw %cs)". */
++      if (sz != 4) goto decode_failure; /* iretw is not yet supported */
+       t1 = newTemp(Ity_I32); /* ESP */
+       t2 = newTemp(Ity_I32); /* new EIP */
+       t3 = newTemp(Ity_I32); /* new CS */
+@@ -12889,7 +12897,8 @@
+       /* set %CS (which is ignored anyway) */
+       putSReg( R_CS, unop(Iop_32to16, mkexpr(t3)) );
+       /* set %EFLAGS */
+-      set_EFLAGS_from_value( t4, False/*!emit_AC_emwarn*/, 0/*unused*/ );
++      set_EFLAGS_from_value( t4, False/*!emit_AC_emwarn*/, 4/*sz*/,
++			     0/*unused*/ );
+       /* goto new EIP value */
+       jmp_treg(&dres, Ijk_Ret, t2);
+       vassert(dres.whatNext == Dis_StopHere);
+@@ -12897,11 +12906,13 @@
+       break;
+ 
+    case 0xE8: /* CALL J4 */
++      if (sz != 4) goto decode_failure;
+       d32 = getUDisp32(delta); delta += 4;
+       d32 += (guest_EIP_bbstart+delta); 
+       /* (guest_eip_bbstart+delta) == return-to addr, d32 == call-to addr */
+       if (d32 == guest_EIP_bbstart+delta && getIByte(delta) >= 0x58 
+-                                         && getIByte(delta) <= 0x5F) {
++                                         && getIByte(delta) <= 0x5F
++	  && resteerOkFn( callback_opaque, (Addr64)(Addr32)d32 )) {
+          /* Specially treat the position-independent-code idiom 
+                  call X
+               X: popl %reg
+@@ -13744,7 +13755,7 @@
+ 
+       /* Generate IR to set %EFLAGS{O,S,Z,A,C,P,D,ID,AC} from the
+ 	 value in t1. */
+-      set_EFLAGS_from_value( t1, True/*emit_AC_emwarn*/,
++      set_EFLAGS_from_value( t1, True/*emit_AC_emwarn*/, sz,
+                                  ((Addr32)guest_EIP_bbstart)+delta );
+ 
+       DIP("popf%c\n", nameISize(sz));
+Index: priv/guest_arm_toIR.c
+===================================================================
+--- priv/guest_arm_toIR.c	(revision 2701)
++++ priv/guest_arm_toIR.c	(working copy)
+@@ -15179,7 +15179,7 @@
+       vassert(0 == (pc & 1));
+ 
+       UInt pageoff = pc & 0xFFF;
+-      if (pageoff >= 18) {
++      if (0 && pageoff >= 18) {
+          /* It's safe to poke about in the 9 halfwords preceding this
+             insn.  So, have a look at them. */
+          guaranteedUnconditional = True; /* assume no 'it' insn found,
+@@ -17156,10 +17156,10 @@
+           && rD != 15 && rN == 13 && imm5 <= 3 && how == 0) {
+          valid = True;
+       }
+-      /* also allow "sub.w reg, sp, reg   w/ no shift
++      /* also allow "sub.w reg, sp, reg, lsl #N for N=0,1,2 or 3
+          (T1) "SUB (SP minus register) */
+       if (!valid && INSN0(8,5) == BITS4(1,1,0,1) // sub
+-          && rD != 15 && rN == 13 && imm5 == 0 && how == 0) {
++          && rD != 15 && rN == 13 && imm5 <= 3 && how == 0) {
+          valid = True;
+       }
+       if (valid) {

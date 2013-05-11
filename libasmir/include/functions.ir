@@ -1,0 +1,52 @@
+#include "reg_decls.ir"
+void init_input()
+{
+R_BUFFER:reg32_t = 0:reg32_t; 
+}
+
+void read_plt()
+{
+
+// copy a byte to target
+// increase buffer pointer
+// return when run out of data or size already met
+var counter:reg32_t; 
+var outptr:reg32_t; 
+var inptr:reg32_t; 
+var size:reg32_t;
+var cond1:reg1_t; 
+var cond2:reg1_t; 
+var cond:reg1_t;
+
+// We need to model all opened descriptors of a program, for now I
+// assume we only read from a single source
+
+outptr:reg32_t = R_ESP:reg32_t + 8:reg32_t;
+size:reg32_t = R_ESP:reg32_t + 12:reg32_t; 
+inptr:reg32_t = R_BUFFER:reg32_t; 
+
+counter:reg32_t = 0: reg32_t; 
+
+label READ_BEGIN:
+mem[outptr:reg32_t]:reg8_t[reg32_t] = BUFFER[inptr:reg32_t]:reg8_t[reg32_t]; 
+inptr:reg32_t = inptr:reg32_t + 1:reg32_t; 
+outptr:reg32_t = outptr:reg32_t + 1:reg32_t;
+R_BUFFER:reg32_t = R_BUFFER:reg32_t + 1:reg32_t;
+counter:reg32_t = counter:reg32_t + 1:reg32_t; 
+
+cond1:reg1_t = ((counter:reg32_t) < (size:reg32_t)); 
+cond2:reg1_t = ((counter:reg32_t) < (R_BUFSIZE:reg32_t)); 
+cond:reg1_t = cond1:reg1_t & cond2:reg1_t; 
+
+cjmp(cond:reg1_t, name(READ_BEGIN), name(READ_DONE));
+label READ_DONE:
+
+R_EAX:reg32_t = counter:reg32_t;
+
+}
+
+void getchar_plt()
+{
+R_EAX:reg32_t = cast(BUFFER[R_BUFFER:reg32_t]:reg8_t[reg32_t])U:reg32_t; 
+R_BUFFER:reg32_t = R_BUFFER:reg32_t + 1:reg32_t; 
+}

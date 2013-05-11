@@ -1,0 +1,27 @@
+Index: priv/guest-x86/toIR.c
+===================================================================
+--- priv/guest-x86/toIR.c	(revision 1735)
++++ priv/guest-x86/toIR.c	(working copy)
+@@ -159,7 +159,12 @@
+ #include "guest-generic/g_generic_x87.h"
+ #include "guest-x86/gdefs.h"
+ 
++#include "setjmp.h"
+ 
++static jmp_buf diswrk_jmp;
++#define vassert(x) if(!(x)) longjmp(diswrk_jmp, 1)
++#define vpanic(x) longjmp(diswrk_jmp, 1)
++
+ /*------------------------------------------------------------*/
+ /*--- Globals                                              ---*/
+ /*------------------------------------------------------------*/
+@@ -7178,6 +7183,9 @@
+    if (put_IP)
+       stmt( IRStmt_Put( OFFB_EIP, mkU32(guest_EIP_curr_instr)) );
+ 
++   if (setjmp(diswrk_jmp) != 0)
++     goto decode_failure;
++
+    /* Spot "Special" instructions (see comment at top of file). */
+    {
+       UChar* code = (UChar*)(guest_code + delta);

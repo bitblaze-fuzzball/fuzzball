@@ -1,0 +1,12 @@
+var R_ESP, R_EDI, R_EBX, R_ECX, R_EBP, R_ESI, R_EAX:reg32_t;
+var R_EDX, R_DFLAG:reg32_t;
+var R_FTOP, R_FPROUND, R_FC3210, R_EMWARN:reg32_t;
+var R_CC_OP, R_CC_DEP1, R_CC_DEP2, R_CC_NDEP, EFLAGS:reg32_t;
+var R_CF, R_PF, R_AF, R_ZF,R_SF,R_OF:reg1_t;
+var mem:reg8_t[reg32_t];
+var ra_locs:reg32_t[reg32_t];
+var write_start, write_end: reg32_t;
+var num_ra_locs: reg32_t;
+var BUFFER:reg8_t[reg32_t]; 
+var R_BUFFER, R_BUFSIZE:reg32_t; 
+

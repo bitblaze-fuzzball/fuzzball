@@ -1,0 +1,136 @@
+Index: src/absrefine_counterexample/CounterExample.cpp
+===================================================================
+--- src/absrefine_counterexample/CounterExample.cpp	(revision 1668)
++++ src/absrefine_counterexample/CounterExample.cpp	(working copy)
+@@ -767,7 +767,78 @@
+     //os << "\nEND OF COUNTEREXAMPLE" << endl;
+   } //End of PrintCounterExample
+ 
++  // The following two functions produce a counter example data
++  // structure that should exactly match the text output, in the form
++  // of two malloced, null-terminated arrays of ASTNode pointers. For
++  // compatiblity with Vine's old OCaml interface, but we should
++  // figure out whether STP standard interfaces can now be used
++  // instead. -SMcC
++  ASTNode **AbsRefine_CounterExample::GetTrueCounterExampleFst() {
++    // Take a copy of the counterexample map, 'cause TermToConstTermUsingModel
++    // changes it. Which breaks the iterator otherwise.
++    const ASTNodeMap c(CounterExampleMap);
++    
++    ASTNode** trueCEFst = (ASTNode**)malloc(sizeof(ASTNode*) * c.size());
+ 
++    ASTNodeMap::const_iterator it = c.begin();
++    ASTNodeMap::const_iterator itend = c.end();
++    int i=0;
++    for (; it != itend; it++)
++      {
++        const ASTNode& f = it->first;
++        const ASTNode& se = it->second;
++
++        //skip over introduced variables
++        if (f.GetKind() == SYMBOL && (bm->FoundIntroducedSymbolSet(f)))
++          {
++            continue;
++          }
++        if (f.GetKind() == SYMBOL     || 
++            (f.GetKind() == READ      && 
++             f[0].GetKind() == SYMBOL && 
++             f[1].GetKind() == BVCONST))
++          {
++           trueCEFst[i++] = new ASTNode(f);
++          }
++      }
++    trueCEFst[i] = 0; // null terminate
++    return trueCEFst;
++  }
++
++  ASTNode **AbsRefine_CounterExample::GetTrueCounterExampleSnd() {
++    // Take a copy of the counterexample map, 'cause TermToConstTermUsingModel
++    // changes it. Which breaks the iterator otherwise.
++    const ASTNodeMap c(CounterExampleMap);
++    
++    ASTNode** trueCESnd = (ASTNode**)malloc(sizeof(ASTNode*) * c.size());
++
++    ASTNodeMap::const_iterator it = c.begin();
++    ASTNodeMap::const_iterator itend = c.end();
++    int i=0;
++    for (; it != itend; it++)
++      {
++        const ASTNode& f = it->first;
++        const ASTNode& se = it->second;
++
++       assert(ARRAY_TYPE != se.GetType());
++
++        //skip over introduced variables
++        if (f.GetKind() == SYMBOL && (bm->FoundIntroducedSymbolSet(f)))
++          {
++            continue;
++          }
++        if (f.GetKind() == SYMBOL     || 
++            (f.GetKind() == READ      && 
++             f[0].GetKind() == SYMBOL && 
++             f[1].GetKind() == BVCONST))
++          {
++           trueCESnd[i++] = new ASTNode(se);
++          }
++      }
++    trueCESnd[i] = 0; // null terminate
++    return trueCESnd;
++  }
++
+   /* iterate through the CounterExampleMap data structure and print it
+    * to stdout. this function prints only the declared array variables
+    * IN the ORDER in which they were declared. It also assumes that
+Index: src/absrefine_counterexample/AbsRefine_CounterExample.h
+===================================================================
+--- src/absrefine_counterexample/AbsRefine_CounterExample.h	(revision 1668)
++++ src/absrefine_counterexample/AbsRefine_CounterExample.h	(working copy)
+@@ -116,6 +116,11 @@
+     {
+       return CounterExampleMap;
+     }
++
++    // Yet another counterexample format, this one as used by the
++    // Vine project's old OCaml interface.
++    ASTNode **GetTrueCounterExampleFst(void);
++    ASTNode **GetTrueCounterExampleSnd(void);
+       
+     //Computes the truth value of a formula w.r.t counter_example
+     ASTNode ComputeFormulaUsingModel(const ASTNode& form);
+Index: src/c_interface/c_interface.cpp
+===================================================================
+--- src/c_interface/c_interface.cpp	(revision 1668)
++++ src/c_interface/c_interface.cpp	(working copy)
+@@ -621,6 +621,16 @@
+   delete c;
+ }
+ 
++Expr * vc_getTrueCounterExampleFst(VC vc) {
++  Expr * es = (Expr *)(((stpstar)vc)->Ctr_Example->GetTrueCounterExampleFst());
++  return es;
++}
++
++Expr * vc_getTrueCounterExampleSnd(VC vc) {
++  Expr * es = (Expr *)(((stpstar)vc)->Ctr_Example->GetTrueCounterExampleSnd());
++  return es;
++}
++
+ int vc_getBVLength(VC vc, Expr ex) {
+   nodestar e = (nodestar)ex;
+ 
+Index: src/c_interface/c_interface.h
+===================================================================
+--- src/c_interface/c_interface.h	(revision 1668)
++++ src/c_interface/c_interface.h	(working copy)
+@@ -376,6 +376,11 @@
+   // Free the return value of vc_getWholeCounterExample
+   void vc_deleteWholeCounterExample(WholeCounterExample cc);
+ 
++  // Counterexample as a Vine-style pair of ASTNode * arrays.
++  // Free these with free() when you're done with them.
++  Expr * vc_getTrueCounterExampleFst(VC vc);
++  Expr * vc_getTrueCounterExampleSnd(VC vc);
++
+   //Kinds of Expr
+   enum exprkind_t{
+       UNDEFINED,

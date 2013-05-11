@@ -1,0 +1,340 @@
+/*
+  Low level interface to libasmir. Avoid using this directly. Instead, use
+  the Asmir module.
+*/
+
+typedef [abstract] void* Exp;
+typedef [abstract] void* Stmt;
+typedef [abstract] void* asm_function_t;
+typedef [abstract] void* asm_program_t;
+typedef [abstract] void* vine_block_t;
+typedef [abstract] void* vine_blocks_t;
+typedef [abstract] void* dyn_function_t;
+typedef [abstract] void* dyn_functions_t;
+typedef [abstract] void* memory_cell_data_t;
+typedef [abstract] void* memory_data_t;
+
+typedef [abstract] void *instmap_t;
+/* typedef [abstract] void* instmap_t_map;
+typedef [ref] struct instmap_s {
+  [ref] asm_program_t *prog;
+  [abstract] instmap_t_map imap;
+} *instmap_t; */
+
+
+#include "../libasmir/config.h"
+#if SIZEOF_BFD_VMA == 4
+typedef [int64] unsigned long address_t;
+#else
+typedef  unsigned long long int address_t; 
+#endif
+
+typedef struct _raw_inst_t {
+  address_t address;
+  int length;
+  [size_is(length)] unsigned char *bytes;
+} raw_inst_t;
+//typedef [abstract] void* raw_insts_t;
+
+// From bfd.h
+// This table causes problems with our Binutils compatibility, because
+// they change the numbering (adding new architectures in the middle)
+// between versions. Perhaps a better approach would be to have an
+// independently numbered enum that covers only the architectures we
+// support (more like Asmir.arch).
+// For now, every time an architecture is added (or, potentially,
+// removed) in between the oldest Binutils we support (2.18) and the
+// present in the range of the table before the largest value we use
+// (bfd_arch_arm), we need to add a configure test for it: see
+// configure.ac.
+enum bfd_architecture
+{
+  bfd_arch_unknown,   /* File arch not known.  */
+  bfd_arch_obscure,   /* Arch known, not one of these.  */
+  bfd_arch_m68k,      /* Motorola 68xxx */
+  bfd_arch_vax,       /* DEC Vax */
+  bfd_arch_i960,      /* Intel 960 */
+  bfd_arch_or32,      /* OpenRISC 32 */
+  bfd_arch_sparc,     /* SPARC */
+#if HAVE_DECL_BFD_ARCH_SPU
+  bfd_arch_spu,       /* PowerPC SPU */
+#endif
+  bfd_arch_mips,      /* MIPS Rxxxx */
+  bfd_arch_i386,      /* Intel 386 */
+#if HAVE_DECL_BFD_ARCH_L1OM
+  bfd_arch_l1om,      /* Intel L1OM */
+#endif
+#if HAVE_DECL_BFD_ARCH_K1OM
+  bfd_arch_k1om,      /* Intel K1OM */
+#endif
+  bfd_arch_we32k,     /* AT&T WE32xxx */
+  bfd_arch_tahoe,     /* CCI/Harris Tahoe */
+  bfd_arch_i860,      /* Intel 860 */
+  bfd_arch_i370,      /* IBM 360/370 Mainframes */
+  bfd_arch_romp,      /* IBM ROMP PC/RT */
+  bfd_arch_convex,    /* Convex */
+  bfd_arch_m88k,      /* Motorola 88xxx */
+  bfd_arch_m98k,      /* Motorola 98xxx */
+  bfd_arch_pyramid,   /* Pyramid Technology */
+  bfd_arch_h8300,     /* Renesas H8/300 (formerly Hitachi H8/300) */
+  bfd_arch_pdp11,     /* DEC PDP-11 */
+#if HAVE_DECL_BFD_ARCH_PLUGIN
+  bfd_arch_plugin,    /* not explained in bfd.h either */
+#endif
+  bfd_arch_powerpc,   /* PowerPC */
+  bfd_arch_rs6000,    /* IBM RS/6000 */
+  bfd_arch_hppa,      /* HP PA RISC */
+  bfd_arch_d10v,      /* Mitsubishi D10V */
+  bfd_arch_d30v,      /* Mitsubishi D30V */
+  bfd_arch_dlx,       /* DLX */
+  bfd_arch_m68hc11,   /* Motorola 68HC11 */
+  bfd_arch_m68hc12,   /* Motorola 68HC12 */
+#ifdef HAVE_DECL_BFD_ARCH_M9S12X
+  bfd_arch_m9s12x,   /* Freescale S12X */
+#endif
+#ifdef HAVE_DECL_BFD_ARCH_M9S12XG
+  bfd_arch_m9s12xg,  /* Freescale XGATE */
+#endif
+  bfd_arch_z8k,       /* Zilog Z8000 */
+  bfd_arch_h8500,     /* Renesas H8/500 (formerly Hitachi H8/500) */
+  bfd_arch_sh,        /* Renesas / SuperH SH (formerly Hitachi SH) */
+  bfd_arch_alpha,     /* Dec Alpha */
+  bfd_arch_arm,       /* Advanced Risc Machines ARM.  */
+  bfd_arch_ns32k,     /* National Semiconductors ns32000 */
+  bfd_arch_w65,       /* WDC 65816 */
+  bfd_arch_tic30,     /* Texas Instruments TMS320C30 */
+  bfd_arch_tic4x,     /* Texas Instruments TMS320C3X/4X */
+  bfd_arch_tic54x,    /* Texas Instruments TMS320C54X */
+  bfd_arch_tic80,     /* TI TMS320c80 (MVP) */
+  bfd_arch_v850,      /* NEC V850 */
+  bfd_arch_arc,       /* ARC Cores */
+  bfd_arch_m32c,     /* Renesas M16C/M32C.  */
+  bfd_arch_m32r,      /* Renesas M32R (formerly Mitsubishi M32R/D) */
+  bfd_arch_mn10200,   /* Matsushita MN10200 */
+  bfd_arch_mn10300,   /* Matsushita MN10300 */
+  bfd_arch_fr30,
+  bfd_arch_frv,
+  bfd_arch_mcore,
+  bfd_arch_mep,
+  bfd_arch_ia64,      /* HP/Intel ia64 */
+  bfd_arch_ip2k,      /* Ubicom IP2K microcontrollers. */
+  bfd_arch_iq2000,     /* Vitesse IQ2000.  */
+  bfd_arch_mt,
+  bfd_arch_pj,
+  bfd_arch_avr,       /* Atmel AVR microcontrollers.  */
+  bfd_arch_bfin,        /* ADI Blackfin */
+  bfd_arch_cr16,       /* National Semiconductor CompactRISC (ie CR16). */
+  bfd_arch_cr16c,       /* National Semiconductor CompactRISC. */
+  bfd_arch_crx,       /*  National Semiconductor CRX.  */
+  bfd_arch_cris,      /* Axis CRIS */
+  bfd_arch_s390,      /* IBM s390 */
+  bfd_arch_score,     /* Sunplus score */ 
+  bfd_arch_openrisc,  /* OpenRISC */
+  bfd_arch_mmix,      /* Donald Knuth's educational processor.  */
+  bfd_arch_xstormy16,
+  bfd_arch_msp430,    /* Texas Instruments MSP430 architecture.  */
+  bfd_arch_xc16x,     /* Infineon's XC16X Series.               */
+  bfd_arch_xtensa,    /* Tensilica's Xtensa cores.  */
+  bfd_arch_maxq,     /* Dallas MAXQ 10/20 */
+  bfd_arch_z80,
+  bfd_arch_last
+};
+
+
+typedef struct _vine_symbol_t {
+  [string] char *name;
+  address_t addr;
+  int is_function;
+  int is_dynamic;
+} vine_symbol_t;
+
+typedef struct _cflow_t {
+  int ctype;
+  address_t target;
+} cflow_t;
+
+typedef [abstract] void* vine_symbols_t;
+
+
+enum exp_type_t {
+  BINOP, UNOP, CONSTANT, MEM, TEMP, PHI, CAST,
+  NAME, UNKNOWN, LET, EXTENSION };
+
+enum reg_t { REG_1, REG_8, REG_16, REG_32, REG_64 };
+
+enum binop_type_t {
+  PLUS = 0, MINUS ,   TIMES ,  DIVIDE,
+  MOD,      LSHIFT,   RSHIFT,  ARSHIFT,
+  LROTATE,  RROTATE,  LOGICAND, LOGICOR,
+  BITAND,  BITOR,       XOR,      EQ,
+  NEQ,  GT,       LT,       GE,
+  LE,SDIVIDE, SMOD    };
+
+enum unop_type_t {NEG, NOT};
+
+typedef __int64 const_val_t;
+
+enum cast_t {
+  CAST_UNSIGNED, CAST_SIGNED, CAST_HIGH, CAST_LOW,
+  CAST_FLOAT, CAST_INTEGER, CAST_RFLOAT, CAST_RINTEGER };
+
+enum stmt_type_t {  JMP,   CJMP, SPECIAL, MOVE,  COMMENT,  LABEL, EXPSTMT, VARDECL, CALL, RETURN, FUNCTION, ASSERT};
+
+
+enum exp_type_t exp_type( [in] Exp e);
+enum binop_type_t binop_type([in] Exp e);
+Exp binop_lhs([in] Exp e);
+Exp binop_rhs([in] Exp e);
+enum unop_type_t unop_type([in] Exp e);
+Exp unop_subexp([in] Exp e);
+Exp mem_addr([in] Exp e);
+enum reg_t mem_regtype([in] Exp e);
+const_val_t constant_val([in] Exp e);
+enum reg_t constant_regtype([in] Exp e);
+[string] char* phi_phiname([in] Exp e);
+int phi_numnodes([in] Exp e);
+Exp phi_nodeat([in] Exp e, int i);
+enum reg_t temp_regtype([in] Exp e);
+[string] char* temp_name([in] Exp e);
+[string] char* unknown_str([in] Exp e);
+enum reg_t cast_width([in] Exp e);
+enum cast_t cast_casttype([in] Exp e);
+Exp cast_subexp([in] Exp e);
+[string] char* name_string([in] Exp e);
+Exp let_var([in] Exp e);
+Exp let_exp([in] Exp e);
+Exp let_in([in] Exp e);
+
+enum stmt_type_t stmt_type([in] Stmt s);
+Exp move_lhs([in] Stmt s);
+Exp move_rhs([in] Stmt s);
+[string] char* label_string([in] Stmt s);
+[string] char* special_string([in] Stmt s);
+[string] char* comment_string([in] Stmt s);
+Exp jmp_target([in] Stmt s);
+Exp cjmp_cond([in] Stmt s);
+Exp cjmp_ttarget([in] Stmt s);
+Exp cjmp_ftarget([in] Stmt s);
+Exp expstmt_exp([in] Stmt s);
+[string] char* vardecl_name([in]Stmt s);
+enum reg_t vardecl_type([in]Stmt s);
+
+
+boolean call_has_lval([in] Stmt s);
+Exp call_lval_opt([in] Stmt s);
+Exp call_fnname([in] Stmt s);
+[null_terminated] Exp* call_params([in] Stmt s);
+boolean ret_has_exp([in] Stmt s);
+Exp ret_exp([in] Stmt s);
+[string] const char* func_name(Stmt s);
+boolean func_has_rv(Stmt s);
+enum reg_t func_rt(Stmt s);
+[null_terminated] Stmt* func_params(Stmt s);
+boolean func_is_external(Stmt s);
+[null_terminated] Stmt* func_body(Stmt s);
+Exp assert_cond(Stmt s);
+
+// generated functions for eflags thunks
+[null_terminated] Stmt* gen_eflags_helpers_c();
+
+
+asm_program_t disassemble_program([string] char *filename);
+
+
+asm_program_t instmap_to_asm_program(instmap_t instmap);
+
+/* functions for disassembling a program and retrieving the IR on a
+   per-address basis */
+
+/* interface with an elf directly */
+instmap_t filename_to_instmap([string] char *filename);
+vine_blocks_t instmap_translate_address_range(instmap_t instmap,
+					      address_t start_addr,
+					      address_t end_addr);
+vine_block_t instmap_translate_address(instmap_t instmap,
+				       address_t addr);
+int instmap_has_address(instmap_t instmap, address_t addr);
+//cflow_t instmap_control_flow_type(instmap_t instmap, address_t addr);
+address_t get_last_segment_address([string] char *filename,
+				   address_t addr);
+
+
+vine_blocks_t asmir_asmprogram_to_vine(asm_program_t prog);
+int asmir_vine_blocks_size(vine_blocks_t bs);
+vine_block_t asmir_vine_blocks_get(vine_blocks_t bs, int i);
+void destroy_vine_block(vine_block_t bs);
+void destroy_vine_blocks(vine_blocks_t bs);
+int asmir_vine_block_size(vine_block_t b);
+address_t asmir_vine_block_address(vine_block_t b);
+Stmt asmir_vine_block_get(vine_block_t b, int i);
+void free_asm_function(asm_function_t f);
+void free_asm_program(asm_program_t p);
+vine_block_t asm_addr_to_ir(asm_program_t p, address_t addr);
+
+[string] char* string_blockinsn(asm_program_t prog, vine_block_t block);
+
+/*
+vine_block_t
+byte_insn_to_ir_c(address_t addr, [size_is(len)] char *bb_bytes, int len);
+*/
+
+dyn_functions_t get_synthetic_symbols([string] char *filename);
+int dyn_functions_size(dyn_functions_t ds);
+dyn_function_t dyn_functions_get(dyn_functions_t ds, int i);
+[string] char* dyn_functions_name(dyn_function_t d)
+  quote(dealloc, "free(_res);");
+
+address_t dyn_functions_addr(dyn_function_t d);
+void destroy_dyn_functions(dyn_functions_t ds);
+
+vine_symbols_t get_symbols_of_file([string] char *filename);
+int symbols_size(vine_symbols_t ds);
+vine_symbol_t *symbols_get(vine_symbols_t ds, int i) ;
+void destroy_symbols(vine_symbols_t ds);
+
+address_t memory_cell_data_address(memory_cell_data_t md);
+int memory_cell_data_value(memory_cell_data_t md);
+memory_data_t get_rodata(asm_program_t prog);
+memory_data_t get_bssdata(asm_program_t prog);
+int memory_data_size(memory_data_t md);
+memory_cell_data_t memory_data_get(memory_data_t md, int i);
+void destroy_memory_data(memory_data_t md);
+
+/*
+raw_insts_t raw_insts_of_file([string] char *ptr);
+int raw_insts_size(raw_insts_t ri);
+raw_inst_t * raw_insts_get([in] raw_insts_t ri, [in] int i);
+void destroy_raw_insts(raw_insts_t ri);
+*/
+
+void set_use_eflags_thunks(boolean v);
+// Return eflags thunk translation setting.
+boolean get_use_eflags_thunks();
+
+/// if set to true, calls/ret in assembly are translated as calls/returns
+/// Deprecated
+void set_call_return_translation(boolean v);
+
+
+// Returns the architecture of a program
+enum bfd_architecture asmprogram_arch(asm_program_t prog);
+
+void set_disasm_format_intel(boolean is_intel);
+
+// Prints to stdout the disassembly string for the given architecture and addr
+void print_disasm_rawbytes(enum bfd_architecture arch,
+			   address_t addr,
+			   [size_is(size)] char *buf, int size);
+
+// Returns the disassembly string for the given architecture and addr
+[string] char* sprintf_disasm_rawbytes(enum bfd_architecture arch,
+				       boolean is_intel,
+				       address_t addr,
+				       [size_is(size)] char *buf, int size);
+
+// returns a special asm_program which contains only the given instruction
+// takes a char array for historical reasons
+asm_program_t
+byte_insn_to_asmp(enum bfd_architecture arch, address_t addr,
+		  [size_is(len)/*,string*/] char *bb_bytes, int len);
+
