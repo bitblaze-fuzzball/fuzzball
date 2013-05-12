@@ -957,6 +957,8 @@ let rec runloop (*ce*) fm eip_var eip mem_var gpr_vars asmir_gamma =
     match sl with
       | [V.Label(_); V.Comment(c1); V.Special("int 0x80");
 	 V.Label(_); V.Jmp(e)]
+      | [V.Comment(c1); V.Move(_, _); V.Special("int 0x80");
+	 V.Jmp(e)]
       | [V.Comment(c1); V.Special("int 0x80"); V.Jmp(e)]
 	->
 	  (let syscall_num = Int64.to_int (read_reg32 eax_var) in

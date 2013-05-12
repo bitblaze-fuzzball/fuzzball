@@ -201,6 +201,8 @@ var R_FTOP:reg32_t;
 var R_FPROUND:reg32_t;
 var R_FC3210:reg32_t;
 var R_SSEROUND:reg32_t;
+var R_EMWARN:reg32_t;
+var R_IP_AT_SYSCALL:reg32_t;
 END
 
 my @prog_phs = read_program_headers($prog_fh, \%prog_eh);
