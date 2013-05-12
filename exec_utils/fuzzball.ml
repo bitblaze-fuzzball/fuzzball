@@ -1885,7 +1885,7 @@ type register_name =
   | R_CC_OP | R_CC_DEP1 | R_CC_DEP2 | R_CC_NDEP
   | R_DFLAG | R_IDFLAG | R_ACFLAG | R_EMWARN
   | R_LDT | R_GDT | R_CS | R_DS| R_ES | R_FS | R_GS | R_SS
-  | R_FTOP | R_FPROUND | R_FC3210 | R_SSEROUND
+  | R_FTOP | R_FPROUND | R_FC3210 | R_SSEROUND | R_IP_AT_SYSCALL
 
 let reg_to_regstr reg = match reg with
   | R_EBP -> "R_EBP" | R_ESP -> "R_ESP" | R_ESI -> "R_ESI"
@@ -1900,7 +1900,7 @@ let reg_to_regstr reg = match reg with
   | R_LDT -> "R_LDT" | R_GDT -> "R_GDT" | R_CS -> "R_CS" | R_DS -> "R_DS"
   | R_ES -> "R_ES" | R_FS -> "R_FS" | R_GS -> "R_GS"| R_SS -> "R_SS"
   | R_FTOP -> "R_FTOP" | R_FPROUND -> "R_FPROUND" | R_FC3210  -> "R_FC3210"
-  | R_SSEROUND -> "R_SSEROUND"
+  | R_SSEROUND -> "R_SSEROUND" | R_IP_AT_SYSCALL -> "R_IP_AT_SYSCALL"
 
 let regstr_to_reg s = match s with
   | "R_EBP" -> R_EBP | "R_ESP" -> R_ESP | "R_ESI" -> R_ESI
@@ -1915,7 +1915,7 @@ let regstr_to_reg s = match s with
   | "R_LDT" -> R_LDT | "R_GDT" -> R_GDT | "R_CS" -> R_CS | "R_DS" -> R_DS
   | "R_ES" -> R_ES | "R_FS" -> R_FS | "R_GS" -> R_GS| "R_SS" -> R_SS
   | "R_FTOP" -> R_FTOP | "R_FPROUND" -> R_FPROUND | "R_FC3210"  -> R_FC3210
-  | "R_SSEROUND" -> R_SSEROUND
+  | "R_SSEROUND" -> R_SSEROUND | "R_IP_AT_SYSCALL" -> R_IP_AT_SYSCALL
   | _ -> failwith ("Unrecognized register name " ^ s)
 
 class ['d] frag_machine factory = object(self)
