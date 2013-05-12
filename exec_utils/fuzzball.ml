@@ -338,7 +338,7 @@ class frag_machine () = object(self)
 
 end
 
-class fake_frag_machine ((dl, sl) as prog) = object(self)
+(* class fake_frag_machine ((dl, sl) as prog) = object(self)
   val ce = new Vine_ceval.concrete_evaluator prog
   val mem_var = List.find (fun (i, s, t) -> s = "mem") dl
 
@@ -377,7 +377,7 @@ class fake_frag_machine ((dl, sl) as prog) = object(self)
     with
       | Vine_eval.NoSuchLabel(s) -> s
 
-end
+end *)
 
 let fresh_addr = 
   let addr = ref 0x50000000L in
