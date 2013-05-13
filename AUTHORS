@@ -1,0 +1,25 @@
+FuzzBALL is based on, and includes a partial copy of, the Vine library
+from the BitBlaze Team at UC Berkeley:
+
+The BitBlaze Team is a research group led by Professor Dawn Song at
+University of California, Berkeley, developing technologies for
+analyzing program binaries for security applications. The past and
+current student and staff members who have contributed to this release
+include David Brumley, Juan Caballero, Cody Hartwig, Ivan Jager, Min
+Gyung Kang, Zhenkai Liang, Stephen McCamant, James Newsome, Pongsin
+Poosankam, Prateek Saxena, Heng Yin, and Jiang Zheng. In particular,
+the main contributors to the Vine core component include David
+Brumley, Ivan Jager, and Pongsin Poosankam; the main contributors to
+the trace, tracecap and trace_utils components for trace recording,
+processing and interfacing with the Vine core include Juan Caballero,
+Zhenkai Liang, and James Newsome; and Heng Yin is the key developer of
+the TEMU component. For more information about BitBlaze, please see
+http://bitblaze.cs.berkeley.edu.
+
+FuzzBALL itself was primarily written by Stephen McCamant while he was
+a postdoc at UC Berkeley. Other Berkeley contributors included Prateek
+Saxena and Devdatta Akhawe, and many other Berkeley colleagues helped
+by testing, providing comments, and working on other projects that
+included or were derived from it. Portions of the development of
+FuzzBALL were also performed by Stephen McCamant for Ensighta
+Security, Inc.
