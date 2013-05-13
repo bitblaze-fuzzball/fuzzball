@@ -1599,15 +1599,15 @@ let main argc argv =
       fm#init_prog prog;
       let eip = fm#get_int_var eip_var
       in
-	runloop fm eip_var eip mem_var gpr_vars asmir_gamma (Some 0x0804855eL);
+	runloop fm eip_var eip mem_var gpr_vars asmir_gamma (Some 0x08048656L);
 	fm#make_snap (); Printf.printf "Took snapshot\n";
 	while true do
 	  let regex = random_regex 8 and
 	      old_tcs = Hashtbl.length trans_cache in
-	    fm#store_cstr 0x8049820L 0L regex;
+	    fm#store_cstr 0x08063c20L 0L regex;
 	    (try
-	       runloop fm eip_var 0x0804855eL mem_var gpr_vars asmir_gamma
-		 (Some 0x0804859dL);
+	       runloop fm eip_var 0x08048656L mem_var gpr_vars asmir_gamma
+		 (Some 0x080486d2L);
 	     with
 	       | Failure("Jump to 0") -> () (* equivalent of segfault *)
 	    );
