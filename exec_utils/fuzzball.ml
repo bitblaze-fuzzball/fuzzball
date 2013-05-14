@@ -865,7 +865,7 @@ class stp_external_engine fname = object(self)
     self#visitor#declare_var_value var rhs
 
   method query e =
-    output_string self#chan "QUERY(0bin0 = ";
+    output_string self#chan "QUERY(NOT ";
     ignore(V.exp_accept (self#visitor :> V.vine_visitor) e);
     output_string self#chan ");\n";
     output_string self#chan "COUNTEREXAMPLE;\n";
@@ -894,9 +894,13 @@ let match_input_var s =
   try
     if (String.sub s 0 5) = "input" then
       let wo_input = String.sub s 5 ((String.length s) - 5) in
-      let uscore_loc = String.index wo_input '_' in
-      let n_str = String.sub wo_input 0 uscore_loc in
-	Some (int_of_string n_str)
+	try
+	  let uscore_loc = String.index wo_input '_' in
+	  let n_str = String.sub wo_input 0 uscore_loc in
+	    Some (int_of_string n_str)
+	with
+	  | Not_found ->
+	      Some (int_of_string wo_input)
     else
       None
   with
