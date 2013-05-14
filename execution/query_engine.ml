@@ -27,6 +27,23 @@ class virtual query_engine = object(self)
     self#reset
 end
 
+let no s = failwith (s ^ " called on dummy_query_engine")
+
+class dummy_query_engine = object(self)
+  inherit query_engine
+
+  method start_query = no "start_query"
+  method add_free_var v = no "add_free_var"
+  method add_temp_var v = no "add_temp_var"
+  method assert_eq v e = no "assert_eq"
+  method add_condition e = no "add_condition"
+  method push = no "push"
+  method pop = no "pop"
+  method query e = no "query"
+  method after_query b = no "after_query"
+  method reset = no "reset"
+end
+
 let print_ce ce =
   List.iter
     (fun (var_s, value) ->

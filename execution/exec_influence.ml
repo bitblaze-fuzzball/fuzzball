@@ -87,7 +87,13 @@ struct
   object(self)
     val form_man = fm#get_form_man
 
-    val qe = construct_solver "-influence"
+    (* This class is currently constructed before the command line
+       options that relate to the choice of solver are parsed. So we want
+       to delay constructing the query engine until it's needed. Using a
+       dummy object will satisfy OCaml's type system so that we don't
+       need a cumbersome option type. *)
+    val mutable qe = new Query_engine.dummy_query_engine
+    val mutable qe_ready = false
 
     val measured_values = Hashtbl.create 30
       
@@ -372,6 +378,9 @@ struct
 
     method measure_influence_common decls assigns cond_e target_e =
       Printf.printf "In measure_influence_common\n";
+      if not qe_ready then
+	(qe <- construct_solver "-influence";
+	 qe_ready <- true);
       let ty = Vine_typecheck.infer_type None target_e in
       let temp_vars = List.map (fun (var, e) -> var) assigns in
       let let_vars = (collect_let_vars target_e) @
