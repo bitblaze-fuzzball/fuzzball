@@ -506,11 +506,16 @@ struct
       in
 	loop (D.to_symbolic_32 d)
 
+    val use_weak = false
     val temp_vars_weak = VarWeak.create 1001
+    val temp_vars_unweak = Hashtbl.create 1001
 
     method private lookup_temp_var (temp_num, var_num, ty) =
       let var = (var_num, "t" ^ (string_of_int temp_num), ty) in
-	VarWeak.find temp_vars_weak var
+	if use_weak then
+	  VarWeak.find temp_vars_weak var
+	else
+	  Hashtbl.find temp_vars_unweak var
 
     method private make_temp_var e ty =
       let cleanup_temp_var (n, s, t) =
@@ -535,7 +540,10 @@ struct
 		var_info;
  	      Hashtbl.replace temp_var_num_to_subexpr var_num
 		(e_enc, used_vars);
-	      VarWeak.add temp_vars_weak var;
+	      if use_weak then
+		VarWeak.add temp_vars_weak var
+	      else
+		Hashtbl.add temp_vars_unweak var var;
 	      if !opt_trace_temps_encoded then
 		Printf.printf "%s = %s\n" s (encode_printable_exp e);
 	      if !opt_trace_temps then
@@ -729,6 +737,7 @@ struct
 	 Hashtbl.fold sum_lengths temp_var_num_to_subexpr 0) in
       let te_ents = Hashtbl.length temp_var_num_evaled in
       let tw_ents = VarWeak.count temp_vars_weak in
+      let tu_ents = Hashtbl.length temp_vars_unweak in
 	Printf.printf "input_vars has %d entries\n" input_ents;
 	Printf.printf "region_base_vars has %d entries\n" rb_ents;
 	Printf.printf "region_vars has %d entries\n" rg_ents;
@@ -741,6 +750,7 @@ struct
 	Printf.printf "temp_var_num_to_subexpr has %d entries and %d bytes\n"
 	  t2se_ents t2se_bytes;
 	Printf.printf "temp_vars_weak has %d entries\n" tw_ents;
+	Printf.printf "temp_vars_unweak has %d entries\n" tu_ents;
 	(input_ents + rb_ents + rg_ents + sc_ents + bv_ents + se2t_ents +
 	   mbv_ents + ma_ents + t2se_ents + te_ents,
 	 input_nodes + rb_nodes + rg_nodes + bv_nodes + se2t_nodes +
