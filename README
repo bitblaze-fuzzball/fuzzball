@@ -1,0 +1,595 @@
+FuzzBALL is a symbolic execution tool for x86 (and a little ARM)
+binary code, based on the BitBlaze Vine library. (The name comes from
+the phrase "FUZZing Binaries with A Little Language", where "fuzzing"
+is a common application of symbolic execution to bug-finding, and the
+"little language" refers to the Vine intermediate language that
+FuzzBALL uses for execution.  Also "fuzzball" is a common nickname for
+a small kitten, and FuzzBALL was intended to be simpler and
+lighter-weight than some other symbolic execution tools.)
+
+At a high level, there are two kinds of code you can run FuzzBALL
+on. First, there is any code that can execute stand-alone, without the
+services of an OS or special hardware devices; this can include a
+subset of code from a larger program that does need those
+things. Second, there are single-threaded Linux programs, which
+FuzzBALL can run by passing their system calls onto your real OS.  In
+either case, an additional restriction to keep in mind is that
+FuzzBALL does not support SIMD (MMX/SSE, etc.) or (inherently)
+floating-point instructions.
+
+FuzzBALL is most commonly applied to 32-bit Linux/x86 binaries. It can
+also be hosted on other architectures (we use 64-bit x86 commonly, and
+have also test ARM), even when the subject programs are
+32-bit. However it requires relatively traditional x86 binaries that
+don't use SIMD instructions. In particular beware that the 32-bit
+libraries supplied with 64-bit versions of Linux often use SIMD
+instructions, because every processor that supports 64-bit code also
+supports them; but FuzzBALL does not, causing it to fail. Thus if you
+want to run 32-bit Linux binaries in FuzzBALL running on a 64-bit host
+machine, you should get older-CPU-compatible versions of the main
+system libraries such as the dynamic linker and the C library. Often
+the easiest way to do this is to install a complete 32-bit userland in
+a subdirectory, what's called a "chroot" installation. You can then
+cause programs running under FuzzBALL to use those libraries with
+FuzzBALL's "-chroot" option.
+
+FuzzBALL works with a decision procedure to solve path conditions. By
+default, this version uses a version of STP
+(http://sites.google.com/site/stpfastprover/) embedded as a library,
+which should require no additional configuration. But for debugging
+the solving process, or if you want to try a different version of STP,
+FuzzBALL also supports using an external STP binary. You can enable
+this by supplying the options "-solver stp-external -stp-path stp",
+where the argument to -stp-path is the location of your STP binary.
+
+EXAMPLES
+--------
+
+Example 1: using FuzzBALL as a concrete emulator
+
+If you don't supply any symbolic input, FuzzBALL can act as a
+relatively slow process-level emulator for (single-threaded) 32-bit
+Linux/x86 programs. To run FuzzBALL on a complete Linux program, give
+it the option "-linux-syscalls" to enable Linux system call support,
+pass the program binary as a non-option argument, and then end your
+command line with "--" and then the complete command line for running
+the program. For instance, to simulate the execution of "cat
+/etc/hostname", say:
+
+% fuzzball -linux-syscalls /bin/cat -- cat /etc/hostname
+
+You can add other FuzzBALL options anywhere before the --; options
+after the -- are passed to the emulated program.
+
+FuzzBALL supports many kinds of tracing and debugging information, but
+for predictability, they are all turned off by default. Most of the
+time you'll probably want to run with some of them turned on, but
+you'll have to choose which ones you want. There are a few kinds of
+tracing options, whose names all start with "-trace", that you can try
+out with concrete execution. The one that's most recommended for
+general use is "-trace-stopping", which prints a message whenever
+FuzzBALL finishes an execution path. For concrete execution, this will
+tell you whether the program finished successfully; if so, it will
+stop with "Stopping when program called exit()". Other more verbose
+kinds of tracing you can try are "-trace-syscalls", which has a
+similar effect as running a program under "strace", and
+"-trace-insns", which prints the disassembly of every instruction the
+program executes. Tracing output goes to the standard output, so for
+instance if run with -trace-insns and pipe the output to "wc -l" you
+can estimate how many instructions a program executes.
+
+If you try a wider variety of programs, you'll see that FuzzBALL's
+system call support is both imperfect and incomplete. Large programs
+may stop because they use unsupported floating point or SIMD
+instructions, or unsupported system calls. In particular the system
+call "clone()", which is used to start new threads, is not supported.
+And of course you'll also see that FuzzBALL is much slower than native
+execution, because it executes each x86 instruction by interpreting a
+sequences of Vine IL statements.
+
+Example 2: injecting symbolic input in a small Linux program
+
+Next let's do an example where we start exercising FuzzBALL's main
+functionality by making some of the state of a program symbolic. If
+you've used other symbolic execution systems in the past, this example
+may be familiar. But because FuzzBALL works on the binary level, we
+have to specify what's symbolic using binary-level program identifiers
+rather than source level.
+
+We'll use a sample program compiled from the following C code:
+
+#include <stdio.h>
+#include <stdlib.h>
+
+int simple(int x) {
+    int path = 0;
+    if (x & 1) {
+	printf("x is odd\n");
+	path++;
+    } else {
+	printf("x is even\n");
+    }
+    path <<= 1;
+    if (x % 11 == 0) {
+	printf("x is a multiple of 11\n");
+	path++;
+    } else {
+	printf("x is not a multiple of 11\n");
+    }
+    printf("Took path %d\n", path);
+}
+
+int main(int argc, char **argv) {
+    int input;
+    if (argc != 2) {
+	fprintf(stderr, "Usage: simple <integer>\n");
+	exit(-1);
+    }
+    input = atoi(argv[1]);
+    simple(input + 10);
+    return 0;
+}
+
+The source code and a binary are included under examples/simple-func.
+For now, just use the binary we provided. It takes a single integer as
+a command-line argument; by changing the value of that argument, you
+should be able to trigger four different outputs (not counting the
+usage error message). These behaviors correspond to the four different
+possible execution paths through the function simple(). We can have
+FuzzBALL explore these four different paths using symbolic execution.
+The way this works is that during an execution of the program, we'll
+replace the concrete value of the variable x (e.g., the integer 0)
+with a symbolic variable, say "n". Then when the program, say, adds 10
+to that value, it gets another symbolic formula, "n + 10". Running a
+program once, with a symbolic value, gives you a summary of the
+behavior for a lot of different concrete values.
+
+Things get a bit more complicated when a symbolic formula like "n +
+10" is used in a branch. For instance, is "n + 10" even, or odd? Of
+course that depends on the value of "n". When this happens, FuzzBALL
+needs to potentially follow multiple execution paths, depending on the
+condition. So what it does is create two formulas based on the branch:
+in this case, they say "n + 10 is even" and "n + 10 is odd". Then it
+asks a decision procedure (AKA constraint solver) whether each formula
+could be true for some value of the symbolic variables (whether the
+formula is "satisfiable"). At least one of the formulas must be
+satisfiable. If they both are, as in this case, it chooses one at
+random to explore now, and remembers the other one to explore later.
+(Some other symbolic execution tools "fork" and execute multiple paths
+in parallel, but FuzzBALL only ever executes one path at a time, to
+completion.) If FuzzBALL encounters another symbolic branch later, it
+does the same thing, but the formulas it checks include all of the
+conditions along the execution path it has taken so far (which is why
+they're called "path conditions").
+
+When there are no symbolic values, there is only ever one execution
+path. So to get multiple execution paths out of this example, we'll
+need to inject a symbolic value somewhere. For instance, let's put a
+symbolic value rather than a concrete value in the variable "input".
+The easiest way to do that in FuzzBALL here is to replace the call to
+atoi() in main(), and create a symbolic variable in place of its
+return value. FuzzBALL knows that the return value goes in %eax in the
+standard x86 calling convention, but it doesn't know about function
+names like "atoi" or source locations like "the statement on line 28",
+so we have to specify the function call by giving the location of its
+address. So to do that we look at the disassembly of the main()
+function from "objdump -d simple":
+
+08048558 <main>:
+ 8048558:       55                      push   %ebp
+ 8048559:       89 e5                   mov    %esp,%ebp
+ 804855b:       83 e4 f0                and    $0xfffffff0,%esp
+ 804855e:       83 ec 20                sub    $0x20,%esp
+ 8048561:       83 7d 08 02             cmpl   $0x2,0x8(%ebp)
+ 8048565:       74 34                   je     804859b <main+0x43>
+ 8048567:       a1 18 98 04 08          mov    0x8049818,%eax
+ 804856c:       89 c2                   mov    %eax,%edx
+ 804856e:       b8 e1 86 04 08          mov    $0x80486e1,%eax
+ 8048573:       89 54 24 0c             mov    %edx,0xc(%esp)
+ 8048577:       c7 44 24 08 18 00 00    movl   $0x18,0x8(%esp)
+ 804857e:       00 
+ 804857f:       c7 44 24 04 01 00 00    movl   $0x1,0x4(%esp)
+ 8048586:       00 
+ 8048587:       89 04 24                mov    %eax,(%esp)
+ 804858a:       e8 45 fe ff ff          call   80483d4 <fwrite@plt>
+ 804858f:       c7 04 24 ff ff ff ff    movl   $0xffffffff,(%esp)
+ 8048596:       e8 59 fe ff ff          call   80483f4 <exit@plt>
+ 804859b:       8b 45 0c                mov    0xc(%ebp),%eax
+ 804859e:       83 c0 04                add    $0x4,%eax
+ 80485a1:       8b 00                   mov    (%eax),%eax
+ 80485a3:       89 04 24                mov    %eax,(%esp)
+ 80485a6:       e8 19 fe ff ff          call   80483c4 <atoi@plt>
+ 80485ab:       89 44 24 1c             mov    %eax,0x1c(%esp)
+ 80485af:       8b 44 24 1c             mov    0x1c(%esp),%eax
+ 80485b3:       83 c0 0a                add    $0xa,%eax
+ 80485b6:       89 04 24                mov    %eax,(%esp)
+ 80485b9:       e8 06 ff ff ff          call   80484c4 <simple>
+ 80485be:       b8 00 00 00 00          mov    $0x0,%eax
+ 80485c3:       c9                      leave  
+
+You can see the call to atoi (technically, a dynamic linking stub
+named atoi@plt) near the bottom, at address 0x080485a6. So we can
+accomplish what we want with the FuzzBALL option 
+"-skip-call-ret-symbol 0x080485a6=n". Be sure to include the "0x"
+prefix when specifying numbers in hexadecimal. The "n" there is the
+name we've chosen to give to the newly created symbolic variable. The
+complete FuzzBALL command line to try is:
+
+% fuzzball -linux-syscalls -skip-call-ret-symbol 0x080485a6=n \
+   -trace-stopping simple -- ./simple 0
+
+From the output, you can see that FuzzBALL explores 4 program paths:
+
+x is even
+x is a multiple of 11
+Took path 1
+Stopping when program called exit()
+x is odd
+x is not a multiple of 11
+Took path 2
+Stopping when program called exit()
+x is even
+x is not a multiple of 11
+Took path 0
+Stopping when program called exit()
+x is odd
+x is a multiple of 11
+Took path 3
+Stopping when program called exit()
+
+By default, what FuzzBALL does when starting a new program path is to
+back up all the way to the beginning of execution. But an optimization
+that is often valuable is to pick the restart point to be later in the
+execution, so that the initial execution of the program only has to
+happen once. For a full program like this, you can control the reset
+point using the "-fuzz-start-addr" option. The key constraint to keep
+in mind is that this point has to come before we introduce symbolic
+state into the program. In this example, most of the execution time is
+spent in the dynamic loader, searching for and linking in the C
+library, so in fact a good restart point is the first instruction of
+main(). You can find this with the command "nm simple | fgrep main":
+
+% nm simple | fgrep main
+         U __libc_start_main@@GLIBC_2.0
+08048558 T main
+
+The second line is for the main function, so the option we want is
+"-fuzz-start-addr 0x08048558". This reduces the running time by almost
+a factor of 4. It makes less of a difference in this example, but
+there's also a converse option "-fuzz-end-addr" that you can use to
+tell FuzzBALL to restart once the interesting part of the program
+execution has finished.
+
+Now that we're really exploring symbolic branches, we can try out a
+few more of FuzzBALL's tracing options to see more details about how
+the symbolic execution is working. For instance, the flag
+"-trace-conditions" will print the branch conditions that FuzzBALL is
+giving to the decision procedure at each symbolic branch. For now,
+let's look at the first one:
+
+% fuzzball ... -trace-conditions ...:
+Symbolic branch condition t6_27997:reg1_t
+x is even
+
+That condition "t6" doesn't look doesn't look very informative,
+because FuzzBALL has introduced a temporary variable (whose names have
+the form "t" followed by a number) to take the place of a large
+formula. You can see the definitions of these temporaries by adding
+the flag "-trace-temps", which gives:
+
+% fuzzball ... -trace-temps ...:
+t6 =  cast(cast(  n_0_27943:reg32_t + 0xa:reg32_t  & 1:reg32_t )L:reg8_t)U:reg32_t
+ == 0:reg32_t
+
+This is the condition you would expect: we're taking n, adding 10 to
+it (0xa in hex), then masking off the low bit and comparing to
+zero. There's a little extra complexity in the nested cast operators:
+you can see were doing the AND operation on a 32-bit value, then
+taking the low 8 bits, then zero-extending back to 32 bits before
+comparing with zero. This shows up in the formula because the compiler
+used an 8-bit test instruction for the comparison:
+
+080484c4 <simple>:
+...
+ 80484d1:       8b 45 08                mov    0x8(%ebp),%eax
+ 80484d4:       83 e0 01                and    $0x1,%eax
+ 80484d7:       84 c0                   test   %al,%al
+ 80484d9:       74 12                   je     80484ed <simple+0x29>
+
+If you look at the conditions related to checking the remainder mod
+11, you'll see that they're even more complicated, because the
+compiler has implemented the remainder using other operators. But this
+isn't a problem for FuzzBALL because the complexity just gets passed
+on to the decision procedure.
+
+Speaking of the decision procedure, some other helpful information it
+generates when it finds that a branch direction is satisfiable is
+what's called a satisfying assignment: a set of values for the
+symbolic variables that are an example of how to make the condition
+true (or, respectively, false). You can have FuzzBALL print these
+using the option "-trace-assigns". This output is easiest to
+understand when you also get more details about how FuzzBALL is
+choosing branches, so you can try it along with "-trace-decisions" and
+"-trace-binary-paths":
+
+% fuzzball ... -trace-decisions -trace-assigns -trace-binary-paths...:
+
+Current Path String: 
+Trying true: Satisfiable.
+Input vars: 
+Trying false: Satisfiable.
+Input vars: n_0=0x1 
+Current Path String: 1
+
+x is even
+
+Current Path String: 1
+Trying true: Satisfiable.
+Input vars: n_0=0x32bd45e6 
+Trying false: Satisfiable.
+Input vars: 
+Current Path String: 11
+
+x is a multiple of 11
+Took path 1
+
+Stopping when program called exit()
+Path: 11
+
+The output shown above is from just the first path FuzzBALL explores:
+we've added some blank lines to separate the program's output from
+FuzzBALL's and show the structure more clearly. One important thing to
+keep in mind is that FuzzBALL always makes two decision procedure
+queries one after the other at a branch, for the condition and its
+negation. In this example, all four of these queries is satisfiable,
+as shown on the lines that start "Trying true:" and "Trying false:").
+The satisfying assignments follow on the lines that start "Input
+vars:". STP happens to default to trying to set variables to zero, so
+the seemingly blank assignments correspond to n=0, since 0+10 is both
+even and not a multiple of 11. For the query that asks for an such
+n+10 is both even and a multiple of 11, the decision procedure picks
+851264998. You can check that this works, though obviously the
+decision procedure isn't bothering to pick the simplest value (a
+person probably would have given you the example n=12). Since every
+path FuzzBALL takes is determined by the set of binary branch choices
+the program takes, FuzzBALL represents paths by strings of bits: for
+instance, the path here is "11", because it took the true case for
+both branches. In general you can think of the union of all of these
+paths as constituting a big binary tree, which we call the "decision
+tree". As the program runs FuzzBALL builds a version of this tree in
+memory, and uses it to decide which remaining unexplored paths to
+take.
+
+One more variation to explore with this example: above we were
+inserting the symbolic value as the return value of atoi(). A more
+general approach is to put a symbolic value in a memory location, and
+we can apply that to this program with some different command-line
+options. The generally most convenient way to do this is to choose an
+instruction in the program to be the -fuzz-start-addr, and then chose
+a memory location to write the value to at that point in execution.
+For this program, we can retain the basic strategy of using the return
+value of atoi(), but look for it when it's on the stack rather than in
+a register. In particular, here's the code that takes the return value
+of atoi(), adds 10 to it, and passes it to simple():
+
+
+ 80485a6:       e8 19 fe ff ff          call   80483c4 <atoi@plt>
+ 80485ab:       89 44 24 1c             mov    %eax,0x1c(%esp)
+ 80485af:       8b 44 24 1c             mov    0x1c(%esp),%eax
+ 80485b3:       83 c0 0a                add    $0xa,%eax
+ 80485b6:       89 04 24                mov    %eax,(%esp)
+ 80485b9:       e8 06 ff ff ff          call   80484c4 <simple>
+
+In between the '5ab and '5af instructions, the value we want to make
+symbolic will be stored on the stack at offset 0x1c. We can confirm
+this by running the program with the option "-tracepoint", which will
+cause FuzzBALL to print the value of an expression at a given
+instruction:
+
+% fuzzball -linux-syscalls \
+   -tracepoint 0x080485af:'R_ESP:reg32_t + 0x1c:reg32_t' \
+   -tracepoint 0x080485af:'mem[R_ESP:reg32_t + 0x1c:reg32_t]:reg32_t' \
+   simple -- ./simple 42
+At 080485af, R_ESP:reg32_t + 0x1c:reg32_t is  0xbfffcf30:reg32_t + 0x1c:reg32_t 
+At 080485af, mem[R_ESP:reg32_t + 0x1c:reg32_t]:reg32_t is 0x2a:reg32_t
+x is even
+x is not a multiple of 11
+Took path 0
+
+Here we've use two tracepoints, one printing an address and the other
+printing the value at that address. (Per-instruction actions such as
+tracepoints occur before the execution of the numbered instruction, so
+an action at '5af effectively happens after the store in '5ab but
+before the load in '5af.) The expressions are in Vine's intermediate
+language, where the registers have names like R_EAX, and memory is
+represented by a variable "mem". We can see that we have the right
+location because its value, 0x2a, matches the "42" we passed on the
+command line. Now that we know the code and data address where we want
+to insert the symbolic variable, we turn them into the arguments to
+-fuzz-start-addr and -symbolic-word respectively:
+
+% fuzzball -linux-syscalls \
+  -fuzz-start-addr 0x080485af -symbolic-word 0xbfffcf4c=n \
+  simple -- ./simple 42
+
+(Note that in FuzzBALL's terminology a "word" is a 32-bit value, what
+Intel's documentation calls a "doubleword".) A potential disadvantage
+to watch out for in using this technique with a stack address is that
+the layout of the stack is not guaranteed to be the same between
+program runs. FuzzBALL tries various tricks to try to make the stack
+layout more consistent, but it isn't always possible.
+
+Example 3: on-the-spot symbolic execution
+
+In example 2, we ran a complete program, with almost all of the
+program's state concrete. But another way you can use FuzzBALL is to
+run just a fragment of a program, with almost all of its state
+symbolic. We call this capability of performing symbolic execution
+from a place in the middle of the program "on-the-spot" symbolic
+execution.
+
+For instance, let's try using on-the-spot symbolic execution to
+explore just the simple() function in the same program from example
+2. Using "nm", we find that the starting address of the simple()
+function is 0x080484c4. For on-the-spot execution, we still pass the
+program binary as a non-option argument to FuzzBALL, but we also give
+"-start-addr 0x080484c4", which tells FuzzBALL where to start
+execution. (If you specify -start-addr without -fuzz-start-addr,
+-fuzz-start-addr will default to the same address as -start-addr.)
+The we often also usually want to make all of the registers of the
+machine symbolic, which we do with "-symbolic-regs". Let's try this:
+
+% fuzzball simple -start-addr 0x080484c4 -symbolic-regs \
+   -trace-stopping -trace-conditions -trace-insns -trace-regions
+080484c4: push   %ebp
+Address initial_esp_61:reg32_t is region 1
+080484c5: mov    %esp,%ebp
+080484c7: sub    $0x28,%esp
+080484ca: movl   $0x0,-0xc(%ebp)
+080484d1: mov    0x8(%ebp),%eax
+080484d4: and    $0x1,%eax
+080484d7: test   %al,%al
+080484d9: je     0x00000000080484ed
+Symbolic branch condition  cast(cast( region_1_89[4:reg32_t]:reg32_t & 1:reg32_t )L:reg8_t)U:reg32_t
+ == 0:reg32_t
+080484ed: movl   $0x8048699,(%esp)
+080484f4: call   0x00000000080483e4
+080483e4: jmp    *0x8049808
+080483ea: push   $0x28
+080483ef: jmp    0x0000000008048384
+08048384: pushl  0x80497ec
+0804838a: jmp    *0x80497f0
+Stopping at jump to null
+...
+
+Observe several things going on here. First, the register %esp is
+initialized to the symbolic value "initial_esp". When that value is
+dereferenced as part of the "push" instruction, FuzzBALL infers that
+it must refer to a region of memory, so it creates what we call a
+symbolic memory region, so that it can reason about the values in that
+memory area without knowing its address. The contents of a symbolic
+memory region are themselves symbolic, so that when the code reads its
+argument at instruction '4d1, it gets a symbolic value "region_1[4]".
+This in turn causes the branch at '4d9 to be symbolic.
+
+However, the execution path terminates soon after when it tries to
+call puts() (optimized by the compiler from the printf() in the source
+code). This demonstrates one of the limitations of on-the-spot
+symbolic execution, uninitialized function pointers. In particular
+reason this function is problematic is that it's in a dynamically
+linked library, but because we didn't go through the program startup,
+the pointer to the function never got initialized. In particular, the
+pointer to the puts() implementation is supposed to be stored in an
+area called the global offset table (GOT) which is in the initialized
+data area, but the entries for external functions are given as 0 in
+the binary. FuzzBALL's default behavior is to initialize the static
+data area based on the binary, so the value is zero and FuzzBALL stops
+because of a null pointer error. (You can disable FuzzBALL's
+initialization of the data area by giving "-load-data false", but that
+just makes the GOT entry symbolic, so FuzzBALL still can't handle the
+jump.)
+
+So what we'd like to do instead is just skip the puts() and printf()
+calls. For this we can use -skip-func-ret, a variant of the
+-skip-call-ret-symbol option mentioned earlier that differs in two
+ways: first, it's based on the address of the called function rather
+than the call address (this means we need only one option for the four
+different calls to puts), and it uses a concrete rather than a
+symbolic value for the return value. So specifically we'll use
+"-skip-func-ret 0x080483e4=10 -skip-func-ret 0x080483b4=10", where
+'3e4 and '3b4 are the address of the (dynamic linking stubs for)
+puts() and printf(), and "10" is a reasonable return value for both
+functions. As a final nicety, FuzzBALL would run into another "jump to
+symbolic value" at the return instruction, since there's no caller to
+return to, so we can specify that return address as the
+-fuzz-end-addr. Taking a different set of tracing options for variety,
+here's the output:
+
+% fuzzball simple -start-addr 0x080484c4 -symbolic-regs \
+   -skip-func-ret 0x080483e4=10 -skip-func-ret 0x080483b4=10
+   -fuzz-end-addr 0x08048557 \
+   -trace-assigns -trace-iterations
+Iteration 1:
+Input vars: 
+Input vars: region_1_byte_0x00000004=0x1 
+Input vars: 
+Input vars: region_1_byte_0x00000004=0x2 
+Iteration 2:
+Input vars: region_1_byte_0x00000004=0x1 
+Input vars: region_1_byte_0x00000007=0x2 region_1_byte_0x00000004=0x1 
+Iteration 3:
+Iteration 4:
+
+The "-trace-iterations" option tells FuzzBALL to print a message every
+time it starts a new path; you can see that there are four paths
+explored here, just like in example 2. The satisfying assignments look
+a little bit different because FuzzBALL doesn't know the layout of a
+symbolic memory region, so it treats each byte as a separate symbolic
+variable, which differs from example 2 where FuzzBALL knew that the
+symbolic value was 32 bits. Thus the decision procedure gives us
+values based on assigning to separately to bytes of a 32-bit value
+that occupies offsets 4 (LSB) though 7 (MSB) in region 1. For instance
+the value n such that n is both odd and a multiple of 11 is 0x2000001
+(3355440 = 305040*11).
+
+Example 4: a regular expression parser
+
+As a somewhat larger example, let's try running FuzzBALL on the
+regular expression parser and compiler from the PCRE library. We write
+the following small test program:
+
+#include <stdio.h>
+#include <string.h>
+#include <pcre.h>
+
+char pattern[4096] = "a|b";
+
+int main(int argc, char **argv) {
+    pcre *re;
+    const char *error;
+    int error_offset;
+    re = pcre_compile("[ab]|c", 0, &error, &error_offset, NULL);
+    printf("About to compile\n"); fflush(stdout);
+    re = pcre_compile(pattern, 0, &error, &error_offset, NULL);
+    if (re) {
+        printf("Compilation succeeded\n");  fflush(stdout);
+    } else {
+        printf("Compilation failed: %s at %d\n", error, error_offset);
+        fflush(stdout);
+    }
+    return 0;
+}
+
+(this is examples/pcre-parser/pcre-parser.c; the included binary is
+statically linked with PCRE so the results don't depend on what
+version you have installed). We compile a simple regular expression
+first, in case there is any special initialization code than runs the
+first time, then compile another regular expression taken from a
+global array. What we'll do is make the contents of that array
+symbolic. In particular, we can find using "nm" that the address of
+the "pattern" variable is 0x08063c20. We'll put the -fuzz-start-addr
+and -fuzz-end-addr right before the second call to pcre_compile and
+right after the success or failure messages are printed,
+respectively. (Note that we flush the standard output after printing
+the messages to make sure they get printed to the screen before
+FuzzBALL stops the program.) These points are 0x0804867d and
+0x080486d2 respectively. The input for this code is a string, so we
+introduce it using the option "-symbolic-cstring 0x08063c20+20", where
+"20" is then length of the string, and the "c" in "cstring" indicated
+that FuzzBALL should add a trailing \0 byte after the 20 symbolic
+bytes, following C string termination conventions. Then to see the
+satisfying assignments in the form of a string we use
+"-trace-assigns-string". The complete command line is:
+
+% fuzzball pcre-compile -linux-syscalls \
+   -symbolic-cstring 0x08063c20+20 \
+   -fuzz-start-addr 0x0804867d -fuzz-end-addr 0x080486d2 \
+   -trace-iterations -trace-assigns-string -trace-stopping -- \
+   ./pcre-compile
+
+Unlike some of the earlier examples, the state space here is large
+enough (about 120**20 ~ 10**41 paths) that it's unlikely to finish in
+any reasonable time; you can stop it with Control-C when you get tired
+of watching it. You can also decrease the length of the symbolic
+string, though even for length 2 it will take quite a while to explore
+all 15530 possible paths.
