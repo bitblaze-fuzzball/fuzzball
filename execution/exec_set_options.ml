@@ -398,7 +398,7 @@ let trace_replay_cmdline_opts =
      " Execute only according to concrete values"); *)
     ("-solve-path-conditions", Arg.Set(opt_solve_path_conditions),
      " Solve conditions along a concrete path");
-    ("-check-read-operands", Arg.Set(opt_check_write_operands),
+    ("-check-read-operands", Arg.Set(opt_check_read_operands),
      " Compare insn inputs against trace");
     ("-check-write-operands", Arg.Set(opt_check_write_operands),
      " Compare insn outputs against trace");
