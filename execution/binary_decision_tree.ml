@@ -1,5 +1,5 @@
 (*
-  Copyright (C) BitBlaze, 2009-2010. All rights reserved.
+  Copyright (C) BitBlaze, 2009-2011. All rights reserved.
 *)
 
 module V = Vine;;
@@ -19,12 +19,22 @@ type decision_tree_node = {
 and
   dt_node_ref = int
 
+(* Mask to restrict an OCaml "int" to be at most 32 bits. This is a
+   no-op on a 32-bit system, but not on a 64-bit system. And it's a
+   little tricky to write, becuse the code has to compile correctly on
+   either kind of system. *)
+let mask_32bits_int =
+  if 0x7fffffff = -1 then
+    0x7fffffff
+  else
+    Int64.to_int 0xffffffffL
+
 let dt_node_to_string n =
   let parent_int = match n.parent with
     | None -> 0
     | Some pr -> pr in
   let kid_to_int = function
-    | None -> -1
+    | None -> 0x7fffffff
     | Some None -> 0
     | Some (Some k) -> k
   in
@@ -38,7 +48,8 @@ let dt_node_to_string n =
     (if n.query_counted then 2 else 0)
   in
   let s = Printf.sprintf "%08x%c%08x%08x%04x"
-    parent_int (Char.chr (0x40 + flags_int)) f_child_int t_child_int
+    (parent_int land mask_32bits_int) (Char.chr (0x40 + flags_int))
+    (f_child_int land mask_32bits_int) (t_child_int land mask_32bits_int)
     (query_children_int land 0xffff) in
     assert(String.length s = 29);
     s
@@ -63,7 +74,7 @@ let string_to_dt_node ident_arg s =
     | i -> Some i
   in
   let kid_to_oo = function
-    | -1 -> None
+    | 0x7fffffff -> None
     | 0 -> Some None
     | i -> Some (Some i)
   in
