@@ -80,6 +80,11 @@ type fd_extra_info = {
   mutable snap_pos : int option;
 }
 
+(* N.b. the argument order here is the opposite from D.assemble64,
+   but matches the way the Linux kernel intefaces go *)
+let assemble64 high low =
+  Int64.logor (Int64.logand 0xffffffffL low) (Int64.shift_left high 32)
+
 class linux_special_handler (fm : fragment_machine) =
   let put_reg = fm#set_word_var in
   let put_return =
@@ -770,6 +775,10 @@ object(self)
 
   method sys_exit_group status =
     raise (SimulatedExit(status))
+
+  method sys_fadvise64_64 fd offset len advice =
+    ignore(fd); ignore(offset); ignore(len); ignore(advice);
+    put_return 0L (* success *)
 
   method private fcntl_common fd cmd arg =
     match cmd with
@@ -2509,7 +2518,7 @@ object(self)
 		 off_low = arg3 and
 		 resultp = arg4 and
 		 whence = Int64.to_int arg5 in
-	     let offset = Int64.logor off_low (Int64.shift_left off_high 32) in
+	     let offset = assemble64 off_high off_low in
 	       if !opt_trace_syscalls then
 		 Printf.printf "_llseek(%d, %Ld, 0x%08Lx, %d)"
 		   fd offset resultp whence;
@@ -3070,9 +3079,17 @@ object(self)
 	 | (ARM, 269)    (* utimes *)
 	 | (X86, 271) -> (* utimes *)
 	     uh "Unhandled Linux system call utimes"
-	 | (ARM, 270)    (* fadvise64_64 *)
+	 | (ARM, 270) -> uh "Check whether ARM fadvise64_64 matches x86"
 	 | (X86, 272) -> (* fadvise64_64 *)
-	     uh "Unhandled Linux system call fadvise64_64"
+	     let (arg1, arg2, arg3, arg4, arg5, arg6) = read_6_regs () in
+	     let fd = Int64.to_int arg1 and
+		 offset = assemble64 arg2 arg3 and
+		 len = assemble64 arg4 arg5 and
+		 advice = Int64.to_int arg6 in
+	       if !opt_trace_syscalls then
+		 Printf.printf "fadvise64_64(%d, %Ld, %Ld, %d)"
+		   fd offset len advice;
+	       self#sys_fadvise64_64 fd offset len advice
 	 | (ARM, 271) -> (* pciconfig_iobase *)
 	     uh "Unhandled Linux/ARM system call pciconfig_iobase (271)"
 	 | (ARM, 272) -> (* pciconfig_read *)

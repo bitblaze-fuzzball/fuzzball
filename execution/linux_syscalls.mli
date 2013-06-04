@@ -54,6 +54,7 @@ object
   method sys_capget : int64 -> int64 -> unit
   method sys_chdir : string -> unit
   method sys_chmod : string -> int -> unit
+  method sys_fadvise64_64 : int -> int64 -> int64 -> int -> unit
   method sys_fchdir : int -> unit
   method sys_fchmod : int -> int -> unit
   method sys_chown : string -> int -> int -> unit
