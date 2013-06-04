@@ -1,0 +1,140 @@
+Useful BitBlaze packages, Debian/Ubuntu version:
+
+These aren't all required for this version of FuzzBALL, but they're
+good for a variety of purposes so you might want to install them all
+at once if it's convenient:
+
+sudo apt-get install build-essential
+sudo apt-get install valgrind
+sudo apt-get build-dep valgrind
+sudo apt-get install qemu
+sudo apt-get build-dep qemu
+sudo apt-get install binutils-multiarch
+sudo apt-get build-dep binutils-multiarch
+sudo apt-get install binutils-dev
+sudo apt-get install ocaml ocaml-findlib libgdome2-ocaml-dev camlidl
+sudo apt-get build-dep ocaml
+sudo apt-get install libextlib-ocaml-dev ocaml-native-compilers
+sudo apt-get install libocamlgraph-ocaml-dev
+sudo apt-get install libsqlite3-ocaml-dev
+sudo apt-get install texlive texlive-latex-extra transfig hevea
+sudo apt-get install subversion
+sudo apt-get install libgmp3-dev
+sudo apt-get install zsh
+sudo apt-get install automake
+
+Prerequisites:
+
+1. VEX
+
+We use the VEX library for instruction processing, best known for its
+use in Valgrind. It's not distributed separately, so you can just
+check it out from Valgrind's SVN repository (and we refer to versions
+by their SVN revision number). Unfortunately for us the VEX interface
+changes incompatibly from time to time, requiring matching updates in
+our interface code (look for "#if VEX_VERSION > xxxx" in
+libasmir/src).
+
+As of last check, the latest VEX version that works completely out of
+the box is r2701 (r2702 broke the Makefile we use, though the code is
+still just fine: c.f. BZ#319494
+<https://bugs.kde.org/show_bug.cgi?id=319494>). Typical commands to
+check out and compile it look like:
+
+   % svn co -r2701 svn://svn.valgrind.org/vex/trunk vex-r2701
+   % cd vex-r2701
+   % make -f Makefile-gcc
+
+For many uses of FuzzBALL, especially on x86, any version of VEX will
+work just fine. If you want to run on ARM code it's more important to
+use a more recent version. Some changes to VEX to make it work better
+for our purposes are in vex-r????.patch. For x86, these only affect a
+few obscure instructions. But for ARM they also disable a Thumb
+instruction optimization that tries to peek directly at other
+instruction bytes in a way that usually crashes FuzzBALL.
+
+The oldest version we've traditionally used is r1856. Back then the
+build steps instead looked like:
+
+   % make version
+   % make libvex.a
+
+2. GNU Binutils
+
+You need a version of the Binutils library suitable for development;
+for instance, the "binutils-dev" package in Debian or Ubuntu.
+
+If you want cross-architecture support, you'll probably need to
+compile your own version of the Binutils. (Debian has a
+binutils-multiarch, but no binutils-multiarch-dev.) You can get the
+source at:
+
+http://www.gnu.org/s/binutils/
+
+and compile it with:
+
+../src/configure --disable-werror --enable-targets=arm-linux-gnueabi,i486-linux-gnu,x86_64-linux-gnu --prefix=<wherever>/binutils-multiarch
+
+and then pass --with-binutils=<wherever>/binutils-multiarch to
+Vine's ./configure.
+
+3. STP
+
+Historically we kept STP binaries in our SVN repository, but for space
+and cleanliness they're not included here, so you'll need to compile
+it yourself and put the "stp" binary and "libstp.a" library in the
+"stp" directory. FuzzBALL can use STP either as a separate program or
+via a library interface, which have various performance/engineering
+tradeoffs. For the library interface we patch STP to get
+counterexamples in a different format. The build steps look like:
+
+    % svn co -r1673 https://stp-fast-prover.svn.sourceforge.net/svnroot/stp-fast-prover/trunk/stp stp-r1673+vine
+    % cd stp-r1673+vine
+    % patch -p0 <$HERE/stp/stp-r1668-true-ce.patch
+    % ./clean-install.sh --with-prefix=$(pwd)/install
+    % cp install/bin/stp install/lib/libstp.a $HERE/stp
+
+Where $HERE is the directory this INSTALL file is in.
+
+4. OCaml tools
+
+You need OCaml itself, plus ocamlfind and ocamlidl.
+
+5. OCaml libraries
+
+You need ExtLib, http://code.google.com/p/ocaml-extlib/
+
+Build process:
+
+  ./autogen.sh
+  ./configure --with-vex=<...> ...
+  make
+
+Notes:
+
+ 'make' will build native-code binaries with debugging information
+        for everything
+ 'make bytecode' will build bytecode with debugging information for
+        everything
+ You can also run 'make' or 'make bytecode' in a single directory if
+ you've only changed files there, but running make at the top level
+ is recommended to handle inter-directory dependencies.
+
+Modern versions of OCaml (3.10 and later) include enough debugging
+information in native code compilation in order to make stack
+backtraces work, so that's our default behavior. You just need to set
+the environment variable OCAMLRUNPARAM=b.
+
+If you have an old version of OCaml and want backtraces, or you want
+to run "ocamldebug", you'll need to compile bytecode versions of the
+programs. This is now done with a "make bytecode" target, and will
+create executables with the suffix ".dbg".
+
+If you are using the Debian/Ubuntu packaged versions of OCaml 3.12 or
+later, there's an additional issue with the way bytecode OCaml code
+and native code libraries are combined in "custom" executables that
+will interfere with debugging. The easiest workaround for this is make
+sure you have package version 3.12.0-6 or later, and set the
+environment variable OCAML_COMPAT=c. More details on this are at:
+
+http://bugs.debian.org/cgi-bin/bugreport.cgi?bug=627761
