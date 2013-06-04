@@ -34,13 +34,19 @@ cause programs running under FuzzBALL to use those libraries with
 FuzzBALL's "-chroot" option.
 
 FuzzBALL works with a decision procedure to solve path conditions. By
-default, this version uses a version of STP
-(http://sites.google.com/site/stpfastprover/) embedded as a library,
-which should require no additional configuration. But for debugging
-the solving process, or if you want to try a different version of STP,
-FuzzBALL also supports using an external STP binary. You can enable
-this by supplying the options "-solver stp-external -stp-path stp",
-where the argument to -stp-path is the location of your STP binary.
+default, this version uses an external version of STP
+(http://sites.google.com/site/stpfastprover/) which the installation
+instructions suggest that you put at "./stp/stp" relative to the
+current directory. You can direct FuzzBALL to use it with the command
+"-stp-path ./stp/stp" (or whatever the relevant path
+is). Altneratively you can use the flag "-solver stpvc" to use a
+library version of STP compiled directly into the binary.
+
+The remainder of this file introduces some of FuzzBALL's features via
+some tutorial examples. This tutorial was originally written for a
+slightly older version of the tool, so the output won't all match
+exactly, but the examples have been sanity checked to work correctly
+on the author's workstation.
 
 EXAMPLES
 --------
