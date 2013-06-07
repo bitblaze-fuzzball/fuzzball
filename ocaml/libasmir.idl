@@ -44,9 +44,8 @@ typedef struct _raw_inst_t {
 // support (more like Asmir.arch).
 // For now, every time an architecture is added (or, potentially,
 // removed) in between the oldest Binutils we support (2.18) and the
-// present in the range of the table before the largest value we use
-// (bfd_arch_arm), we need to add a configure test for it: see
-// configure.ac.
+// the largest value we use (bfd_arch_arm), we need to add a configure
+// test for it: see configure.ac.
 enum bfd_architecture
 {
   bfd_arch_unknown,   /* File arch not known.  */
@@ -89,10 +88,10 @@ enum bfd_architecture
   bfd_arch_dlx,       /* DLX */
   bfd_arch_m68hc11,   /* Motorola 68HC11 */
   bfd_arch_m68hc12,   /* Motorola 68HC12 */
-#ifdef HAVE_DECL_BFD_ARCH_M9S12X
+#if HAVE_DECL_BFD_ARCH_M9S12X
   bfd_arch_m9s12x,   /* Freescale S12X */
 #endif
-#ifdef HAVE_DECL_BFD_ARCH_M9S12XG
+#if HAVE_DECL_BFD_ARCH_M9S12XG
   bfd_arch_m9s12xg,  /* Freescale XGATE */
 #endif
   bfd_arch_z8k,       /* Zilog Z8000 */
