@@ -50,8 +50,9 @@ let linux_cmdline_opts =
      " Simulate Linux system calls on the real system");
     ("-trace-syscalls", Arg.Set(opt_trace_syscalls),
      " Print systems calls (like strace)");
-    ("-prefix-out", Arg.Set(opt_prefix_out),
-     " Add a distinguishing prefix before the program's writes");
+    ("-prefix-out", Arg.String
+       (fun s -> opt_prefix_out := Some s),
+     "prefix Add a distinguishing prefix before the program's writes");
     ("-symbolic-file", Arg.String
        (fun s -> opt_symbolic_files := s :: !opt_symbolic_files),
      "fname Make data read from the named file symbolic");

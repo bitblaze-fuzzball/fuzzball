@@ -253,25 +253,27 @@ object(self)
     with Invalid_argument("String.create")
 	-> raise (Unix.Unix_error(Unix.EFAULT, "String.create", ""))
 
+  (* Right now we always redirect the program's FDs 1 and 2 (stdout
+     and stderr) to FuzzBALL's stdout. We might want to consider doing
+     this more selectively (e.g., only if they're still pointing the same
+     place as they did when the program started), or controlled by a
+     command-line flag. *)
   method do_write fd bytes count =
     (try
+       (match !opt_prefix_out, fd with
+	  | (Some prefix, (1|2)) ->
+	      Printf.printf "[%s fd %d]: " prefix fd
+	  | _ -> ());
        (match fd with
-	  | 1 -> Array.iter print_char bytes;
+	  | (1|2) -> Array.iter print_char bytes;
 	      put_return (Int64.of_int count)
 	  | _ ->
-	      let str = string_of_char_array bytes in
-	      let (ufd, toapp) = if
-		!opt_prefix_out && (fd = 1 || fd = 2) 
-	      then
-		(Unix.stdout, (Printf.sprintf "[Trans-eval fd %d]: " fd))
-	      else
-		((self#get_fd fd), "")
+	      let str = string_of_char_array bytes and
+		  ufd = self#get_fd fd
 	      in
-	      let strout = toapp ^ str in
-		match Unix.write (ufd) strout 0 (String.length strout)
+		match Unix.write ufd str 0 count
 		with
 		  | i when i = count -> put_return (Int64.of_int count)
-		  | i when i = (count + (String.length toapp)) ->  put_return (Int64.of_int count)
 		  | _ -> raise (Unix.Unix_error(Unix.EINTR, "", "")))
      with
        | Unix.Unix_error(err, _, _) -> self#put_errno err);

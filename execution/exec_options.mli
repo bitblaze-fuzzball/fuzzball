@@ -100,7 +100,7 @@ val opt_nonfatal_solver : bool ref
 val opt_num_paths : int64 option ref
 val opt_pid : int ref
 val opt_translation_cache_size : int option ref
-val opt_prefix_out : bool ref
+val opt_prefix_out : string option ref
 val opt_omit_pf_af : bool ref
 val opt_nop_system_insns : bool ref
 val opt_symbolic_syscall_error : int64 option ref
