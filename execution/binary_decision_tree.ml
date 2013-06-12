@@ -633,19 +633,6 @@ class binary_decision_tree = object(self)
 	Printf.printf "Marking node %d as all_seen\n" n.ident;
       update_dt_node n
     in
-    let rec mark_internal_nodes n =
-      (match get_f_child n with
-	 | Some(Some kid) when
-	     kid.query_children = None && not kid.all_seen ->
-	     mark_internal_nodes kid
-	 | _ -> ());
-      (match get_t_child n with
-	 | Some(Some kid) when
-	     kid.query_children = None && not kid.all_seen ->
-	     mark_internal_nodes kid
-	 | _ -> ());
-      mark n
-    in
     let rec internal_nodes_check n top =
       if n.all_seen then
 	true
