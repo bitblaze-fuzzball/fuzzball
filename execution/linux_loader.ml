@@ -190,20 +190,25 @@ let load_partial_segment fm ic phr vbase size =
     let data = IO.really_nread i (Int64.to_int size) in
       store_page fm vbase data;
       fm#watchpoint
-	  
+
 let load_ldso fm dso vaddr =
   let ic = open_in (chroot dso) in
   let dso_eh = read_elf_header ic in
     if !opt_trace_setup then
       Printf.printf "Loading from dynamic linker %s\n" dso;
     assert(dso_eh.eh_type = 3);
-    List.iter
-      (fun phr ->
-	 if phr.ph_type = 1L || phr.memsz <> 0L then
-	   load_segment fm ic phr vaddr)
-      (read_program_headers ic dso_eh);
-    close_in ic;
-    Int64.add vaddr dso_eh.entry
+    let phrs = read_program_headers ic dso_eh in
+      (* If the loader already has a non-zero base address, disable
+	 our default offset. This can happen if it's prelinked. *)
+      if (List.hd phrs).vaddr <> 0L then
+	vaddr := 0L;
+      List.iter
+	(fun phr ->
+	   if phr.ph_type = 1L || phr.memsz <> 0L then
+	     load_segment fm ic phr !vaddr)
+	phrs;
+      close_in ic;
+      Int64.add !vaddr dso_eh.entry
 
 let load_x87_emulator fm emulator =
   let ic = open_in emulator in
@@ -269,6 +274,7 @@ let build_startup_state fm eh load_base ldso argv =
 	  (* 0xbfebfbffL (* AT_HWCAP, Core 2 Duo *) *)
     | ARM -> (push_cstr "v5l", 0x1d7L)
   in
+  let random_bytes = push_cstr "123456789abcdef" in
   let auxv =
     [(3L, Int64.add load_base eh.phoff);    (* AT_PHDR *)
      (4L, Int64.of_int eh.phentsize);       (* AT_PHENT *)
@@ -285,6 +291,7 @@ let build_startup_state fm eh load_base ldso argv =
      (16L, 0L);                             (* AT_HWCAP, bare-bones *)
      (17L, 100L);                           (* AT_CLKTCK *)
      (23L, 0L);                             (* AT_SECURE *)
+     (25L, random_bytes);                   (* AT_RANDOM *)
      (* Let's see if we can avoid bothering with AT_SYSINFO *)
     ] in
     (* Arrange so that the program's initial %esp is page-aligned, and
@@ -316,7 +323,7 @@ let load_dynamic_program (fm : fragment_machine) fname load_base
     data_too do_setup extras argv =
   let ic = open_in (chroot fname) in
   let i = IO.input_channel ic in
-  let ldso_base = ref 0L in
+  let ldso_base = ref 0xb7f00000L in
   let eh = read_elf_header ic in
   let entry_point = ref eh.entry in
     assert(eh.eh_type = 2);
@@ -330,9 +337,7 @@ let load_dynamic_program (fm : fragment_machine) fname load_base
 	 else if phr.ph_type = 3L then (* PT_INTERP *)
 	   (seek_in ic (Int64.to_int phr.offset);
 	    let interp = IO.really_nread i ((Int64.to_int phr.filesz) - 1) in
-	    let base = 0xb7f00000L in
-	      entry_point := load_ldso fm interp base;
-	      ldso_base := base;
+	      entry_point := load_ldso fm interp ldso_base;
 	      load_segment fm ic phr 0L)
 	 else if phr.memsz != 0L then
 	   load_segment fm ic phr 0L;

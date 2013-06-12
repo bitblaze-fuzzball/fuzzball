@@ -1279,6 +1279,10 @@ object(self)
 	   (0x802L|0x2L|0x1L) (* MAP_PRIVATE|MAP_DENYWRITE|MAP_SHARED *), _) ->
 	    let dest_addr = self#fresh_addr length in
 	      do_read dest_addr
+	| (_, _,
+	   (0x1L|0x5L) (* PROT_READ|PROT_EXEC *),
+	   (0x802L|0x2L|0x1L) (* MAP_PRIVATE|MAP_DENYWRITE|MAP_SHARED *), _) ->
+	    do_read addr
 	| (_, _, (0x3L|0x7L) (* PROT_READ|PROT_WRITE|PROT_EXEC *),
 	   0x812L (* MAP_DENYWRITE|PRIVATE|FIXED *), _) ->
 	    do_read addr
@@ -1748,8 +1752,8 @@ object(self)
 	   | X86 ->
 	       ["Linux"; (* sysname *)
 		nodename; (* nodename *)
-		"2.6.26-2-amd64"; (* release *)
-		"#1 SMP Fri Mar 27 04:02:59 UTC 2009"; (* version *)
+		"2.6.32-5-amd64"; (* release *)
+		"#1 SMP Fri Mar 27 04:02:59 UTC 2011"; (* version *)
 		"i686"; (* machine *)
 		"example.com" (* domain *)
 	       ]
