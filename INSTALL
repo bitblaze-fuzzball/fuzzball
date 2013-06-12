@@ -23,6 +23,31 @@ sudo apt-get install libgmp3-dev
 sudo apt-get install zsh
 sudo apt-get install automake
 
+Fedora rough equivalents:
+
+sudo yum install make automake gcc gcc-c++ kernel-devel
+sudo yum install glibc-devel glibc-static glibc-utils
+sudo yum install bison flex
+sudo yum install strace
+sudo yum install valgrind
+sudo yum-builddep valgrind
+sudo yum install qemu
+sudo yum-builddep qemu
+sudo yum install binutils-arm-linux-gnu binutils-x86_64-linux-gnu
+sudo yum install binutils-devel
+sudo yum install ocaml
+sudo yum install ocaml-findlib ocaml-findlib-devel
+sudo yum install ocaml-camlidl ocaml-camlidl-devel
+sudo yum-builddep ocaml
+sudo yum install ocaml-extlib ocaml-extlib-devel
+sudo yum install ocaml-ocamlgraph ocaml-ocamlgraph-devel
+sudo yum install ocaml-sqlite ocaml-sqlite-devel
+sudo yum install texlive transfig hevea
+sudo yum install subversion git
+sudo yum install gmp gmp-devel
+sudo yum install zsh
+sudo debuginfo-install coreutils
+
 Prerequisites:
 
 1. VEX
