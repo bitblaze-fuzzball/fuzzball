@@ -103,7 +103,7 @@ let store_page fm vaddr str =
   else
     fm#store_str vaddr 0L str
 
-let load_segment fm ic phr virt_off =
+let load_segment fm ic phr virt_off is_main_prog =
   let i = IO.input_channel ic in
   let type_str = match (phr.ph_type, phr.ph_flags, !opt_arch) with
     | (1L, 5L, _) -> "text"
@@ -168,7 +168,7 @@ let load_segment fm ic phr virt_off =
 	   if !opt_trace_setup then
 	     Printf.printf "        Extra zero filling from %08Lx to %08Lx\n"
 	       !va last_aligned;
-	   (if last_aligned < 0xb7f00000L then
+	   (if is_main_prog then
 	      match !linux_initial_break with 
 		| None -> linux_initial_break := Some last_aligned;
 		    if !opt_trace_setup then
@@ -205,7 +205,7 @@ let load_ldso fm dso vaddr =
       List.iter
 	(fun phr ->
 	   if phr.ph_type = 1L || phr.memsz <> 0L then
-	     load_segment fm ic phr !vaddr)
+	     load_segment fm ic phr !vaddr false)
 	phrs;
       close_in ic;
       Int64.add !vaddr dso_eh.entry
@@ -219,7 +219,7 @@ let load_x87_emulator fm emulator =
     List.iter
       (fun phr ->
 	 if phr.ph_type = 1L || phr.memsz <> 0L then
-	   load_segment fm ic phr 0L)
+	   load_segment fm ic phr 0L false)
       (read_program_headers ic eh);
     close_in ic;
     eh.entry
@@ -333,14 +333,14 @@ let load_dynamic_program (fm : fragment_machine) fname load_base
 	 if phr.ph_type = 1L then (* PT_LOAD *)
 	   (if phr.ph_flags = 5L then assert(phr.vaddr = load_base);
 	    if data_too || (phr.ph_flags <> 6L && phr.ph_flags <> 7L) then
-	      load_segment fm ic phr 0L)
+	      load_segment fm ic phr 0L true)
 	 else if phr.ph_type = 3L then (* PT_INTERP *)
 	   (seek_in ic (Int64.to_int phr.offset);
 	    let interp = IO.really_nread i ((Int64.to_int phr.filesz) - 1) in
 	      entry_point := load_ldso fm interp ldso_base;
-	      load_segment fm ic phr 0L)
+	      load_segment fm ic phr 0L true)
 	 else if phr.memsz != 0L then
-	   load_segment fm ic phr 0L;
+	   load_segment fm ic phr 0L true;
 	 List.iter
 	   (fun (base, size) ->
 	      if base >= phr.vaddr && 
@@ -443,7 +443,7 @@ let load_core (fm:fragment_machine) fname =
     List.iter
       (fun phr ->
 	 if phr.ph_type = 1L then (* PT_LOAD *)
-	   load_segment fm ic phr 0L
+	   load_segment fm ic phr 0L true
 	 else if phr.ph_type = 4L then (* PT_NOTE *)
 	   (seek_in ic (Int64.to_int phr.offset);
 	    let endpos = Int64.to_int (Int64.add phr.offset phr.filesz) in
