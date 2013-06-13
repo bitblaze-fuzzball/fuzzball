@@ -39,8 +39,359 @@ default, this version uses an external version of STP
 instructions suggest that you put at "./stp/stp" relative to the
 current directory. You can direct FuzzBALL to use it with the command
 "-stp-path ./stp/stp" (or whatever the relevant path
-is). Altneratively you can use the flag "-solver stpvc" to use a
+is). Alternatively you can use the flag "-solver stpvc" to use a
 library version of STP compiled directly into the binary.
+
+Executables
+-----------
+
+If the compilation is successful, the main produced executables will
+appear in the exec_utils directory. "exec_utils/fuzzball" is the main
+symbolic execution tool. Two additional programs produced in that
+directory contain subsets of FuzzBALL's functionality, primarily for
+testing purposes. "exec_utils/test_insn" decodes and executes a single
+instruction specified on the command line. For instance you might try:
+
+./exec_utils/test_insn 0xff 0x42 0x12 -trace-insns -trace-ir -omit-pf-af
+
+"exec_utils/vinegrind" operates similarly to FuzzBALL except that it
+only supports concrete execution. It's meant for running complete
+programs concretely; the name is a portmanteau coming from the
+similarity of this use case to Valgrind. (Instrumentation options like
+Valgrind Memcheck and other tools aren't currently available, but
+could be added in the future.)
+
+Top-level directory structure
+-----------------------------
+
+README
+README.md
+
+  Basic documentation
+
+AUTHORS
+COPYING
+LICENSE
+INSTALL
+
+  Other standard package information files
+
+ChangeLog
+NEWS
+
+  Currently empty: see the Git history instead
+
+autogen.sh
+configure.ac
+Makefile.am
+
+  Configuration scripts for use with the GNU Automake and Autoconf
+  tools. Run autogen.sh to create "configure", then run configure to
+  create configuration headers and Makefiles.
+
+config
+m4
+
+  A few extra files used in the configuration process
+
+libasmir
+
+  The C/C++ portion of Vine, which most importantly for FuzzBALL
+  provides the interface between the OCaml part of Vine and the VEX
+  and GNU Binutils libraries.
+
+vex-r*.patch
+
+  Patches you can apply to the VEX instruction decoding library to
+  help it work better with FuzzBALL. The number after "r" is the VEX
+  SVN revision against which the patch was generated. Usually you
+  want to use the highest-numbered patch that's not higher than the
+  version you checked out.
+
+ocaml
+
+  The core OCaml portions of the Vine instruction representation
+  library. The FuzzBALL repository only includes the subset of Vine it
+  requires; functionality relevant to trace processing and static
+  analysis is omitted.
+
+trace
+
+  OCaml libraries related to trace processing. Most of the contents of
+  this directory are unused by FuzzBALL and omitted, but a version of
+  the Temu_state module is included to support FuzzBALL's "-state"
+  option.
+
+stp
+
+  Code related to the STP decision procedure, and particularly the
+  OCaml library interface that FuzzBALL uses with "-solver stpvc".
+
+execution
+
+  The main OCaml modules of FuzzBALL. From the name "Vine Execution"
+  for FuzzBALL's functionality of executing machine instructions
+  (concretely or symbolically) via interpreting the Vine IL rather
+  than executing natively.
+
+exec_utils
+
+  The executable main programs that wrap functionality from the
+  "execution" directory, such as the main FuzzBALL executable. Follows
+  a Vine naming scheme; Vine also has "utils" to go with "ocaml" and
+  "trace_utils" to go with "trace", but these are omitted from
+  FuzzBALL.
+
+extras
+
+  Optional code that provides additional features when used with
+  FuzzBALL, but is not included in the main compilation process.
+
+extras/scripts
+
+  Small utility scripts for use with FuzzBALL. "decision-tree-vcg.pl"
+  formats dumps for FuzzBALL decision trees for viewing with the VCG
+  graph-drawing program.
+
+extras/x87-emu
+
+  A software floating point emulator for 8087-style floating point
+  instructions (comparable to a 486DX), in terms of 32-bit machine
+  code. (Derived from code in the Linux kernel.) When used with
+  FuzzBALL's "-x87-emulator" option, this can allow floating point
+  code to execute, albeit slowly.
+
+examples
+
+  Example programs you can try running FuzzBALL on. Described more
+  under "EXAMPLES" below.
+
+FuzzBALL code modules
+---------------------
+
+Each of the modules described here is defined in similarly-named OCaml
+source files in the "execution" directory. ".ml" files are module
+implementations, while ".mli" files are corresponding interface
+definitions; this distinction is analogous to the relationship between
+".c" and ".h" files for C.
+
+Exec_domain
+
+  A "domain" is the abstract type of the values that a concrete or
+  symbolic execution engine operates on. It supports operations such
+  as arithmetic, comparison, and width conversion, and an implicit
+  width of 1, 8, 16, 32, or 64 bits. Several of the core FuzzBALL
+  classes (such as fragment_machine and granular_memory) are
+  polymorphic in a domain, so they can be instantiated in either
+  concrete (as in vinegrind) or symbolic (as in fuzzball) versions.
+  This uses OCaml's compile-time module/functor polymorphism, which
+  can be thought of as a more type-safe relative of C++ templates.
+
+Concrete_domain
+
+  A domain in which values are represented concretely as in64s.
+
+Exec_utils
+
+  Utility functions that didn't have a better place elsewhere:
+  currently, just routines for doing narrow-bitwidth operations on
+  int64s.
+
+Symbolic_domain
+
+  A domain in which values are represented as formulas by Vine
+  expressions. For instance adding two symbolic values produces a new
+  expression tree with an addition node at the root.
+
+Tagged_domain
+
+  A compound domain which keeps an additional data flow tag with each
+  domain value, which can be used in type inference. (Compare the
+  paper on "Dynamic inference of abstract types" in ISSTA 2006.)
+
+Granular_memory
+
+  An object representing machine memory which can store values of
+  varying sizes (8, 16, 32, or 64 bits), each represented by a domain
+  element. This is a dynamic approach to dealing with the problem of
+  differing-sized memory accesses. As long as the program's accesses
+  are size-consistent, no conversions are required; conversions
+  (putting values together or splitting them apart) are performed
+  automatically if a load is not size-consistent with the
+  corresponding store(s). Variants can also be chained together like
+  overlays to allow an efficient snapshot and restore functionality.
+
+Concrete_memory
+
+  Specialized and more resource-efficient concrete-only memory
+  representations.
+
+Decision_tree
+Binary_decision_tree
+Linear_decision_tree
+
+  A decision tree (sometimes abbreviated DT) is a representation of
+  the search space in symbolic exploration: nodes represent two-way
+  branches with symbolic branch conditions, with subtrees
+  corresponding to the true and false sides of a branch. FuzzBALL uses
+  the decision tree to remember which paths have been explored before,
+  and choose different paths to explore on future
+  iterations. Decision_tree is the abstract class, "Binary_" is the
+  main implementation, and "Linear_" is a simplified degenerate
+  implementation that can be used if only one path is to be explored.
+
+Frag_marshal
+
+  Routines to encode and decode small Vine expressions into a compact
+  string representation and back. FuzzBALL uses this representation to
+  save memory in the case of large symbolic expressions. ("Frag" is
+  short for "fragment", but note that perhaps unfortunately it refers
+  there to fragments of Vine expressions, not fragments of Vine
+  executable statements as in "Frag_simplify" and "Fragment_machine".)
+
+Formula_manager
+
+  An object encapsulating state relating to symbolic expressions and
+  formulas as passed to a decision procedure. Code here keeps track of
+  temporary and symbolic memory variables, and translates them
+  appropriately when building queries.
+
+Exec_influence
+Exec_no_influence
+
+  Routines for computing quantitative information flow from input
+  variables to expressions. See our PLAS 2009 paper on "Measuring
+  Channel Capacity to Distinguish Undue Influence"; this is a
+  reimplementation compared to the code used in that paper's
+  experiments. "no_influence" is a dummy implementation which makes
+  all influence calculations no-ops.
+
+Fragment_machine
+
+  The core object representing a machine with a register file and
+  memory, which executes one fragment of Vine IL code (usually
+  translated from a single instruction) at once. Vine IL operations
+  are interpreted using domain operations. This module defines both a
+  concrete base class, which takes a domain, as well as a simplified
+  interface class which hides the domain variance and is used by most
+  of the rest of the system.
+
+Exec_run_common
+
+  Lowest-level operations for translating an instruction into Vine IL
+  in preparation for executing it.
+
+Frag_simplify
+
+  Compiler-like optimizations, including constant folding and
+  propagation, copy propagation, dead assignment and unused variable
+  elimination, and some other peephole transformations. These are
+  intended to apply to the Vine IL translation of a single instruction
+  or a basic block.
+
+Exec_runloop
+
+  The core execution loop in which FuzzBALL translates the current
+  instruction, executes it, and updates the instruction pointer.
+
+Exec_exceptions
+
+  A number of FuzzBALL-specific exceptions, most of which represent
+  reasons for FuzzBALL to stop exploring a particular execution path.
+
+Exec_fuzzloop
+
+  The outer loop of FuzzBALL's one-path-at-a-time symbolic
+  exploration, in which it executes one path symbolically until
+  reaching a stopping point, and then starts over and re-executes with
+  different symbolic decisions until the space is completely
+  explored.
+
+Exec_stats
+
+  Code for collecting FuzzBALL implementation-level statistics,
+  especially related to memory usage.
+
+Special_handlers
+
+  Defines an abstract class for objects which interpret Vine "Special"
+  statements, which stand in for operations with side effects that
+  can't be represented natively in the Vine IL. Also includes some
+  simple handlers, such as those for "cpuid" instructions, trap
+  instructions, and emulated x87 floating point instructions.
+
+Linux_syscalls
+
+  By far the most complex current special_handler, one which
+  interprets Linux system calls, mostly by executing them on the host
+  system using OCaml's Unix module.
+
+Query_engine
+
+  An abstract class representing an interface to a decision procedure
+  that takes quantifier-free bitvector formulas (represented with Vine
+  expressions) and decides whether or not they are satisfiable.
+
+Stp_external_engine
+
+  A query engine implementation based on calling the STP solver in an
+  external process using its CVC-like native text input format.
+
+Stpvc_engine
+
+  A query engine implementation based on calling the STP solver via
+  its OCaml-wrapped same-process library interface. Named after the
+  OCaml wrapper library Stpvc, where "vc" stands for "validity
+  checker", another synonym for "(constraint) solver" or "decision
+  procedure".
+
+Sym_path_frag_machine
+
+  A subclass of fragment_machine which provides the key symbolic
+  execution capability of keeping track of a path condition, updating
+  it on symbolic branches, and checking that the path is feasible
+  using a decision procedure.
+
+Sym_region_frag_machine
+
+  A subclass of sym_path_frag_machine that adds FuzzBALL-specific
+  features related to recovering the structure of memory
+  accesses. Symbolic regions are fictitious memory areas that are
+  generated when the base address of an access is symbolic, as in
+  on-the-spot symbolic execution. The symbolic treatment of tables, by
+  contrast, occurs when an index expression is symbolic, as when
+  loading or storing to an array or lookup table.
+
+Linux_loader
+
+  Routines for creating an initial process state from a Linux ELF
+  executable (similar to what the Linux kernel does for an exec system
+  call), or from an ELF core dump.
+
+State_loader
+
+  Routines for creating an initial machine state from a state dump
+  file in the format produced by the BitBlaze TEMU Tracecap tool.
+
+Exec_options
+
+  Global variables which mostly correspond to FuzzBALL's many
+  command-line options.
+
+Exec_set_options
+
+  Code for initializing global variables and parts of the fragment
+  machine state based on command-line options.
+
+Options_linux
+
+  Code for setting options specifically related to Linux process
+  simulation.
+
+Options_solver
+
+  Code for setting options related to decision procedure interface.
+
 
 The remainder of this file introduces some of FuzzBALL's features via
 some tutorial examples. This tutorial was originally written for a
