@@ -533,6 +533,8 @@ struct
 	reg R_CC_DEP1 (D.from_concrete_32 0L);
 	reg R_CC_DEP2 (D.from_concrete_32 0L);
 	reg R_CC_NDEP (D.from_concrete_32 0L);
+	reg R_SSEROUND (D.from_concrete_32 0L);
+	()
 
     method private make_arm_regs_zero =
       let reg r v =

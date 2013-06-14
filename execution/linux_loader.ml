@@ -288,7 +288,7 @@ let build_startup_state fm eh load_base ldso argv =
      (13L, Int64.of_int (Unix.getgid ()));  (* AT_GID *)
      (14L, Int64.of_int (Unix.getegid ())); (* AT_EGID *)
      (15L, platform_loc);                   (* AT_PLATFORM *)
-     (16L, 0L);                             (* AT_HWCAP, bare-bones *)
+     (16L, hwcap);                          (* AT_HWCAP *)
      (17L, 100L);                           (* AT_CLKTCK *)
      (23L, 0L);                             (* AT_SECURE *)
      (25L, random_bytes);                   (* AT_RANDOM *)

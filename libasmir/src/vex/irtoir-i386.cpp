@@ -932,6 +932,21 @@ Exp *i386_translate_ccall( IRExpr *expr, IRSB *irbb, vector<Stmt *> *irout )
       Exp::destroy(eflags_in);
       Exp::destroy(rot_amt);
     }
+    else if ( func == "x86g_create_mxcsr" )
+    {
+	Exp *arg = translate_expr(expr->Iex.CCall.args[0], irbb, irout);
+	result = _ex_or(ex_const(0x1f80),
+			_ex_shl(arg, ex_const(13)));
+    }
+    else if ( func == "x86g_check_ldmxcsr" )
+    {
+	Exp *arg = translate_expr(expr->Iex.CCall.args[0], irbb, irout);
+	/* Extract the rounding mode */
+	Exp *rmode = _ex_and(_ex_shr(arg, ex_const(13)),
+			     ex_const(3));
+	/* The high word is for emulation warnings: skip it */
+	result = _ex_u_cast(rmode, REG_64);
+    }
     else
     {
         result = new Unknown("CCall: " + func);
