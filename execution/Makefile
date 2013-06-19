@@ -56,7 +56,7 @@ RESULT = execution
 # DOC_FILES=$(SOURCES)
 
 # ocamlfind packages required
-export PACKS = str ocamlgraph extlib unix sqlite3
+export PACKS = str extlib unix
 export YFLAGS = -v
 
 export CLIBS = asmir vex opcodes bfd iberty stdc++ 

@@ -8,7 +8,7 @@ export VINE_EXECDIR=../execution
 export STP_OCAMLDIR=../stp/ocaml
 
 # ocamlfind packages required
-export PACKS = str ocamlgraph extlib unix
+export PACKS = str extlib unix
 export LIBS = stpvc vine trace execution
 export INCDIRS = $(VINE_OCAMLDIR) $(VINE_TRACEDIR) $(VINE_EXECDIR) \
                  $(STP_OCAMLDIR)

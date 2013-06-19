@@ -20,7 +20,7 @@ RESULT = trace
 
 
 # ocamlfind packages required
-export PACKS = str ocamlgraph extlib unix
+export PACKS = str extlib unix
 export YFLAGS = -v
 
 
