@@ -327,7 +327,7 @@ let cmdline_opts =
   [
     ("-arch", Arg.String
        (fun s -> opt_arch := execution_arch_of_string s ),
-     "arch x86 (default), arm");
+     "arch x86 (default), x64, arm");
     ("-translation-cache-size", Arg.String
        (fun s -> opt_translation_cache_size := Some (int_of_string s)),
      "N Save translations of at most N instructions");

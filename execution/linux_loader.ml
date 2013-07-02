@@ -272,6 +272,7 @@ let build_startup_state fm eh load_base ldso argv =
   let (platform_loc, hwcap) = match !opt_arch with
     | X86 -> (push_cstr "i686", 0L) (* barebones HWCAP *)
 	  (* 0xbfebfbffL (* AT_HWCAP, Core 2 Duo *) *)
+    | X64 -> (push_cstr "x86_64", 0L) (* barebones HWCAP *)
     | ARM -> (push_cstr "v5l", 0x1d7L)
   in
   let random_bytes = push_cstr "123456789abcdef" in
@@ -315,6 +316,7 @@ let build_startup_state fm eh load_base ldso argv =
 	Printf.printf "Initial ESP is 0x%08Lx\n" !esp;
       let sp = match !opt_arch with
 	| X86 -> R_ESP
+	| X64 -> R_RSP
 	| ARM -> R13
       in
 	fm#set_word_var sp !esp      

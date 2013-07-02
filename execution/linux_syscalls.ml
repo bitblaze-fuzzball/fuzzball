@@ -90,6 +90,7 @@ class linux_special_handler (fm : fragment_machine) =
   let put_return =
     (match !opt_arch with
        | X86 -> put_reg R_EAX
+       | X64 -> failwith "64-bit syscalls not supported"
        | ARM -> put_reg R0)
   in
   let load_word addr =
@@ -496,6 +497,7 @@ object(self)
   method private write_oc_statbuf_as_stat64 addr oc_buf =
     match !opt_arch with
       | X86 -> self#write_oc_statbuf_as_x86_stat64 addr oc_buf
+      | X64 -> failwith "64-bit syscalls not supported"
       | ARM -> self#write_oc_statbuf_as_arm_stat64 addr oc_buf
 
   method write_fake_statfs_buf addr =
@@ -1757,6 +1759,14 @@ object(self)
 		"i686"; (* machine *)
 		"example.com" (* domain *)
 	       ]
+	   | X64 ->
+	       ["Linux"; (* sysname *)
+		nodename; (* nodename *)
+		"2.6.32-5-amd64"; (* release *)
+		"#1 SMP Fri Mar 27 04:02:59 UTC 2011"; (* version *)
+		"x86_64"; (* machine *)
+		"example.com" (* domain *)
+	       ]
 	   | ARM ->
 	       ["Linux"; (* sysname *)
 		nodename; (* nodename *)
@@ -1827,6 +1837,8 @@ object(self)
     let (callnum_reg, arg_regs, ret_reg) = match !opt_arch with
       |	X86 -> (R_EAX, [| R_EBX; R_ECX; R_EDX; R_ESI; R_EDI; R_EBP |], R_EAX)
       | ARM -> (R7, [| R0; R1; R2; R3; R4; R5; R6 |], R0)
+      | X64 -> failwith "64-bit syscalls not supported"
+
     in
     (let syscall_num = Int64.to_int (get_reg callnum_reg) and
 	 read_1_reg () = get_reg arg_regs.(0) in
@@ -3443,7 +3455,9 @@ object(self)
 	     uh "Unhandled Linux system call"
 	 | (ARM, _) ->
 	     Printf.printf "Unknown Linux/ARM system call %d\n" syscall_num;
-	     uh "Unhandled Linux system call");
+	     uh "Unhandled Linux system call"
+	 | (X64, _) ->
+	     failwith "64-bit syscalls not supported");
     if !opt_trace_syscalls then
       let ret_val = fm#get_word_var ret_reg in
 	Printf.printf " = %Ld (0x%08Lx)\n" (fix_s32 ret_val) ret_val;

@@ -13,17 +13,17 @@ asm_program_t *instmap_to_asm_program(instmap_t *map)
 }
 
 // Returns a fake asm_program_t for use when disassembling bits out of memory
-asm_program_t* fake_prog_for_arch(enum bfd_architecture arch)
+asm_program_t* fake_prog_for_arch(enum asmir_arch arch)
 {
-  int machine = 0; // TODO: pick based on arch
   asm_program_t *prog = new asm_program_t;
   prog->segs = 0; /* no segments */
+  prog->asmir_arch = arch;
 
-  if (arch == bfd_arch_i386) {
+  if (arch == asmir_arch_x86) {
     if (!immortal_bfd_for_x86) {
       bfd *bfd = bfd_openw("/dev/null", NULL);
       assert(bfd);
-      bfd_set_arch_info(bfd, bfd_lookup_arch(bfd_arch_i386, machine));
+      bfd_set_arch_info(bfd, bfd_lookup_arch(bfd_arch_i386, 0));
       if (!bfd->arch_info) {
 	fprintf(stderr, "BFD architecture lookup failed: does your Binutils support bfd_arch_i386?\n");
 	assert(bfd->arch_info);
@@ -31,11 +31,11 @@ asm_program_t* fake_prog_for_arch(enum bfd_architecture arch)
       immortal_bfd_for_x86 = bfd;
     }
     prog->abfd = immortal_bfd_for_x86;
-  } else if (arch == bfd_arch_arm) {
+  } else if (arch == asmir_arch_arm) {
     if (!immortal_bfd_for_arm) {
       bfd *bfd = bfd_openw("/dev/null", NULL);
       assert(bfd);
-      bfd_set_arch_info(bfd, bfd_lookup_arch(bfd_arch_arm, machine));
+      bfd_set_arch_info(bfd, bfd_lookup_arch(bfd_arch_arm, 0));
       if (!bfd->arch_info) {
 	fprintf(stderr, "BFD architecture lookup failed: does your Binutils support bfd_arch_arm?\n");
 	assert(bfd->arch_info);
@@ -43,15 +43,21 @@ asm_program_t* fake_prog_for_arch(enum bfd_architecture arch)
       immortal_bfd_for_arm = bfd;
     }
     prog->abfd = immortal_bfd_for_arm;
-  } else {  
-    prog->abfd = bfd_openw("/dev/null", NULL);
-    assert(prog->abfd);
-    //not in .h bfd_default_set_arch_mach(prog->abfd, arch, machine);
-    bfd_set_arch_info(prog->abfd, bfd_lookup_arch(arch, machine));
-    if (!prog->abfd->arch_info) {
-      fprintf(stderr, "BFD architecture lookup failed: unexpected bfd_arch value?\n");
-      assert(prog->abfd->arch_info);
+  } else if (arch == asmir_arch_x64) {
+    if (!immortal_bfd_for_x64) {
+      bfd *bfd = bfd_openw("/dev/null", NULL);
+      assert(bfd);
+      bfd_set_arch_info(bfd, bfd_lookup_arch(bfd_arch_i386, bfd_mach_x86_64));
+      if (!bfd->arch_info) {
+	fprintf(stderr, "BFD architecture lookup failed: does your Binutils support bfd_mach_x64_64?\n");
+	assert(bfd->arch_info);
+      }
+      immortal_bfd_for_x64 = bfd;
     }
+    prog->abfd = immortal_bfd_for_x64;
+  } else {  
+    fprintf(stderr, "Unrecognized architecture in fake_prog_for_arch\n");
+    assert(0);
   }
 
   init_disasm_info(prog);
@@ -208,7 +214,7 @@ void init_disasm_info(bfd *abfd, struct disassemble_info *disasm_info);
 // interface yet.
 // This isn't really the right place for it...
 extern "C" {
-void print_disasm_rawbytes(enum bfd_architecture arch,
+void print_disasm_rawbytes(enum asmir_arch arch,
 			   bfd_vma addr,
 			   const char *buf, int size)
 {
@@ -224,7 +230,7 @@ void print_disasm_rawbytes(enum bfd_architecture arch,
   fflush(stdout);
 }
 
-char* sprintf_disasm_rawbytes(enum bfd_architecture arch,
+char* sprintf_disasm_rawbytes(enum asmir_arch arch,
 			      bool is_intel,
 			      bfd_vma addr,
 			      const char *buf, int size)

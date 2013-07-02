@@ -12,6 +12,7 @@ libasmir_a_SOURCES = \
 	./vex/vexmem.cpp \
 	./vex/irtoir.cpp \
 	./vex/irtoir-i386.cpp \
+	./vex/irtoir-x64.cpp \
 	./vex/irtoir-arm.cpp \
 	./vex/irtoir_c.cpp \
 	./vex/vexir.cpp \

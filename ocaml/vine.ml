@@ -219,7 +219,7 @@ let newlab =
 (* convenient constructor functions *)
 let bool_t = REG_1
 let char_t = REG_8
-let addr_t = REG_32
+let addr_t = REG_32 (* XXX 64-bit platforms? *)
 let exp_true = Constant(Int(bool_t, 1L))
 let exp_false = Constant(Int(bool_t, 0L))
 let exp_bool c =  Constant(Int(bool_t,if c then 1L else 0L))

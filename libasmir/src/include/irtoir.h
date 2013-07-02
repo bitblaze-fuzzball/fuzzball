@@ -212,9 +212,6 @@ void generate_vine_ir_block( asm_program_t *prog, vine_block_t *block );
 vector<vine_block_t *> generate_vine_ir( asm_program_t *prog, vector<vine_block_t *> vblocks );
 
 
-VexArch vexarch_of_bfdarch(bfd_architecture arch);
-
-
 //
 // Take a vector of vine blocks and merge them into a single vector of
 // Vine IR statements
@@ -338,7 +335,7 @@ extern "C" {
   extern int asmir_vine_block_size(vine_block_t *b);
   extern address_t asmir_vine_block_address(vine_block_t *b);
   extern Stmt * asmir_vine_block_get(vine_block_t *b, int i);
-  extern asm_program_t* byte_insn_to_asmp(bfd_architecture arch, address_t addr, unsigned char *bb_bytes, unsigned int len);
+  extern asm_program_t* byte_insn_to_asmp(enum asmir_arch arch, address_t addr, unsigned char *bb_bytes, unsigned int len);
   extern char* string_blockinsn(asm_program_t *prog, vine_block_t *block);
 
 #ifdef __cplusplus

@@ -12,15 +12,21 @@ end
 type register_name = 
   (* VEX generic *)
   | R_CC_OP | R_CC_DEP1 | R_CC_DEP2 | R_CC_NDEP
-  | R_IP_AT_SYSCALL | R_EMWARN
-  (* Common to x86 and ARM: *)
+  | R_IP_AT_SYSCALL | R_EMWARN | R_EMNOTE
+  (* Common to x86, x64, and ARM: *)
   | R_CF | R_ZF
+  (* Common to x86 and x64: *)
+  | R_PF | R_AF | R_SF | R_OF
+  | R_DFLAG | R_IDFLAG | R_ACFLAG
+  | R_CS | R_DS| R_ES | R_FS | R_GS | R_SS
+  | R_FTOP | R_FPROUND | R_FC3210 | R_SSEROUND 
   (* x86 *)
   | R_EBP | R_ESP | R_ESI | R_EDI | R_EIP | R_EAX | R_EBX | R_ECX | R_EDX
-  | EFLAGSREST | R_PF | R_AF | R_SF | R_OF
-  | R_DFLAG | R_IDFLAG | R_ACFLAG
-  | R_LDT | R_GDT | R_CS | R_DS| R_ES | R_FS | R_GS | R_SS
-  | R_FTOP | R_FPROUND | R_FC3210 | R_SSEROUND 
+  | EFLAGSREST | R_LDT | R_GDT 
+  (* x64 *)
+  | R_RBP | R_RSP | R_RSI | R_RDI | R_RIP | R_RAX | R_RBX | R_RCX | R_RDX
+  | R_R8 | R_R9 | R_R10 | R_R11 | R_R12 | R_R13 | R_R14 | R_R15
+  | R_RFLAGSREST
   (* ARM *)
   | R0 | R1 |  R2 |  R3 |  R4 |  R5 |  R6 |  R7
   | R8 | R9 | R10 | R11 | R12 | R13 | R14 | R15 | R15T

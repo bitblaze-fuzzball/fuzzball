@@ -57,11 +57,11 @@ Stmt * asmir_vine_block_get(vine_block_t *b, int i) {
 
 
 // from translate.cpp
-asm_program_t* fake_prog_for_arch(enum bfd_architecture arch);
+asm_program_t* fake_prog_for_arch(enum asmir_arch arch);
 extern VexArch guest_arch;
 
 asm_program_t*
-byte_insn_to_asmp(bfd_architecture arch, address_t addr, unsigned char *bb_bytes, unsigned int len)
+byte_insn_to_asmp(enum asmir_arch arch, address_t addr, unsigned char *bb_bytes, unsigned int len)
 {
   asm_program_t *prog = fake_prog_for_arch(arch);
   unsigned char *bytes = (unsigned char*)malloc(len);
@@ -70,7 +70,7 @@ byte_insn_to_asmp(bfd_architecture arch, address_t addr, unsigned char *bb_bytes
   prog->fake_asmp_bytes = bytes;
   Instruction *inst = new Instruction;
 
-  if (arch == bfd_arch_arm && (addr & 1)) {
+  if (arch == asmir_arch_arm && (addr & 1)) {
     addr = addr & ~1;
     inst->arch_flags = 1;
   } else {

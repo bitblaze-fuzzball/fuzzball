@@ -81,6 +81,12 @@ typedef struct vine_symbol {
   int is_dynamic;
 } vine_symbol_t;
 
+enum asmir_arch {
+  asmir_arch_x86,
+  asmir_arch_x64, /* AKA AMD64, x86_64, x86-64, Intel 64 */
+  asmir_arch_arm,
+};
+
 typedef struct asm_program {
   string name;
   set<asymbol *> symbols;
@@ -89,11 +95,13 @@ typedef struct asm_program {
   //cfg_t cg; /// callgraph
   Segment *segs; // linked list of segments
   bfd *abfd;
+  enum asmir_arch asmir_arch;
   struct disassemble_info disasm_info;
   unsigned char *fake_asmp_bytes;
 } asm_program_t;
 
 extern bfd *immortal_bfd_for_x86;
+extern bfd *immortal_bfd_for_x64;
 extern bfd *immortal_bfd_for_arm;
 
 typedef struct raw_inst {

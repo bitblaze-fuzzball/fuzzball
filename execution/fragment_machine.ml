@@ -39,15 +39,21 @@ end
 type register_name = 
   (* VEX generic *)
   | R_CC_OP | R_CC_DEP1 | R_CC_DEP2 | R_CC_NDEP
-  | R_IP_AT_SYSCALL | R_EMWARN
-  (* Common to x86 and ARM: *)
+  | R_IP_AT_SYSCALL | R_EMWARN | R_EMNOTE
+  (* Common to x86, x64, and ARM: *)
   | R_CF | R_ZF
+  (* Common to x86 and x64: *)
+  | R_PF | R_AF | R_SF | R_OF
+  | R_DFLAG | R_IDFLAG | R_ACFLAG
+  | R_CS | R_DS| R_ES | R_FS | R_GS | R_SS
+  | R_FTOP | R_FPROUND | R_FC3210 | R_SSEROUND 
   (* x86 *)
   | R_EBP | R_ESP | R_ESI | R_EDI | R_EIP | R_EAX | R_EBX | R_ECX | R_EDX
-  | EFLAGSREST | R_PF | R_AF | R_SF | R_OF
-  | R_DFLAG | R_IDFLAG | R_ACFLAG
-  | R_LDT | R_GDT | R_CS | R_DS| R_ES | R_FS | R_GS | R_SS
-  | R_FTOP | R_FPROUND | R_FC3210 | R_SSEROUND 
+  | EFLAGSREST | R_LDT | R_GDT 
+  (* x64 *)
+  | R_RBP | R_RSP | R_RSI | R_RDI | R_RIP | R_RAX | R_RBX | R_RCX | R_RDX
+  | R_R8 | R_R9 | R_R10 | R_R11 | R_R12 | R_R13 | R_R14 | R_R15
+  | R_RFLAGSREST
   (* ARM *)
   | R0 | R1 |  R2 |  R3 |  R4 |  R5 |  R6 |  R7
   | R8 | R9 | R10 | R11 | R12 | R13 | R14 | R15 | R15T
@@ -64,12 +70,18 @@ let reg_to_regstr reg = match reg with
   | R_EBP -> "R_EBP" | R_ESP -> "R_ESP" | R_ESI -> "R_ESI"
   | R_EDI -> "R_EDI" | R_EIP -> "R_EIP" | R_EAX -> "R_EAX" | R_EBX -> "R_EBX"
   | R_ECX -> "R_ECX" | R_EDX -> "R_EDX"
+  | R_RBP -> "R_RBP" | R_RSP -> "R_RSP" | R_RSI -> "R_RSI"
+  | R_RDI -> "R_RDI" | R_RIP -> "R_RIP" | R_RAX -> "R_RAX" | R_RBX -> "R_EBX"
+  | R_RCX -> "R_RCX" | R_RDX -> "R_RDX"
+  | R_R8 -> "R_R8" | R_R9 -> "R_R9" | R_R10 -> "R_R10" | R_R11 -> "R_R11"
+  | R_R12 -> "R_R12" | R_R13 -> "R_R13" | R_R14 -> "R_R14" | R_R15 -> "R_R15"
+  | R_RFLAGSREST -> "R_RFLAGSREST"
   | EFLAGSREST -> "EFLAGSREST" | R_CF -> "R_CF" | R_PF -> "R_PF"
   | R_AF -> "R_AF"| R_ZF -> "R_ZF" | R_SF -> "R_SF" | R_OF -> "R_OF"
   | R_CC_OP -> "R_CC_OP" | R_CC_DEP1 -> "R_CC_DEP1"
   | R_CC_DEP2 -> "R_CC_DEP2" | R_CC_NDEP -> "R_CC_NDEP"
   | R_DFLAG -> "R_DFLAG" | R_IDFLAG -> "R_IDFLAG" | R_ACFLAG -> "R_ACFLAG"
-  | R_EMWARN -> "R_EMWARN"
+  | R_EMWARN -> "R_EMWARN" | R_EMNOTE -> "R_EMNOTE"
   | R_LDT -> "R_LDT" | R_GDT -> "R_GDT" | R_CS -> "R_CS" | R_DS -> "R_DS"
   | R_ES -> "R_ES" | R_FS -> "R_FS" | R_GS -> "R_GS"| R_SS -> "R_SS"
   | R_FTOP -> "R_FTOP" | R_FPROUND -> "R_FPROUND" | R_FC3210  -> "R_FC3210"
@@ -99,12 +111,18 @@ let regstr_to_reg s = match s with
   | "R_EBP" -> R_EBP | "R_ESP" -> R_ESP | "R_ESI" -> R_ESI
   | "R_EDI" -> R_EDI | "R_EIP" -> R_EIP | "R_EAX" -> R_EAX | "R_EBX" -> R_EBX
   | "R_ECX" -> R_ECX | "R_EDX" -> R_EDX
+  | "R_RBP" -> R_RBP | "R_RSP" -> R_RSP | "R_RSI" -> R_RSI
+  | "R_RDI" -> R_RDI | "R_RIP" -> R_RIP | "R_RAX" -> R_RAX | "R_RBX" -> R_RBX
+  | "R_RCX" -> R_RCX | "R_RDX" -> R_RDX
+  | "R_R8" -> R_R8 | "R_R9" -> R_R9 | "R_R10" -> R_R10 | "R_R11" -> R_R11
+  | "R_R12" -> R_R12 | "R_R13" -> R_R13 | "R_R14" -> R_R14 | "R_R15" -> R_R15
+  | "R_RFLAGSREST" -> R_RFLAGSREST
   | "EFLAGSREST" -> EFLAGSREST | "R_CF" -> R_CF | "R_PF" -> R_PF
   | "R_AF" -> R_AF| "R_ZF" -> R_ZF | "R_SF" -> R_SF | "R_OF" -> R_OF
   | "R_CC_OP" -> R_CC_OP | "R_CC_DEP1" -> R_CC_DEP1
   | "R_CC_DEP2" -> R_CC_DEP2 | "R_CC_NDEP" -> R_CC_NDEP
   | "R_DFLAG" -> R_DFLAG | "R_IDFLAG" -> R_IDFLAG | "R_ACFLAG" -> R_ACFLAG
-  | "R_EMWARN" -> R_EMWARN
+  | "R_EMWARN" -> R_EMWARN | "R_EMNOTE" -> R_EMNOTE
   | "R_LDT" -> R_LDT | "R_GDT" -> R_GDT | "R_CS" -> R_CS | "R_DS" -> R_DS
   | "R_ES" -> R_ES | "R_FS" -> R_FS | "R_GS" -> R_GS| "R_SS" -> R_SS
   | "R_FTOP" -> R_FTOP | "R_FPROUND" -> R_FPROUND | "R_FC3210"  -> R_FC3210
@@ -460,11 +478,13 @@ struct
     method get_eip =
       match !opt_arch with
 	| X86 -> self#get_word_var R_EIP
+	| X64 -> self#get_word_var R_RIP
 	| ARM -> self#get_word_var R15T
 
     method set_eip eip =
       match !opt_arch with
 	| X86 -> self#set_word_var R_EIP eip
+	| X64 -> self#set_word_var R_RIP eip
 	| ARM -> self#set_word_var R15T eip
 
     method run_eip_hooks =
@@ -536,6 +556,44 @@ struct
 	reg R_SSEROUND (D.from_concrete_32 0L);
 	()
 
+    method private make_x64_regs_zero =
+      let reg r v =
+	self#set_int_var (Hashtbl.find reg_to_var r) v
+      in
+	reg R_RAX (D.from_concrete_64 0x0000000000000000L);
+	reg R_RBX (D.from_concrete_64 0x0000000000000000L);
+	reg R_RCX (D.from_concrete_64 0x0000000000000000L);
+	reg R_RDX (D.from_concrete_64 0x0000000000000000L);
+	reg R_RBP (D.from_concrete_64 0x0000000000000000L);
+	reg R_RSP (D.from_concrete_64 0x0000000000000000L);
+	reg R_RSI (D.from_concrete_64 0x0000000000000000L);
+	reg R_RDI (D.from_concrete_64 0x0000000000000000L);
+	reg R_R8  (D.from_concrete_64 0x0000000000000000L);
+	reg R_R9  (D.from_concrete_64 0x0000000000000000L);
+	reg R_R10 (D.from_concrete_64 0x0000000000000000L);
+	reg R_R11 (D.from_concrete_64 0x0000000000000000L);
+	reg R_R12 (D.from_concrete_64 0x0000000000000000L);
+	reg R_R13 (D.from_concrete_64 0x0000000000000000L);
+	reg R_R14 (D.from_concrete_64 0x0000000000000000L);
+	reg R_R15 (D.from_concrete_64 0x0000000000000000L);
+	reg R_PF (D.from_concrete_1 0);
+	reg R_CF (D.from_concrete_1 0);
+	reg R_AF (D.from_concrete_1 0);
+	reg R_SF (D.from_concrete_1 0);
+	reg R_OF (D.from_concrete_1 0);
+	reg R_ZF (D.from_concrete_1 0);
+	reg R_FTOP (D.from_concrete_32 0L);	
+	reg R_RFLAGSREST (D.from_concrete_64 0L);
+	reg R_DFLAG (D.from_concrete_64 1L);
+	reg R_IDFLAG (D.from_concrete_64 0L);
+	reg R_ACFLAG (D.from_concrete_64 0L);
+	reg R_CC_OP   (D.from_concrete_64 0L);
+	reg R_CC_DEP1 (D.from_concrete_64 0L);
+	reg R_CC_DEP2 (D.from_concrete_64 0L);
+	reg R_CC_NDEP (D.from_concrete_64 0L);
+	reg R_SSEROUND (D.from_concrete_64 0L);
+	()
+
     method private make_arm_regs_zero =
       let reg r v =
 	self#set_int_var (Hashtbl.find reg_to_var r) v
@@ -568,6 +626,7 @@ struct
     method make_regs_zero =
       match !opt_arch with
 	| X86 -> self#make_x86_regs_zero
+	| X64 -> self#make_x64_regs_zero
 	| ARM -> self#make_arm_regs_zero
 
     method private make_x86_regs_symbolic =
@@ -674,6 +733,38 @@ struct
 	self#store_byte_conc 0x6000003eL 0xfd; (* flags, limit high *)
 	self#store_byte_conc 0x6000003fL 0x7f; (* base high *)
 
+    method private make_x64_regs_symbolic =
+      let reg r v =
+	self#set_int_var (Hashtbl.find reg_to_var r) v
+      in
+	reg R_RBP (form_man#fresh_symbolic_64 "initial_rbp");
+	reg R_RSP (form_man#fresh_symbolic_64 "initial_rsp");
+	reg R_RSI (form_man#fresh_symbolic_64 "initial_rsi");
+	reg R_RDI (form_man#fresh_symbolic_64 "initial_rdi");
+	reg R_RAX (form_man#fresh_symbolic_64 "initial_rax");
+	reg R_RBX (form_man#fresh_symbolic_64 "initial_rbx");
+	reg R_RCX (form_man#fresh_symbolic_64 "initial_rcx");
+	reg R_RDX (form_man#fresh_symbolic_64 "initial_rdx");
+	reg R_R8  (form_man#fresh_symbolic_64 "initial_r8");
+	reg R_R9  (form_man#fresh_symbolic_64 "initial_r9");
+	reg R_R10 (form_man#fresh_symbolic_64 "initial_r10");
+	reg R_R11 (form_man#fresh_symbolic_64 "initial_r11");
+	reg R_R12 (form_man#fresh_symbolic_64 "initial_r12");
+	reg R_R13 (form_man#fresh_symbolic_64 "initial_r13");
+	reg R_R14 (form_man#fresh_symbolic_64 "initial_r14");
+	reg R_R15 (form_man#fresh_symbolic_64 "initial_r15");
+	reg R_DFLAG (D.from_concrete_64 1L);
+	reg R_ACFLAG (D.from_concrete_64 0L);
+	reg R_IDFLAG (D.from_concrete_64 0L);
+	reg R_RFLAGSREST (D.from_concrete_64 0L);
+	reg R_PF (D.from_concrete_1 0);
+	reg R_CF (D.from_concrete_1 0);
+	reg R_AF (D.from_concrete_1 0);
+	reg R_SF (D.from_concrete_1 0);
+	reg R_OF (D.from_concrete_1 0);
+	reg R_ZF (D.from_concrete_1 0);
+	reg R_FTOP (D.from_concrete_32 0L);
+
     method private make_arm_regs_symbolic =
       let reg r v =
 	self#set_int_var (Hashtbl.find reg_to_var r) v
@@ -704,6 +795,7 @@ struct
     method make_regs_symbolic =
       match !opt_arch with	
 	| X86 -> self#make_x86_regs_symbolic
+	| X64 -> self#make_x64_regs_symbolic
 	| ARM -> self#make_arm_regs_symbolic
 
     method load_x86_user_regs regs =
@@ -759,6 +851,36 @@ struct
       self#print_reg1 "SF" R_SF;
       self#print_reg1 "OF" R_OF
 
+    method private print_reg64 str r = 
+	Printf.printf "%s: " str;
+	Printf.printf "%s\n"
+	  (D.to_string_64
+	     (self#get_int_var (Hashtbl.find reg_to_var r)))
+
+    method private print_x64_regs =
+      self#print_reg64 "%rax" R_RAX;
+      self#print_reg64 "%rbx" R_RBX;
+      self#print_reg64 "%rcx" R_RCX;
+      self#print_reg64 "%rdx" R_RDX;
+      self#print_reg64 "%rsi" R_RSI;
+      self#print_reg64 "%rdi" R_RDI;
+      self#print_reg64 "%rsp" R_RSP;
+      self#print_reg64 "%rbp" R_RBP;
+      self#print_reg64 "%r8"  R_R8;
+      self#print_reg64 "%r9"  R_R9;
+      self#print_reg64 "%r10" R_R10;
+      self#print_reg64 "%r11" R_R11;
+      self#print_reg64 "%r12" R_R12;
+      self#print_reg64 "%r13" R_R13;
+      self#print_reg64 "%r14" R_R14;
+      self#print_reg64 "%r15" R_R15;
+      self#print_reg1 "CF" R_CF;
+      self#print_reg1 "PF" R_PF;
+      self#print_reg1 "AF" R_AF;
+      self#print_reg1 "ZF" R_ZF;
+      self#print_reg1 "SF" R_SF;
+      self#print_reg1 "OF" R_OF
+
     method private print_arm_regs =
       self#print_reg32 " r0" R0;
       self#print_reg32 " r1" R1;
@@ -786,6 +908,7 @@ struct
     method print_regs =
       match !opt_arch with	
 	| X86 -> self#print_x86_regs
+	| X64 -> self#print_x64_regs
 	| ARM -> self#print_arm_regs
 
     method private simplify_reg32 r =
@@ -805,6 +928,35 @@ struct
       self#simplify_reg32 R_EDI;
       self#simplify_reg32 R_ESP;
       self#simplify_reg32 R_EBP;
+      self#simplify_reg1 R_CF;
+      self#simplify_reg1 R_PF;
+      self#simplify_reg1 R_AF;
+      self#simplify_reg1 R_ZF;
+      self#simplify_reg1 R_SF;
+      self#simplify_reg1 R_OF;
+      ()
+
+    method private simplify_reg64 r =
+      let var = Hashtbl.find reg_to_var r in
+	self#set_int_var var (form_man#simplify64 (self#get_int_var var))
+
+    method private simplify_x64_regs =
+      self#simplify_reg64 R_RAX;
+      self#simplify_reg64 R_RBX;
+      self#simplify_reg64 R_RCX;
+      self#simplify_reg64 R_RDX;
+      self#simplify_reg64 R_RSI;
+      self#simplify_reg64 R_RDI;
+      self#simplify_reg64 R_RSP;
+      self#simplify_reg64 R_RBP;
+      self#simplify_reg64 R_R8;
+      self#simplify_reg64 R_R9;
+      self#simplify_reg64 R_R10;
+      self#simplify_reg64 R_R11;
+      self#simplify_reg64 R_R12;
+      self#simplify_reg64 R_R13;
+      self#simplify_reg64 R_R14;
+      self#simplify_reg64 R_R15;
       self#simplify_reg1 R_CF;
       self#simplify_reg1 R_PF;
       self#simplify_reg1 R_AF;
@@ -840,6 +992,7 @@ struct
     method private simplify_regs =
       match !opt_arch with	
 	| X86 -> self#simplify_x86_regs
+	| X64 -> self#simplify_x64_regs
 	| ARM -> self#simplify_arm_regs
 
     method store_byte  addr b = mem#store_byte  addr b

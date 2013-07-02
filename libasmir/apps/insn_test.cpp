@@ -19,6 +19,7 @@ void usage(char *prog)
     fprintf(stderr, "General options:\n");
     fprintf(stderr, "  -arm               ARM architecture mode\n");
     fprintf(stderr, "  -thumb             ARM Thumb architecture mode\n");
+    fprintf(stderr, "  -x64               x86-64/AMD64/Intel64 mode\n");
     fprintf(stderr, "  -print-vex-ir      Pretty-print VEX's IR\n");
     fprintf(stderr, "  -print-ir          Pretty-print the IR\n");
     fprintf(stderr, "  -disasm            Disassemble in a default format\n");
@@ -36,13 +37,13 @@ bool flag_print_ir;
 bool flag_disasm_default;
 bool flag_disasm_intel;
 
-enum bfd_architecture bfd_arch = bfd_arch_i386;
+enum asmir_arch asmir_arch = asmir_arch_x86;
 int insn_max_len = 16;
 int print_size = 1;
 
 void one_insn(unsigned int addr, unsigned char *bytes, int bytes_len) {
     asm_program_t *asmp =
-	byte_insn_to_asmp(bfd_arch, addr | thumb_flag, bytes, bytes_len);
+	byte_insn_to_asmp(asmir_arch, addr | thumb_flag, bytes, bytes_len);
     vine_block_t *vb = asm_addr_to_ir(asmp, addr);
     if (flag_print_ir) {
 	vector<Stmt *> *sl = vb->vine_ir;
@@ -292,14 +293,16 @@ int main(int argc, char *argv[])
 	} else if (!strcmp(argv[i], "-print-vex-ir")) {
 	    debug_on("vex");
 	} else if (!strcmp(argv[i], "-arm")) {
-	    bfd_arch = bfd_arch_arm;
+	    asmir_arch = asmir_arch_arm;
 	    insn_max_len = 4;
 	    print_size = 4;
 	} else if (!strcmp(argv[i], "-thumb")) {
-	    bfd_arch = bfd_arch_arm;
+	    asmir_arch = asmir_arch_arm;
 	    insn_max_len = 4;
 	    print_size = 2;
 	    thumb_flag = 1;
+	} else if (!strcmp(argv[i], "-x64")) {
+	    asmir_arch = asmir_arch_x64;
 	} else if (!strcmp(argv[i], "-disasm-att")) {
 	    flag_disasm_default = true;
 	} else if (!strcmp(argv[i], "-disasm")) {

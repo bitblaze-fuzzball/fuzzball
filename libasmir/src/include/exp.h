@@ -269,6 +269,7 @@ class Let : public Exp {
 Exp *ecl( Exp *exp );
 //Constant *_ex_const( Constant co );
 Constant *ex_const(uint32_t value);
+Constant *ex_const64(uint64_t value);
 Constant *ex_const(reg_t t, const_val_t value );
 Name *ex_name( string name );
 UnOp *_ex_not( Exp *arg );

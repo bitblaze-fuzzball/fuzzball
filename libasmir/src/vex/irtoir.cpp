@@ -92,6 +92,8 @@ vector<VarDecl *> get_reg_decls(VexArch arch)
   switch (arch) {
   case VexArchX86:
     return i386_get_reg_decls();
+  case VexArchAMD64:
+    return x64_get_reg_decls();
   case VexArchARM:
     return arm_get_reg_decls();
   default:
@@ -111,6 +113,8 @@ IRStmt *make_pc_put_stmt(VexArch arch, Addr64 addr) {
   switch (arch) {
   case VexArchX86:
     return i386_make_pc_put_stmt(addr);
+  case VexArchAMD64:
+    return x64_make_pc_put_stmt(addr);
   case VexArchARM:
     return arm_make_pc_put_stmt(addr);
   default:
@@ -127,6 +131,8 @@ Exp *translate_get( IRExpr *expr, IRSB *irbb, vector<Stmt *> *irout )
     switch (guest_arch) {
     case VexArchX86:
       return i386_translate_get(expr, irbb, irout);
+    case VexArchAMD64:
+      return x64_translate_get(expr, irbb, irout);
     case VexArchARM:
       return arm_translate_get(expr, irbb, irout);
     default:
@@ -139,6 +145,8 @@ Stmt *translate_put( IRStmt *stmt, IRSB *irbb, vector<Stmt *> *irout )
     switch (guest_arch) {
     case VexArchX86:
       return i386_translate_put(stmt, irbb, irout);
+    case VexArchAMD64:
+      return x64_translate_put(stmt, irbb, irout);
     case VexArchARM:
       return arm_translate_put(stmt, irbb, irout);
     default:
@@ -155,6 +163,8 @@ Stmt *translate_dirty( IRStmt *stmt, IRSB *irbb, vector<Stmt *> *irout )
     switch (guest_arch) {
     case VexArchX86:
       return i386_translate_dirty(stmt, irbb, irout);
+    case VexArchAMD64:
+      return x64_translate_dirty(stmt, irbb, irout);
     default:
       return new ExpStmt(new Unknown(uTag("Dirty")));
     }
@@ -169,6 +179,8 @@ Exp *translate_ccall( IRExpr *expr, IRSB *irbb, vector<Stmt *> *irout )
     switch (guest_arch) {
     case VexArchX86:
       return i386_translate_ccall(expr, irbb, irout);
+    case VexArchAMD64:
+      return x64_translate_ccall(expr, irbb, irout);
      case VexArchARM:
       return arm_translate_ccall(expr, irbb, irout);
    default:
@@ -182,6 +194,8 @@ void modify_flags( asm_program_t *prog, vine_block_t *block )
     switch (guest_arch) {
     case VexArchX86:
       return i386_modify_flags(prog, block);
+    case VexArchAMD64:
+      return x64_modify_flags(prog, block);
     case VexArchARM:
       return arm_modify_flags(prog, block);
     default:
@@ -1538,19 +1552,14 @@ vector<Stmt *> *translate_irbb( Instruction *inst, IRSB *irbb )
     return irout;
 }
 
-VexArch vexarch_of_bfdarch(bfd_architecture arch) {
-  switch (arch) {
-  case bfd_arch_i386:
-    // check for amd64?
-    return VexArchX86;
-  case bfd_arch_arm:
-    return VexArchARM;
+VexArch vexarch_of_prog(asm_program_t *prog) {
+  switch (prog->asmir_arch) {
+  case asmir_arch_x86: return VexArchX86;
+  case asmir_arch_x64: return VexArchAMD64;
+  case asmir_arch_arm: return VexArchARM;
   default:
     return VexArch_INVALID;
   }
-}
-VexArch vexarch_of_prog(asm_program_t *prog) {
-  return vexarch_of_bfdarch(bfd_get_arch(prog->abfd));
 }
 
 //======================================================================

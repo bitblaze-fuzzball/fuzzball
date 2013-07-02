@@ -7,13 +7,13 @@ type offset_strategy = UniformStrat | BiasedSmallStrat
 
 val offset_strategy_of_string : string -> offset_strategy
 
-type execution_arch = X86 | ARM
+type execution_arch = X86 | X64 | ARM
 
 val execution_arch_of_string : string -> execution_arch
 
 val asmir_arch_of_execution_arch : execution_arch -> Asmir.arch
 val libasmir_arch_of_execution_arch : execution_arch ->
-  Libasmir.bfd_architecture
+  Libasmir.asmir_arch
 
 val max_input_string_length : int ref
 val input_string_mem_prefix : string option ref

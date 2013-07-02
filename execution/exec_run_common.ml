@@ -14,6 +14,7 @@ let match_faked_insn eip insn_bytes =
 	 !opt_nop_system_insns || (!opt_x87_entry_point <> None)) with
     | (_,  false) -> None 
     | (ARM, true) -> None (* nothing implemented *)
+    | (X64, true) -> None (* nothing implemented *)
     | (X86, true) ->
 	(* Pretend to decode, but just to a no-op or a trap, some
 	   system instructions that a VEX-based LibASMIR doesn't handle. *)

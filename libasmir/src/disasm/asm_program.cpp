@@ -178,6 +178,7 @@ disassemble_program(const char *filename)
 // }
 
 bfd *immortal_bfd_for_x86 = 0;
+bfd *immortal_bfd_for_x64 = 0;
 bfd *immortal_bfd_for_arm = 0;
 
 void free_asm_program(asm_program_t *p)
@@ -193,7 +194,8 @@ void free_asm_program(asm_program_t *p)
       it++) {
     free_asm_function(it->second);
   }  
-  if (p->abfd != immortal_bfd_for_x86 && p->abfd != immortal_bfd_for_arm)
+  if (p->abfd != immortal_bfd_for_x86 && p->abfd != immortal_bfd_for_x64
+      && p->abfd != immortal_bfd_for_arm)
     bfd_close_all_done(p->abfd);
   if (p->fake_asmp_bytes)
     free(p->fake_asmp_bytes);
@@ -942,8 +944,8 @@ static void *xmalloc(size_t size) {
 
 extern "C" {
 
-  enum bfd_architecture asmprogram_arch(asm_program_t *prog) {
-    return bfd_get_arch(prog->abfd);
+  enum asmir_arch asmprogram_arch(asm_program_t *prog) {
+    return prog->asmir_arch;
   }
 
 }

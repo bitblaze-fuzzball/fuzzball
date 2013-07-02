@@ -13,10 +13,11 @@ open Vine_util
 
 type asmprogram = Libasmir.asm_program_t
 
-type arch = Libasmir.bfd_architecture
+type arch = Libasmir.asmir_arch
 
-let arch_i386 = Libasmir.Bfd_arch_i386
-let arch_arm  = Libasmir.Bfd_arch_arm
+let arch_i386 = Libasmir.Asmir_arch_x86
+let arch_x64  = Libasmir.Asmir_arch_x64
+let arch_arm  = Libasmir.Asmir_arch_arm
 (*more to come later when we support them*)
 
 module D = Debug.Make(struct let name = "ASMIR" and default=`Debug end)
@@ -464,6 +465,67 @@ let x86_regs : decl list =
 let x86_mem :decl = newvar "mem" (TMem(Vine.addr_t, Little))
 let arm_mem = x86_mem
 
+let x64_regs : decl list =
+  List.map (fun (n,t) -> newvar n t)
+    [
+  (* 64 bit regs *)
+  ("R_RBP", REG_64);
+  ("R_RSP", REG_64);
+  ("R_RSI", REG_64);
+  ("R_RDI", REG_64);
+  ("R_RIP", REG_64);
+  ("R_RAX", REG_64);
+  ("R_RBX", REG_64);
+  ("R_RCX", REG_64);
+  ("R_RDX", REG_64);
+  ("R_R8",  REG_64);
+  ("R_R9",  REG_64);
+  ("R_R10", REG_64);
+  ("R_R11", REG_64);
+  ("R_R12", REG_64);
+  ("R_R13", REG_64);
+  ("R_R14", REG_64);
+  ("R_R15", REG_64);
+  (* To get the real RFLAGS, you need to combine with R_CF
+     through R_OF below *)
+  ("R_RFLAGSREST", REG_64);
+
+  (* condition flag bits *)
+  ("R_CF", REG_1);
+  ("R_PF", REG_1);
+  ("R_AF", REG_1);
+  ("R_ZF", REG_1);
+  ("R_SF", REG_1);
+  ("R_OF", REG_1);
+
+  (* VEX left-overs from calc'ing condition flags *)
+  ("R_CC_OP", REG_64);
+  ("R_CC_DEP1", REG_64);
+  ("R_CC_DEP2", REG_64);
+  ("R_CC_NDEP", REG_64);
+
+  (* more status flags *)
+  ("R_DFLAG", REG_64);
+  ("R_IDFLAG", REG_64);
+  ("R_ACFLAG", REG_64);
+  ("R_EMNOTE", REG_32);
+
+  (* floating point *)
+  ("R_FTOP", REG_32);
+  ("R_FPROUND", REG_64);
+  ("R_FC3210", REG_64);
+
+  (* SIMD instructions *)
+  ("R_SSEROUND", REG_64);
+
+  (* more recent VEX quirks *)
+  ("R_EMNOTE", REG_32);
+  ("R_IP_AT_SYSCALL", REG_64);
+]
+
+
+let x64_mem : decl = newvar "mem" (TMem(Vine.REG_64, Little))
+
 let x86_eflags_helpers () =
   (* FIXME: destroy C++ stmts *)
   let stmts = Libasmir.gen_eflags_helpers_c () in
@@ -554,23 +616,19 @@ let arm_regs : decl list =
     ]
 
 let decls_for_arch = function
-  | Bfd_arch_i386 -> x86_mem::x86_regs
-  | Bfd_arch_arm  -> arm_mem::arm_regs
-  | _ ->
-      failwith "decls_for_arch: unsupported arch"
+  | Asmir_arch_x86 -> x86_mem::x86_regs
+  | Asmir_arch_x64 -> x64_mem::x64_regs
+  | Asmir_arch_arm -> arm_mem::arm_regs
 
 let gamma_for_arch = function
-  | Bfd_arch_i386 -> gamma_create x86_mem x86_regs
-  | Bfd_arch_arm  -> gamma_create arm_mem arm_regs
-  | _ ->
-      failwith "gamma_for_arch: unsupported arch"
+  | Asmir_arch_x86 -> gamma_create x86_mem x86_regs
+  | Asmir_arch_x64 -> gamma_create x64_mem x64_regs
+  | Asmir_arch_arm -> gamma_create arm_mem arm_regs
 
 let helpers_for_arch = function
-  | Bfd_arch_i386 -> x86_eflags_helpers()
-  | Bfd_arch_arm  -> []
-  | _ ->
-      failwith "helpers_for_arch: unsupported arch"
-
+  | Asmir_arch_x86 -> x86_eflags_helpers()
+  | Asmir_arch_x64 -> []
+  | Asmir_arch_arm -> []
 
 let asmprogram_arch = Libasmir.asmprogram_arch
 
@@ -735,7 +793,7 @@ let asm_bytes_to_vine g arch addr bytes =
     This will be deprecated soon, as soon as I figure out how we want to specify
     the architecture in ocaml.
 *)
-let print_i386_rawbytes = Libasmir.print_disasm_rawbytes Libasmir.Bfd_arch_i386
+let print_i386_rawbytes = Libasmir.print_disasm_rawbytes Libasmir.Asmir_arch_x86
 
 let print_disasm_rawbytes = Libasmir.print_disasm_rawbytes
 
@@ -744,4 +802,4 @@ let print_disasm_rawbytes = Libasmir.print_disasm_rawbytes
     the architecture in ocaml.
 *)
 let sprintf_i386_rawbytes = 
-      Libasmir.sprintf_disasm_rawbytes Libasmir.Bfd_arch_i386
+      Libasmir.sprintf_disasm_rawbytes Libasmir.Asmir_arch_x86

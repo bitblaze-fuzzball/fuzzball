@@ -641,6 +641,10 @@ Constant *ex_const(uint32_t value )
   return new Constant(REG_32, value);
 }
 
+Constant *ex_const64(uint64_t value )
+{
+  return new Constant(REG_64, value);
+}
 
 Constant *ex_const(reg_t t, const_val_t value )
 {

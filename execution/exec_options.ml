@@ -15,22 +15,27 @@ let offset_strategy_of_string s =
 (* This type plays a similar role to Asmir.arch and
    Libasmir.bfd_architecture, but it's structured to be easier to use
    in matching by exporting the full list of values, and only
-   including architectures supported by Vine execution. *)
-type execution_arch = X86 | ARM
+   including architectures supported by Vine execution. More recently
+   the other ones have been changed to be more similar too, so
+   there's some duplication that could be removed. *)
+type execution_arch = X86 | X64 | ARM
 
 let execution_arch_of_string s =
   match s with
     | "i386"|"x86" -> X86
+    | "x64"|"x86-64"|"x86_64"|"amd64"|"intel64" -> X64
     | "arm" -> ARM
     | _ -> failwith "Unrecognized architecture"
 
 let asmir_arch_of_execution_arch = function
   | X86 -> Asmir.arch_i386
+  | X64 -> Asmir.arch_x64
   | ARM -> Asmir.arch_arm
 
 let libasmir_arch_of_execution_arch = function
-  | X86 -> Libasmir.Bfd_arch_i386
-  | ARM -> Libasmir.Bfd_arch_arm
+  | X86 -> Libasmir.Asmir_arch_x86
+  | X64 -> Libasmir.Asmir_arch_x64
+  | ARM -> Libasmir.Asmir_arch_arm
 
 let max_input_string_length = ref 0
 let input_string_mem_prefix = ref None

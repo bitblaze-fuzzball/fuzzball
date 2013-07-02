@@ -88,6 +88,7 @@ let apply_linux_cmdline_opts (fm : Fragment_machine.fragment_machine) =
 	   | None ->
 	       (match !opt_arch with
 		  | X86 -> 0x08048000L
+		  | X64 -> 0x00400000L
 		  | ARM -> 0x8000L
 	       )
 	 in

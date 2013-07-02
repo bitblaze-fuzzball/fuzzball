@@ -13,11 +13,13 @@ open Exec_run_common
 let call_replacements fm last_eip eip =
   let ret_reg = match !opt_arch with
     | X86 -> R_EAX
+    | X64 -> R_RAX
     | ARM -> R0
   in
   let canon_eip eip =
     match !opt_arch with
       | X86 -> eip
+      | X64 -> eip
       | ARM -> Int64.logand 0xfffffffeL eip (* undo Thumb encoding *)
   in
   let lookup targ l =
@@ -119,6 +121,7 @@ let rec runloop (fm : fragment_machine) eip asmir_gamma until =
 	    thunk ();
 	    let fake_ret = match (!opt_arch, (Int64.logand eip 1L)) with
 	      | (X86, _) -> [|'\xc3'|] (* ret *)
+	      | (X64, _) -> [|'\xc3'|] (* ret *)
 	      | (ARM, 0L) -> [|'\x1e'; '\xff'; '\x2f'; '\xe1'|] (* bx lr *)
 	      | (ARM, 1L) -> [|'\x70'; '\x47'|] (* bx lr (Thumb) *)
 	      | (ARM, _) -> failwith "Can't happen (logand with 1)"

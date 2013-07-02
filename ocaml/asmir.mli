@@ -16,6 +16,7 @@ type asmprogram = Libasmir.asm_program_t
 
 type arch
 val arch_i386 : arch
+val arch_x64 : arch
 val arch_arm : arch
 
 

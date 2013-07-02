@@ -58,6 +58,15 @@ Exp  *i386_translate_ccall( IRExpr *expr, IRSB *irbb, vector<Stmt *> *irout );
 Stmt *i386_translate_dirty( IRStmt *stmt, IRSB *irbb, vector<Stmt *> *irout );
 void  i386_modify_flags( asm_program_t *prog, vine_block_t *block );
 
+// defined in irtoir-x64.cpp
+vector<VarDecl *> x64_get_reg_decls();
+IRStmt *x64_make_pc_put_stmt(Addr64 addr);
+Exp  *x64_translate_get( IRExpr *expr, IRSB *irbb, vector<Stmt *> *irout );
+Stmt *x64_translate_put( IRStmt *stmt, IRSB *irbb, vector<Stmt *> *irout );
+Exp  *x64_translate_ccall( IRExpr *expr, IRSB *irbb, vector<Stmt *> *irout );
+Stmt *x64_translate_dirty( IRStmt *stmt, IRSB *irbb, vector<Stmt *> *irout );
+void  x64_modify_flags( asm_program_t *prog, vine_block_t *block );
+
 // defined in irtoir-arm.cpp
 vector<VarDecl *> arm_get_reg_decls();
 IRStmt *arm_make_pc_put_stmt(Addr64 addr);
