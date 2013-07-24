@@ -1115,7 +1115,9 @@ struct
 	       | Some true -> "known equal"
 	       | Some false -> "known mismatch"
 	       | None -> "possible") b;
-	if not b then raise DisqualifiedPath;
+	if not b then
+	  (dt#set_heur 0;
+	   raise DisqualifiedPath);
 	true
 
     method private target_solve_single offset cond_v wd =

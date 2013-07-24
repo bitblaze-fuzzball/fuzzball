@@ -579,6 +579,7 @@ struct
 	!opt_trace_detailed_ranges
 	  
     method finish_path =
+      dt#set_heur 1;
       dt#mark_all_seen;
       infl_man#finish_path;
       if !opt_trace_binary_paths then
