@@ -128,7 +128,10 @@ class linux_special_handler (fm : fragment_machine) =
       fm#store_short_conc addr v
   in
   let zero_region base len =
-    for i = 0 to len -1 do fm#store_byte_idx base i 0 done
+    assert(len >= 0 && len <= 1073741824); (* sanity check *)
+    for i = 0 to len - 1 do
+      fm#store_byte_idx base i 0
+    done
   in
   let string_of_char_array ca =
     let s = String.create (Array.length ca) in
@@ -659,8 +662,13 @@ object(self)
       if addr < cur_break then
 	cur_break
       else 
-	(fm#zero_fill cur_break (Int64.to_int (Int64.sub addr cur_break));
-	 addr)
+	let size = Int64.sub addr cur_break in
+	  if size < 1073741824L then
+	    (fm#zero_fill cur_break (Int64.to_int size);
+	     addr)
+	  else
+	    (* too big, refuse *)
+	    cur_break
     in
       the_break := Some new_break;
       put_return new_break;
@@ -1261,6 +1269,9 @@ object(self)
     in
     let ret =
       match (addr, length, prot, flags, fd) with
+	| (_, length, _, _, _) when
+	    length < 0L || length > 1073741824L ->
+	    raise (Unix.Unix_error(Unix.ENOMEM, "Too large in mmap", ""))
 	| (0L, _, 0x3L (* PROT_READ|PROT_WRITE *),
 	   0x22L (* MAP_PRIVATE|MAP_ANONYMOUS *), 0xffffffffL) ->
 	    let fresh = self#fresh_addr length in
@@ -1293,10 +1304,16 @@ object(self)
       put_return ret
 
   method sys_mmap addr length prot flags fd offset =
-    self#mmap_common addr length prot flags fd offset
+    try
+      self#mmap_common addr length prot flags fd offset
+    with
+      | Unix.Unix_error(err, _, _) -> self#put_errno err
 
   method sys_mmap2 addr length prot flags fd pgoffset =
-    self#mmap_common addr length prot flags fd (4096*pgoffset)
+    try
+      self#mmap_common addr length prot flags fd (4096*pgoffset)
+    with
+      | Unix.Unix_error(err, _, _) -> self#put_errno err
 
   method sys_mprotect addr len prot =
     (* treat as no-op *)
