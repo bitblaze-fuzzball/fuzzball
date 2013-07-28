@@ -252,6 +252,17 @@ object(self)
 
   val the_break = ref None
 
+  val mutable saved_next_fresh_addr = 0L
+  val mutable saved_the_break = None
+
+  method private save_memory_state =
+    saved_next_fresh_addr <- next_fresh_addr;
+    saved_the_break <- !the_break
+
+  method private reset_memory_state =
+    next_fresh_addr <- saved_next_fresh_addr;
+    the_break := saved_the_break
+
   method string_create len =
     try String.create len
     with Invalid_argument("String.create")
@@ -621,10 +632,12 @@ object(self)
       symbolic_fds
 
   method make_snap = 
-    self#save_sym_fd_positions
+    self#save_sym_fd_positions;
+    self#save_memory_state
 
   method reset = 
-    self#reset_sym_fd_positions
+    self#reset_sym_fd_positions;
+    self#reset_memory_state
 
   method sys_access path mode =
     let oc_mode =
