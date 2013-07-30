@@ -216,6 +216,15 @@ class stp_external_engine fname = object(self)
 	if rcode <> 0 then
 	  (Printf.printf "STP died with result code %d\n" rcode;
 	   (match rcode with 
+	      | 127 ->
+		  if !opt_stp_path = "stp" then
+		    Printf.printf
+		      "Perhaps you should set the -stp-path option?\n"
+		  else if String.contains !opt_stp_path '/' &&
+		    not (Sys.file_exists !opt_stp_path)
+		  then
+		    Printf.printf "The file %s does not appear to exist\n"
+		      !opt_stp_path
 	      | 131 -> raise (Signal "QUIT")
 	      | _ -> ());
 	   ignore(Sys.command ("cat " ^ curr_fname ^ ".stp.out"));
