@@ -60,14 +60,12 @@ changes incompatibly from time to time, requiring matching updates in
 our interface code (look for "#if VEX_VERSION > xxxx" in
 libasmir/src).
 
-As of last check, the latest VEX version that works completely out of
-the box is r2701 (r2702 broke the Makefile we use, though the code is
-still just fine: c.f. BZ#319494
-<https://bugs.kde.org/show_bug.cgi?id=319494>). Typical commands to
-check out and compile it look like:
+The most recent version of VEX we've checked to work correctly out of
+the box is r2737. Typical commands to check out and compile it look
+like:
 
-   % svn co -r2701 svn://svn.valgrind.org/vex/trunk vex-r2701
-   % cd vex-r2701
+   % svn co -r2737 svn://svn.valgrind.org/vex/trunk vex-r2737
+   % cd vex-r2737
    % make -f Makefile-gcc
 
 For many uses of FuzzBALL, especially on x86, any version of VEX will
@@ -107,7 +105,7 @@ Vine's ./configure.
 
 Historically we kept STP binaries in our SVN repository, but for space
 and cleanliness they're not included here, so you'll need to compile
-it yourself and put the "stp" binary and "libstp.a" library in the
+STP yourself and put the "stp" binary and "libstp.a" library in the
 "stp" directory. FuzzBALL can use STP either as a separate program or
 via a library interface, which have various performance/engineering
 tradeoffs. For the library interface we patch STP to get
@@ -119,7 +117,12 @@ counterexamples in a different format. The build steps look like:
     % ./clean-install.sh --with-prefix=$(pwd)/install
     % cp install/bin/stp install/lib/libstp.a $HERE/stp
 
-Where $HERE is the directory this INSTALL file is in.
+Where $HERE is the directory this INSTALL file is in. Note that
+actually only libstp.a is used as part of the build process right
+now. FuzzBALL's default mode is to use the external "stp" binary, but
+it doesn't automatically look in the "stp" directory; you need to
+either out it in a directory that's on your $PATH or pass the
+-stp-path option to FuzzBALL.
 
 4. OCaml tools
 
@@ -129,7 +132,8 @@ You need OCaml itself, plus ocamlfind and ocamlidl.
 
 You need ExtLib, http://code.google.com/p/ocaml-extlib/
 
-Build process:
+
+FuzzBALL build process:
 
   ./autogen.sh
   ./configure --with-vex=<...> ...
@@ -147,8 +151,9 @@ Notes:
 
 Modern versions of OCaml (3.10 and later) include enough debugging
 information in native code compilation in order to make stack
-backtraces work, so that's our default behavior. You just need to set
-the environment variable OCAMLRUNPARAM=b.
+backtraces work, so that's our default behavior. To get stack traces
+on fatal errors you just need to set the environment variable
+OCAMLRUNPARAM=b.
 
 If you have an old version of OCaml and want backtraces, or you want
 to run "ocamldebug", you'll need to compile bytecode versions of the
