@@ -28,6 +28,17 @@ A_OBJS =reg_u_add.o reg_u_div.o reg_u_mul.o reg_u_sub.o \
 
 obj-y =$(C_OBJS) $(A_OBJS)
 
+# If your linker doesn't recognize "-Ttext-segment", try replacing it with
+# just "-Ttext". "-Ttext-segment" has the right behavior in all GNU-ish
+# linkers that support it, including old LD and modern GOLD. All versions
+# of GOLD support "-Ttext" with the right behavior, but for old LD
+# "-Ttext" has a different behavior.
+# We could try to figure this out automatically, but I don't know if it's
+# worth the effort: "-Ttext-segment" sounds like it will be the standard
+# going forward. Right now this Makefile isn't hooked up with a configure
+# script; if it is in the future, Valgrind has a similar check we could
+# borrow. For now doing the LD version determination here seems a bit
+# overkill.
 math-emu.so: $(obj-y)
 	$(CC) -Wl,--entry,inline_x87 -Wl,-Ttext-segment,0xc1048000 $(obj-y) -nostdlib -o $@
 
