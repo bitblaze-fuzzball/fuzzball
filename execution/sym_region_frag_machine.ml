@@ -1060,51 +1060,83 @@ struct
 		 (b, choices))
 
     method private target_store_condition addr from value ty =
+      let offset = Int64.to_int (Int64.sub addr from) and
+	  limit_pos = (Int64.add from
+			 (Int64.of_int
+			    (String.length !opt_target_region_string)))
+      in
+      let in_range addr size =
+	addr >= from && (Int64.add addr (Int64.of_int (size - 1))) < limit_pos
+      in
+      let byte_cond off v =
+	let c = (!opt_target_region_string).[off] in
+	  if !opt_trace_target then
+	    Printf.printf
+	      "Store to target string offset %d: %s (vs '%s'): "
+	      off (D.to_string_8 v) (Char.escaped c);
+	  D.eq8 v (D.from_concrete_8 (Char.code c))
+      in
+      let word_cond off v =
+	let c0 = (!opt_target_region_string).[off] and
+	    c1 = (!opt_target_region_string).[off + 1] and
+	    c2 = (!opt_target_region_string).[off + 2] and
+	    c3 = (!opt_target_region_string).[off + 3]
+	in
+	let s0 = (Char.code c0) lor ((Char.code c1) lsl 8) and
+	    s2 = (Char.code c2) lor ((Char.code c3) lsl 8)
+	in
+	let w = Int64.logor (Int64.of_int s0)
+	  (Int64.shift_left (Int64.of_int s2) 16)
+	in
+	  if !opt_trace_target then
+	    Printf.printf
+	      "Store to target string offset %d: %s (vs 0x%08Lx): "
+	      off (D.to_string_32 v) w;
+	  D.eq32 v (D.from_concrete_32 w)
+      in
+	(* Ick, there are a lot of cases here, and we're only handling
+	   end and not beginning overlaps. In the future, consider
+	   rewriting to always treating each byte separately. *)
 	match ty with
-	  | V.REG_8 ->
-	      if addr >= from &&
-		addr < (Int64.add from
-			  (Int64.of_int
-			     (String.length !opt_target_region_string)))
-	      then
-		let offset = Int64.to_int (Int64.sub addr from) in
-		let c = (!opt_target_region_string).[offset] in
-		  if !opt_trace_target then
-		    Printf.printf
-		      "Store to target string offset %d: %s (vs '%s'): "
-		      offset (D.to_string_32 value) (Char.escaped c);
-		  let cond_v = D.eq8 value (D.from_concrete_8 (Char.code c))
-		  in
-		    Some (offset, cond_v, 1)
-	      else
-		None
-	  | V.REG_32 ->
-	       if addr >= from &&
-		 addr < (Int64.add from
-			   (Int64.of_int
-			      (String.length !opt_target_region_string)))
-	       then
-		 let offset = Int64.to_int (Int64.sub addr from) in
-		 let c0 = (!opt_target_region_string).[offset] and
-		     c1 = (!opt_target_region_string).[offset + 1] and
-		     c2 = (!opt_target_region_string).[offset + 2] and
-		     c3 = (!opt_target_region_string).[offset + 3]
-		 in
-		 let s0 = (Char.code c0) lor ((Char.code c1) lsl 8) and
-		     s2 = (Char.code c2) lor ((Char.code c3) lsl 8)
-		 in
-		 let w = Int64.logor (Int64.of_int s0)
-		   (Int64.shift_left (Int64.of_int s2) 16)
-		 in
-		   if !opt_trace_target then
-		     Printf.printf
-		       "Store to target string offset %d: %s (vs 0x%08Lx): "
-		       offset (D.to_string_32 value) w;
-		   let cond_v = D.eq32 value (D.from_concrete_32 w)
-		   in
-		     Some (offset, cond_v, 4)
-	       else
-		 None
+	  | V.REG_8 when in_range addr 1 ->
+	      Some (offset, (byte_cond offset value), 1)
+	  | V.REG_16 when in_range addr 2 ->
+	      (* Fully in-bounds short store *)
+	      let v0 = form_man#simplify8 (D.extract_8_from_16 value 0) and
+		  v1 = form_man#simplify8 (D.extract_8_from_16 value 1)
+	      in
+	      let cond0 = byte_cond offset v0 and
+		  cond1 = byte_cond (offset + 1) v1 in
+		Some (offset, (D.bitand1 cond0 cond1), 2)
+	  | V.REG_16 when in_range addr 1 ->
+	      (* Partial end-overlap short store *)
+	      let v0 = form_man#simplify8 (D.extract_8_from_16 value 0) in
+	      let cond0 = byte_cond offset v0 in
+		Some (offset, cond0, 1)
+	  | V.REG_32 when in_range addr 4 ->
+	      (* Fully in-bounds word store *)
+	      Some (offset, (word_cond offset value), 4)
+	  | V.REG_32 when in_range addr 3 ->
+	      (* Word store end-overlap, 3 bytes in bounds *)
+	      let v0 = form_man#simplify8 (D.extract_8_from_32 value 0) and
+		  v1 = form_man#simplify8 (D.extract_8_from_32 value 1) and
+		  v2 = form_man#simplify8 (D.extract_8_from_32 value 2) in
+	      let cond0 = byte_cond offset v0 and
+		  cond1 = byte_cond (offset + 1) v1 and
+		  cond2 = byte_cond (offset + 2) v2 in
+		Some (offset, (D.bitand1 cond0 (D.bitand1 cond1 cond2)), 3)
+	  | V.REG_32 when in_range addr 2 ->
+	      (* Word store end-overlap, 2 bytes in bounds *)
+	      let v0 = form_man#simplify8 (D.extract_8_from_32 value 0) and
+		  v1 = form_man#simplify8 (D.extract_8_from_32 value 1) in
+	      let cond0 = byte_cond offset v0 and
+		  cond1 = byte_cond (offset + 1) v1 in
+		Some (offset, (D.bitand1 cond0 cond1), 2)
+	  | V.REG_32 when in_range addr 1 ->
+	      (* Word store end-overlap, 1 byte in bounds *)
+	      let v0 = form_man#simplify8 (D.extract_8_from_32 value 0) in
+	      let cond0 = byte_cond offset v0 in
+		Some (offset, cond0, 1)
 	  | _ -> None
 
     method private target_solve cond_v =
