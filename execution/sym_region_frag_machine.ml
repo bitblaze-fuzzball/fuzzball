@@ -330,6 +330,20 @@ struct
 		 ExprOffset(e)
 	     | _ -> AmbiguousExpr(e)
 	  )
+      (* Similar pattern where we don't have the sign extend, but
+	 we do have something and its negation *)
+      | V.BinOp(V.BITOR,
+		V.BinOp(V.BITAND, c1, x),
+		V.BinOp(V.BITAND, V.UnOp(V.NOT, c2), y))
+	  when c1 = c2
+	->
+	  (* ITE expression "_ ? x : y" *)
+	  (match (classify_term form_man x), (classify_term form_man y) with
+	     | (ExprOffset(_)|ConstantOffset(_)),
+	       (ExprOffset(_)|ConstantOffset(_)) ->
+		 ExprOffset(e)
+	     | _ -> AmbiguousExpr(e)
+	  )
       (* Occurs as an optimized ITE: *)
       | V.BinOp(V.BITAND, x, V.UnOp(V.NOT, V.Cast(V.CAST_SIGNED, _, _)))
       | V.BinOp(V.BITAND, V.UnOp(V.NOT, V.Cast(V.CAST_SIGNED, _, _)), x)
@@ -339,6 +353,21 @@ struct
 	     | (ExprOffset(_)|ConstantOffset(_)) -> ExprOffset(e)
 	     | _ -> AmbiguousExpr(e)
 	  )
+
+      (* AND with negation of a small value used for rounding *)
+      | V.BinOp(V.BITAND, x, V.Constant(V.Int(V.REG_32, off)))
+	  when (fix_u32 off) >= 0xffffff00L
+	    ->
+	  (classify_term form_man x)
+      (* Addition inside another operation (top-level addition should
+	 be handled by split_terms) *)
+      | V.BinOp(V.PLUS, e1, e2)
+	->
+	  (match (classify_term form_man e1), (classify_term form_man e2) with
+	     | (ExprOffset(_)|ConstantOffset(_)),
+	       (ExprOffset(_)|ConstantOffset(_)) -> ExprOffset(e)
+	     | _,_ -> AmbiguousExpr(e))
+
 
 (*       | V.BinOp(V.BITAND, _, _) *)
 (*       | V.BinOp(V.BITOR, _, _) (* XXX happens in Windows 7, don't know why *) *)
