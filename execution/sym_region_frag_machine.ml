@@ -1059,41 +1059,54 @@ struct
 		 dt#count_query;
 		 (b, choices))
 
+    method private target_region_length =
+      if !opt_target_region_formulas <> [] then
+	List.length !opt_target_region_formulas
+      else
+	String.length !opt_target_region_string
+
+    method private target_region_byte off =
+      if !opt_target_region_formulas <> [] then
+	let e = List.nth !opt_target_region_formulas off in
+	  ((D.from_symbolic e), (V.exp_to_string e))
+      else
+	let c = (!opt_target_region_string).[off] in
+	  ((D.from_concrete_8 (Char.code c)),
+	   (Char.escaped c))
+
     method private target_store_condition addr from value ty =
       let offset = Int64.to_int (Int64.sub addr from) and
-	  limit_pos = (Int64.add from
-			 (Int64.of_int
-			    (String.length !opt_target_region_string)))
+	  limit_pos = Int64.add from (Int64.of_int self#target_region_length)
       in
       let in_range addr size =
 	addr >= from && (Int64.add addr (Int64.of_int (size - 1))) < limit_pos
       in
       let byte_cond off v =
-	let c = (!opt_target_region_string).[off] in
+	let (c_v, c_str) = self#target_region_byte off in
 	  if !opt_trace_target then
 	    Printf.printf
 	      "Store to target string offset %d: %s (vs '%s'): "
-	      off (D.to_string_8 v) (Char.escaped c);
-	  D.eq8 v (D.from_concrete_8 (Char.code c))
+	      off (D.to_string_8 v) c_str;
+	  D.eq8 v c_v
       in
-      let word_cond off v =
-	let c0 = (!opt_target_region_string).[off] and
-	    c1 = (!opt_target_region_string).[off + 1] and
-	    c2 = (!opt_target_region_string).[off + 2] and
-	    c3 = (!opt_target_region_string).[off + 3]
-	in
-	let s0 = (Char.code c0) lor ((Char.code c1) lsl 8) and
-	    s2 = (Char.code c2) lor ((Char.code c3) lsl 8)
-	in
-	let w = Int64.logor (Int64.of_int s0)
-	  (Int64.shift_left (Int64.of_int s2) 16)
-	in
-	  if !opt_trace_target then
-	    Printf.printf
-	      "Store to target string offset %d: %s (vs 0x%08Lx): "
-	      off (D.to_string_32 v) w;
-	  D.eq32 v (D.from_concrete_32 w)
-      in
+(*       let word_cond off v = *)
+(* 	let c0 = (!opt_target_region_string).[off] and *)
+(* 	    c1 = (!opt_target_region_string).[off + 1] and *)
+(* 	    c2 = (!opt_target_region_string).[off + 2] and *)
+(* 	    c3 = (!opt_target_region_string).[off + 3] *)
+(* 	in *)
+(* 	let s0 = (Char.code c0) lor ((Char.code c1) lsl 8) and *)
+(* 	    s2 = (Char.code c2) lor ((Char.code c3) lsl 8) *)
+(* 	in *)
+(* 	let w = Int64.logor (Int64.of_int s0) *)
+(* 	  (Int64.shift_left (Int64.of_int s2) 16) *)
+(* 	in *)
+(* 	  if !opt_trace_target then *)
+(* 	    Printf.printf *)
+(* 	      "Store to target string offset %d: %s (vs 0x%08Lx): " *)
+(* 	      off (D.to_string_32 v) w; *)
+(* 	  D.eq32 v (D.from_concrete_32 w) *)
+(*       in *)
 	(* Ick, there are a lot of cases here, and we're only handling
 	   end and not beginning overlaps. In the future, consider
 	   rewriting to always treating each byte separately. *)
@@ -1115,7 +1128,17 @@ struct
 		Some (offset, cond0, 1)
 	  | V.REG_32 when in_range addr 4 ->
 	      (* Fully in-bounds word store *)
-	      Some (offset, (word_cond offset value), 4)
+	      (* Some (offset, (word_cond offset value), 4) *)
+	      let v0 = form_man#simplify8 (D.extract_8_from_32 value 0) and
+		  v1 = form_man#simplify8 (D.extract_8_from_32 value 1) and
+		  v2 = form_man#simplify8 (D.extract_8_from_32 value 2) and
+		  v3 = form_man#simplify8 (D.extract_8_from_32 value 3) in
+	      let cond0 = byte_cond offset v0 and
+		  cond1 = byte_cond (offset + 1) v1 and
+		  cond2 = byte_cond (offset + 2) v2 and
+		  cond3 = byte_cond (offset + 3) v3 in
+		Some (offset, (D.bitand1 (D.bitand1 cond0 cond1)
+				 (D.bitand1 cond2 cond3)), 4)
 	  | V.REG_32 when in_range addr 3 ->
 	      (* Word store end-overlap, 3 bytes in bounds *)
 	      let v0 = form_man#simplify8 (D.extract_8_from_32 value 0) and
@@ -1162,13 +1185,8 @@ struct
 		 "Achieved score %d with offset %d and depth %d\n"
 		 score offset depth;
 	     dt#set_heur score;
-	     (* We might also prefer shallower paths, as in: *)
-	     (* dt#set_heur (10000 * offset / (100 + dt#get_depth)); *)
-	     (* I haven't yet seen an example where this helps significantly,
-		though *)
-	     (* dt#set_heur offset; *)
 	 if !opt_finish_on_target_match &&
-	   offset = (String.length !opt_target_region_string) - wd
+	   offset = (self#target_region_length) - wd
 	 then
 	   finish_fuzz "store to final target offset")
 

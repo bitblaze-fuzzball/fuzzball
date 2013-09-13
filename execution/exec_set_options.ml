@@ -220,6 +220,18 @@ let concolic_state_cmdline_opts =
      "frac Take concolic branch with probability 0 <= FRAC <= 1");
   ]
 
+let read_lines_file fname =
+  let ic = open_in fname and
+      l = ref [] in
+    try
+      while true do
+	l := (input_line ic) :: !l
+      done;
+      failwith "Unreachable (infinite loop)"
+    with
+      | End_of_file ->
+	  List.rev !l
+
 let explore_cmdline_opts =
   [
     ("-fuzz-start-addr", Arg.String
@@ -284,6 +296,11 @@ let explore_cmdline_opts =
 	  opt_target_region_start := Some (Int64.of_string s1);
 	  opt_target_region_string := unescape s2),
      "base=string Try to make a buffer have the given contents");
+    ("-target-formulas", Arg.String
+       (fun s -> let (s1, s2) = split_string '=' s in
+	  opt_target_region_start := Some (Int64.of_string s1);
+	  opt_target_region_formula_strings := read_lines_file s2),
+     "base=exprs-file Try to make a buffer have the given contents");
     ("-trace-target", Arg.Set(opt_trace_target),
      " Print targeting checks");
     ("-finish-on-target-match", Arg.Set(opt_finish_on_target_match),
@@ -629,6 +646,9 @@ let make_symbolic_init (fm:Fragment_machine.fragment_machine)
        List.iter (fun (varname, size) ->
 		    fm#make_sink_region varname size)
 	 !opt_sink_regions;
+       opt_target_region_formulas :=
+	 List.map (fun s -> fm#parse_symbolic_expr s)
+	   !opt_target_region_formula_strings;
        opt_extra_conditions := !opt_extra_conditions @ 
 	 List.map (fun s -> fm#parse_symbolic_expr s)
 	   !opt_extra_condition_strings)
