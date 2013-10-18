@@ -1206,14 +1206,14 @@ struct
 
     method private target_solve_single offset cond_v wd =
       if self#target_solve cond_v then
-	(if !opt_target_guidance <> 0.0 then
-	   let depth = self#input_depth in
-	   let score = (100000 * (offset + 1) / depth) + offset in
-	     if !opt_trace_guidance then
-	       Printf.printf
-		 "Achieved score %d with offset %d and depth %d\n"
-		 score offset depth;
-	     dt#set_heur score;
+	((if !opt_target_guidance <> 0.0 then
+	    let depth = self#input_depth in
+	    let score = (100000 * (offset + 1) / depth) + offset in
+	      if !opt_trace_guidance then
+		Printf.printf
+		  "Achieved score %d with offset %d and depth %d\n"
+		  score offset depth;
+	      dt#set_heur score);
 	 if !opt_finish_on_target_match &&
 	   offset = (self#target_region_length) - wd
 	 then
