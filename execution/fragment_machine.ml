@@ -1852,10 +1852,10 @@ struct
 
     method mem_val_as_string addr ty =
       match ty with
-	| V.REG_8  -> D.to_string_8  (self#load_byte addr)
-	| V.REG_16 -> D.to_string_16 (self#load_byte addr)
-	| V.REG_32 -> D.to_string_32 (self#load_byte addr)
-	| V.REG_64 -> D.to_string_64 (self#load_byte addr)
+	| V.REG_8  -> D.to_string_8  (self#load_byte  addr)
+	| V.REG_16 -> D.to_string_16 (self#load_short addr)
+	| V.REG_32 -> D.to_string_32 (self#load_word  addr)
+	| V.REG_64 -> D.to_string_64 (self#load_long  addr)
 	| _ -> failwith "Unexpected type in mem_val_as_string"
 
     method query_with_path_cond (e:Vine.exp) (v:bool)
