@@ -1,0 +1,2 @@
+#!/bin/sh
+../../exec_utils/fuzzball ./txtdns-bad -solver stpvc -linux-syscalls -trace-syscalls -trace-stopping -coverage-stats -time-stats -trace-iterations -trace-assigns-string -tracepoint 0x0804914c:R_EAX:reg32_t -fuzz-start-addr 0x08049154 -symbolic-region 0xbfffcb0c+52 -path-depth-limit 400 -check-condition-at 0x08048ff6:'R_EDX:reg32_t > mem[R_EBP:reg32_t - 0x64:reg32_t]:reg32_t' -finish-on-nonfalse-cond -solve-final-pc -- ./txtdns-bad

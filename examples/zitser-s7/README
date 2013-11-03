@@ -1,0 +1,68 @@
+This directory is an example of using FuzzBALL to find a buffer
+overflow. It's based on the "Undirected dynamic analysis" baseline
+experiment from our ISSTA 2011 paper:
+                      
+  Statically-Directed Dynamic Automated Test Generation
+  Domagoj Babic, Lorenzo Martignoni, Stephen McCamant, and Dawn
+  Song. In Proceedings of the ACM/SIGSOFT International Symposium on
+  Software Testing and Analysis (ISSTA), July 2011.
+  http://bitblaze.cs.berkeley.edu/papers/testgen-issta11.pdf
+
+(The preliminary dynamic analysis and the static analysis from that
+paper are not currently included in the open source release.) The
+subject program is a testcase extracted from a historical
+vulnerability in Sendmail, originally for testing static analysis
+buffer overflow detectors, by a group at MIT Lincoln Labs:
+
+  M. Zitser, R. Lippmann, and T. Leek. Testing static analysis
+  tools using exploitable buffer overflows from open source
+  code. In SIGSOFT FSE 2004, pages 97--106.
+
+The vulnerability is marked with /* BAD */ in the source:
+
+          /* BAD */
+          (void) strncpy((*rr)->rr_u.rr_txt, (char*) p + 1, *p);
+          /*BAD*/
+          (*rr)->rr_u.rr_txt[*p] = 0;
+
+Both the size of the buffer and the amount to copy "*p" are based on a
+DNS response from the untrusted network (in the real system; here the
+file "testcase"), so both the strncpy and the write of \0 can overflow
+the buffer.
+
+Compile with, for instance:
+
+  gcc -m32 -g my-util.c txt-dns-file-bad.c -o txtdns -lresolv
+
+However you'll probably want to test first with the supplied binary
+"txtdns-bad" to minimize the number of addresses that need to be
+changed. The command for running FuzzBALL is in "run-fuzzball.sh": it
+should stop having triggered the bug on the 66th iteration (maybe 5
+minutes depending on how fast your machine is). Here are notes on some
+of the options used:
+
+  -tracepoint 0x0804914c:R_EAX:reg32_t 
+  -fuzz-start-addr 0x08049154
+  -symbolic-region 0xbfffcb0c+52
+
+We'd like the symbolic input to be in the buffer written to by the
+function read_record_from_file, which is called only in one place. 
+The buffer is on the stack, so we can't easily predict its address
+ahead of time, but we use the first -tracepoint to print the value of
+a pointer to the buffer on one run, then copy the value to the
+address argument to -symbolic-region.
+
+  -path-depth-limit 400
+
+When fuzzing programs you can sometimes run into very long loops, for
+instance if the symbolic input includes a length field. Because
+FuzzBALL explores just one path at a time, you'll want to put in a
+limit to avoid getting stuck. -path-depth-limit works well when the
+path has a symbolic branch in it.
+
+  -check-condition-at \
+  0x08048ff6:'R_EDX:reg32_t > mem[R_EBP:reg32_t - 0x64:reg32_t]:reg32_t'
+
+This is the vulnerability condition. At this point in the code, %edx
+is the size limit passed as the third argument to strncpy(), and
+-0x64(%ebp) is the local variable "size".
