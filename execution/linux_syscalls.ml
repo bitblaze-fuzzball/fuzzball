@@ -128,7 +128,7 @@ class linux_special_handler (fm : fragment_machine) =
       fm#store_short_conc addr v
   in
   let zero_region base len =
-    assert(len >= 0 && len <= 1073741824); (* sanity check *)
+    assert(len >= 0 && len <= 0x20000000); (* sanity check *)
     for i = 0 to len - 1 do
       fm#store_byte_idx base i 0
     done
