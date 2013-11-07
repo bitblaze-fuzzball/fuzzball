@@ -55,6 +55,7 @@
 #define OFFB_FPROUND   offsetof(VexGuestAMD64State,guest_FPROUND)
 
 #define OFFB_SSEROUND  offsetof(VexGuestAMD64State,guest_SSEROUND)
+#if VEX_VERSION >= 2330
 #define OFFB_YMM0      offsetof(VexGuestAMD64State,guest_YMM0)
 #define OFFB_YMM1      offsetof(VexGuestAMD64State,guest_YMM1)
 #define OFFB_YMM2      offsetof(VexGuestAMD64State,guest_YMM2)
@@ -72,6 +73,7 @@
 #define OFFB_YMM14     offsetof(VexGuestAMD64State,guest_YMM14)
 #define OFFB_YMM15     offsetof(VexGuestAMD64State,guest_YMM15)
 #define OFFB_YMM16     offsetof(VexGuestAMD64State,guest_YMM16)
+#endif
 
 #define OFFB_EMNOTE    offsetof(VexGuestAMD64State,guest_EMNOTE)
 #define OFFB_TISTART   offsetof(VexGuestAMD64State,guest_TISTART)
@@ -211,6 +213,7 @@ vector<VarDecl *> x64_get_reg_decls()
   // SIMD registers. We don't yet support 256-bit registers, so break
   // them up a 4x64. 
   ret.push_back(new VarDecl("R_SSEROUND", r64));
+#if VEX_VERSION >= 2330
   ret.push_back(new VarDecl("R_YMM0_0", r64));
   ret.push_back(new VarDecl("R_YMM0_1", r64));
   ret.push_back(new VarDecl("R_YMM0_2", r64));
@@ -279,6 +282,7 @@ vector<VarDecl *> x64_get_reg_decls()
   ret.push_back(new VarDecl("R_YMM16_1", r64)); /* VEX's imagination */
   ret.push_back(new VarDecl("R_YMM16_2", r64));
   ret.push_back(new VarDecl("R_YMM16_3", r64));
+#endif
 
   // x87-style floating point
   ret.push_back(new VarDecl("R_FTOP", r32));
@@ -390,10 +394,12 @@ static Exp *translate_get_reg_8( unsigned int offset )
     bool low;
     string name;
 
+#if VEX_VERSION >= 2330
     if (offset >= OFFB_YMM0 && offset < OFFB_YMM16+32) {
 	// SSE sub-register: not supported.
 	return new Unknown("Unhandled 8-bit YMM lane");
     }
+#endif
 
     // Determine which 64-bit register this 8-bit sub
     // register is a part of
@@ -443,10 +449,12 @@ static Exp *translate_get_reg_16( unsigned int offset )
     string name;
     bool sub;
 
+#if VEX_VERSION >= 2330
     if (offset >= OFFB_YMM0 && offset < OFFB_YMM16+64) {
 	// SSE sub-register: not supported.
 	return new Unknown("Unhandled 16-bit YMM lane");
     }
+#endif
 
     switch ( offset )
     {
@@ -497,10 +505,12 @@ static Exp *translate_get_reg_32( unsigned int offset )
     string name;
     bool sub;
 
+#if VEX_VERSION >= 2330
     if (offset >= OFFB_YMM0 && offset < OFFB_YMM16+64) {
 	// SSE sub-register: not supported.
 	return new Unknown("Unhandled 32-bit YMM lane");
     }
+#endif
 
     switch ( offset )
     {
@@ -661,11 +671,13 @@ static Stmt *translate_put_reg_8( unsigned int offset, Exp *data, IRSB *irbb )
     string name;
     Temp *reg;
 
+#if VEX_VERSION >= 2330
     if (offset >= OFFB_YMM0 && offset < OFFB_YMM16+64) {
 	// SSE sub-register: not supported.
 	Exp::destroy(data);
 	return new Special("Unhandled store to 8-bit YMM lane");
     }
+#endif
 
     // Determine which 32 bit register this 8 bit sub
     // register is a part of
@@ -729,11 +741,13 @@ static Stmt *translate_put_reg_16( unsigned int offset, Exp *data, IRSB *irbb )
     bool sub;
     Temp *reg;
 
+#if VEX_VERSION >= 2330
     if (offset >= OFFB_YMM0 && offset < OFFB_YMM7+64) {
 	// SSE sub-register: not supported.
 	Exp::destroy(data);
 	return new Special("Unhandled store to 16-bit YMM lane");
     }
+#endif
 
     switch ( offset )
     {
@@ -792,11 +806,13 @@ static Stmt *translate_put_reg_32( unsigned int offset, Exp *data, IRSB *irbb )
     bool sub;
     Temp *reg;
 
+#if VEX_VERSION >= 2330
     if (offset >= OFFB_YMM0 && offset < OFFB_YMM7+64) {
 	// SSE sub-register: not supported.
 	Exp::destroy(data);
 	return new Special("Unhandled store to 32-bit YMM lane");
     }
+#endif
 
     switch ( offset )
     {

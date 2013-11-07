@@ -324,6 +324,18 @@ IRExpr* vx_IRExpr_ITE ( IRExpr* cond, IRExpr* expr_t, IRExpr* expr_f ) {
    return e;
 }
 #endif
+#if VEX_VERSION >= 2742
+IRExpr* vx_IRExpr_VECRET ( void ) {
+   IRExpr* e = (IRExpr *)vx_Alloc(sizeof(IRExpr));
+   e->tag    = Iex_VECRET;
+   return e;
+}
+IRExpr* vx_IRExpr_BBPTR ( void ) {
+   IRExpr* e = (IRExpr *)vx_Alloc(sizeof(IRExpr));
+   e->tag    = Iex_BBPTR;
+   return e;
+}
+#endif
 
 
 /* Constructors -- IRDirty */
@@ -337,7 +349,9 @@ IRDirty* vx_emptyIRDirty ( void ) {
    d->mFx      = Ifx_None;
    d->mAddr    = NULL;
    d->mSize    = 0;
+#if VEX_VERSION < 2739
    d->needsBBP = False;
+#endif
    d->nFxState = 0;
    return d;
 }
@@ -628,8 +642,14 @@ IRExpr* vx_dopyIRExpr ( IRExpr* e )
                              vx_dopyIRExpr(e->Iex.ITE.iftrue),
                              vx_dopyIRExpr(e->Iex.ITE.iffalse));
 #endif
+#if VEX_VERSION >= 2742
+      case Iex_VECRET:
+         return vx_IRExpr_VECRET();
+      case Iex_BBPTR:
+         return vx_IRExpr_BBPTR();
+#endif
       default:
-         vx_panic("vx_dopyIRExpr");
+         vx_panic("Unhandled type in vx_dopyIRExpr");
    }
 
    return NULL;
@@ -646,7 +666,9 @@ IRDirty* vx_dopyIRDirty ( IRDirty* d )
    d2->mFx   = d->mFx;
    d2->mAddr = d->mAddr==NULL ? NULL : vx_dopyIRExpr(d->mAddr);
    d2->mSize = d->mSize;
+#if VEX_VERSION < 2739
    d2->needsBBP = d->needsBBP;
+#endif
    d2->nFxState = d->nFxState;
    for (i = 0; i < d2->nFxState; i++)
       d2->fxState[i] = d->fxState[i];
