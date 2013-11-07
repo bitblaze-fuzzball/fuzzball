@@ -173,28 +173,34 @@ struct
       let ty = Vine_typecheck.infer_type None target_e in
       let le_op = if is_signed then V.SLE else V.LE in
       let midpoint a b =
-	let incr = if is_max then 0L else 1L in
+	let half_rounded x =
+	  let half = Int64.shift_right_logical x 1 in
+	    if Int64.logand x 1L = 0L then
+	      half
+	    else
+	      Int64.add half (if is_max then 0L else 1L)
+	in
 	  if is_signed then
 	    let (a', b') = ((sx ty a), (sx ty b)) in
 	    let sz = Int64.sub b' a' in
-	    let hf_sz = Vine_util.int64_udiv (Int64.add sz incr) 2L in
+	    let hf_sz = half_rounded sz in
 	    let mid = Int64.add a' hf_sz in
 	      assert(a' <= mid);
 	      assert(mid <= b');
 	      zx ty mid
 	  else
 	    let sz = Int64.sub b a in
-	    let hf_sz = Vine_util.int64_udiv (Int64.add sz incr) 2L in
+	    let hf_sz = half_rounded sz in
 	    let mid = Int64.add a hf_sz in
 	      assert(Vine_util.int64_ucompare a mid <= 0);
 	      assert(Vine_util.int64_ucompare mid b <= 0);
 	      mid
       in
       let rec loop min max =
-	assert(is_signed || min <= max);
 	if !opt_influence_details then
 	  Printf.printf "Binary search in [0x%Lx, 0x%Lx]\n"
 	    min max;
+	assert(is_signed || Vine_util.int64_ucompare min max <= 0);
 	if min = max then
 	  min
 	else
