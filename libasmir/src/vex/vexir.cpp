@@ -57,6 +57,9 @@ IRSB *irbb_current = NULL;
 // support any level of SSE, but it's helpful in debugging for VEX to
 // give its semantics for an instruction, even if we can't translate
 // them, rather than claiming that the instruction is illegal.
+#ifndef VEX_HWCAPS_X86_MMXEXT /* Added in r2745 */
+#define VEX_HWCAPS_X86_MMXEXT 0
+#endif
 #define X86_HWCAPS VEX_HWCAPS_X86_MMXEXT|VEX_HWCAPS_X86_SSE1|VEX_HWCAPS_X86_SSE2|VEX_HWCAPS_X86_SSE3
 #define AMD64_HWCAPS VEX_HWCAPS_AMD64_SSE3
 #if VEX_VERSION >= 2015
