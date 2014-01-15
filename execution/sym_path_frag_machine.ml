@@ -187,18 +187,6 @@ struct
 	      query_engine#after_query true;
 	      raise SolverFailure
 	in
-	  if verbose then
-	    (if is_sat then
-	       (if !opt_trace_decisions then
-		  Printf.printf "Satisfiable.\n";
-		if !opt_trace_assigns_string then
-		  Printf.printf "Input: \"%s\"\n"
-		    (String.escaped (self#ce_to_input_str ce));
-		if !opt_trace_assigns then
-		  (Printf.printf "Input vars: ";
-		   self#print_ce ce))
-	     else
-	       if !opt_trace_decisions then Printf.printf "Unsatisfiable.\n");
 	  let time = (get_time ()) -. time_before in
 	  let is_slow = time > !opt_solver_slow_time in
 	    if is_slow then
@@ -271,6 +259,16 @@ struct
 		   Printf.printf "No guidance, choosing randomly\n";
 		 dt#random_bit)
 
+    val mutable saved_ce_0 = []
+    val mutable saved_ce_1 = []
+    val mutable saved_ce = []
+
+    method private select_saved_ce b =
+      if b then
+	saved_ce <- saved_ce_1
+      else
+	saved_ce <- saved_ce_0
+
     method query_with_pc_choice cond verbose choice =
       let trans_func b =
 	if b then cond else V.UnOp(V.NOT, cond)
@@ -279,11 +277,51 @@ struct
 	if verbose && !opt_trace_decisions then
 	  Printf.printf "Trying %B: " b;
 	match self#quick_check_in_path_cond cond' with
-	  | Some b -> b
+	  | Some b' -> b'
 	  | None -> 
-	      let (is_sat, _) =
-		self#query_with_path_cond cond' verbose in
-		is_sat
+	    let result = ref 0L in
+	    if saved_ce <> [] then
+	      (let conj = List.fold_left
+		 (fun es e -> V.BinOp(V.BITAND, e, es))
+		 cond'
+		 (List.rev self#get_path_cond)
+	       in
+	       result := form_man#eval_expr_from_ce saved_ce conj);
+	    if !result <> 0L then
+	      (if b then
+		 saved_ce_1 <- saved_ce
+	       else
+		 saved_ce_0 <- saved_ce;
+	       if verbose then
+		 (if !opt_trace_decisions then
+		    Printf.printf "Satisfiable.\n";
+		  if !opt_trace_assigns_string then
+		    Printf.printf "Input: \"%s\"\n"
+		      (String.escaped (self#ce_to_input_str saved_ce));
+		  if !opt_trace_assigns then
+		    (Printf.printf "Input vars: ";
+		     self#print_ce saved_ce));
+               true)
+            else
+              (let (is_sat, ce) =
+	         self#query_with_path_cond cond' verbose in
+               if b then
+                 saved_ce_1 <- ce
+               else
+                 saved_ce_0 <- ce;
+		 if verbose then
+		 (if is_sat then
+		     (if !opt_trace_decisions then
+			Printf.printf "Satisfiable.\n";
+		      if !opt_trace_assigns_string then
+			Printf.printf "Input: \"%s\"\n"
+			  (String.escaped (self#ce_to_input_str ce));
+		      if !opt_trace_assigns then
+			(Printf.printf "Input vars: ";
+			 self#print_ce ce))
+		  else
+		     if !opt_trace_decisions then Printf.printf "Unsatisfiable.\n");
+	       is_sat)
       in
       let non_try_func b =
 	if verbose && !opt_trace_decisions then
@@ -310,12 +348,14 @@ struct
       else
 	let (result, cond') = (self#query_with_pc_choice cond verbose
 				 (fun () -> self#follow_or_random)) in
+	  self#select_saved_ce result;
 	  self#add_to_path_cond cond';
 	  result
 
     method extend_pc_known cond verbose b =
       let (result, cond') = (self#query_with_pc_choice cond verbose
 			       (fun () -> b)) in
+	self#select_saved_ce result;
 	self#add_to_path_cond cond';
 	result
 
