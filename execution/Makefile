@@ -50,6 +50,7 @@ export SOURCES = \
 	options_solver.mli options_solver.ml \
 	exec_influence.mli exec_influence.ml \
 	options_linux.mli options_linux.ml \
+	git_version.ml \
 	exec_set_options.mli exec_set_options.ml
 
 RESULT = execution
@@ -68,6 +69,10 @@ export LIBDIRS = $(LIBASMIR)/src # ../appreplay ../stp ../stp/ocaml
 OCAMLFLAGS = -warn-error Aelz  #-w A
 # merge everything but descriptions.
 OCAMLDOCFLAGS = -m avlsoper
+
+# Fast enough that it's better to just always remake it than
+# worry about whether it's up to date.
+UNUSED := $(shell perl update-git-version.pl >/dev/tty)
 
 all: dncl
 

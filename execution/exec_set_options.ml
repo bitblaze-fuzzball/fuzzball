@@ -460,6 +460,9 @@ let cmdline_opts =
      " Print final path condition at end of trace");
     ("-solve-final-pc", Arg.Set(opt_solve_final_pc),
      " Solve final path condition");
+    ("-git-version", Arg.Unit
+       (fun () -> Printf.printf "GIT version %s\n" Git_version.git_version),
+     " Print GIT revision hash");
   ]
 
 let trace_replay_cmdline_opts =
