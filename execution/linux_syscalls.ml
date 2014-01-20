@@ -1744,6 +1744,10 @@ object(self)
     self#write_fake_statfs64buf struct_buf;
     put_return 0L (* success *)
 
+  method sys_fsync fd =
+    ignore(fd);
+    put_return 0L (* success *)
+
   method sys_tgkill tgid tid signal : unit =
     let my_pid = self#get_pid in
       if tgid = my_pid && tid = my_pid && signal = 6 then
@@ -2485,7 +2489,11 @@ object(self)
 		   call first second third ptr fifth;
 	       self#put_errno Unix.ENOSYS
 	 | (_, 118) -> (* fsync *)
-	     uh "Unhandled Linux system call fsync (118)"
+	     let arg1 = read_1_reg () in
+	     let fd = Int64.to_int arg1 in
+	       if !opt_trace_syscalls then
+		 Printf.printf "fsync(%d)" fd;
+	       self#sys_fsync fd
 	 | (_, 119) -> (* sigreturn *)
 	     uh "Unhandled Linux system call sigreturn (119)"
 	 | (_, 120) -> (* clone *)

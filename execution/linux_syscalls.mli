@@ -143,6 +143,7 @@ object
   method sys_statfs : string -> int64 -> unit
   method sys_fstatfs : int -> int64 -> unit
   method sys_statfs64 : string -> int -> int64 -> unit
+  method sys_fsync : int -> unit
   method sys_time : int64 -> unit
   method sys_times : int64 -> unit
   method sys_tgkill : int -> int -> int -> unit
