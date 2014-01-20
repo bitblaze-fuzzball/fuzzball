@@ -89,4 +89,8 @@ sig
 
   val if_expr_temp : formula_manager -> Vine.var ->
     (Vine.exp -> 'a) -> 'a -> (Vine.var -> unit) -> 'a
+
+  val map_expr_temp : formula_manager -> Vine.exp ->
+    ((Vine.exp -> 'a) -> Vine.exp -> 'a) ->
+    (int -> 'a -> 'a) -> 'a
 end

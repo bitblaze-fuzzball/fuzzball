@@ -54,7 +54,8 @@ struct
       loop i
 
   let narrow_bitwidth form_man e =
-    let rec loop e = 
+    let combine wd res = min wd res in
+    let f loop e =
       match e with
 	| V.Constant(V.Int(ty, v)) -> 1 + floor_log2 v
 	| V.BinOp(V.BITAND, e1, e2) -> min (loop e1) (loop e2)
@@ -80,21 +81,6 @@ struct
 	| V.Cast(V.CAST_HIGH, V.REG_16, e1) -> 16
 	| V.Cast(V.CAST_HIGH, V.REG_8,  e1) -> 8
 	| V.Cast(V.CAST_HIGH, V.REG_1,  e1) -> 1
-	| V.Lval(V.Temp((_, _,  V.REG_1) as var)) ->
-	    FormMan.if_expr_temp form_man var
-	      (fun e' -> min 1  (loop e'))  1 (fun v -> ())
-	| V.Lval(V.Temp((_, _,  V.REG_8) as var)) ->
-	    FormMan.if_expr_temp form_man var
-	      (fun e' -> min 8  (loop e'))  8 (fun v -> ())
-	| V.Lval(V.Temp((_, _, V.REG_16) as var)) ->
-	    FormMan.if_expr_temp form_man var
-	      (fun e' -> min 16 (loop e')) 16 (fun v -> ())
-	| V.Lval(V.Temp((_, _, V.REG_32) as var)) ->
-	    FormMan.if_expr_temp form_man var
-	      (fun e' -> min 32 (loop e')) 32 (fun v -> ())
-	| V.Lval(V.Temp((_, _, V.REG_64) as var)) ->
-	    FormMan.if_expr_temp form_man var
-	      (fun e' -> min 64 (loop e')) 64 (fun v -> ())
 	| V.Lval(V.Mem(_, _, V.REG_8))  ->  8
 	| V.Lval(V.Mem(_, _, V.REG_16)) -> 16
 	| V.Lval(V.Mem(_, _, V.REG_32)) -> 32
@@ -103,7 +89,7 @@ struct
 	    (loop e1) + (Int64.to_int v)
 	| _ -> V.bits_of_width (Vine_typecheck.infer_type_fast e)
     in
-      loop e
+      FormMan.map_expr_temp form_man e f combine
 
   let ctz i =
     let rec loop = function
@@ -122,7 +108,8 @@ struct
       loop i
 
   let bitshift form_man e =
-    let rec loop e =
+    let combine wd res = min wd res in
+    let f loop e =
       match e with
 	| V.Constant(V.Int(ty, v)) -> ctz v
 	| V.BinOp(V.BITAND, e1, e2) -> max (loop e1) (loop e2)
@@ -131,28 +118,13 @@ struct
 	    (loop e1) + (Int64.to_int v)
 	| V.BinOp(V.TIMES, e1, e2) -> (loop e1) + (loop e2)
 	| V.BinOp(V.PLUS, e1, e2) -> min (loop e1) (loop e2)
-	| V.Lval(V.Temp((_, _,  V.REG_1) as var)) ->
-	    FormMan.if_expr_temp form_man var
-	      (fun e' -> min 1  (loop e')) 0 (fun v -> ())
-	| V.Lval(V.Temp((_, _,  V.REG_8) as var)) ->
-	    FormMan.if_expr_temp form_man var
-	      (fun e' -> min 8  (loop e')) 0 (fun v -> ())
-	| V.Lval(V.Temp((_, _, V.REG_16) as var)) ->
-	    FormMan.if_expr_temp form_man var
-	      (fun e' -> min 16 (loop e')) 0 (fun v -> ())
-	| V.Lval(V.Temp((_, _, V.REG_32) as var)) ->
-	    FormMan.if_expr_temp form_man var
-	      (fun e' -> min 32 (loop e')) 0 (fun v -> ())
-	| V.Lval(V.Temp((_, _, V.REG_64) as var)) ->
-	    FormMan.if_expr_temp form_man var
-	      (fun e' -> min 64 (loop e')) 0 (fun v -> ())
 	| V.Cast(_, V.REG_32, e1) -> min 32 (loop e1)
 	| V.Cast(_, V.REG_16, e1) -> min 16 (loop e1)
 	| V.Cast(_, V.REG_8, e1)  -> min 8  (loop e1)
 	| V.Cast(_, V.REG_1, e1)  -> min 1  (loop e1)
 	| _ -> 0
     in
-      loop e
+      FormMan.map_expr_temp form_man e f combine
 
   (* OCaml's standard library has this for big ints but not regular ones *)
   let rec gcd a b =
@@ -163,10 +135,9 @@ struct
       | _ -> gcd a (b mod a)
 
   let stride form_man e =
-    let rec loop e =
+    let combine wd res = res in
+    let rec f loop e =
       match e with
-	| V.Lval(V.Temp((_, _, _) as var)) ->
-	    FormMan.if_expr_temp form_man var loop 1 (fun v -> ())
 	| V.BinOp((V.PLUS|V.MINUS), e1, e2) -> gcd (loop e1) (loop e2)
 	| V.BinOp(V.TIMES, e1, e2) -> (loop e1) * (loop e2)
 	| V.BinOp(V.LSHIFT, e1, V.Constant(V.Int(_, v)))
@@ -177,7 +148,7 @@ struct
 	      -> Int64.to_int k
 	| e -> 1 lsl (bitshift form_man e)
     in
-      loop e
+      FormMan.map_expr_temp form_man e f combine
 
   let map_n fn n =
     let l = ref [] in
@@ -875,7 +846,7 @@ struct
 	    try
 	      let wd = Hashtbl.find bitwidth_cache key in
 		if !opt_trace_tables then
-		  Printf.printf "Reusing cached width %d for %s at [%s]\n"
+		  Printf.printf "Reusing cached width %d for %s at [%s]\n%!"
 		    (match wd with Some w -> w | None -> -1)
 		    (V.exp_to_string off_exp) dt#get_hist_str;
 		wd

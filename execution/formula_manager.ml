@@ -61,6 +61,49 @@ struct
 	);
       !box
 
+  (* This function captures a kind of structure used for a function
+     that would naturally be written as recursive over the structure of
+     expressions, but wants to recuse into the definitions of temporary
+     variables. It's important to memoize such a function over the
+     temporaries, since otherwise a given temporary could appear
+     exponentially many times in the traversal for a deep expression. We
+     also pass the size of the variable when it's reused, since that's
+     useful information that may not otherwise be visible nearby. It
+     might also be worth caching between calls to this function, though
+     that's less critical. As with if_expr_temp this has a polymorphic
+     type, though in the motivating examples the result of the traversal
+     was always an int.
+  *)
+  let map_expr_temp form_man e f combine =
+    let cache = V.VarHash.create 101 in
+    let rec recurse e =
+      let rec maybe_recurse e var wd =
+	try
+	  V.VarHash.find cache var
+	with
+	    Not_found ->
+	      let box = ref None in
+		form_man#if_expr_temp_unit var
+		  (function
+		     | Some (e') ->
+			 let res = f recurse e' in
+			   V.VarHash.replace cache var res;
+			   box := Some (combine wd res)
+		     | None -> box := Some (f recurse e));
+		match !box with
+		  | Some res -> res
+		  | None -> failwith "Empty box invariant failure"
+      in
+	match e with
+	  | V.Lval(V.Temp((_, _,  V.REG_1) as var)) -> maybe_recurse e var  1
+	  | V.Lval(V.Temp((_, _,  V.REG_8) as var)) -> maybe_recurse e var  8
+	  | V.Lval(V.Temp((_, _, V.REG_16) as var)) -> maybe_recurse e var 16
+	  | V.Lval(V.Temp((_, _, V.REG_32) as var)) -> maybe_recurse e var 32
+	  | V.Lval(V.Temp((_, _, V.REG_64) as var)) -> maybe_recurse e var 64
+	  | _ -> f recurse e
+    in
+      f recurse e
+
   class formula_manager = object(self)
     val input_vars = Hashtbl.create 30
 

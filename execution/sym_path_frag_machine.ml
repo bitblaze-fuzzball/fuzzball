@@ -204,10 +204,10 @@ struct
       let (is_sat, ce) = self#query_with_path_cond taut !opt_trace_ivc in
 	assert(is_sat);
 	if !opt_trace_ivc then
-	  Printf.printf "QUV of %s\n" (V.exp_to_string exp);
+	  Printf.printf "QUV of %s\n%!" (V.exp_to_string exp);
 	let v = form_man#eval_expr_from_ce ce exp in
 	  if !opt_trace_ivc then
-	    Printf.printf "Sat value is 0x%Lx\n" v;
+	    Printf.printf "Sat value is 0x%Lx\n%!" v;
 	  let const_e = V.Constant(V.Int(ty, v)) in
 	  let another_exp = V.BinOp(V.NEQ, exp, const_e) in
 	  let (is_another, ce2) =
@@ -217,11 +217,11 @@ struct
 	      let v2 = form_man#eval_expr_from_ce ce2 exp in
 		assert(v2 <> v);
 		if !opt_trace_ivc then
-		  Printf.printf "Not unique, another is 0x%Lx\n" v2;
+		  Printf.printf "Not unique, another is 0x%Lx\n%!" v2;
 		None
 	    else
 	      (if !opt_trace_ivc then
-		 Printf.printf "Unique!\n";
+		 Printf.printf "Unique!\n%!";
 	       Some v)
 
     method eval_int_exp_simplify exp =
