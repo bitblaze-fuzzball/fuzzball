@@ -192,6 +192,14 @@ let symbolic_state_cmdline_opts =
      "addr=symname Like -s-f-r-s, but hint the symbol is a mem region");
   ]
 
+let slurp_file fname =
+  let ic = open_in fname in
+  let len = in_channel_length ic in
+  let str = String.create len in
+    really_input ic str 0 len;
+    close_in ic;
+    str
+
 let concolic_state_cmdline_opts =
   [
     ("-concrete-path", Arg.Set(opt_concrete_path),
@@ -207,11 +215,7 @@ let concolic_state_cmdline_opts =
     ("-concolic-cstring-file", Arg.String
        (fun s ->
 	  let (s1, s2) = split_string '=' s in
-	  let ic = open_in s2 in
-	  let len = in_channel_length ic in
-	  let str = String.create len in
-	    really_input ic str 0 len;
-	    close_in ic;
+	  let str = slurp_file s2 in
 	    opt_concolic_cstrings :=
 	      ((Int64.of_string s1), str) :: !opt_concolic_cstrings),
      "base=file As above, but read contents from a file");
@@ -296,6 +300,11 @@ let explore_cmdline_opts =
 	  opt_target_region_start := Some (Int64.of_string s1);
 	  opt_target_region_string := unescape s2),
      "base=string Try to make a buffer have the given contents");
+    ("-target-string-file", Arg.String
+       (fun s -> let (s1, s2) = split_string '=' s in
+	  opt_target_region_start := Some (Int64.of_string s1);
+	  opt_target_region_string := slurp_file s2),
+     "base=filename same, but read string direct from a file");
     ("-target-formulas", Arg.String
        (fun s -> let (s1, s2) = split_string '=' s in
 	  opt_target_region_start := Some (Int64.of_string s1);
