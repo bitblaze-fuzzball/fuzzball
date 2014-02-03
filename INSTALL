@@ -109,7 +109,11 @@ STP yourself and put the "stp" binary and "libstp.a" library in the
 "stp" directory. FuzzBALL can use STP either as a separate program or
 via a library interface, which have various performance/engineering
 tradeoffs. For the library interface we patch STP to get
-counterexamples in a different format. The build steps look like:
+counterexamples in a different format.
+
+Older versions of STP are kept in a SourceForge SVN repository, which
+is a good choice if you want stability. For instance we've had good
+luck with r1673:
 
     % svn co -r1673 https://stp-fast-prover.svn.sourceforge.net/svnroot/stp-fast-prover/trunk/stp stp-r1673+vine
     % cd stp-r1673+vine
@@ -117,11 +121,28 @@ counterexamples in a different format. The build steps look like:
     % ./clean-install.sh --with-prefix=$(pwd)/install
     % cp install/bin/stp install/lib/libstp.a $HERE/stp
 
-Where $HERE is the directory this INSTALL file is in. Note that
-actually only libstp.a is used as part of the build process right
-now. FuzzBALL's default mode is to use the external "stp" binary, but
-it doesn't automatically look in the "stp" directory; you need to
-either out it in a directory that's on your $PATH or pass the
+Where $HERE is the directory this INSTALL file is in.
+
+If you want to be more bleeding-edge, more recently STP has moved to
+GitHub repository and redone their build process, now requiring recent
+versions of CMake and the Boost libraries. We keep a branch that
+includes the same "true-ce" patch mentioned above and is otherwise
+maintained in a state that should work with FuzzBALL. That build
+process looks like:
+
+    % git clone https://github.com/bitblaze-fuzzball/stp
+    % cd stp
+    % mkdir build
+    % cd build
+    % cmake -G 'Unix Makefiles' ..
+      (or /.../path/to/recent/cmake cmake -G 'Unix Makefiles' .. -DBOOST_ROOT=/.../path/to/recent/boost )
+    % make
+    % cp stp lib/libstp.a $HERE/stp
+
+Note that actually only libstp.a is used as part of the build process
+right now. FuzzBALL's default mode is to use the external "stp"
+binary, but it doesn't automatically look in the "stp" directory; you
+need to either out it in a directory that's on your $PATH or pass the
 -stp-path option to FuzzBALL.
 
 4. OCaml tools
