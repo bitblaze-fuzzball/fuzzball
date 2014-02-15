@@ -103,7 +103,7 @@ struct
 	    (l, Short l)
 
   let gran32_get_short g32 missing addr which =
-    assert(which = 0 or which = 2);
+    assert(which = 0 || which = 2);
     match g32, Absent16, Absent16 with
       | Word(l),_,_ -> (D.extract_16_from_32 l (endian_i 4 which), g32)
       | Gran16s(g1, g2),_,_
@@ -116,7 +116,7 @@ struct
 	      (l, Gran16s(g1, g2'))
 
   let gran64_get_short g64 missing addr which =
-    assert(which = 0 or which = 2 or which = 4 or which = 6);
+    assert(which = 0 || which = 2 || which = 4 || which = 6);
     match g64, Absent32, Absent32 with
       | Long(l),_,_ -> (D.extract_16_from_64 l (endian_i 8 which), g64)
       | Gran32s(g1, g2),_,_
@@ -141,7 +141,7 @@ struct
 	    (l, Word l)
 	      
   let gran64_get_word  g64 missing addr which =
-    assert(which = 0 or which = 4);
+    assert(which = 0 || which = 4);
     match g64, Absent32, Absent32 with
       | Long(l),_,_ -> (D.extract_32_from_64 l (endian_i 8 which), g64)
       | Gran32s(g1, g2),_,_
@@ -185,7 +185,7 @@ struct
       | Absent16 -> (Absent8, Absent8)
 
   let gran16_put_byte g16 which b =
-    assert(which = 0 or which = 1);
+    assert(which = 0 || which = 1);
     let (g1, g2) = gran16_split g16 in
       if which < 1 then
 	Gran8s(Byte(b), g2)
@@ -209,7 +209,7 @@ struct
 	Gran32s(g1, (gran32_put_byte g2 (which - 4) b))
 
   let gran32_put_short g32 which s =
-    assert(which = 0 or which = 2);
+    assert(which = 0 || which = 2);
     let (g1, g2) = gran32_split g32 in
       if which < 2 then
 	Gran16s(Short(s), g2)
@@ -217,7 +217,7 @@ struct
 	Gran16s(g1, Short(s))
 	  
   let gran64_put_short g64 which s =
-    assert(which = 0 or which = 2 or which = 4 or which = 6);
+    assert(which = 0 || which = 2 || which = 4 || which = 6);
     let (g1, g2) = gran64_split g64 in
       if which < 4 then
 	Gran32s((gran32_put_short g1 which s), g2)
@@ -225,7 +225,7 @@ struct
 	Gran32s(g1, (gran32_put_short g2 (which - 4) s))
 
   let gran64_put_word g64 which w =
-    assert(which = 0 or which = 4);
+    assert(which = 0 || which = 4);
     let (g1, g2) = gran64_split g64 in
       if which < 4 then
 	Gran32s(Word(w), g2)

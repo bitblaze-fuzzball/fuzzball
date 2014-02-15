@@ -1692,7 +1692,7 @@ object(self)
   method sys_fstat fd buf_addr =
     try
       let oc_buf =
-	(if (fd <> 1 or true) then
+	(if (fd <> 1 || true) then
 	   Unix.fstat (self#get_fd fd)
 	 else
 	   Unix.stat "/etc/group") (* pretend stdout is always redirected *) in
@@ -1720,7 +1720,7 @@ object(self)
   method sys_fstat64 fd buf_addr =
     try
       let oc_buf =
-	(if (fd <> 1 or true) then
+	(if (fd <> 1 || true) then
 	   Unix.fstat (self#get_fd fd)
 	 else
 	   Unix.stat "/etc/group") (* pretend stdout is always redirected *) in
