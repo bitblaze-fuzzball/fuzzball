@@ -326,6 +326,10 @@ let explore_cmdline_opts =
      " Concretize based on path condition");
     ("-trace-ivc", Arg.Set(opt_trace_ivc),
      " Print operations of -implied-value-conc");
+    ("-trace-working-ce-cache", Arg.Set(opt_trace_working_ce_cache),
+     " Print working cache after each query");
+    ("-trace-global-ce-cache", Arg.Set(opt_trace_global_ce_cache),
+     " Print global and working caches after each query");
   ]
 
 

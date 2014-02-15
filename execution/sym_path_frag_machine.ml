@@ -98,6 +98,60 @@ struct
 
     val mutable path_cond = []
     val mutable var_seen_hash = V.VarHash.create 101
+    val mutable global_ce_cache = Hashtbl.create 1009
+    val mutable working_ce_cache = []
+    val mutable new_path = false
+
+    method private print_global_cache =
+      let print_entry ce_ref count_ref =
+	Printf.printf "CE ~~~ ";
+	self#print_ce !ce_ref;
+	Printf.printf "Count ~~~ %d\n\n" !count_ref
+      in
+        Hashtbl.iter print_entry global_ce_cache
+
+    method private print_working_cache =
+      let rec loop = function
+        | ce_ref :: rest ->
+	    self#print_ce !ce_ref;
+	    loop rest
+	| [] -> ()
+      in
+        loop working_ce_cache
+
+    method private add_to_global_cache ce_ref =
+      try
+	let count_ref = Hashtbl.find global_ce_cache ce_ref in
+	  count_ref := !count_ref + 1
+      with
+	Not_found ->
+	  if !opt_trace_working_ce_cache || !opt_trace_global_ce_cache then
+	    (Printf.printf "Adding CE to global cache: ";
+	     self#print_ce !ce_ref);
+	  Hashtbl.add global_ce_cache ce_ref (ref 0)
+
+    method private add_to_working_cache ce_ref =
+      working_ce_cache <- ce_ref :: working_ce_cache
+
+    method private fill_working_cache =
+      match (List.rev path_cond) with
+        | cond :: rest ->
+	    let conj = List.fold_left
+	      (fun es e -> V.BinOp(V.BITAND, e, es)) cond rest
+	    in
+	    let select ce_ref count_ref =
+	      if (form_man#eval_expr_from_ce !ce_ref conj) <> 0L then
+		self#add_to_working_cache ce_ref
+	    in
+	      Hashtbl.iter select global_ce_cache
+	| [] -> ()
+
+    method private filter_working_cache new_cond =
+      let conj = List.fold_left
+	(fun es e -> V.BinOp(V.BITAND, e, es)) new_cond path_cond
+      in
+      let filter ce_ref = (form_man#eval_expr_from_ce !ce_ref conj) <> 0L in
+        working_ce_cache <- List.filter filter working_ce_cache
 
     method input_depth =
       let count = ref 0 in
@@ -147,7 +201,8 @@ struct
     method add_to_path_cond cond =
       self#ensure_extra_conditions;
       if (self#quick_check_in_path_cond cond) <> Some true then
-	(path_cond <- cond :: path_cond;
+	(self#filter_working_cache cond;
+	 path_cond <- cond :: path_cond;
 	 self#push_cond_to_qe cond)
 
     method restore_path_cond f =
@@ -164,40 +219,92 @@ struct
 
     method query_with_path_cond cond verbose =
       self#ensure_extra_conditions;
+      if new_path then
+	(self#fill_working_cache;
+	 new_path <- false);
       let get_time () = Unix.gettimeofday () in
-      let (decls, assigns, cond_e, new_vars) =
-	form_man#one_cond_for_solving cond var_seen_hash
+      let cond' = form_man#rewrite_for_solver cond in
+      let conj = List.fold_left
+	(fun es e -> V.BinOp(V.BITAND, e, es)) cond' (List.rev path_cond)
       in
-	query_engine#push;
-	query_engine#start_query;
-	List.iter query_engine#add_free_var decls;
-	List.iter (fun (v,_) -> query_engine#add_temp_var v) assigns;
-	List.iter (fun (v,e) -> query_engine#assert_eq v e) assigns;
-	let time_before = get_time () in
-	let (result_o, ce) = query_engine#query cond_e in
-	let is_sat = match result_o with
-	  | Some true ->
-	      solver_unsats := Int64.succ !solver_unsats;
-	      false
-	  | Some false ->
-	      solver_sats := Int64.succ !solver_sats;
-	      true
-	  | None ->
-	      solver_fails := Int64.succ !solver_fails;
-	      query_engine#after_query true;
-	      raise SolverFailure
+      let ce_opt =
+	let rec loop = function
+	  | ce_ref :: rest
+	      when (form_man#eval_expr_from_ce !ce_ref conj) <> 0L ->
+	      Some !ce_ref
+	  | ce_ref :: rest -> loop rest
+	  | [] -> None
 	in
-	  let time = (get_time ()) -. time_before in
-	  let is_slow = time > !opt_solver_slow_time in
-	    if is_slow then
-	      Printf.printf "Slow query (%f sec)\n"
-		((get_time ()) -. time_before);
-	    flush stdout;
-	    query_engine#after_query is_slow;
-	    query_engine#pop;
-	    List.iter (fun v -> V.VarHash.remove var_seen_hash v) new_vars;
-	    infl_man#maybe_periodic_influence;
-	    (is_sat, ce)
+	  loop working_ce_cache
+      in
+      let (is_sat, ce) = match ce_opt with
+	| Some ce' ->
+	    if !opt_trace_working_ce_cache || !opt_trace_global_ce_cache then
+	      (Printf.printf "CE Cache Hit: ";
+	       self#print_ce ce');
+	    (true, ce')
+	| None -> 
+	    let (decls, assigns, cond_e, new_vars) =
+	      form_man#one_cond_for_solving cond var_seen_hash
+	    in
+	      query_engine#push;
+	      query_engine#start_query;
+	      List.iter query_engine#add_free_var decls;
+	      List.iter (fun (v,_) -> query_engine#add_temp_var v) assigns;
+	      List.iter (fun (v,e) -> query_engine#assert_eq v e) assigns;
+	      let time_before = get_time () in
+	      let (result_o, ce') = query_engine#query cond_e in
+	      let is_sat' = match result_o with
+		| Some true ->
+		    solver_unsats := Int64.succ !solver_unsats;
+		    false
+	        | Some false ->
+		    solver_sats := Int64.succ !solver_sats;
+		    true
+		| None ->
+		    solver_fails := Int64.succ !solver_fails;
+		    query_engine#after_query true;
+		    raise SolverFailure
+	      in
+	      let time = (get_time ()) -. time_before in
+	      let is_slow = time > !opt_solver_slow_time in
+	        if is_slow then
+		Printf.printf "Slow query (%f sec)\n"
+		  ((get_time ()) -. time_before);
+	        flush stdout;
+		query_engine#after_query is_slow;
+		query_engine#pop;
+		List.iter (fun v -> V.VarHash.remove var_seen_hash v) new_vars;
+		infl_man#maybe_periodic_influence;
+		if is_sat' then
+		  self#add_to_working_cache (ref ce');
+		(is_sat', ce')
+      in
+        if verbose then
+	  (if is_sat then
+	     (if !opt_trace_decisions then
+		Printf.printf "Satisfiable.\n";
+	      if !opt_trace_assigns_string then
+		Printf.printf "Input: \"%s\"\n"
+		  (String.escaped (self#ce_to_input_str ce));
+	      if !opt_trace_assigns then
+		(Printf.printf "Input vars: ";
+		 self#print_ce ce))
+	   else
+	     if !opt_trace_decisions then
+	       Printf.printf "Unsatisfiable.\n");
+        if is_sat then
+	  (self#add_to_global_cache (ref ce);
+	   if !opt_trace_global_ce_cache then
+	     (Printf.printf "\n******* Global Cache *******\n";
+	      self#print_global_cache;
+	      Printf.printf "****************************\n");
+	   if !opt_trace_global_ce_cache || !opt_trace_working_ce_cache then
+	     (Printf.printf "\n^^^^^^^ Working Cache ^^^^^^^\n";
+	      self#print_working_cache;
+	      Printf.printf "^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n\n"));
+	(is_sat, ce)
+
 
     method query_unique_value exp ty =
       let taut = V.BinOp(V.EQ, exp, exp) in
@@ -259,16 +366,6 @@ struct
 		   Printf.printf "No guidance, choosing randomly\n";
 		 dt#random_bit)
 
-    val mutable saved_ce_0 = []
-    val mutable saved_ce_1 = []
-    val mutable saved_ce = []
-
-    method private select_saved_ce b =
-      if b then
-	saved_ce <- saved_ce_1
-      else
-	saved_ce <- saved_ce_0
-
     method query_with_pc_choice cond verbose choice =
       let trans_func b =
 	if b then cond else V.UnOp(V.NOT, cond)
@@ -277,51 +374,11 @@ struct
 	if verbose && !opt_trace_decisions then
 	  Printf.printf "Trying %B: " b;
 	match self#quick_check_in_path_cond cond' with
-	  | Some b' -> b'
+	  | Some b -> b
 	  | None -> 
-	    let result = ref 0L in
-	    if saved_ce <> [] then
-	      (let conj = List.fold_left
-		 (fun es e -> V.BinOp(V.BITAND, e, es))
-		 cond'
-		 (List.rev self#get_path_cond)
-	       in
-	       result := form_man#eval_expr_from_ce saved_ce conj);
-	    if !result <> 0L then
-	      (if b then
-		 saved_ce_1 <- saved_ce
-	       else
-		 saved_ce_0 <- saved_ce;
-	       if verbose then
-		 (if !opt_trace_decisions then
-		    Printf.printf "Satisfiable.\n";
-		  if !opt_trace_assigns_string then
-		    Printf.printf "Input: \"%s\"\n"
-		      (String.escaped (self#ce_to_input_str saved_ce));
-		  if !opt_trace_assigns then
-		    (Printf.printf "Input vars: ";
-		     self#print_ce saved_ce));
-               true)
-            else
-              (let (is_sat, ce) =
-	         self#query_with_path_cond cond' verbose in
-               if b then
-                 saved_ce_1 <- ce
-               else
-                 saved_ce_0 <- ce;
-		 if verbose then
-		 (if is_sat then
-		     (if !opt_trace_decisions then
-			Printf.printf "Satisfiable.\n";
-		      if !opt_trace_assigns_string then
-			Printf.printf "Input: \"%s\"\n"
-			  (String.escaped (self#ce_to_input_str ce));
-		      if !opt_trace_assigns then
-			(Printf.printf "Input vars: ";
-			 self#print_ce ce))
-		  else
-		     if !opt_trace_decisions then Printf.printf "Unsatisfiable.\n");
-	       is_sat)
+	      let (is_sat, _) =
+		self#query_with_path_cond cond' verbose in
+		is_sat
       in
       let non_try_func b =
 	if verbose && !opt_trace_decisions then
@@ -348,14 +405,12 @@ struct
       else
 	let (result, cond') = (self#query_with_pc_choice cond verbose
 				 (fun () -> self#follow_or_random)) in
-	  self#select_saved_ce result;
 	  self#add_to_path_cond cond';
 	  result
 
     method extend_pc_known cond verbose b =
       let (result, cond') = (self#query_with_pc_choice cond verbose
 			       (fun () -> b)) in
-	self#select_saved_ce result;
 	self#add_to_path_cond cond';
 	result
 
@@ -649,7 +704,9 @@ struct
       V.VarHash.clear var_seen_hash;
       query_engine#reset;
       infl_man#reset;
-      dt#reset
+      dt#reset;
+      working_ce_cache <- [];
+      new_path <- true
 
     method after_exploration =
       infl_man#after_exploration
