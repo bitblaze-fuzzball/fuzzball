@@ -166,11 +166,17 @@ and simplify_rec_lv lv =
     | _ -> lv
 
 let rec simplify_fp e =
-  let e' = simplify_rec e in
-    if e = e' then
-      e'
-    else
-      simplify_fp e'
+  let rec loop e n =
+    let e' = simplify_rec e in
+      (* Printf.printf "Simplified %s -> %s\n"
+	(V.exp_to_string e) (V.exp_to_string e'); *)
+      assert(n < 100);
+      if e = e' then
+	e'
+      else
+	loop e' (n + 1)
+  in
+    loop e 0
 
 let rec expr_size e =
   match e with

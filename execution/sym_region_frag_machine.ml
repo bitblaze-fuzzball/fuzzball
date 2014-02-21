@@ -853,7 +853,10 @@ struct
 	    with Not_found ->
 	      let wd = compute_wd off_exp in
 		Hashtbl.replace bitwidth_cache key wd;
-		wd
+		if wd = Some 0 then
+		  None
+		else
+		  wd
 
     method private query_maxval e ty =
       let rec loop min max =
