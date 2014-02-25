@@ -142,7 +142,7 @@ process looks like:
 Note that actually only libstp.a is used as part of the build process
 right now. FuzzBALL's default mode is to use the external "stp"
 binary, but it doesn't automatically look in the "stp" directory; you
-need to either out it in a directory that's on your $PATH or pass the
+need to either put it in a directory that's on your $PATH or pass the
 -stp-path option to FuzzBALL.
 
 4. OCaml tools
