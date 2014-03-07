@@ -99,6 +99,7 @@ struct
     val mutable path_cond = []
     val mutable var_seen_hash = V.VarHash.create 101
     val mutable global_ce_cache = Hashtbl.create 1009
+    val mutable global_ce_limit = !opt_global_ce_cache_limit
     val mutable working_ce_cache = []
     val mutable new_path = false
 
@@ -128,10 +129,36 @@ struct
 	  if !opt_trace_working_ce_cache || !opt_trace_global_ce_cache then
 	    (Printf.printf "Adding CE to global cache: ";
 	     self#print_ce !ce_ref);
-	  Hashtbl.add global_ce_cache ce_ref (ref 0)
+	  Hashtbl.add global_ce_cache ce_ref (ref 0);
+	  if (Hashtbl.length global_ce_cache) > global_ce_limit then
+	    self#prune_global_cache
 
     method private add_to_working_cache ce_ref =
       working_ce_cache <- ce_ref :: working_ce_cache
+
+    method private prune_global_cache =
+      let goal = global_ce_limit / 2 in
+      let rec loop cutoff =
+	let f key value =
+	  if !value < cutoff then
+	    Hashtbl.remove global_ce_cache key
+	in
+	  Hashtbl.iter f global_ce_cache;
+	  if !opt_trace_global_ce_cache || !opt_trace_working_ce_cache then
+	    Printf.printf "Global cache size after pruning counts <%d: %d\n"
+	      cutoff (Hashtbl.length global_ce_cache);
+	  if (Hashtbl.length global_ce_cache > goal) then
+	    loop (cutoff lsl 1)
+	  else
+	    self#reset_global_cache_counts
+      in
+        loop 1
+
+    method private reset_global_cache_counts =
+      let f key value =
+	value := 0
+      in
+        Hashtbl.iter f global_ce_cache
 
     method private fill_working_cache =
       match (List.rev path_cond) with

@@ -126,6 +126,7 @@ val opt_trace_ivc : bool ref
 val opt_periodic_stats : int64 option ref
 val opt_trace_global_ce_cache : bool ref
 val opt_trace_working_ce_cache : bool ref
+val opt_global_ce_cache_limit : int ref
 
 val opt_symbolic_memory : bool ref
 val opt_zero_memory : bool ref

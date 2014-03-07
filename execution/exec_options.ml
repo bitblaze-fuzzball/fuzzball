@@ -148,6 +148,7 @@ let opt_trace_ivc = ref false
 let opt_periodic_stats = ref None
 let opt_trace_working_ce_cache = ref false
 let opt_trace_global_ce_cache = ref false
+let opt_global_ce_cache_limit = ref 10000
 
 let opt_symbolic_memory = ref false
 let opt_zero_memory = ref false

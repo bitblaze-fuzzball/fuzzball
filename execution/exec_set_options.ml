@@ -330,6 +330,8 @@ let explore_cmdline_opts =
      " Print working cache after each query");
     ("-trace-global-ce-cache", Arg.Set(opt_trace_global_ce_cache),
      " Print global and working caches after each query");
+    ("-global-ce-cache-limit", Arg.Set_int(opt_global_ce_cache_limit),
+     " Set an integer limit on the global cache size");
   ]
 
 
