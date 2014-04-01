@@ -87,21 +87,68 @@ class stpvc_engine = object(self)
        flush stdout; *)
     let result = Stpvc.query vc s in
     let ce = if result then [] else
-      (*
+      (* Strategy 1: getTrueCounterExample. A custom interface that Vine
+	 has patched into STP for a while, but I don't know the reason
+	 why it's desirable. Probably better to avoid.
       List.map
 	(fun (sym, stp_exp) ->
 	   ((Stpvc.to_string sym), (fun () -> (Stpvc.int64_of_e stp_exp))))
 	(Stpvc.get_true_counterexample vc) *)
+
+      (* Strategy 2: getWholeCounterExample. An interface that's closer to
+	 STP's internal data structures. If a variable is unconstrained,
+	 it will just be mapped to a SYMBOL, so we can drop it from the
+	 C.E. This worked fine for many versions of STP, but recently
+	 we've run into trouble when an optimization has caused this to
+	 return a BVCONCAT when only some of the bits in an expression
+	 are constrained. Potentially useful information but we don't
+	 always know how to deal with it.
       let wce = Stpvc.get_whole_counterexample vc in
 	List.map (fun (var, e) -> (var, Stpvc.int64_of_e e))
 	  (List.filter (fun (var, e) ->
 			  (Libstp.getExprKind e) = Libstp.BVCONST)
 	     (List.map
 		(fun ((n,s,t) as var) ->
-		   let var_e = V.Lval(V.Temp(var)) in
-		   let var_s = Vine_stpvc.vine_to_stp vc self#ctx var_e
+		   let var_s = Vine_stpvc.vine_var_to_stp vc self#ctx var
 		   in
 		     (s, (Stpvc.get_term_from_counterexample vc var_s wce)))
+		free_vars)) *)
+
+      (* Strategy 3: getCounterExample. This always returns a concrete
+         value; if the variable is unconstrained, it will just return a
+         constant 0. I believe this is the interface KLEE uses
+         exclusively.
+      List.map
+	(fun ((n,s,t) as var) ->
+	    let var_e = V.Lval(V.Temp(var)) in
+	    let var_s = Vine_stpvc.vine_to_stp vc self#ctx var_e in
+	    let val_s = Stpvc.get_counterexample vc var_s in
+	      assert((Libstp.getExprKind val_s) = Libstp.BVCONST);
+	      (s, Stpvc.int64_of_e val_s))
+	free_vars; *)
+
+      (* Strategy 4: first try getWholeCounterExample, but fallback to
+	 getCounterExample if the value is neither completely
+	 unconstrained nor completely constrained. *)
+      let wce = Stpvc.get_whole_counterexample vc in
+	List.map (function
+		    | Some x -> x
+		    | _ -> failwith "Filter invariant failure")
+	  (List.filter (function Some _ -> true | None -> false)
+	     (List.map
+		(fun ((n,s,t) as var) ->
+		   let var_s = Vine_stpvc.vine_var_to_stp vc self#ctx var in
+		   let term = Stpvc.get_term_from_counterexample vc var_s wce
+		   in
+		     match Libstp.getExprKind term with
+		       | Libstp.SYMBOL -> None
+		       | Libstp.BVCONST ->
+			   Some (s, Stpvc.int64_of_e term)
+		       | _ ->
+			   let cterm = Stpvc.get_counterexample vc var_s in
+			     assert((Libstp.getExprKind cterm)
+				    =  Libstp.BVCONST);
+			     Some (s, Stpvc.int64_of_e cterm))
 		free_vars))
     in
       the_query <- Some s;

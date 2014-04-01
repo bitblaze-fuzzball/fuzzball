@@ -68,6 +68,19 @@ let rev_ctx ctx =
     rc
     
 
+(** Build an STP expression for the given VinE variable. The effect is
+    similar to constructing a Temp expression with the variable and
+    passing that to vine_var_to_stp, but it saves some steps including
+    a call to STP's simplifier. Avoiding the simplifier can be good if
+    you are going to use the variable for a counter-example lookup.
+    @param vc The STP validity checker the result will be used in. The VC passed
+    here must be the same as the one used to create the context.
+    @param ctx The context created by new_ctx.
+    @param v The variable to translate.
+    @return the translated STP expression.
+*)
+let vine_var_to_stp vc ctx v = VH.find ctx v
+
 (** Build an STP expression for the given VinE expression
     @param vc The STP validity checker the result will be used in. The VC passed
     here must be the same as the one used to create the context. (We could
