@@ -114,7 +114,8 @@ class stp_external_engine fname = object(self)
 	| _ -> failwith "Non-empty list invariant failure in get_fresh_fname"
       in
       let dir' = make_dirs dir (List.rev rest) in
-	curr_fname <- (Printf.sprintf "%s/%s-%d" dir' fname low);
+        ignore(low);
+	curr_fname <- (Printf.sprintf "%s/%s-%d" dir' fname filenum);
 	if !opt_trace_solver then
 	  Printf.printf "Creating STP file: %s.stp\n" curr_fname;
 	curr_fname
