@@ -22,6 +22,8 @@ sudo apt-get install subversion
 sudo apt-get install libgmp3-dev
 sudo apt-get install zsh
 sudo apt-get install automake
+sudo apt-get install bison flex cmake
+sudo apt-get install libboost-system-dev libboost-program-options-dev
 
 Fedora rough equivalents:
 
