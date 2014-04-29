@@ -327,7 +327,7 @@ object(self)
 	    else
 	      Unix.ADDR_UNIX(chroot path)
 	| 2 -> 
-	    assert(len = 6);
+	    assert(len = 6 || len = 14);
 	    let port_be = load_short buf and
 		addr_h  = load_byte (lea buf 0 0 2) and
 		addr_mh = load_byte (lea buf 0 0 3) and
@@ -1210,6 +1210,9 @@ object(self)
 	  fm#store_short_conc (lea argp 0 0 4) 0; (* ws_xpixel *)
 	  fm#store_short_conc (lea argp 0 0 6) 0; (* ws_ypixel *)
 	  put_return 0L (* success *)
+      | 0x541bL -> (* FIONREAD *)
+	  (* Not sure how to support this in OCaml *)
+	  self#put_errno Unix.EINVAL
       | _ -> 	  raise (UnhandledSysCall ("Unhandled ioctl sub-call"))
 
   method sys_link oldpath newpath =
@@ -1449,6 +1452,27 @@ object(self)
 			  max (!max_input_string_length) num_read))
 	else
 	  fm#store_str buf 0L (String.sub str 0 num_read);
+	put_return (Int64.of_int num_read) (* success *)
+    with
+      | Unix.Unix_error(err, _, _) -> self#put_errno err
+
+  method sys_recvfrom sockfd buf len flags addrbuf addrlen_ptr =
+    try
+      let str = self#string_create len in
+      let flags = (if (flags land 1) <> 0 then [Unix.MSG_OOB] else []) @
+		  (if (flags land 2) <> 0 then [Unix.MSG_PEEK] else [])
+      in
+      let (num_read, sockaddr) =
+	Unix.recvfrom (self#get_fd sockfd) str 0 len flags
+      in
+	if num_read > 0 && Hashtbl.mem symbolic_fds sockfd then
+	  fm#maybe_start_symbolic
+	    (fun () -> (fm#make_symbolic_region buf num_read;
+			max_input_string_length :=
+			  max (!max_input_string_length) num_read))
+	else
+	  fm#store_str buf 0L (String.sub str 0 num_read);
+	self#write_sockaddr sockaddr addrbuf addrlen_ptr;
 	put_return (Int64.of_int num_read) (* success *)
     with
       | Unix.Unix_error(err, _, _) -> self#put_errno err
@@ -2414,7 +2438,20 @@ object(self)
 			    sockfd buf len flags;
 			self#sys_recv sockfd buf len flags
 		  | 11 -> uh"Unhandled Linux system call sendto (102:11)"
-		  | 12 -> uh"Unhandled Linux system call recvfrom (102:12)"
+		  | 12 ->
+		      let sockfd = Int64.to_int (load_word args) and
+			  buf = load_word (lea args 0 0 4) and
+			  len = Int64.to_int (load_word (lea args 0 0 8)) and
+			  flags = Int64.to_int (load_word (lea args 0 0 12))
+									  and
+			  addr = load_word (lea args 0 0 16) and
+			  addrlen_ptr = load_word (lea args 0 0 20)
+		      in
+			if !opt_trace_syscalls then
+			  Printf.printf
+			    "recvfrom(%d, 0x%08Lx, %d, %d, 0x%08Lx, 0x%08Lx)"
+			    sockfd buf len flags addr addrlen_ptr;
+			self#sys_recvfrom sockfd buf len flags addr addrlen_ptr
 		  | 13 -> uh"Unhandled Linux system call shutdown (102:13)"
 		  | 14 -> uh"Unhandled Linux system call setsockopt (102:14)"
 		  | 15 -> uh"Unhandled Linux system call getsockopt (102:15)"
