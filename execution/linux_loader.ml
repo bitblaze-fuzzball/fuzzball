@@ -275,6 +275,9 @@ let build_startup_state fm eh load_base ldso argv =
     | X64 -> (push_cstr "x86_64", 0L) (* barebones HWCAP *)
     | ARM -> (push_cstr "v5l", 0x1d7L)
   in
+  let reloc_entry = Int64.add eh.entry
+    (if eh.eh_type = 3 then load_base else 0L)
+  in
   let random_bytes = push_cstr "123456789abcdef" in
   let auxv =
     [(3L, Int64.add load_base eh.phoff);    (* AT_PHDR *)
@@ -283,7 +286,7 @@ let build_startup_state fm eh load_base ldso argv =
      (6L, 4096L);                           (* AT_PAGESZ *)
      (7L, ldso);                            (* AT_BASE: dynamic loader *)
      (8L, 0L);                              (* AT_FLAGS, no flags *)
-     (9L, eh.entry);                        (* AT_ENTRY *)
+     (9L, reloc_entry);                     (* AT_ENTRY *)
      (11L, Int64.of_int (Unix.getuid ()));  (* AT_UID *)
      (12L, Int64.of_int (Unix.geteuid ())); (* AT_EUID *)
      (13L, Int64.of_int (Unix.getgid ()));  (* AT_GID *)
@@ -328,21 +331,26 @@ let load_dynamic_program (fm : fragment_machine) fname load_base
   let ldso_base = ref 0xb7f00000L in
   let eh = read_elf_header ic in
   let entry_point = ref eh.entry in
-    assert(eh.eh_type = 2);
+  let extra_vaddr = match eh.eh_type with
+    | 2 -> 0L (* fixed-location executable *)
+    | 3 -> load_base (* shared object or PIE *)
+    | _ -> failwith "Unhandled ELF object type"
+  in
     entry_point := eh.entry;
     List.iter
       (fun phr ->
 	 if phr.ph_type = 1L then (* PT_LOAD *)
-	   (if phr.ph_flags = 5L then assert(phr.vaddr = load_base);
+	   (if phr.ph_flags = 5L && extra_vaddr = 0L then
+	      assert(phr.vaddr = load_base);
 	    if data_too || (phr.ph_flags <> 6L && phr.ph_flags <> 7L) then
-	      load_segment fm ic phr 0L true)
+	      load_segment fm ic phr extra_vaddr true)
 	 else if phr.ph_type = 3L then (* PT_INTERP *)
 	   (seek_in ic (Int64.to_int phr.offset);
 	    let interp = IO.really_nread i ((Int64.to_int phr.filesz) - 1) in
 	      entry_point := load_ldso fm interp ldso_base;
-	      load_segment fm ic phr 0L true)
+	      load_segment fm ic phr extra_vaddr true)
 	 else if phr.memsz != 0L then
-	   load_segment fm ic phr 0L true;
+	   load_segment fm ic phr extra_vaddr true;
 	 List.iter
 	   (fun (base, size) ->
 	      if base >= phr.vaddr && 
