@@ -114,9 +114,11 @@ object
   method sys_pipe2 : int64 -> int -> unit
   method sys_poll : int64 -> int -> int64 -> unit
   method sys_read : int -> int64 -> int -> unit
+  method sys_readv : int -> int64 -> int -> unit
   method sys_readlink : string -> int64 -> int -> unit
   method sys_recv : int -> int64 -> int -> int -> unit
   method sys_recvfrom : int -> int64 -> int -> int -> int64 -> int64 -> unit
+  method sys_recvmsg : int -> int64 -> int -> unit
   method sys_rename : string -> string -> unit
   method sys_sched_getparam : int -> int64 -> unit
   method sys_sched_get_priority_max : int -> unit
@@ -124,6 +126,8 @@ object
   method sys_sched_getscheduler : int -> unit
   method sys_select : int -> int64 -> int64 -> int64 -> int64 -> unit
   method sys_send : int -> int64 -> int -> int -> unit
+  method sys_sendto : int -> int64 -> int -> int -> int64 -> int -> unit
+  method sys_sendmsg : int -> int64 -> int -> unit
   method sys_setgid32 : int -> unit
   method sys_setuid32 : int -> unit
   method sys_setreuid : int -> int -> unit

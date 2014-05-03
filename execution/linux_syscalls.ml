@@ -344,8 +344,8 @@ object(self)
   method write_sockaddr sockaddr_oc addr addrlen_ptr =
     let dotted_addr_to_dat str =
       let dot1 = String.index str '.' in
-      let dot2 = String.index_from str dot1 '.' in
-      let dot3 = String.index_from str dot2 '.' in
+      let dot2 = String.index_from str (dot1 + 1) '.' in
+      let dot3 = String.index_from str (dot2 + 1) '.' in
       let b1 = int_of_string (String.sub str 0 dot1) and
 	  b2 = int_of_string (String.sub str (dot1 + 1) (dot2 - dot1 - 1)) and
 	  b3 = int_of_string (String.sub str (dot2 + 1) (dot3 - dot2 - 1)) and
@@ -1426,7 +1426,19 @@ object(self)
 	put_return (Int64.of_int num_read)
     with
       | Unix.Unix_error(err, _, _) -> self#put_errno err
-	  
+
+  method sys_readv fd iov cnt =
+    try
+      let num_bytes = self#iovec_size iov cnt in
+      let str = self#string_create num_bytes in
+      let oc_fd = self#get_fd fd in
+      let num_read = Unix.read oc_fd str 0 num_bytes in
+	assert(not (Hashtbl.mem symbolic_fds fd)); (* unimplemented *)
+	self#scatter_iovec iov cnt str;
+	put_return (Int64.of_int num_read)
+    with
+      | Unix.Unix_error(err, _, _) -> self#put_errno err
+
   method sys_readlink path out_buf buflen =
     try
       let real = Unix.readlink (chroot path) in
@@ -1476,6 +1488,29 @@ object(self)
 	put_return (Int64.of_int num_read) (* success *)
     with
       | Unix.Unix_error(err, _, _) -> self#put_errno err
+
+  method sys_recvmsg sockfd msg flags =
+    try
+      let iov = load_word (lea msg 0 0 8) and
+	  cnt = Int64.to_int (load_word (lea msg 0 0 12)) in
+      let len = self#iovec_size iov cnt in
+      let str = self#string_create len in
+      let flags = (if (flags land 1) <> 0 then [Unix.MSG_OOB] else []) @
+	          (if (flags land 2) <> 0 then [Unix.MSG_PEEK] else [])
+      and addrbuf = load_word (lea msg 0 0 0)
+      in
+      let (num_read, sockaddr) =
+	Unix.recvfrom (self#get_fd sockfd) str 0 len flags
+      in
+	assert(not (Hashtbl.mem symbolic_fds sockfd)); (* unimplemented *)
+	(if addrbuf <> 0L then
+	   let addrlen_ptr = load_word (lea msg 0 0 4) in
+	     self#write_sockaddr sockaddr addrbuf addrlen_ptr);
+	self#scatter_iovec iov cnt str;
+	put_return (Int64.of_int num_read) (* success *)	
+    with
+      | Unix.Unix_error(err, _, _) -> self#put_errno err
+
 
   method sys_rename oldpath newpath =
     try
@@ -1552,6 +1587,44 @@ object(self)
     with
       | Unix.Unix_error(err, _, _) -> self#put_errno err
 
+  method sys_sendto sockfd buf len flags addrbuf addrlen =
+    try
+      let str = string_of_char_array (read_buf buf len) and
+	  flags = (if (flags land 1) <> 0 then [Unix.MSG_OOB] else []) @
+	(if (flags land 4) <> 0 then [Unix.MSG_DONTROUTE] else []) @
+	(if (flags land 2) <> 0 then [Unix.MSG_PEEK] else []) and
+	  sockaddr = self#read_sockaddr addrbuf addrlen
+      in
+      let num_sent =
+	Unix.sendto (self#get_fd sockfd) str 0 len flags sockaddr
+      in
+	put_return (Int64.of_int num_sent) (* success *)
+    with
+      | Unix.Unix_error(err, _, _) -> self#put_errno err
+
+  method sys_sendmsg sockfd msg flags =
+    try
+      let str = string_of_char_array
+	(self#gather_iovec (load_word (lea msg 0 0 8))
+	   (Int64.to_int (load_word (lea msg 0 0 12))))
+      and flags = (if (flags land 1) <> 0 then [Unix.MSG_OOB] else []) @
+	(if (flags land 4) <> 0 then [Unix.MSG_DONTROUTE] else []) @
+	(if (flags land 2) <> 0 then [Unix.MSG_PEEK] else [])
+      and addrbuf = load_word (lea msg 0 0 0) in
+      let num_sent = 
+	if addrbuf = 0L then
+	  Unix.send (self#get_fd sockfd) str 0 (String.length str) flags
+	else
+	  let sockaddr = self#read_sockaddr addrbuf
+	    (Int64.to_int (load_word (lea msg 0 0 4)))
+	  in
+	    Unix.sendto (self#get_fd sockfd) str 0 (String.length str)
+	      flags sockaddr
+      in
+	put_return (Int64.of_int num_sent) (* success *)
+    with
+      | Unix.Unix_error(err, _, _) -> self#put_errno err
+    
   method sys_setgid32 gid =
     Unix.setgid gid;
     put_return 0L (* success *)
@@ -1871,15 +1944,34 @@ object(self)
   method sys_write fd bytes count =
     self#do_write fd bytes count
 
+  method private iovec_size iov cnt =
+    let sum = ref 0 in
+      for i = 0 to cnt - 1 do
+	let len = Int64.to_int (load_word (lea iov i 8 4)) in
+	  sum := !sum + len
+      done;
+      !sum
+
+  method private scatter_iovec iov cnt buf =
+    let off = ref 0 in
+      for i = 0 to cnt - 1 do
+	let base = load_word (lea iov i 8 0) and
+	    len = Int64.to_int (load_word (lea iov i 8 4))
+	in
+	  fm#store_str base 0L (String.sub buf !off len);
+	  off := !off + len
+      done
+
+  method private gather_iovec iov cnt =
+    Array.concat
+      (Vine_util.mapn
+	 (fun i -> read_buf
+	    (load_word (lea iov i 8 0)) (* iov_base *)
+	    (Int64.to_int (load_word (lea iov i 8 4)))) (* iov_len *)
+	 (cnt - 1))
+
   method sys_writev fd iov cnt =
-    let bytes =
-      Array.concat
-	(Vine_util.mapn
-	   (fun i -> read_buf
-	      (load_word (lea iov i 8 0)) (* iov_base *)
-	      (Int64.to_int (load_word (lea iov i 8 4))))
-	   (* iov_len *)
-	   (cnt - 1)) in
+    let bytes = self#gather_iovec iov cnt in
       self#do_write fd bytes (Array.length bytes)
 
   method private handle_linux_syscall () =
@@ -2437,7 +2529,20 @@ object(self)
 			  Printf.printf "recv(%d, 0x%08Lx, %d, %d)"
 			    sockfd buf len flags;
 			self#sys_recv sockfd buf len flags
-		  | 11 -> uh"Unhandled Linux system call sendto (102:11)"
+		  | 11 ->
+		      let sockfd = Int64.to_int (load_word args) and
+			  buf = load_word (lea args 0 0 4) and
+			  len = Int64.to_int (load_word (lea args 0 0 8)) and
+			  flags = Int64.to_int (load_word (lea args 0 0 12))
+									  and
+			  addr = load_word (lea args 0 0 16) and
+			  addrlen = Int64.to_int (load_word (lea args 0 0 20))
+		      in
+			if !opt_trace_syscalls then
+			  Printf.printf
+			    "sendto(%d, 0x%08Lx, %d, %d, 0x%08Lx, %d)"
+			    sockfd buf len flags addr addrlen;
+			self#sys_sendto sockfd buf len flags addr addrlen
 		  | 12 ->
 		      let sockfd = Int64.to_int (load_word args) and
 			  buf = load_word (lea args 0 0 4) and
@@ -2455,8 +2560,24 @@ object(self)
 		  | 13 -> uh"Unhandled Linux system call shutdown (102:13)"
 		  | 14 -> uh"Unhandled Linux system call setsockopt (102:14)"
 		  | 15 -> uh"Unhandled Linux system call getsockopt (102:15)"
-		  | 16 -> uh"Unhandled Linux system call sendmsg (102:16)"
-		  | 17 -> uh"Unhandled Linux system call recvmsg (102:17)"
+		  | 16 ->
+		      let sockfd = Int64.to_int (load_word args) and
+			  msg = load_word (lea args 0 0 4) and
+			  flags = Int64.to_int (load_word (lea args 0 0 8))
+		      in
+			if !opt_trace_syscalls then
+			  Printf.printf "sendmsg(%d, 0x%08Lx, %d)"
+			    sockfd msg flags;
+			self#sys_sendmsg sockfd msg flags
+		  | 17 ->
+		      let sockfd = Int64.to_int (load_word args) and
+			  msg = load_word (lea args 0 0 4) and
+			  flags = Int64.to_int (load_word (lea args 0 0 8))
+		      in
+			if !opt_trace_syscalls then
+			  Printf.printf "recvmsg(%d, 0x%08Lx, %d)"
+			    sockfd msg flags;
+			self#sys_recvmsg sockfd msg flags
 		  | 18 -> uh"Unhandled Linux system call accept4 (102:18)"
 		  | _ -> self#put_errno Unix.EINVAL)
 	 | (_, 103) -> (* syslog *)
@@ -2642,7 +2763,13 @@ object(self)
 	 | (_, 144) -> (* msync *)
 	     uh "Unhandled Linux system call msync (144)"
 	 | (_, 145) -> (* readv *)
-	     uh "Unhandled Linux system call readv (145)"
+	     let (arg1, arg2, arg3) = read_3_regs () in
+	     let fd  = Int64.to_int arg1 and
+		 iov = arg2 and
+		 cnt = Int64.to_int arg3 in
+	       if !opt_trace_syscalls then
+		 Printf.printf "readv(%d, 0x%08Lx, %d)" fd iov cnt;
+	       self#sys_readv fd iov cnt
 	 | (_, 146) -> (* writev *)
 	     let (arg1, arg2, arg3) = read_3_regs () in
 	     let fd  = Int64.to_int arg1 and
