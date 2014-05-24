@@ -1537,6 +1537,12 @@ object(self)
     put_return 0L (* SCHED_OTHER *)
 
   method sys_select nfds readfds writefds exceptfds timeout =
+    let read_timeval_as_secs addr =
+      let secs_f = Int64.to_float (load_word addr) and
+      nsecs_f = Int64.to_float (load_word (lea addr 0 0 4)) in
+      let ret = secs_f +. nsecs_f in
+      ret
+    in
     let read_bitmap addr =
       if addr = 0L then
 	[]
@@ -1549,6 +1555,21 @@ object(self)
 		l := i :: !l
 	  done;
 	  !l
+    in
+    let put_sel_fd fd_bm idx fd_w_or =
+      fm#store_word_conc (lea fd_bm idx 4 0) fd_w_or;
+    in
+    let write_bitmap fd_bm fd_l nfds =
+        zero_region fd_bm 128;
+        for i = 0 to nfds - 1 do ( 
+          if List.mem (self#get_fd i) fd_l then (
+            let fd_lsh = Int64.shift_left 1L i in
+            let w = load_word (lea fd_bm (i / 32) 4 0) in
+            let fd_w_or = Int64.logor fd_lsh w in
+            put_sel_fd fd_bm (i / 32) fd_w_or ;
+            )
+          )
+        done;
     in
     let rec format_fds l =
       match l with
@@ -1566,12 +1587,26 @@ object(self)
 	| ([fd], [], []) when fd_info.(fd).fname = "/dev/urandom" ->
 	    put_return 1L (* assume /dev/urandom is always readable *)
 	| _ ->
-	    (* Our default behavior of saying that nothing ever
-	       happens works for some uses of select(), but causes others
-	       to go into an infinite loop. It would be nice to characterize
-	       what cases a 0 return works well for, and make any other
-	       cases failwith to be easier to debug. *)
-	    put_return 0L (* no events *)
+	      try
+          let map_fd fds =
+            List.map (fun (fd) ->  (self#get_fd fd)) fds
+          in
+          let rl_file_descr = map_fd rl and 
+          wl_file_descr = map_fd wl and 
+          el_file_descr = map_fd el and
+          timeout_f = read_timeval_as_secs timeout in
+          let (r_fds, w_fds, e_fds) = 
+            Unix.select rl_file_descr wl_file_descr el_file_descr timeout_f in
+          let ret = (List.length r_fds) + (List.length w_fds) + (List.length e_fds) in
+          if (readfds) <> 0L then 
+            write_bitmap readfds r_fds nfds ;
+          if (writefds) <> 0L then 
+            write_bitmap writefds w_fds nfds ;
+          if (exceptfds) <> 0L then 
+            write_bitmap exceptfds e_fds nfds ;
+          put_return (Int64.of_int ret)
+        with
+          | Unix.Unix_error(err, _, _) -> self#put_errno err
 
   method sys_send sockfd buf len flags =
     try
