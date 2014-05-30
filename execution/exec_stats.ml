@@ -10,11 +10,17 @@ module V = Vine;;
 
 let check_memory_size () =
   let chan = open_in "/proc/self/status" in
-    for i = 1 to 11 do ignore(input_line chan) done;
-    let line = input_line chan in 
-      close_in chan;
-      assert((String.sub line 0 7) = "VmSize:");
-      String.sub line 7 ((String.length line) - 7)
+  let try_read () =
+    try Some (input_line chan)
+    with End_of_file -> None in
+  let rec get_mem () = match try_read () with
+    | Some s ->
+      if (String.sub s 0 7) = "VmSize:"
+      then String.sub s 7 ((String.length s) - 7)
+      else get_mem ()
+    | None -> failwith "Couldn't find memory consumption in /proc/self/status!" in
+  get_mem ()
+
 
 let check_memory_usage (fm:Fragment_machine.fragment_machine) trans_cache =
   let tc_size =
