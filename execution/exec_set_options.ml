@@ -486,6 +486,9 @@ let cmdline_opts =
     ("-git-version", Arg.Unit
        (fun () -> Printf.printf "GIT version %s\n" Git_version.git_version),
      " Print GIT revision hash");
+    ("-svn-version", Arg.Unit
+       (fun () -> Printf.printf "SVN version %s\n" Svn_version.svn_version),
+     " Print SVN revision number");
   ]
 
 let trace_replay_cmdline_opts =
