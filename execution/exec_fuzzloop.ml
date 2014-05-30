@@ -119,7 +119,10 @@ let fuzz start_eip opt_fuzz_start_eip end_eips
 		      (* KnownPath currently shouldn't happen *)
 		  | DeepPath -> stop "on too-deep path"
 		  | SymbolicJump -> stop "at symbolic jump"
-		  | NullDereference -> stop "at null deref"
+		  | NullDereference ->
+		      if !opt_finish_on_null_deref then
+			finish_fuzz "concrete null dereference";
+		      stop "at null deref"
 		  | JumpToNull -> stop "at jump to null"
 		  | DivideByZero -> stop "at division by zero"
 		  | TooManyIterations -> stop "after too many loop iterations"

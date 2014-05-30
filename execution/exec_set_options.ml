@@ -348,6 +348,8 @@ let fuzzball_cmdline_opts =
   [
     ("-check-for-null", Arg.Set(opt_check_for_null),
      " Check whether dereferenced values can be null");
+    ("-finish-on-null-deref", Arg.Set(opt_finish_on_null_deref),
+     " Finish exploration on finding a null dereference");
     ("-print-callrets", Arg.Set(opt_print_callrets),
      " Print call and ret instructions executed. Can be used with ./getbacktrace.pl to generate the backtrace at any point.");
     (* This flag is misspelled, and will be renamed in the future. *)

@@ -553,10 +553,16 @@ struct
 	(match
 	   self#check_cond (V.BinOp(V.EQ, e, V.Constant(V.Int(V.REG_32, 0L))))
 	 with
-	   | Some true -> Printf.printf "Can be null.\n"
+	   | Some true ->
+	       Printf.printf "Can be null.\n";
+	       if !opt_finish_on_null_deref then
+		 finish_fuzz "symbolic dereference can be null"
 	   | Some false -> Printf.printf "Cannot be null.\n"
-	   | None -> Printf.printf "Can be null or non-null\n";
-	       infl_man#maybe_measure_influence_deref e);
+	   | None ->
+	       Printf.printf "Can be null or non-null\n";
+	       infl_man#maybe_measure_influence_deref e;
+	       if !opt_finish_on_null_deref then
+		 finish_fuzz "symbolic dereference can be null");
       dt#start_new_query;
       let (cbases, coffs, eoffs, ambig, syms) = classify_terms e form_man in
 	if !opt_trace_sym_addr_details then
