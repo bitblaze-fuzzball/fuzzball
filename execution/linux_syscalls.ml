@@ -1539,74 +1539,72 @@ object(self)
   method sys_select nfds readfds writefds exceptfds timeout =
     let read_timeval_as_secs addr =
       let secs_f = Int64.to_float (load_word addr) and
-      nsecs_f = Int64.to_float (load_word (lea addr 0 0 4)) in
-      let ret = secs_f +. nsecs_f in
+          susecs_f = Int64.to_float (load_word (lea addr 0 0 4)) in
+      let ret = secs_f +. (susecs_f /. 1000000.0) in
       ret
     in
     let read_bitmap addr =
       if addr = 0L then
-	[]
+        []
       else
-	let l = ref [] in
-	  for i = 0 to nfds - 1 do
-	    let w = load_word (lea addr (i / 32) 4 0) and
-		b = i mod 32 in
-	      if (Int64.logand (Int64.shift_right w b) 1L) = 1L then
-		l := i :: !l
-	  done;
-	  !l
+        let l = ref [] in
+        for i = 0 to nfds - 1 do
+          let w = load_word (lea addr (i / 32) 4 0) and
+              b = i mod 32 in
+          if (Int64.logand (Int64.shift_right w b) 1L) = 1L then
+          l := i :: !l
+        done;
+        !l
     in
     let put_sel_fd fd_bm idx fd_w_or =
       fm#store_word_conc (lea fd_bm idx 4 0) fd_w_or;
     in
     let write_bitmap fd_bm fd_l nfds =
-        zero_region fd_bm 128;
+        zero_region fd_bm nfds;
         for i = 0 to nfds - 1 do ( 
           if List.mem (self#get_fd i) fd_l then (
             let fd_lsh = Int64.shift_left 1L i in
             let w = load_word (lea fd_bm (i / 32) 4 0) in
             let fd_w_or = Int64.logor fd_lsh w in
-            put_sel_fd fd_bm (i / 32) fd_w_or ;
+            put_sel_fd fd_bm (i / 32) fd_w_or;
             )
           )
         done;
     in
     let rec format_fds l =
       match l with
-	| [] -> ""
-	| [x] -> string_of_int x
-	| x :: rest -> (string_of_int x) ^ ", " ^ (format_fds rest)
+      | [] -> ""
+      | [x] -> string_of_int x
+      | x :: rest -> (string_of_int x) ^ ", " ^ (format_fds rest)
     in
     let rl = read_bitmap readfds and
-	wl = read_bitmap writefds and
-	el = read_bitmap exceptfds in
-      if !opt_trace_syscalls then
-	Printf.printf "\nselect(%d, [%s], [%s], [%s], 0x%08Lx)"
-	  nfds (format_fds rl) (format_fds wl) (format_fds el) timeout;
-      match (rl, wl, el) with
-	| ([fd], [], []) when fd_info.(fd).fname = "/dev/urandom" ->
-	    put_return 1L (* assume /dev/urandom is always readable *)
-	| _ ->
-	      try
-          let map_fd fds =
-            List.map (fun (fd) ->  (self#get_fd fd)) fds
-          in
-          let rl_file_descr = map_fd rl and 
+        wl = read_bitmap writefds and
+        el = read_bitmap exceptfds in
+    if !opt_trace_syscalls then
+      Printf.printf "\nselect(%d, [%s], [%s], [%s], 0x%08Lx)"
+        nfds (format_fds rl) (format_fds wl) (format_fds el) timeout;
+    try
+      let map_fd fds =
+        List.map (fun (fd) ->  (self#get_fd fd)) fds
+      in
+      let rl_file_descr = map_fd rl and 
           wl_file_descr = map_fd wl and 
           el_file_descr = map_fd el and
           timeout_f = read_timeval_as_secs timeout in
-          let (r_fds, w_fds, e_fds) = 
-            Unix.select rl_file_descr wl_file_descr el_file_descr timeout_f in
-          let ret = (List.length r_fds) + (List.length w_fds) + (List.length e_fds) in
-          if (readfds) <> 0L then 
-            write_bitmap readfds r_fds nfds ;
-          if (writefds) <> 0L then 
-            write_bitmap writefds w_fds nfds ;
-          if (exceptfds) <> 0L then 
-            write_bitmap exceptfds e_fds nfds ;
-          put_return (Int64.of_int ret)
-        with
-          | Unix.Unix_error(err, _, _) -> self#put_errno err
+      let (r_fds, w_fds, e_fds) = 
+        Unix.select rl_file_descr wl_file_descr el_file_descr timeout_f in
+      let r_fds_len = (List.length r_fds) and
+          w_fds_len = (List.length w_fds) and 
+          e_fds_len = (List.length e_fds) in
+      if readfds <> 0L then 
+        write_bitmap readfds r_fds nfds;
+      if writefds <> 0L then 
+        write_bitmap writefds w_fds nfds;
+      if exceptfds <> 0L then 
+        write_bitmap exceptfds e_fds nfds;
+      put_return (Int64.of_int (r_fds_len + w_fds_len + e_fds_len))
+    with
+      | Unix.Unix_error(err, _, _) -> self#put_errno err
 
   method sys_send sockfd buf len flags =
     try
