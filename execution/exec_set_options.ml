@@ -467,6 +467,12 @@ let cmdline_opts =
        (fun s -> opt_extra_condition_strings :=
 	  s :: !opt_extra_condition_strings),
      "cond Add an extra constraint for solving");
+    ("-check-for-jump-to", Arg.String
+       (fun s -> opt_check_for_jump_to :=
+	  (Int64.of_string s) :: !opt_check_for_jump_to),
+     "addr Check if symbolic jump target can take given value");
+    ("-finish-on-controlled-jump", Arg.Set(opt_finish_on_controlled_jump),
+     " Finish exploration if -check-for-jump-to succeeds");
     ("-omit-pf-af", Arg.Set(opt_omit_pf_af),
      " Omit computation of the (rarely used) PF and AF flags");
     ("-nop-system-insns", Arg.Set(opt_nop_system_insns),

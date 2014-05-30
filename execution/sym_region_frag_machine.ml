@@ -271,6 +271,9 @@ struct
 	  -> ExprOffset(e)
       | e when (narrow_bitwidth form_man e) < 23
 	  -> ExprOffset(e)
+      | V.Cast(V.CAST_SIGNED, _, e)
+	  when (narrow_bitwidth form_man e) < 23
+	    -> ExprOffset(e)
       | V.BinOp(V.ARSHIFT, _, _)
 	  -> ExprOffset(e)
       | V.BinOp(V.RSHIFT, _, _)
@@ -694,11 +697,38 @@ struct
     (* Because we override handle_{load,store}, this should only be
        called for jumps. *)
     method eval_addr_exp exp =
-      let (r, addr) = self#eval_addr_exp_region exp in
-	match r with
-	  | Some 0 -> addr
-	  | Some r_num -> raise SymbolicJump
-	  | None -> raise SymbolicJump
+      let v = self#eval_int_exp_simplify exp in
+	try
+	  D.to_concrete_32 v
+	with NotConcrete _ ->
+	  let e = D.to_symbolic_32 v in
+	  let eip = self#get_eip in
+	    if !opt_trace_sym_addrs then
+	      Printf.printf "Symbolic jump address %s @ (0x%Lx)\n"
+		(V.exp_to_string e) eip;
+	    List.iter
+	      (fun target ->
+		 match
+		   let targ_c = V.Constant(V.Int(V.REG_32, target)) in
+		     self#check_cond (V.BinOp(V.EQ, e, targ_c))
+		 with
+		   | (None|Some true) ->
+		       Printf.printf "Symbolic jump can be 0x%Lx.\n" target;
+		       if !opt_finish_on_controlled_jump then
+			 finish_fuzz "controlled jump"
+		   | Some false ->
+		       Printf.printf "Symbolic jump cannot be 0x%Lx.\n" target)
+	      !opt_check_for_jump_to;
+	    let (r, addr) = 
+	      if !opt_concrete_path then
+		self#eval_addr_exp_region_conc_path e
+	      else
+		self#region_expr e
+	    in
+	      match r with
+		| Some 0 -> addr
+		| Some r_num -> raise SymbolicJump
+		| None -> raise SymbolicJump
 
     method get_word_var_concretize reg do_influence name : int64 =
       let v = self#get_int_var (Hashtbl.find reg_to_var reg) in
