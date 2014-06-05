@@ -27,6 +27,8 @@ let linux_cmdline_opts =
      "pid Use regs from specified LWP when loading from core");
     ("-use-ids-from-core", Arg.Set(opt_use_ids_from_core),
      " Simulate getpid(), etc., using values from core file");
+    ("-external-uname", Arg.Set(opt_external_uname),
+     " Use real uname and domainname to simulate uname(2)");
     ("-setup-initial-proc-state",
      Arg.Bool(fun b -> opt_setup_initial_proc_state := Some b),
      "bool Setup initial process state (argv, etc.)?"); 

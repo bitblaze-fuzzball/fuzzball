@@ -99,6 +99,7 @@ val opt_time_stats : bool ref
 val opt_nonfatal_solver : bool ref
 val opt_num_paths : int64 option ref
 val opt_pid : int ref
+val opt_external_uname : bool ref
 val opt_translation_cache_size : int option ref
 val opt_prefix_out : string option ref
 val opt_omit_pf_af : bool ref

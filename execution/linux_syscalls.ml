@@ -1908,14 +1908,33 @@ object(self)
     let old_mask = Unix.umask new_mask in
       put_return (Int64.of_int old_mask)
 
+  method private one_line_from_cmd cmd =
+    let ic = Unix.open_process_in cmd in
+    let s = try
+      input_line ic
+    with
+      | End_of_file -> ""
+    in
+      ignore(Unix.close_process_in ic);
+      s
+
+  method private external_uname =
+    [(self#one_line_from_cmd "uname -s");
+     (self#one_line_from_cmd "uname -n");
+     (self#one_line_from_cmd "uname -r");
+     (self#one_line_from_cmd "uname -v");
+     (self#one_line_from_cmd "uname -m");
+     (self#one_line_from_cmd "domainname")]
+
   method sys_uname buf =
     let nodename = (Unix.gethostname ()) in
       List.iter2
 	(fun i str ->
 	   fm#store_cstr buf (Int64.mul 65L i) str)
 	[0L; 1L; 2L; 3L; 4L; 5L]
-	(match !opt_arch with
-	   | X86 ->
+	(match (!opt_external_uname, !opt_arch) with
+	   | (true, _) -> self#external_uname
+	   | (false, X86) ->
 	       ["Linux"; (* sysname *)
 		nodename; (* nodename *)
 		"2.6.32-5-amd64"; (* release *)
@@ -1923,7 +1942,7 @@ object(self)
 		"i686"; (* machine *)
 		"example.com" (* domain *)
 	       ]
-	   | X64 ->
+	   | (false, X64) ->
 	       ["Linux"; (* sysname *)
 		nodename; (* nodename *)
 		"2.6.32-5-amd64"; (* release *)
@@ -1931,7 +1950,7 @@ object(self)
 		"x86_64"; (* machine *)
 		"example.com" (* domain *)
 	       ]
-	   | ARM ->
+	   | (false, ARM) ->
 	       ["Linux"; (* sysname *)
 		nodename; (* nodename *)
 		"2.6.32-5-versatile"; (* release *)
