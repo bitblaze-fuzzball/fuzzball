@@ -65,6 +65,8 @@ let linux_cmdline_opts =
     ("-chroot", Arg.String
        (fun s -> opt_chroot_path := Some s),
      "path Prepend PATH to absolute filenames");
+    ("-decree", Arg.Set(opt_decree),
+     " Use CGC binary format and syscalls (similar to Linux/x86/ELF)");
     ("--", Arg.Rest(fun s -> opt_argv := !opt_argv @ [s]),
      " Pass any remaining arguments to the program");
   ]
@@ -79,6 +81,9 @@ let apply_linux_cmdline_opts (fm : Fragment_machine.fragment_machine) =
 		 false
 	       else if !opt_argv <> [] then
 		 true
+	       else if !opt_decree then
+		 true (* CBs don't take args anyway, so don't require
+			 users to give -- *)
 	       else
 		 failwith ("Can't decide whether to "^
 			     "-setup-initial-proc-state")
@@ -92,17 +97,26 @@ let apply_linux_cmdline_opts (fm : Fragment_machine.fragment_machine) =
 		  | ARM -> 0x8000L
 	       )
 	 in
-	   state_start_addr := Some
-	     (Linux_loader.load_dynamic_program fm name
-		load_base !opt_load_data do_setup
-		!opt_load_extra_regions !opt_argv)
+	   if !opt_decree then
+	     state_start_addr := Some
+	       (Decree_loader.load_cb fm name
+		  load_base !opt_load_data do_setup
+		  !opt_load_extra_regions)
+	   else
+	     state_start_addr := Some
+	       (Linux_loader.load_dynamic_program fm name
+		  load_base !opt_load_data do_setup
+		  !opt_load_extra_regions !opt_argv)
      | _ -> ());
   (match !opt_core_file_name with
      | Some name -> 
 	 state_start_addr :=
 	   Some (Linux_loader.load_core fm name)
      | None -> ());
-  if !opt_linux_syscalls then
+  if !opt_decree then
+    let csh = new Cgc_syscalls.cgcos_special_handler fm in
+      fm#add_special_handler (csh :> Fragment_machine.special_handler)      
+  else if !opt_linux_syscalls then
     let lsh = new Linux_syscalls.linux_special_handler fm in
       if !opt_use_ids_from_core then
 	lsh#set_proc_identities !Linux_loader.proc_identities;
