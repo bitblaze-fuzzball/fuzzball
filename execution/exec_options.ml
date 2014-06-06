@@ -127,6 +127,7 @@ let opt_time_stats = ref false
 let opt_nonfatal_solver = ref false
 let opt_num_paths = ref None
 let opt_pid = ref (-1)
+let opt_external_uname = ref false
 let opt_translation_cache_size = ref None
 let opt_prefix_out = ref None
 let opt_omit_pf_af = ref false

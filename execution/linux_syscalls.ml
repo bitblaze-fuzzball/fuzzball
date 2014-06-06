@@ -1411,19 +1411,22 @@ object(self)
       done;
       put_return (Int64.of_int !count)
 
+  method private read_throw fd buf count =
+    let str = self#string_create count in
+    let oc_fd = self#get_fd fd in
+    let num_read = Unix.read oc_fd str 0 count in
+      if num_read > 0 && Hashtbl.mem symbolic_fds fd then
+	fm#maybe_start_symbolic
+	  (fun () -> (fm#make_symbolic_region buf num_read;
+		      max_input_string_length :=
+			max (!max_input_string_length) num_read))
+      else
+	fm#store_str buf 0L (String.sub str 0 num_read);
+      put_return (Int64.of_int num_read)
+
   method sys_read fd buf count =
     try
-      let str = self#string_create count in
-      let oc_fd = self#get_fd fd in
-      let num_read = Unix.read oc_fd str 0 count in
-	if num_read > 0 && Hashtbl.mem symbolic_fds fd then    
-	  fm#maybe_start_symbolic
-	    (fun () -> (fm#make_symbolic_region buf num_read;
-			max_input_string_length :=
-			  max (!max_input_string_length) num_read))
-	else
-	  fm#store_str buf 0L (String.sub str 0 num_read);
-	put_return (Int64.of_int num_read)
+      self#read_throw fd buf count
     with
       | Unix.Unix_error(err, _, _) -> self#put_errno err
 
@@ -1438,6 +1441,30 @@ object(self)
 	put_return (Int64.of_int num_read)
     with
       | Unix.Unix_error(err, _, _) -> self#put_errno err
+
+  method sys_pread64 fd buf count off =
+    let oc_fd = self#get_fd fd in
+      try
+	let old_loc = Unix.lseek oc_fd 0 Unix.SEEK_CUR in
+	  try
+	    ignore(Unix.lseek oc_fd (Int64.to_int off) Unix.SEEK_SET);
+	    let err_or = ref None in
+	      (try
+		 self#read_throw fd buf count
+	       with
+		 | Unix.Unix_error(err, _, _) -> err_or := Some err);
+	      (try
+		 ignore(Unix.lseek oc_fd old_loc Unix.SEEK_SET);
+	       with
+		 | Unix.Unix_error(err, _, _) -> ()
+		     (* ignore in favor of read error *) );
+	      match !err_or with
+		| Some err -> self#put_errno err
+		| None -> ()
+	  with
+	    | Unix.Unix_error(err, _, _) -> self#put_errno err
+      with
+	| Unix.Unix_error(err, _, _) -> self#put_errno err
 
   method sys_readlink path out_buf buflen =
     try
@@ -1537,41 +1564,74 @@ object(self)
     put_return 0L (* SCHED_OTHER *)
 
   method sys_select nfds readfds writefds exceptfds timeout =
+    let read_timeval_as_secs addr =
+      let secs_f = Int64.to_float (load_word addr) and
+          susecs_f = Int64.to_float (load_word (lea addr 0 0 4)) in
+      let ret = secs_f +. (susecs_f /. 1000000.0) in
+      ret
+    in
     let read_bitmap addr =
       if addr = 0L then
-	[]
+        []
       else
-	let l = ref [] in
-	  for i = 0 to nfds - 1 do
-	    let w = load_word (lea addr (i / 32) 4 0) and
-		b = i mod 32 in
-	      if (Int64.logand (Int64.shift_right w b) 1L) = 1L then
-		l := i :: !l
-	  done;
-	  !l
+        let l = ref [] in
+        for i = 0 to nfds - 1 do
+          let w = load_word (lea addr (i / 32) 4 0) and
+              b = i mod 32 in
+          if (Int64.logand (Int64.shift_right w b) 1L) = 1L then
+          l := i :: !l
+        done;
+        !l
+    in
+    let put_sel_fd fd_bm idx fd_w_or =
+      fm#store_word_conc (lea fd_bm idx 4 0) fd_w_or;
+    in
+    let write_bitmap fd_bm fd_l nfds =
+        zero_region fd_bm nfds;
+        for i = 0 to nfds - 1 do ( 
+          if List.mem (self#get_fd i) fd_l then (
+            let fd_lsh = Int64.shift_left 1L i in
+            let w = load_word (lea fd_bm (i / 32) 4 0) in
+            let fd_w_or = Int64.logor fd_lsh w in
+            put_sel_fd fd_bm (i / 32) fd_w_or;
+            )
+          )
+        done;
     in
     let rec format_fds l =
       match l with
-	| [] -> ""
-	| [x] -> string_of_int x
-	| x :: rest -> (string_of_int x) ^ ", " ^ (format_fds rest)
+      | [] -> ""
+      | [x] -> string_of_int x
+      | x :: rest -> (string_of_int x) ^ ", " ^ (format_fds rest)
     in
     let rl = read_bitmap readfds and
-	wl = read_bitmap writefds and
-	el = read_bitmap exceptfds in
-      if !opt_trace_syscalls then
-	Printf.printf "\nselect(%d, [%s], [%s], [%s], 0x%08Lx)"
-	  nfds (format_fds rl) (format_fds wl) (format_fds el) timeout;
-      match (rl, wl, el) with
-	| ([fd], [], []) when fd_info.(fd).fname = "/dev/urandom" ->
-	    put_return 1L (* assume /dev/urandom is always readable *)
-	| _ ->
-	    (* Our default behavior of saying that nothing ever
-	       happens works for some uses of select(), but causes others
-	       to go into an infinite loop. It would be nice to characterize
-	       what cases a 0 return works well for, and make any other
-	       cases failwith to be easier to debug. *)
-	    put_return 0L (* no events *)
+        wl = read_bitmap writefds and
+        el = read_bitmap exceptfds in
+    if !opt_trace_syscalls then
+      Printf.printf "\nselect(%d, [%s], [%s], [%s], 0x%08Lx)"
+        nfds (format_fds rl) (format_fds wl) (format_fds el) timeout;
+    try
+      let map_fd fds =
+        List.map (fun (fd) ->  (self#get_fd fd)) fds
+      in
+      let rl_file_descr = map_fd rl and 
+          wl_file_descr = map_fd wl and 
+          el_file_descr = map_fd el and
+          timeout_f = read_timeval_as_secs timeout in
+      let (r_fds, w_fds, e_fds) = 
+        Unix.select rl_file_descr wl_file_descr el_file_descr timeout_f in
+      let r_fds_len = (List.length r_fds) and
+          w_fds_len = (List.length w_fds) and 
+          e_fds_len = (List.length e_fds) in
+      if readfds <> 0L then 
+        write_bitmap readfds r_fds nfds;
+      if writefds <> 0L then 
+        write_bitmap writefds w_fds nfds;
+      if exceptfds <> 0L then 
+        write_bitmap exceptfds e_fds nfds;
+      put_return (Int64.of_int (r_fds_len + w_fds_len + e_fds_len))
+    with
+      | Unix.Unix_error(err, _, _) -> self#put_errno err
 
   method sys_send sockfd buf len flags =
     try
@@ -1645,6 +1705,19 @@ object(self)
   method sys_setuid32 uid =
     Unix.setuid uid;
     put_return 0L (* success *)
+
+  method sys_setsockopt sockfd level name valp len =
+    let as_bool () =
+      let w = load_word valp in
+	w <> 0L
+    in
+    let fd = self#get_fd sockfd in
+      match (level, name) with
+	(* 0 = SOL_IP *)
+	| (0, 6) (* IP_RECVOPTS *) -> () (* No OCaml support *)
+	(* 6 = SOL_TCP *)
+	| (6, 1) -> Unix.setsockopt fd Unix.TCP_NODELAY (as_bool ())
+	| _ -> () (* ignore unrecognized options *)
 
   method sys_set_robust_list addr len =
     put_return 0L (* success *)
@@ -1875,14 +1948,33 @@ object(self)
     let old_mask = Unix.umask new_mask in
       put_return (Int64.of_int old_mask)
 
+  method private one_line_from_cmd cmd =
+    let ic = Unix.open_process_in cmd in
+    let s = try
+      input_line ic
+    with
+      | End_of_file -> ""
+    in
+      ignore(Unix.close_process_in ic);
+      s
+
+  method private external_uname =
+    [(self#one_line_from_cmd "uname -s");
+     (self#one_line_from_cmd "uname -n");
+     (self#one_line_from_cmd "uname -r");
+     (self#one_line_from_cmd "uname -v");
+     (self#one_line_from_cmd "uname -m");
+     (self#one_line_from_cmd "domainname")]
+
   method sys_uname buf =
     let nodename = (Unix.gethostname ()) in
       List.iter2
 	(fun i str ->
 	   fm#store_cstr buf (Int64.mul 65L i) str)
 	[0L; 1L; 2L; 3L; 4L; 5L]
-	(match !opt_arch with
-	   | X86 ->
+	(match (!opt_external_uname, !opt_arch) with
+	   | (true, _) -> self#external_uname
+	   | (false, X86) ->
 	       ["Linux"; (* sysname *)
 		nodename; (* nodename *)
 		"2.6.32-5-amd64"; (* release *)
@@ -1890,7 +1982,7 @@ object(self)
 		"i686"; (* machine *)
 		"example.com" (* domain *)
 	       ]
-	   | X64 ->
+	   | (false, X64) ->
 	       ["Linux"; (* sysname *)
 		nodename; (* nodename *)
 		"2.6.32-5-amd64"; (* release *)
@@ -1898,7 +1990,7 @@ object(self)
 		"x86_64"; (* machine *)
 		"example.com" (* domain *)
 	       ]
-	   | ARM ->
+	   | (false, ARM) ->
 	       ["Linux"; (* sysname *)
 		nodename; (* nodename *)
 		"2.6.32-5-versatile"; (* release *)
@@ -2558,7 +2650,18 @@ object(self)
 			    sockfd buf len flags addr addrlen_ptr;
 			self#sys_recvfrom sockfd buf len flags addr addrlen_ptr
 		  | 13 -> uh"Unhandled Linux system call shutdown (102:13)"
-		  | 14 -> uh"Unhandled Linux system call setsockopt (102:14)"
+		  | 14 ->
+		      let sockfd = Int64.to_int (load_word args) and
+			  level = Int64.to_int (load_word (lea args 0 0 4)) and
+			  name = Int64.to_int (load_word (lea args 0 0 8)) and
+			  valp = load_word (lea args 0 0 12) and
+			  len = Int64.to_int (load_word (lea args 0 0 16))
+		      in
+			if !opt_trace_syscalls then
+			  Printf.printf
+			    "setsockopt(%d, %d, %d, 0x%08Lx, %d)"
+			    sockfd level name valp len;
+			self#sys_setsockopt sockfd level name valp len
 		  | 15 -> uh"Unhandled Linux system call getsockopt (102:15)"
 		  | 16 ->
 		      let sockfd = Int64.to_int (load_word args) and
@@ -2893,7 +2996,15 @@ object(self)
 	 | (_, 179) -> (* rt_sigsuspend *)
 	     uh "Unhandled Linux system call rt_sigsuspend (179)"
 	 | (_, 180) -> (* pread64 *)
-	     uh "Unhandled Linux system call pread64 (180)"
+	     let (arg1, arg2, arg3, arg4, arg5) = read_5_regs () in
+	     let fd    = Int64.to_int arg1 and
+		 buf   = arg2 and
+		 count = Int64.to_int arg3 and
+		 off   = Int64.logor (Int64.shift_left arg5 32) arg4 in
+	       if !opt_trace_syscalls then
+		 Printf.printf "pread64(%d, 0x%08Lx, %d, %Ld)"
+		   fd buf count off;
+	       self#sys_pread64 fd buf count off;
 	 | (_, 181) -> (* pwrite64 *)
 	     uh "Unhandled Linux system call pwrite64 (181)"
 	 | (_, 182) -> (* chown *)

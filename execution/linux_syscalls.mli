@@ -115,6 +115,7 @@ object
   method sys_poll : int64 -> int -> int64 -> unit
   method sys_read : int -> int64 -> int -> unit
   method sys_readv : int -> int64 -> int -> unit
+  method sys_pread64 : int -> int64 -> int -> int64 -> unit
   method sys_readlink : string -> int64 -> int -> unit
   method sys_recv : int -> int64 -> int -> int -> unit
   method sys_recvfrom : int -> int64 -> int -> int -> int64 -> int64 -> unit
@@ -131,6 +132,7 @@ object
   method sys_setgid32 : int -> unit
   method sys_setuid32 : int -> unit
   method sys_setreuid : int -> int -> unit
+  method sys_setsockopt : int -> int -> int -> int64 -> int -> unit
   method sys_set_robust_list : int64 -> int64 -> unit
   method sys_set_thread_area : int64 -> unit
   method sys_set_tid_address : int64 -> unit
