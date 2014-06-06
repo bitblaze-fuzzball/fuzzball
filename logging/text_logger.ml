@@ -1,9 +1,23 @@
+type lazy_type = LazyString of string Lazy.t
+		 | LazyInt of int Lazy.t
+		 | LazyInt64 of int64 Lazy.t
+		 | LazyFloat of float Lazy.t
+		 | LazyBool of bool Lazy.t
+
+let evaluateLazyTypeToString lazyType =
+  match lazyType with
+  | LazyString s -> Lazy.force s
+  | LazyInt i -> Pervasives.string_of_int (Lazy.force i)
+  | LazyInt64 i -> Int64.to_string (Lazy.force i)
+  | LazyFloat f -> Pervasives.string_of_float (Lazy.force f)
+  | LazyBool b -> Pervasives.string_of_bool (Lazy.force b)
+
 module type TextLog = sig
-  val always   : (unit -> string) -> unit
-  val standard : (unit -> string) -> unit
-  val debug    : (unit -> string) -> unit
-  val trace    : (unit -> string) -> unit
-  val never    : (unit -> string) -> unit
+  val always   : lazy_type -> unit
+  val standard : lazy_type -> unit
+  val debug    : lazy_type -> unit
+  val trace    : lazy_type -> unit
+  val never    : lazy_type -> unit
 end
 
 (* an in place variant if you don't need the complexity of first-class modules (we do) *)
@@ -21,14 +35,14 @@ let timestamp use_highres =
            (time.Unix.tm_min)
            (time.Unix.tm_sec)
 
-let log message_thunk =
+let log lazy_message =
       Printf.fprintf
         Verb.out_channel
         "%s %s %s: %s\n"
         (timestamp Verb.use_hr_time)
         Verb.major_name
         Verb.minor_name
-        (message_thunk ())
+        (evaluateLazyTypeToString lazy_message)
 
 let dummy_log _ = ()
 
@@ -36,7 +50,6 @@ let always =
   if Logger_config.sufficient (Verb.major_name,Verb.minor_name) `Always
   then log
   else dummy_log
-
 
 let standard =
   if Logger_config.sufficient (Verb.major_name,Verb.minor_name) `Standard
@@ -53,7 +66,6 @@ let trace =
   then log
   else dummy_log
 
-
 let never =
   if Logger_config.sufficient (Verb.major_name,Verb.minor_name) `Never
   then log
@@ -67,24 +79,24 @@ let make_logger verb =
   (module struct
     let timestamp use_highres =
       if use_highres
-    then Printf.sprintf "%f" (Unix.gettimeofday())
-    else let time = Unix.localtime (Unix.time ()) in
-         Printf.sprintf "%d-%02d-%02d:%02d:%02d:%02d"
-           (time.Unix.tm_year + 1900)
-           (time.Unix.tm_mon + 1)
-           (time.Unix.tm_mday)
-           (time.Unix.tm_hour)
-           (time.Unix.tm_min)
-           (time.Unix.tm_sec)
-
-let log message_thunk =
-      Printf.fprintf
-        Pervasives.stdout
-        "%s %s %s: %s\n"
-        (timestamp Verb.use_hr_time)
-        Verb.major_name
-        Verb.minor_name
-        (message_thunk ())
+      then Printf.sprintf "%f" (Unix.gettimeofday())
+      else let time = Unix.localtime (Unix.time ()) in
+           Printf.sprintf "%d-%02d-%02d:%02d:%02d:%02d"
+             (time.Unix.tm_year + 1900)
+             (time.Unix.tm_mon + 1)
+             (time.Unix.tm_mday)
+             (time.Unix.tm_hour)
+             (time.Unix.tm_min)
+             (time.Unix.tm_sec)
+	     
+let log lazy_message =
+  Printf.fprintf
+    Pervasives.stdout
+    "%s %s %s: %s\n"
+    (timestamp Verb.use_hr_time)
+    Verb.major_name
+    Verb.minor_name
+    (evaluateLazyTypeToString lazy_message)
 
 let dummy_log _ = ()
 

@@ -2,6 +2,8 @@
   Copyright (C) BitBlaze, 2009-2010. All rights reserved.
 *)
 
+val opt_state_file : string option ref
+
 val load_mem_state : Fragment_machine.fragment_machine -> string -> int64
 
 val state_loader_cmdline_opts : (string * Arg.spec * string) list

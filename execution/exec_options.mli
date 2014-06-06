@@ -20,6 +20,8 @@ val input_string_mem_prefix : string option ref
 
 val next_periodic_influence : int ref
 
+val opt_trace_basic : bool ref
+val opt_trace_detailed : bool ref
 val opt_trace_temps : bool ref
 val opt_trace_temps_encoded : bool ref
 val opt_use_tags : bool ref
@@ -80,6 +82,7 @@ val opt_finish_on_null_deref : bool ref
 val opt_check_for_jump_to : int64 list ref
 val opt_finish_on_controlled_jump : bool ref
 val opt_offset_strategy : offset_strategy ref
+val opt_offset_strategy_string : string ref
 val opt_concretize_divisors : bool ref
 val opt_trace_stopping : bool ref
 val opt_trace_setup : bool ref
@@ -114,6 +117,9 @@ val opt_total_timeout : float option ref
 val opt_x87_emulator : string option ref
 val opt_x87_entry_point : int64 option ref
 val opt_trace_fpu : bool ref
+val opt_target_strings : (string * string) list ref
+val opt_target_string_files : (string * string) list ref
+val opt_target_formulas : (string * string) list ref
 val opt_target_region_start : int64 option ref
 val opt_target_region_string : string ref
 val opt_target_region_formula_strings : string list ref
@@ -150,6 +156,7 @@ val opt_final_pc : bool ref
 val opt_solve_final_pc : bool ref
 val opt_skip_untainted : bool ref
 val opt_arch : execution_arch ref
+val opt_arch_string : string option ref
 
 val asmir_arch : unit -> Asmir.arch
 
@@ -169,3 +176,4 @@ val opt_program_name : string option ref
 val opt_start_addr : int64 option ref
 val opt_argv : string list ref
 val state_start_addr : int64 option ref
+

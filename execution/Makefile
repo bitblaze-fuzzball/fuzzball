@@ -7,12 +7,12 @@ export VINE_TRACEDIR=../trace
 export STP_OCAMLDIR=../stp/ocaml
 export LIBASMIR=../libasmir
 include $(LIBASMIR)/makefile.inc
-export INCDIRS += ../stp ../stp/ocaml $(VINE_OCAMLDIR) $(VINE_TRACEDIR)
+export INCDIRS += ../stp ../stp/ocaml $(VINE_OCAMLDIR) $(VINE_TRACEDIR) ../logging
 export EXTLIBDIRS += ../stp ../stp/ocaml
 export LIBS += stpvc ../ocaml/vine ../trace/trace
 
 export OCAMLDEP = ocamldep -I $(VINE_OCAMLDIR) -I $(STP_OCAMLDIR) \
-	                   -I $(VINE_TRACEDIR)
+	                   -I $(VINE_TRACEDIR) -I ../logging
 
 # Source files. In a dependency-respecting order (OCaml doesn't allow
 # circular dependencies).
@@ -52,13 +52,14 @@ export SOURCES = \
 	options_linux.mli options_linux.ml \
 	git_version.ml \
 	svn_version.ml \
-	exec_set_options.mli exec_set_options.ml
+	exec_set_options.mli exec_set_options.ml \
+	exec_options_table.mli exec_options_table.ml
 
 RESULT = execution
 # DOC_FILES=$(SOURCES)
 
 # ocamlfind packages required
-export PACKS = str extlib unix
+export PACKS = str extlib unix yojson
 export YFLAGS = -v
 
 export CLIBS = asmir vex opcodes bfd iberty stdc++ 

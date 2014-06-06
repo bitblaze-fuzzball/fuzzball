@@ -34,6 +34,7 @@ let opt_symbolic_words_influence = ref []
 let opt_symbolic_longs_influence = ref []
 let opt_symbolic_regions = ref []
 let opt_concolic_cstrings = ref []
+let opt_concolic_cstring_files = ref []
 let opt_concolic_strings = ref []
 let opt_sink_regions = ref []
 let opt_measure_expr_influence_at_strings = ref None
@@ -41,6 +42,7 @@ let opt_check_condition_at_strings = ref []
 let opt_extra_condition_strings = ref []
 let opt_tracepoint_strings = ref []
 let opt_string_tracepoint_strings = ref []
+let opt_svn_version = ref false
 
 let set_defaults_for_concrete () =
   opt_zero_memory := true
@@ -133,7 +135,7 @@ let concrete_state_cmdline_opts =
     ("-store-word", Arg.String
        (add_delimited_pair opt_store_words '='),
      "addr=val Set a memory word to a concrete value");
-    ("-store-word", Arg.String
+    ("-store-long", Arg.String
        (add_delimited_pair opt_store_longs '='),
      "addr=val Set 64-bit location to a concrete value");
     ("-skip-call-ret", Arg.String
@@ -215,6 +217,9 @@ let concolic_state_cmdline_opts =
     ("-concolic-cstring-file", Arg.String
        (fun s ->
 	  let (s1, s2) = split_string '=' s in
+
+	  opt_concolic_cstring_files := ((Int64.of_string s1), s2) :: !opt_concolic_cstring_files;
+
 	  let str = slurp_file s2 in
 	    opt_concolic_cstrings :=
 	      ((Int64.of_string s1), str) :: !opt_concolic_cstrings),
@@ -275,7 +280,9 @@ let explore_cmdline_opts =
     ("-coverage-stats", Arg.Set(opt_coverage_stats),
      " Print pseudo-BB coverage statistics");
     ("-offset-strategy", Arg.String
-       (fun s -> opt_offset_strategy := offset_strategy_of_string s),
+       (fun s -> 
+	 opt_offset_strategy_string := s;
+	 opt_offset_strategy := offset_strategy_of_string s),
      "strategy Strategy for offset concretization: uniform, biased-small");
     ("-follow-path", Arg.Set_string(opt_follow_path),
      "string String of 0's and 1's signifying the specific path decisions to make.");
@@ -297,11 +304,13 @@ let explore_cmdline_opts =
      "SECS Finish exploration after a given time has elapsed");
     ("-target-string", Arg.String
        (fun s -> let (s1, s2) = split_string '=' s in
+	  opt_target_strings := (s1, s2) :: !opt_target_strings;
 	  opt_target_region_start := Some (Int64.of_string s1);
 	  opt_target_region_string := unescape s2),
      "base=string Try to make a buffer have the given contents");
     ("-target-string-file", Arg.String
        (fun s -> let (s1, s2) = split_string '=' s in
+	  opt_target_string_files := (s1, s2) :: !opt_target_string_files;
 	  opt_target_region_start := Some (Int64.of_string s1);
 	  opt_target_region_string := slurp_file s2),
      "base=filename same, but read string direct from a file");
@@ -360,7 +369,9 @@ let fuzzball_cmdline_opts =
 let cmdline_opts =
   [
     ("-arch", Arg.String
-       (fun s -> opt_arch := execution_arch_of_string s ),
+       (fun s -> 
+	 opt_arch_string := Some s;
+	 opt_arch := execution_arch_of_string s ),
      "arch x86 (default), x64, arm");
     ("-translation-cache-size", Arg.String
        (fun s -> opt_translation_cache_size := Some (int_of_string s)),
@@ -374,6 +385,7 @@ let cmdline_opts =
     ("-trace-basic",
      (Arg.Unit
 	(fun () ->
+	   opt_trace_basic := true;
 	   opt_trace_binary_paths := true;
 	   opt_trace_conditions := true;
 	   opt_trace_decisions := true;
@@ -394,6 +406,7 @@ let cmdline_opts =
     ("-trace-detailed",
      (Arg.Unit
 	(fun () ->
+	   opt_trace_detailed := true;
 	   opt_trace_insns := true;
 	   opt_trace_loads := true;
 	   opt_trace_stores := true;
@@ -487,7 +500,9 @@ let cmdline_opts =
        (fun () -> Printf.printf "GIT version %s\n" Git_version.git_version),
      " Print GIT revision hash");
     ("-svn-version", Arg.Unit
-       (fun () -> Printf.printf "SVN version %s\n" Svn_version.svn_version),
+       (fun () -> 
+	 opt_svn_version := true;
+	 Printf.printf "SVN version %s\n" Svn_version.svn_version),
      " Print SVN revision number");
   ]
 
