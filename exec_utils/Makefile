@@ -6,18 +6,19 @@ export VINE_OCAMLDIR=../ocaml
 export VINE_TRACEDIR=../trace
 export VINE_EXECDIR=../execution
 export STP_OCAMLDIR=../stp/ocaml
+export LOG_DIR=../logging
 
 # ocamlfind packages required
 export PACKS = str extlib unix
-export LIBS = stpvc vine trace execution
+export LIBS = stpvc vine trace execution logging
 export INCDIRS = $(VINE_OCAMLDIR) $(VINE_TRACEDIR) $(VINE_EXECDIR) \
-                 $(STP_OCAMLDIR)
+                 $(STP_OCAMLDIR) $(LOG_DIR)
 
 # Include sources from ocaml, trace, execution, stp in the automatically
 # generated dependencies.
 # It seems like there should be a more elegant way to do this.
 export OCAMLDEP = ocamldep -I $(VINE_OCAMLDIR) -I $(VINE_TRACEDIR) \
-                   -I $(VINE_EXECDIR) -I $(STP_OCAMLDIR)
+                   -I $(VINE_EXECDIR) -I $(STP_OCAMLDIR) -I $(LOG_DIR)
 
 OCAMLFLAGS = -warn-error Aelz  #-w A
 
