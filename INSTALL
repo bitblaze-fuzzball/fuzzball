@@ -15,6 +15,7 @@ sudo apt-get install binutils-dev
 sudo apt-get install ocaml ocaml-findlib libgdome2-ocaml-dev camlidl
 sudo apt-get build-dep ocaml
 sudo apt-get install libextlib-ocaml-dev ocaml-native-compilers
+sudo apt-get install libyojson-ocaml-dev
 sudo apt-get install libocamlgraph-ocaml-dev
 sudo apt-get install libsqlite3-ocaml-dev
 sudo apt-get install texlive texlive-latex-extra transfig hevea
@@ -155,6 +156,7 @@ You need OCaml itself, plus ocamlfind and ocamlidl.
 
 You need ExtLib, http://code.google.com/p/ocaml-extlib/
 
+The CGC version needs Yojson, http://mjambon.com/yojson.html
 
 FuzzBALL build process:
 

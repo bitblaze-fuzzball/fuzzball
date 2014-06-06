@@ -26,6 +26,13 @@ if test $? != 0; then
     exit -1
 fi
 
+ocamlfind query yojson
+if test $? != 0; then
+    echo "SIFT FuzzBALL needs yojson (e.g., libyojson-ocaml-dev)"
+    exit -1
+fi
+
+
 # Where is VEX ?
 # stolen from valgrind's configure.in
 # Nb: For the 2nd arg, the help string, AS_HELP_STRING is the proper way, but
