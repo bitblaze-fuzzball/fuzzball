@@ -61,6 +61,7 @@ let  getParameterTable () =
     add_parameter "-core" (StringOpt OL.opt_core_file_name);
     add_parameter "-pid" (Int EO.opt_pid);
     add_parameter "-use-ids-from-core" (Bool OL.opt_use_ids_from_core);
+    add_parameter "-external-uname" (Bool EO.opt_external_uname);
     add_parameter "-setup-init-proc-state" (BoolOpt OL.opt_setup_initial_proc_state);
     add_parameter "-load-region" (Int64PairList OL.opt_load_extra_regions);
     add_parameter "-load-base" (Int64Opt OL.opt_load_base);
@@ -74,6 +75,7 @@ let  getParameterTable () =
     add_parameter "-symbolic-syscall-error" (Int64Opt EO.opt_symbolic_syscall_error);
     add_parameter "-stop-on-symbolic-syscall-args" (Bool EO.opt_stop_on_symbolic_syscall_args);
     add_parameter "-chroot" (StringOpt EO.opt_chroot_path);
+    add_parameter "-decree" (Bool EO.opt_decree);
 
 
     (* State_loader.state_loader_cmdline_opts *)
