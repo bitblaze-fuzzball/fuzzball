@@ -2591,15 +2591,15 @@ object(self)
 			if !opt_trace_syscalls then
 			  Printf.printf "listen(%d, %d)" sockfd backlog;
 			self#sys_listen sockfd backlog
-        | 5 ->
-            let sockfd = Int64.to_int (load_word args) and
-            addr = load_word (lea args 0 0 4) and
-            addrlen_ptr = load_word (lea args 0 0 8)
+          | 5 ->
+              let sockfd = Int64.to_int (load_word args) and
+              addr = load_word (lea args 0 0 4) and
+              addrlen_ptr = load_word (lea args 0 0 8)
 		      in
-			if !opt_trace_syscalls then
-			  Printf.printf "accept(%d, 0x%08Lx, 0x%08Lx)"
-			    sockfd addr addrlen_ptr;
-			self#sys_accept sockfd addr addrlen_ptr
+			  if !opt_trace_syscalls then
+			    Printf.printf "accept(%d, 0x%08Lx, 0x%08Lx)"
+			      sockfd addr addrlen_ptr;
+			  self#sys_accept sockfd addr addrlen_ptr
 		  | 6 ->
 		      let sockfd = Int64.to_int (load_word args) and
 			  addr = load_word (lea args 0 0 4) and

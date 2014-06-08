@@ -50,6 +50,7 @@ object
 
   method sys_access : string -> int -> unit
   method sys_bind : int -> int64 -> int -> unit
+  method sys_accept : int -> int64 -> int64 -> unit
   method sys_brk : int64 -> unit
   method sys_capget : int64 -> int64 -> unit
   method sys_chdir : string -> unit
