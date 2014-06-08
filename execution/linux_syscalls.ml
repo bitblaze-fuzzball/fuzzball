@@ -659,6 +659,16 @@ object(self)
     with
       | Unix.Unix_error(err, _, _) -> self#put_errno err
 
+  method sys_accept sockfd addr addrlen_ptr =
+    try
+      let (sockfd_oc,socka_oc) = Unix.accept (self#get_fd sockfd) and
+          vt_fd = self#fresh_fd () in
+      self#write_sockaddr socka_oc addr addrlen_ptr;
+      Array.set unix_fds vt_fd (Some sockfd_oc);
+      put_return (Int64.of_int vt_fd)
+    with
+      | Unix.Unix_error(err, _, _) -> self#put_errno err
+
   method sys_brk addr =
     let cur_break = match !the_break with
       | Some b -> b
@@ -2581,7 +2591,15 @@ object(self)
 			if !opt_trace_syscalls then
 			  Printf.printf "listen(%d, %d)" sockfd backlog;
 			self#sys_listen sockfd backlog
-		  | 5 -> uh"Unhandled Linux system call accept (102:5)"
+        | 5 ->
+            let sockfd = Int64.to_int (load_word args) and
+            addr = load_word (lea args 0 0 4) and
+            addrlen_ptr = load_word (lea args 0 0 8)
+		      in
+			if !opt_trace_syscalls then
+			  Printf.printf "accept(%d, 0x%08Lx, 0x%08Lx)"
+			    sockfd addr addrlen_ptr;
+			self#sys_accept sockfd addr addrlen_ptr
 		  | 6 ->
 		      let sockfd = Int64.to_int (load_word args) and
 			  addr = load_word (lea args 0 0 4) and
