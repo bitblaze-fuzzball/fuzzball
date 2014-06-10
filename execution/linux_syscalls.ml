@@ -3786,18 +3786,17 @@ object(self)
 	     uh "Unhandled Linux system call clock_adjtime (343)"
 	 | (X86, 344) -> (* syncfs *)
 	     uh "Unhandled Linux system call syncfs (344)"
-     | (X86, 345) -> (* sendmmsg *)
-       (*uh "Unhandled Linux system call sendmmsg (345)" *)
-	     let (ebx, ecx, edx, esi) = read_4_regs () in
-         let sockfd = Int64.to_int ebx and
-             msg = ecx and
-             vlen = Int64.to_int edx and
-             flags = Int64.to_int esi
-         in
-         if !opt_trace_syscalls then
-           Printf.printf "sendmmsg(%d, 0x%08Lx, %d, %d)"
-             sockfd msg vlen flags;
-         self#sys_sendmmsg sockfd msg vlen flags
+       | (X86, 345) -> (* sendmmsg *)
+           let (ebx, ecx, edx, esi) = read_4_regs () in
+           let sockfd = Int64.to_int ebx and
+               msg = ecx and
+               vlen = Int64.to_int edx and
+               flags = Int64.to_int esi
+           in
+           if !opt_trace_syscalls then
+             Printf.printf "sendmmsg(%d, 0x%08Lx, %d, %d)"
+               sockfd msg vlen flags;
+           self#sys_sendmmsg sockfd msg vlen flags
 
 	 | (ARM, 0xf0001) -> (* breakpoint *)
 	     uh "Unhandled Linux/ARM pseudo-syscall breakpoint (0xf0001)"
