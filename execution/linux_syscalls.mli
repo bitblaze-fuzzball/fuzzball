@@ -130,6 +130,7 @@ object
   method sys_send : int -> int64 -> int -> int -> unit
   method sys_sendto : int -> int64 -> int -> int -> int64 -> int -> unit
   method sys_sendmsg : int -> int64 -> int -> unit
+  method sys_sendmmsg : int -> int64 -> int -> int -> unit
   method sys_setgid32 : int -> unit
   method sys_setuid32 : int -> unit
   method sys_setreuid : int -> int -> unit

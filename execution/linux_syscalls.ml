@@ -1672,29 +1672,50 @@ object(self)
     with
       | Unix.Unix_error(err, _, _) -> self#put_errno err
 
+  method private sendmsg_throw sockfd msg flags =
+    let str = string_of_char_array
+      (self#gather_iovec (load_word (lea msg 0 0 8))
+      (Int64.to_int (load_word (lea msg 0 0 12))))
+    and flags = (if (flags land 1) <> 0 then [Unix.MSG_OOB] else []) @
+                (if (flags land 4) <> 0 then [Unix.MSG_DONTROUTE] else []) @
+                (if (flags land 2) <> 0 then [Unix.MSG_PEEK] else [])
+    and addrbuf = load_word (lea msg 0 0 0) in
+    let num_sent = 
+      if addrbuf = 0L then
+        Unix.send (self#get_fd sockfd) str 0 (String.length str) flags
+      else
+        let sockaddr = self#read_sockaddr addrbuf
+          (Int64.to_int (load_word (lea msg 0 0 4)))
+        in
+        Unix.sendto (self#get_fd sockfd) str 0 (String.length str)
+          flags sockaddr
+    in
+    num_sent ;
+
   method sys_sendmsg sockfd msg flags =
     try
-      let str = string_of_char_array
-	(self#gather_iovec (load_word (lea msg 0 0 8))
-	   (Int64.to_int (load_word (lea msg 0 0 12))))
-      and flags = (if (flags land 1) <> 0 then [Unix.MSG_OOB] else []) @
-	(if (flags land 4) <> 0 then [Unix.MSG_DONTROUTE] else []) @
-	(if (flags land 2) <> 0 then [Unix.MSG_PEEK] else [])
-      and addrbuf = load_word (lea msg 0 0 0) in
-      let num_sent = 
-	if addrbuf = 0L then
-	  Unix.send (self#get_fd sockfd) str 0 (String.length str) flags
-	else
-	  let sockaddr = self#read_sockaddr addrbuf
-	    (Int64.to_int (load_word (lea msg 0 0 4)))
-	  in
-	    Unix.sendto (self#get_fd sockfd) str 0 (String.length str)
-	      flags sockaddr
-      in
-	put_return (Int64.of_int num_sent) (* success *)
+      let ret = self#sendmsg_throw sockfd msg flags in
+      put_return (Int64.of_int ret);
     with
       | Unix.Unix_error(err, _, _) -> self#put_errno err
-    
+
+  method sys_sendmmsg sockfd mmsg vlen flags =
+    try
+      let rec sendmmsg sockfd mmsg vlen flags =
+        let char_sent = self#sendmsg_throw sockfd mmsg flags in 
+        let send_res = (if char_sent < 0 then 0 else 1) in
+        let next_send = 
+          (if vlen > 1 && send_res = 1 then 
+             sendmmsg sockfd (lea mmsg 1 32 0) (vlen-1) flags
+           else 0) in 
+
+        fm#store_word_conc (lea mmsg 7 4 0) (Int64.of_int char_sent);
+        send_res + next_send;
+      in
+      put_return (Int64.of_int(sendmmsg sockfd mmsg vlen flags));
+    with
+      | Unix.Unix_error(err, _, _) -> self#put_errno err
+
   method sys_setgid32 gid =
     Unix.setgid gid;
     put_return 0L (* success *)
@@ -3765,7 +3786,19 @@ object(self)
 	     uh "Unhandled Linux system call clock_adjtime (343)"
 	 | (X86, 344) -> (* syncfs *)
 	     uh "Unhandled Linux system call syncfs (344)"
-	 
+     | (X86, 345) -> (* sendmmsg *)
+       (*uh "Unhandled Linux system call sendmmsg (345)" *)
+	     let (ebx, ecx, edx, esi) = read_4_regs () in
+         let sockfd = Int64.to_int ebx and
+             msg = ecx and
+             vlen = Int64.to_int edx and
+             flags = Int64.to_int esi
+         in
+         if !opt_trace_syscalls then
+           Printf.printf "sendmmsg(%d, 0x%08Lx, %d, %d)"
+             sockfd msg vlen flags;
+         self#sys_sendmmsg sockfd msg vlen flags
+
 	 | (ARM, 0xf0001) -> (* breakpoint *)
 	     uh "Unhandled Linux/ARM pseudo-syscall breakpoint (0xf0001)"
 	 | (ARM, 0xf0002) -> (* cacheflush *)
