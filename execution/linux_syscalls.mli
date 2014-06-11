@@ -50,6 +50,7 @@ object
 
   method sys_access : string -> int -> unit
   method sys_bind : int -> int64 -> int -> unit
+  method sys_accept : int -> int64 -> int64 -> unit
   method sys_brk : int64 -> unit
   method sys_capget : int64 -> int64 -> unit
   method sys_chdir : string -> unit
@@ -129,6 +130,7 @@ object
   method sys_send : int -> int64 -> int -> int -> unit
   method sys_sendto : int -> int64 -> int -> int -> int64 -> int -> unit
   method sys_sendmsg : int -> int64 -> int -> unit
+  method sys_sendmmsg : int -> int64 -> int -> int -> unit
   method sys_setgid32 : int -> unit
   method sys_setuid32 : int -> unit
   method sys_setreuid : int -> int -> unit
