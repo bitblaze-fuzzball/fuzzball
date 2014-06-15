@@ -1349,10 +1349,9 @@ object(self)
     (* treat as no-op *)
     put_return 0L
 
-  method sys_open path flags mode =
-    try
-      let oc_flags = self#flags_to_oc_flags flags in
-      let oc_fd = Unix.openfile (chroot path) oc_flags mode and
+  method private open_throw path flags mode =
+    let oc_flags = self#flags_to_oc_flags flags in
+    let oc_fd = Unix.openfile (chroot path) oc_flags mode and
 	  vt_fd = self#fresh_fd () in
 	Array.set unix_fds vt_fd (Some oc_fd);
 	fd_info.(vt_fd).fname <- path;
@@ -1361,6 +1360,24 @@ object(self)
 	if Hashtbl.mem symbolic_fnames path then
 	  Hashtbl.replace symbolic_fds vt_fd ();
 	put_return (Int64.of_int vt_fd)
+
+  method sys_open path flags mode =
+    try
+      self#open_throw path flags mode;
+    with
+      | Unix.Unix_error(err, _, _) -> self#put_errno err
+
+  method sys_openat dirfd path flags mode =
+    try
+      let dirpath = (if dirfd <> -100 then 
+                       ref fd_info.(dirfd).fname 
+                     else ref "" ) in
+      let dirpathlen = (String.length !dirpath) in
+      if dirpathlen > 0 then
+        if !dirpath.[dirpathlen - 1]  <> '/' then
+          dirpath := !dirpath ^ "/"; 
+      let fullpath = !dirpath ^ path in
+      self#open_throw fullpath flags mode;
     with
       | Unix.Unix_error(err, _, _) -> self#put_errno err
 
@@ -3619,7 +3636,20 @@ object(self)
 	     uh "Unhandled Linux/x86 system call migrate_pages (294)"
 	 | (ARM, 322)    (* openat *)
 	 | (X86, 295) -> (* openat *)
-	     uh "Unhandled Linux system call openat"
+         let (arg1, arg2, arg3) = read_3_regs () in
+         let arg4 = (if (Int64.logand arg3 0o100L) <> 0L then
+                       get_reg arg_regs.(3)
+                     else
+                       0L) in
+         let dirfd    = Int64.to_int arg1 and
+             path_buf = arg2 and
+             flags    = Int64.to_int arg3 and
+             mode     = Int64.to_int arg4 in
+         let path = fm#read_cstr path_buf in
+         if !opt_trace_syscalls then
+           Printf.printf "openat(%d, \"%s\", 0x%x, 0o%o)" dirfd path flags mode;
+         self#sys_openat dirfd path flags mode
+
 	 | (ARM, 323)    (* mkdirat *)
 	 | (X86, 296) -> (* mkdirat *)
 	     uh "Unhandled Linux system call mkdirat"

@@ -111,6 +111,7 @@ object
   method sys_mprotect : int64 -> int64 -> int64 -> unit
   method sys_munmap : int64 -> int64 -> unit
   method sys_open : string -> int -> Unix.file_perm -> unit
+  method sys_openat : int -> string -> int -> Unix.file_perm -> unit
   method sys_pipe : int64 -> unit
   method sys_pipe2 : int64 -> int -> unit
   method sys_poll : int64 -> int -> int64 -> unit
