@@ -19,3 +19,6 @@ missing
 ._bcdi/
 ._d/
 ._ncdi/
+.dirstamp
+/ar-lib
+/compile
