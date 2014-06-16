@@ -1592,8 +1592,11 @@ object(self)
 
   method sys_select nfds readfds writefds exceptfds timeout =
     let read_timeval_as_secs addr =
-      let secs_f = Int64.to_float (load_word addr) and
-          susecs_f = Int64.to_float (load_word (lea addr 0 0 4)) in
+      let secs_f   = (if addr <> 0x0L then Int64.to_float (load_word addr)
+                      else -1.0) and
+          susecs_f = (if addr <> 0x0L then 
+                        Int64.to_float (load_word (lea addr 0 0 4)) 
+                      else 0.0) in
       let ret = secs_f +. (susecs_f /. 1000000.0) in
       ret
     in
