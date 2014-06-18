@@ -1862,7 +1862,8 @@ object(self)
           Unix.setsockopt fd !bool_option_val (as_bool ());
         )
         else if !int_option = true then (
-          Unix.setsockopt_int fd !int_option_val (Int64.to_int (load_word valp));
+          Unix.setsockopt_int fd !int_option_val 
+                              (Int64.to_int (load_word valp));
         )
         else if !float_option = true then (
           let timeval_f = (self#read_timeval_as_secs valp) in
@@ -2938,7 +2939,7 @@ object(self)
 			    "recvfrom(%d, 0x%08Lx, %d, %d, 0x%08Lx, 0x%08Lx)"
 			    sockfd buf len flags addr addrlen_ptr;
 			self#sys_recvfrom sockfd buf len flags addr addrlen_ptr
-		  | 13 -> (* uh"Unhandled Linux system call shutdown (102:13)" *)
+		  | 13 ->
               let sockfd = Int64.to_int (load_word args) and
                   how = Int64.to_int (load_word(lea args 0 0 4)) in
               if !opt_trace_syscalls then
