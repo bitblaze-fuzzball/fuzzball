@@ -1774,37 +1774,104 @@ object(self)
       let w = load_word valp in
 	w <> 0L
     in
-    let float_option = ref false and
-        float_option_val = ref Unix.SO_RCVTIMEO and
-        option_handled = ref false and
-        fd = self#get_fd sockfd in
+    try
+      let bool_option = ref false and
+          bool_option_val = ref Unix.SO_DEBUG and
+          int_option = ref false and
+          int_option_val = ref Unix.SO_SNDBUF and
+          float_option = ref false and
+          float_option_val = ref Unix.SO_RCVTIMEO and
+          option_handled = ref false and
+          fd = self#get_fd sockfd in
       (match (level, name) with
-	(* 0 = SOL_IP *)
-	| (0, 6) (* IP_RECVOPTS *) -> () (* No OCaml support *)
-    | (1, 13) ->
-      let lonoff = Int64.to_int (load_word valp) and
-          linger = Int64.to_int (load_word (lea valp 1 4 0)) in
-      let linger_oc = (if lonoff <> 0 && linger <> 0 then Some linger
-                       else None) in
-      Unix.setsockopt_optint fd Unix.SO_LINGER linger_oc;
-      option_handled := true;
-    | (1, 20) ->
-      float_option := true;
-      float_option_val := Unix.SO_RCVTIMEO;
-    | (1, 21) ->
-      float_option := true;
-      float_option_val := Unix.SO_SNDTIMEO;
-    (* 6 = SOL_TCP *)
-	| (6, 1) -> 
-      Unix.setsockopt fd Unix.TCP_NODELAY (as_bool ());
-      option_handled := true;
-	| _ -> ()); (* ignore unrecognized options *)
-    if !option_handled = false then (
-      if !float_option = true then (
-        let timeval_f = (self#read_timeval_as_secs valp) in
-        Unix.setsockopt_float fd !float_option_val timeval_f;
-      )
-    );
+	  (* 0 = SOL_IP *)
+	  | (0, 6) (* IP_RECVOPTS *) -> () (* No OCaml support *)
+      (* 1 = SOL_SOCKET *)
+      | (1, 1) ->
+        bool_option := true;
+        bool_option_val := Unix.SO_DEBUG;
+      | (1, 2) ->
+        bool_option := true;
+        bool_option_val := Unix.SO_REUSEADDR;
+      | (1, 3) ->
+        int_option := true;
+        int_option_val := Unix.SO_TYPE;
+      | (1, 5) ->
+        bool_option := true;
+        bool_option_val := Unix.SO_DONTROUTE;
+      | (1, 6) ->
+        bool_option := true;
+        bool_option_val := Unix.SO_BROADCAST;
+      | (1, 7) ->
+        int_option := true;
+        int_option_val := Unix.SO_SNDBUF;
+      | (1, 8) ->
+        int_option := true;
+        int_option_val := Unix.SO_RCVBUF;
+      | (1, 9) ->
+        bool_option := true;
+        bool_option_val := Unix.SO_KEEPALIVE;
+      | (1, 10) ->
+        bool_option := true;
+        bool_option_val := Unix.SO_OOBINLINE;
+      | (1, 11) -> (* SO_NO_CHECK *) () (* No OCaml support *)
+      | (1, 12) -> (* SO_PRIORITY *) () (* No OCaml support *)
+      | (1, 13) ->
+        let lonoff = Int64.to_int (load_word valp) and
+            linger = Int64.to_int (load_word (lea valp 1 4 0)) in
+        let linger_oc = (if lonoff <> 0 && linger <> 0 then Some linger
+                         else None) in
+        Unix.setsockopt_optint fd Unix.SO_LINGER linger_oc;
+        option_handled := true;
+      | (1, 14) -> (* SO_BSDCOMPAT *) () (* No OCaml support *)
+      | (1, 15) -> (* SO_REUSEPORT *) () (* No OCaml support *)
+      | (1, 16) -> (* SO_PASSCRED *) () (* No OCaml support *)
+      | (1, 17) -> (* SO_PEERCRED *) () (* No OCaml support *)
+      | (1, 18) ->
+        int_option := true;
+        int_option_val := Unix.SO_RCVLOWAT;
+      | (1, 19) ->
+        int_option := true;
+        int_option_val := Unix.SO_SNDLOWAT;
+      | (1, 20) ->
+        float_option := true;
+        float_option_val := Unix.SO_RCVTIMEO;
+      | (1, 21) ->
+        float_option := true;
+        float_option_val := Unix.SO_SNDTIMEO;
+      | (1, 22) -> (* SO_SECURITY_AUTHENTICATION *) () (* No OCaml support *)
+      | (1, 23) -> (* SO_SECURITY_ENCRYPTION_TRANSPORT *) 
+          () (* No OCaml support *)
+      | (1, 24) -> (* SO_SECURITY_ENCRYPTION_NETWORK *) 
+          () (* No OCaml support *)
+      | (1, 25) -> (* SO_BINDTODEVICE *) () (* No OCaml support *)
+      | (1, 26) -> (* SO_ATTACH_FILTER *) () (* No OCaml support *)
+      | (1, 27) -> (* SO_DETACH_FILTER *) () (* No OCaml support *)
+      | (1, 28) -> (* SO_PEERNAME *) () (* No OCaml support *)
+      | (1, 29) -> (* SO_TIMESTAMP *) () (* No OCaml support *)
+      | (1, 30) ->
+        bool_option := true;
+        bool_option_val := Unix.SO_ACCEPTCONN;
+      (* 6 = SOL_TCP *)
+	  | (6, 1) -> 
+        Unix.setsockopt fd Unix.TCP_NODELAY (as_bool ());
+        option_handled := true;
+	  | _ -> ()); (* ignore unrecognized options *)
+      if !option_handled = false then (
+        if !bool_option = true then (
+          Unix.setsockopt fd !bool_option_val (as_bool ());
+        )
+        else if !int_option = true then (
+          Unix.setsockopt_int fd !int_option_val (Int64.to_int (load_word valp));
+        )
+        else if !float_option = true then (
+          let timeval_f = (self#read_timeval_as_secs valp) in
+          Unix.setsockopt_float fd !float_option_val timeval_f;
+        )
+      );
+      put_return 0L;
+    with
+      | Unix.Unix_error(err, _, _) -> self#put_errno err
 
   method sys_getsockopt sockfd level name valp lenp =
     let write_timeval_from_secs addr secs_f =
@@ -1897,7 +1964,8 @@ object(self)
       | (1, 22) -> (* SO_SECURITY_AUTHENTICATION *) () (* No OCaml support *)
       | (1, 23) -> (* SO_SECURITY_ENCRYPTION_TRANSPORT *) 
           () (* No OCaml support *)
-      | (1, 24) -> (* SO_SECURITY_ENCRYPTION_NETWORK *) () (* No OCaml support *)
+      | (1, 24) -> (* SO_SECURITY_ENCRYPTION_NETWORK *) 
+          () (* No OCaml support *)
       | (1, 25) -> (* SO_BINDTODEVICE *) () (* No OCaml support *)
       | (1, 26) -> (* SO_ATTACH_FILTER *) () (* No OCaml support *)
       | (1, 27) -> (* SO_DETACH_FILTER *) () (* No OCaml support *)
@@ -2870,7 +2938,7 @@ object(self)
 			    "recvfrom(%d, 0x%08Lx, %d, %d, 0x%08Lx, 0x%08Lx)"
 			    sockfd buf len flags addr addrlen_ptr;
 			self#sys_recvfrom sockfd buf len flags addr addrlen_ptr
-		  | 13 ->
+		  | 13 -> (* uh"Unhandled Linux system call shutdown (102:13)" *)
               let sockfd = Int64.to_int (load_word args) and
                   how = Int64.to_int (load_word(lea args 0 0 4)) in
               if !opt_trace_syscalls then
