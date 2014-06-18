@@ -121,6 +121,7 @@ object
   method sys_readlink : string -> int64 -> int -> unit
   method sys_recv : int -> int64 -> int -> int -> unit
   method sys_recvfrom : int -> int64 -> int -> int -> int64 -> int64 -> unit
+  method sys_shutdown: int -> int -> unit
   method sys_recvmsg : int -> int64 -> int -> unit
   method sys_rename : string -> string -> unit
   method sys_sched_getparam : int -> int64 -> unit
