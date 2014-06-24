@@ -87,6 +87,7 @@ object
   method sys_getresgid32 : int64 -> int64 -> int64 -> unit
   method sys_getresuid32 : int64 -> int64 -> int64 -> unit
   method sys_getgroups32 : int -> int64 -> unit
+  method sys_setgroups32 : int -> int64 -> unit
   method sys_getpid : unit -> unit
   method sys_getpgid : int -> unit
   method sys_getpgrp : unit -> unit

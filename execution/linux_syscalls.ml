@@ -987,9 +987,18 @@ object(self)
 	self#put_errno Unix.ERANGE	
       else
 	(for i = 0 to len - 1 do
-	   store_word list i (Int64.of_int (oc_groups.(i)))
+	   store_word (lea list i 4 0) 0 (Int64.of_int (oc_groups.(i)))
 	 done;
 	 put_return (Int64.of_int len))
+
+  method sys_setgroups32 size list =
+    let oc_groups = Array.init size 
+      (fun i -> Int64.to_int (load_word (lea list i 4 0))) in
+    try
+      Unix.setgroups oc_groups;
+      put_return 0L;
+    with
+      | Unix.Unix_error(err, _, _) -> self#put_errno err
 
   method sys_getuid () = 
     put_return (Int64.of_int (Unix.getuid ()))
@@ -3429,7 +3438,12 @@ object(self)
 		 Printf.printf "getgroups32(%d, 0x%08Lx)" size list;
 	       self#sys_getgroups32 size list
 	 | (_, 206) -> (* setgroups32 *)
-	     uh "Unhandled Linux system call setgroups32 (206)"
+         let (ebx, ecx) = read_2_regs () in
+         let size = Int64.to_int ebx and
+         list = ecx in
+         if !opt_trace_syscalls then
+           Printf.printf "setgroups32(%d, 0x%08Lx)" size list;
+         self#sys_setgroups32 size list
 	 | (ARM, 207) -> uh "Check whether ARM fchown32 syscall matches x86"
 	 | (X86, 207) -> (* fchown32 *)
 	     let (ebx, ecx, edx) = read_3_regs () in
