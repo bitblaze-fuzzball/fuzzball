@@ -987,7 +987,7 @@ object(self)
 	self#put_errno Unix.ERANGE	
       else
 	(for i = 0 to len - 1 do
-	   store_word list i (Int64.of_int (oc_groups.(i)))
+	   store_word (lea list i 4 0) 0 (Int64.of_int (oc_groups.(i)))
 	 done;
 	 put_return (Int64.of_int len))
 
