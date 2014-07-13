@@ -271,8 +271,8 @@ struct
 	  -> ExprOffset(e)
       | e when (narrow_bitwidth form_man e) < 23
 	  -> ExprOffset(e)
-      | V.Cast(V.CAST_SIGNED, _, e)
-	  when (narrow_bitwidth form_man e) < 23
+      | V.Cast(V.CAST_SIGNED, _, x)
+	  when (narrow_bitwidth form_man x) < 23
 	    -> ExprOffset(e)
       | V.BinOp(V.ARSHIFT, _, _)
 	  -> ExprOffset(e)
