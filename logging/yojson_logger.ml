@@ -72,7 +72,7 @@ let fuzzball_config () =
 
 let log lazy_message =
   pretty_to_channel
-    Verb.out_channel
+    (Verb.out_channel ())
     (`Assoc
         [ "_type", `String "log";
           "time", timestamp Verb.use_hr_time;
@@ -135,10 +135,12 @@ let make_logger verb =
                               (time.Unix.tm_hour)
                               (time.Unix.tm_min)
                              (time.Unix.tm_sec));
-          "high_res", `Variant ("hr_time",
+(*          "high_res", `Variant ("hr_time",
 				(if use_highres
                                  then Some (`Float high_res_time)
-                                 else None))]
+                                 else None))*)
+	  "high_res", `Float (if use_highres then high_res_time else 0.)
+	]
 
 
 let process_identifier () =
@@ -167,7 +169,7 @@ let fuzzball_config () =
 	  
 let log lazy_message =
   pretty_to_channel
-    Verb.out_channel
+    (Verb.out_channel ())
     (`Assoc
         [ "_type", `String "log";
           "time", timestamp Verb.use_hr_time;

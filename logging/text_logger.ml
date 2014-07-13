@@ -37,7 +37,7 @@ let timestamp use_highres =
 
 let log lazy_message =
       Printf.fprintf
-        Verb.out_channel
+        (Verb.out_channel ())
         "%s %s %s: %s\n"
         (timestamp Verb.use_hr_time)
         Verb.major_name

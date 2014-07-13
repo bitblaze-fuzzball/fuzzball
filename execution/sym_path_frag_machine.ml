@@ -245,6 +245,7 @@ struct
 	  ret
 
     method query_with_path_cond cond verbose =
+      let module TIMING = (val !Loggers.fuzzball_timing_json : Yojson_logger.JSONLog) in
       self#ensure_extra_conditions;
       if new_path then
 	(self#fill_working_cache;
@@ -274,6 +275,7 @@ struct
 	    let (decls, assigns, cond_e, new_vars) =
 	      form_man#one_cond_for_solving cond var_seen_hash
 	    in
+	    TIMING.trace (Yojson_logger.LazyJson (lazy (`Assoc ["STP", `String "begin"])));
 	      query_engine#push;
 	      query_engine#start_query;
 	      List.iter query_engine#add_free_var decls;
@@ -293,6 +295,7 @@ struct
 		    query_engine#after_query true;
 		    raise SolverFailure
 	      in
+	    TIMING.trace (Yojson_logger.LazyJson (lazy (`Assoc ["STP", `String "end"])));
 	      let time = (get_time ()) -. time_before in
 	      let is_slow = time > !opt_solver_slow_time in
 	        if is_slow then
@@ -507,14 +510,21 @@ struct
 	| Some h -> h eip t1 t2 (dt#random_float) dir
 
     method private cjmp_choose targ1 targ2 =
+(*      let module Log = 
+	    (val !Loggers.fuzzball_bdt_json : Yojson_logger.JSONLog) in
+*)
       let eip = self#get_eip in
+      let path = ref "" in
+      let preference = (
 	try let pref = Hashtbl.find opt_branch_preference eip in
-	  match pref with
+	    path := "hashtable hit";
+	    match pref with
 	    | 0L -> Some false
 	    | 1L -> Some true
 	    | _ -> failwith "Unsupported branch preference"
 	with
 	  | Not_found ->
+	    path := "hashtable miss (heur_preference)";
 	      match dt#heur_preference with
 		| Some b ->
 		    let choice = dt#random_float in
@@ -528,7 +538,23 @@ struct
 			   Printf.printf "On %f, falling to cjmp_heuristic\n"
 			     choice;
 			 self#call_cjmp_heuristic eip targ1 targ2 None)
-		| None -> (self#call_cjmp_heuristic eip targ1 targ2 None)
+		| None -> (self#call_cjmp_heuristic eip targ1 targ2 None)) in
+(*
+      Log.trace (Yojson_logger.LazyJson
+		   (lazy
+		      (`Assoc [
+			"function", `String "sym_path_frag_machine.cjmp_choose";
+			"exec_path", `String !path;
+			"cjmp_opt", `Variant ("cjmp", 
+					      (match preference with
+					      | Some p -> Some  (`Bool p)
+					      | None -> None
+					      ));
+		      ])
+		   )
+      );
+*)
+      preference
 
     method eval_cjmp exp targ1 targ2 =
       let eip = self#get_eip in

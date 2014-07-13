@@ -12,7 +12,7 @@ export EXTLIBDIRS += ../stp ../stp/ocaml
 export LIBS += stpvc ../ocaml/vine ../trace/trace
 
 export OCAMLDEP = ocamldep -I $(VINE_OCAMLDIR) -I $(STP_OCAMLDIR) \
-	                   -I $(VINE_TRACEDIR) -I ../logging
+				-I $(VINE_TRACEDIR) -I ../logging
 
 # Source files. In a dependency-respecting order (OCaml doesn't allow
 # circular dependencies).

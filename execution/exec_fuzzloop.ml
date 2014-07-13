@@ -12,10 +12,52 @@ open Frag_simplify;;
 open Fragment_machine;;
 open Sym_path_frag_machine;;
 open Sym_region_frag_machine;;
+open Decision_tree;;
 open Exec_run_common;;
 open Exec_runloop;;
 open Exec_stats;;
 
+let loop_w_probing count (dt : decision_tree) (frag : fragment_machine) fn =
+(*  let outer_iteration = ref 0L 
+  and num_probes = 2L 
+  and best_path = ref ""
+  and probe_depth = 3L in
+  opt_path_depth_limit := (-1L);
+  
+  while true
+  do
+    opt_path_depth_limit := Int64.add !opt_path_depth_limit probe_depth;
+    Printf.printf "Probe depth: %s\n" (Int64.to_string !opt_path_depth_limit);
+    Printf.printf "Using prefix: [%s]\n" !opt_follow_path;
+    outer_iteration := Int64.add !outer_iteration 1L;
+    
+    (* reset our probe counter *)
+    let inner_iteration = ref 0L in
+    (try
+       while (!inner_iteration < num_probes)
+       do
+	 inner_iteration := Int64.add !inner_iteration 1L;
+	 Printf.printf "Iteration #%s Probe #%s\n" 
+	   (Int64.to_string !outer_iteration)
+	   (Int64.to_string !inner_iteration);
+
+
+	 fn !inner_iteration;
+	 let cur_path = dt#get_most_recent_traversal in
+	 Printf.printf "recent path: %s\n%!" cur_path;
+(*	 if Random.bool () then *)
+	 best_path := cur_path
+       done
+     with
+       LastIteration -> Printf.printf "LastIteration Thrown\n");
+
+    (* update the path prefix with the best we've seen *)
+    opt_follow_path := !best_path
+	  
+  done;*)
+  Printf.printf "DID NOTHING\n";
+  Printf.printf "Exited loop\n"
+      
 let loop_w_stats count fn =
   let iter = ref 0L and
       start_wtime = Unix.gettimeofday () and
@@ -51,8 +93,21 @@ let loop_w_stats count fn =
     if !opt_gc_stats then
       Gc.full_major () (* for the benefit of leak checking *)
 
+let log_fuzz_restart log str = 
+  log (
+    Yojson_logger.LazyJson (lazy 
+			      (`Assoc 
+				  ["function", `String "fuzz";
+				   "type", `String "restart";
+				   "restart_reason", `String str;
+				  ]
+			      )
+    )
+  )
+
 let fuzz start_eip opt_fuzz_start_eip end_eips
-    (fm : fragment_machine) asmir_gamma symbolic_init reset_cb =
+    (fm : fragment_machine) asmir_gamma symbolic_init reset_cb
+    (*(dt : decision_tree)*)  =
   if !opt_trace_setup then
     (Printf.printf "Initial registers:\n";
      fm#print_regs);
@@ -101,7 +156,8 @@ let fuzz start_eip opt_fuzz_start_eip end_eips
      if !opt_trace_setup then
        (Printf.printf "Took snapshot\n"; flush stdout);
      (try
-	loop_w_stats !opt_num_paths
+ 	loop_w_stats !opt_num_paths
+(*	loop_w_probing !opt_num_paths dt fm *)
 	  (fun iter ->
 	     let old_tcs = Hashtbl.length trans_cache in
 	     let stop str = if !opt_trace_stopping then
@@ -109,37 +165,78 @@ let fuzz start_eip opt_fuzz_start_eip end_eips
 	         Printf.printf "Stopping %s at 0x%08Lx\n" str stop_eip
 	     in
 	       fm#set_iter_seed (Int64.to_int iter);
+	     let module Log = 
+		   (val !Loggers.fuzzball_bdt_json : Yojson_logger.JSONLog) in
 	       (try
 		  runloop fm !fuzz_start_eip asmir_gamma
 		    (fun a -> List.mem a end_eips);
 		with
-		  | SimulatedExit(_) -> stop "when program called exit()"
-		  | SimulatedAbort -> stop "when program called abort()"
-		  | KnownPath -> stop "on previously-explored path"
+		  | SimulatedExit(_) -> 
+		    log_fuzz_restart Log.trace "when program called exit()";
+		    stop "when program called exit()"
+		  | SimulatedAbort -> 
+		    log_fuzz_restart Log.trace "when program called abort()";
+		    stop "when program called abort()"
+		  | KnownPath ->
+		    log_fuzz_restart Log.trace "on previously-explored path";
+		    stop "on previously-explored path"
 		      (* KnownPath currently shouldn't happen *)
-		  | DeepPath -> stop "on too-deep path"
-		  | SymbolicJump -> stop "at symbolic jump"
+		  | DeepPath ->
+		    log_fuzz_restart Log.trace "on too-deep path";
+		    stop "on too-deep path"
+		  | SymbolicJump ->
+		    log_fuzz_restart Log.trace "at symbolic jump";
+		    stop "at symbolic jump"
 		  | NullDereference ->
-		      if !opt_finish_on_null_deref then
-			finish_fuzz "concrete null dereference";
-		      stop "at null deref"
-		  | JumpToNull -> stop "at jump to null"
-		  | DivideByZero -> stop "at division by zero"
-		  | TooManyIterations -> stop "after too many loop iterations"
-		  | UnhandledTrap -> stop "at trap"
-		  | IllegalInstruction -> stop "at bad instruction"
+		    if !opt_finish_on_null_deref then (
+		      log_fuzz_restart Log.trace "concrete null dereference";
+		      finish_fuzz "concrete null dereference"
+		    );
+		    log_fuzz_restart Log.trace "at null deref";
+		    stop "at null deref"
+		  | JumpToNull -> 
+		    log_fuzz_restart Log.trace "at jump to null";
+		    stop "at jump to null"
+		  | DivideByZero -> 
+		    log_fuzz_restart Log.trace "at division by zero";
+		    stop "at division by zero"
+		  | TooManyIterations ->
+		    log_fuzz_restart Log.trace "after too many iterations";
+		    stop "after too many loop iterations"
+		  | UnhandledTrap -> 
+		    log_fuzz_restart Log.trace "at trap";
+		    stop "at trap"
+		  | IllegalInstruction -> 
+		    log_fuzz_restart Log.trace "at bad instruction";
+		    stop "at bad instruction"
 		  | UnhandledSysCall(s) ->
-		      Printf.printf "[trans_eval WARNING]: %s\n%!" s;
-		      stop "at unhandled system call"
-		  | SymbolicSyscall -> stop "at symbolic system call"
-		  | ReachedMeasurePoint -> stop "at measurement point"
-		  | ReachedInfluenceBound -> stop "at influence bound"
-		  | DisqualifiedPath -> stop "on disqualified path"
-		  | BranchLimit -> stop "on branch limit"
-		  | SolverFailure when !opt_nonfatal_solver
-		      -> stop "on solver failure"
-		  | UnproductivePath -> stop "on unproductive path"
-		  | Signal("USR1") -> stop "on SIGUSR1"
+		    Printf.printf "[trans_eval WARNING]: %s\n%!" s;
+		    log_fuzz_restart Log.trace "at unhandled system call";
+		    stop "at unhandled system call"
+		  | SymbolicSyscall ->
+		    log_fuzz_restart Log.trace "at symbolic system call";
+		    stop "at symbolic system call"
+		  | ReachedMeasurePoint ->
+		    log_fuzz_restart Log.trace "at measurement point";
+		    stop "at measurement point"
+		  | ReachedInfluenceBound -> 
+		    log_fuzz_restart Log.trace "at influence bound";
+		    stop "at influence bound"
+		  | DisqualifiedPath ->
+		    log_fuzz_restart Log.trace "on disqualified path";
+		    stop "on disqualified path"
+		  | BranchLimit ->
+		    log_fuzz_restart Log.trace "on branch limit";
+		    stop "on branch limit"
+		  | SolverFailure when !opt_nonfatal_solver -> 
+		    log_fuzz_restart Log.trace "on solver failure";
+		    stop "on solver failure"
+		  | UnproductivePath ->
+		    log_fuzz_restart Log.trace "on unproductive path";
+		    stop "on unproductive path"
+		  | Signal("USR1") -> 
+		    log_fuzz_restart Log.trace "on SIGUSR1";
+		    stop "on SIGUSR1"
 		  (* | NotConcrete(_) -> () (* shouldn't happen *)
 		     | Simplify_failure(_) -> () (* shouldn't happen *)*)
 	       ); 
@@ -164,6 +261,7 @@ let fuzz start_eip opt_fuzz_start_eip end_eips
       with
 	| LastIteration -> ()
 	| Signal("QUIT") -> Printf.printf "Caught SIGQUIT\n");
+     Printf.printf "DONE\n";
      fm#after_exploration
    with
      | LastIteration -> ()

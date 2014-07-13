@@ -297,6 +297,18 @@ class binary_decision_tree = object(self)
       cur_query <- root;
       if !opt_trace_decision_tree then
 	Printf.printf "DT: Initialized.\n";
+(*
+      let module Log = 
+	    (val !Loggers.fuzzball_bdt_json : Yojson_logger.JSONLog) in
+      Log.trace (Yojson_logger.LazyJson
+		   (lazy
+		      (`Assoc [
+			"function", `String "init";
+			"node", `Int cur.ident;
+		      ])
+		   )
+      );
+*)
       (self :> Decision_tree.decision_tree)
 
   method reset =
@@ -388,18 +400,48 @@ class binary_decision_tree = object(self)
     if !opt_trace_decision_tree then
       Printf.printf "DT: Adding %B child to %d\n" b cur.ident;
     assert(not cur.all_seen);
-    match (b, (get_f_child cur), (get_t_child cur)) with
+    let status =
+    (match (b, (get_f_child cur), (get_t_child cur)) with
       | (false, Some(Some kid), _)
-      | (true,  _, Some(Some kid)) -> () (* already there *)
+      | (true,  _, Some(Some kid)) ->
+	"child already exists"
       | (false, None, _) ->
-	  let new_kid = new_dt_node (Some cur) in
-	    put_f_child cur (Some (Some new_kid))
+	let new_kid = new_dt_node (Some cur) in
+	put_f_child cur (Some (Some new_kid));
+	  "adding false child";
       | (true,  _, None) ->
-	  let new_kid = new_dt_node (Some cur) in
-	    put_t_child cur (Some (Some new_kid))
+	let new_kid = new_dt_node (Some cur) in
+	put_t_child cur (Some (Some new_kid));
+	"adding true child"
       | (false, Some None, _)
       | (true,  _, Some None) ->
-	  failwith "Tried to extend an unsat branch"
+	failwith "Tried to extend an unsat branch") in
+    let module Log = 
+	  (val !Loggers.fuzzball_bdt_json : Yojson_logger.JSONLog) in
+
+    let childId = match status with
+      | "child already exists" -> -1
+      | "adding false child" ->
+	(match cur.f_child with
+	| Some Some cid -> cid
+	| _ -> -1)
+      | "adding true child" ->
+	(match cur.t_child with
+	| Some Some cid -> cid
+	| _ -> -1)
+      | _ -> failwith "Didn't match status string, shouldn't happen" in
+
+    Log.trace (Yojson_logger.LazyJson
+		 (lazy
+		    (`Assoc [
+		      "function", `String "add_kid";
+		      "node", `Int cur.ident; 
+		      "childId", `Int childId;
+		      "childBranch", `Bool b;
+		      "status", `String status;
+		    ])
+		 )
+    ) 	  
 
   method start_new_query =
     assert(cur.query_children <> None);
@@ -453,6 +495,19 @@ class binary_decision_tree = object(self)
 	  Printf.printf "\n"
 
   method extend b =
+    let module Log = 
+	  (val !Loggers.fuzzball_bdt_json : Yojson_logger.JSONLog) in
+    Log.trace (Yojson_logger.LazyJson
+		 (lazy
+		    (`Assoc [
+		      "function", `String "extend";
+		      "node", `Int cur.ident;
+		      "heuristic_min", `Int cur.heur_min;
+		      "heuristic_max", `Int cur.heur_max;
+		      "child", `Bool b;
+		    ])
+		 )
+    );
     if !opt_trace_decision_tree then
       Printf.printf "DT: Extending with %B at %d\n" b cur.ident;
     self#add_kid b;
@@ -714,6 +769,18 @@ class binary_decision_tree = object(self)
       self#mark_all_seen_node n
 
   method set_heur i =
+(*    let module Log = 
+	  (val !Loggers.fuzzball_bdt_json : Yojson_logger.JSONLog) in
+    Log.trace (Yojson_logger.LazyJson
+		 (lazy
+		    (`Assoc [
+		      "function", `String "set_heur";
+		      "oldValue", `Int cur_heur;
+		      "newValue", `Int i;
+		    ])
+		 )
+    );
+*)
     cur_heur <- i;
     if i > best_heur then
       best_heur <- i;
@@ -735,12 +802,26 @@ class binary_decision_tree = object(self)
       loop node
 
   method heur_preference =
+    let setH = ref false and
+	fMin = ref (-1) and
+	fMax = ref (-1) and
+	tMin = ref (-1) and
+	tMax = ref (-1) in
+(*    let module Log = 
+	  (val !Loggers.fuzzball_bdt_json : Yojson_logger.JSONLog) in
+*)
+    let preference = (
     match (get_f_child cur, get_t_child cur) with
       | (Some Some kid_f, Some Some kid_t) ->
 	  let f_min = kid_f.heur_min and
 	      f_max = kid_f.heur_max and
 	      t_min = kid_t.heur_min and
 	      t_max = kid_t.heur_max in
+	  setH := true;
+	  fMin := f_min;
+	  fMax := f_max;
+	  tMin := t_min;
+	  tMax := t_max;
 	    if !opt_trace_guidance then
 	      Printf.printf
 		"Heuristic choice between F[%d, %d] and T[%d, %d]\n"
@@ -772,6 +853,31 @@ class binary_decision_tree = object(self)
       | (Some Some _, None) -> Some false
       | (None, Some Some _) -> Some true
       | _ -> None
+    ) in
+(*    Log.trace (Yojson_logger.LazyJson
+		 (lazy
+		    (`Assoc [
+		      "function", `String "heur_preference";
+		      "consideredH", `Bool !setH;
+		      "falseKid", `Assoc [
+			"min", `Int !fMin;
+			"max", `Int !fMax;
+		      ];
+		      "trueKid", `Assoc [
+			"min", `Int !tMin;
+			"max", `Int !tMax;
+		      ];
+		      "preference_opt", `Variant ("preference", 
+						  (match preference with
+						  | Some p -> Some  (`Bool p)
+						  | None -> None
+						  ));
+		     ]
+		    )
+		 )
+    );
+*)
+    preference
 
   method mark_all_seen =
     self#mark_all_seen_node cur;
