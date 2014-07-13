@@ -42,7 +42,7 @@ type register_name =
 val reg_to_regstr : register_name -> string
 val regstr_to_reg : string -> register_name
 
-val fuzz_finish_reason : string option ref
+val fuzz_finish_reasons : string list ref
 val finish_fuzz : string -> unit
 
 (* This virtual class is the outside interface to a fragment machine,

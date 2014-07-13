@@ -59,6 +59,10 @@ let main argv =
   FBG.trace (Text_logger.LazyFloat (lazy Pervasives.max_float));
   FBG.trace (Text_logger.LazyBool (lazy true));
 *)
+
+  let module TIMING = (val !Loggers.fuzzball_timing_json : Yojson_logger.JSONLog) in
+  TIMING.trace (Yojson_logger.LazyJson (lazy (`Assoc ["Everything", `String "begin"])));
+  TIMING.trace (Yojson_logger.LazyJson (lazy (`Assoc ["Setup", `String "begin"])));
   FBG.trace (Text_logger.LazyString (lazy "Making binary decision tree."));
   let dt = ((new Binary_decision_tree.binary_decision_tree)
 	    :> Decision_tree.decision_tree)#init in
@@ -92,10 +96,14 @@ let main argv =
     Exec_set_options.apply_cmdline_opts_late fm;
     let symbolic_init = Exec_set_options.make_symbolic_init fm infl_man in
     let (start_addr, fuzz_start) = Exec_set_options.decide_start_addrs () in
+    TIMING.trace (Yojson_logger.LazyJson (lazy (`Assoc ["Setup", `String "end"])));
     FBG.trace (Text_logger.LazyString (lazy "Setup done; Beginning fuzzloop"));
+    TIMING.trace (Yojson_logger.LazyJson (lazy (`Assoc ["Search", `String "begin"])));
       Exec_fuzzloop.fuzz start_addr fuzz_start
 	!Exec_options.opt_fuzz_end_addrs fm asmir_gamma symbolic_init
 	(fun _ -> ());
+      TIMING.trace (Yojson_logger.LazyJson (lazy (`Assoc ["Search", `String "end"])));
+  TIMING.trace (Yojson_logger.LazyJson (lazy (`Assoc ["Everything", `String "end"])));
       ()
 ;;
 

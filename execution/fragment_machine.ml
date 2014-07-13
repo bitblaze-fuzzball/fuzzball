@@ -22,13 +22,18 @@ let move_hash src dest =
   V.VarHash.clear dest;
   V.VarHash.iter (fun a b -> V.VarHash.add dest a b) src
 
-let fuzz_finish_reason = ref None
+let fuzz_finish_reasons = ref []
+let reason_warned = ref false
 
 let finish_fuzz s =
-  assert(!fuzz_finish_reason = None);
-  fuzz_finish_reason := Some s;
   if !opt_trace_stopping then
-    Printf.printf "Final iteration, %s\n" s
+    Printf.printf "Final iteration (%d previous reasons), %s\n" (List.length !fuzz_finish_reasons) s;
+  if List.length !fuzz_finish_reasons < 15 then
+    fuzz_finish_reasons := s :: !fuzz_finish_reasons
+  else
+    if !opt_trace_stopping || not !reason_warned then (
+      reason_warned := true;
+      Printf.printf "fuzz_finish_reasons list exceeded 15... ignoring new reason\n")
 
 class virtual special_handler = object(self)
   method virtual handle_special : string -> V.stmt list option
