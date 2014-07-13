@@ -1,8 +1,22 @@
-Useful BitBlaze packages, Debian/Ubuntu version:
+Prerequisites:
 
-These aren't all required for this version of FuzzBALL, but they're
-good for a variety of purposes so you might want to install them all
-at once if it's convenient:
+1. Available as Linux distribution packages
+
+Many of FuzzBALL dependencies are commonly found packaged for Linux
+distributions, and if that's available it's usually the easiest way to
+install them. For instance here's a list of the packages you'd need on
+Debian/Ubuntu, last tested on Ubuntu 14.04:
+
+# Git for FuzzBALL, SVN for VEX, one or both for STP
+apt-get install git subversion
+apt-get install build-essential automake
+# Before 14.04, libiberty-dev was included in binutils-dev
+apt-get install binutils-dev libiberty-dev zlib1g-dev
+apt-get install ocaml ocaml-findlib camlidl libextlib-ocaml-dev
+
+Here's a longer list of packages that includes things useful in
+conjunction with FuzzBALL, for other BitBlaze software, for building
+prerequisite software, etc:
 
 sudo apt-get install build-essential
 sudo apt-get install valgrind
@@ -14,15 +28,19 @@ sudo apt-get build-dep binutils-multiarch
 sudo apt-get install binutils-dev
 sudo apt-get install ocaml ocaml-findlib libgdome2-ocaml-dev camlidl
 sudo apt-get build-dep ocaml
+# ocaml-native-compilers improves compilation speed
 sudo apt-get install libextlib-ocaml-dev ocaml-native-compilers
 sudo apt-get install libyojson-ocaml-dev
 sudo apt-get install libocamlgraph-ocaml-dev
 sudo apt-get install libsqlite3-ocaml-dev
+# texlive is big, but used with ocamldoc, etc.
 sudo apt-get install texlive texlive-latex-extra transfig hevea
 sudo apt-get install subversion
 sudo apt-get install libgmp3-dev
 sudo apt-get install zsh
 sudo apt-get install automake
+# STP always needs bison and flex.
+# Modern (Git) STP requires cmake and some Boost libraries
 sudo apt-get install bison flex cmake
 sudo apt-get install libboost-system-dev libboost-program-options-dev
 
@@ -51,9 +69,7 @@ sudo yum install gmp gmp-devel
 sudo yum install zsh
 sudo debuginfo-install coreutils
 
-Prerequisites:
-
-1. VEX
+2. VEX
 
 We use the VEX library for instruction processing, best known for its
 use in Valgrind. It's not distributed separately, so you can just
@@ -85,7 +101,7 @@ build steps instead looked like:
    % make version
    % make libvex.a
 
-2. GNU Binutils
+3. GNU Binutils
 
 You need a version of the Binutils library suitable for development;
 for instance, the "binutils-dev" package in Debian or Ubuntu.
@@ -99,12 +115,12 @@ http://www.gnu.org/s/binutils/
 
 and compile it with:
 
-../src/configure --disable-werror --enable-targets=arm-linux-gnueabi,i486-linux-gnu,x86_64-linux-gnu --prefix=<wherever>/binutils-multiarch
+../configure --disable-werror --enable-targets=arm-linux-gnueabi,i486-linux-gnu,x86_64-linux-gnu --prefix=<wherever>/binutils-multiarch
 
 and then pass --with-binutils=<wherever>/binutils-multiarch to
 Vine's ./configure.
 
-3. STP
+4. STP
 
 Historically we kept STP binaries in our SVN repository, but for space
 and cleanliness they're not included here, so you'll need to compile
@@ -114,24 +130,12 @@ via a library interface, which have various performance/engineering
 tradeoffs. For the library interface we patch STP to get
 counterexamples in a different format.
 
-Older versions of STP are kept in a SourceForge SVN repository, which
-is a good choice if you want stability. For instance we've had good
-luck with r1673:
-
-    % svn co -r1673 https://stp-fast-prover.svn.sourceforge.net/svnroot/stp-fast-prover/trunk/stp stp-r1673+vine
-    % cd stp-r1673+vine
-    % patch -p0 <$HERE/stp/stp-r1668-true-ce.patch
-    % ./clean-install.sh --with-prefix=$(pwd)/install
-    % cp install/bin/stp install/lib/libstp.a $HERE/stp
-
-Where $HERE is the directory this INSTALL file is in.
-
-If you want to be more bleeding-edge, more recently STP has moved to
-GitHub repository and redone their build process, now requiring recent
-versions of CMake and the Boost libraries. We keep a branch that
-includes the same "true-ce" patch mentioned above and is otherwise
-maintained in a state that should work with FuzzBALL. That build
-process looks like:
+The ongoing development of STP is now in a GitHub repository, and has
+switched to a CMake-based build process. This newer version is where
+all the upstream support has moved. As a convenience to provide a bit
+of isolation from possible incompatibilities and to include any
+FuzzBALL-specific patches, we now keep a branch of this under the
+FuzzBALL GitHub area. That build process looks like:
 
     % git clone https://github.com/bitblaze-fuzzball/stp
     % cd stp
@@ -142,17 +146,35 @@ process looks like:
     % make
     % cp stp lib/libstp.a $HERE/stp
 
+Where $HERE is the directory this INSTALL file is in.
+
+Older versions of STP are kept in a SourceForge SVN repository, which
+is a good choice if you want stability, and it doesn't have any
+show-stopping bugs. The apparently final revision is r1673, which you
+can build like:
+
+    % svn co -r1673 https://svn.code.sf.net/p/stp-fast-prover/code/trunk/stp stp-r1673+vine
+    % cd stp-r1673+vine
+    % patch -p0 <$HERE/stp/stp-r1673-true-ce+bison3.patch
+    % ./clean-install.sh --with-prefix=$(pwd)/install
+    % cp install/bin/stp install/lib/libstp.a $HERE/stp
+
+The "+bison3" in the latest version of the patch refers to the fact
+that includes a backported compatibility fix for use with Bison 3,
+which is needed for STP to build on Ubuntu 14.04, for instance. Fixes
+like this now appear first in the GIT version, though.
+
 Note that actually only libstp.a is used as part of the build process
 right now. FuzzBALL's default mode is to use the external "stp"
 binary, but it doesn't automatically look in the "stp" directory; you
 need to either put it in a directory that's on your $PATH or pass the
 -stp-path option to FuzzBALL.
 
-4. OCaml tools
+5. OCaml tools
 
 You need OCaml itself, plus ocamlfind and ocamlidl.
 
-5. OCaml libraries
+6. OCaml libraries
 
 You need ExtLib, http://code.google.com/p/ocaml-extlib/
 

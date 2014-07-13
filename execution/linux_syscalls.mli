@@ -87,6 +87,7 @@ object
   method sys_getresgid32 : int64 -> int64 -> int64 -> unit
   method sys_getresuid32 : int64 -> int64 -> int64 -> unit
   method sys_getgroups32 : int -> int64 -> unit
+  method sys_setgroups32 : int -> int64 -> unit
   method sys_getpid : unit -> unit
   method sys_getpgid : int -> unit
   method sys_getpgrp : unit -> unit
@@ -111,6 +112,7 @@ object
   method sys_mprotect : int64 -> int64 -> int64 -> unit
   method sys_munmap : int64 -> int64 -> unit
   method sys_open : string -> int -> Unix.file_perm -> unit
+  method sys_openat : int -> string -> int -> Unix.file_perm -> unit
   method sys_pipe : int64 -> unit
   method sys_pipe2 : int64 -> int -> unit
   method sys_poll : int64 -> int -> int64 -> unit
@@ -120,6 +122,7 @@ object
   method sys_readlink : string -> int64 -> int -> unit
   method sys_recv : int -> int64 -> int -> int -> unit
   method sys_recvfrom : int -> int64 -> int -> int -> int64 -> int64 -> unit
+  method sys_shutdown: int -> int -> unit
   method sys_recvmsg : int -> int64 -> int -> unit
   method sys_rename : string -> string -> unit
   method sys_sched_getparam : int -> int64 -> unit
@@ -131,10 +134,12 @@ object
   method sys_send : int -> int64 -> int -> int -> unit
   method sys_sendto : int -> int64 -> int -> int -> int64 -> int -> unit
   method sys_sendmsg : int -> int64 -> int -> unit
+  method sys_sendmmsg : int -> int64 -> int -> int -> unit
   method sys_setgid32 : int -> unit
   method sys_setuid32 : int -> unit
   method sys_setreuid : int -> int -> unit
   method sys_setsockopt : int -> int -> int -> int64 -> int -> unit
+  method sys_getsockopt : int -> int -> int -> int64 -> int64 -> unit
   method sys_set_robust_list : int64 -> int64 -> unit
   method sys_set_thread_area : int64 -> unit
   method sys_set_tid_address : int64 -> unit

@@ -673,8 +673,8 @@ object(self)
       Array.set unix_fds vt_fd (Some sockfd_oc);
       put_return (Int64.of_int vt_fd)
     with
-    | Unix.Unix_error(err, _, _) -> self#put_errno err
-      
+      | Unix.Unix_error(err, _, _) -> self#put_errno err
+
   method sys_brk addr =
     let cur_break = match !the_break with
       | Some b -> b
@@ -993,9 +993,18 @@ object(self)
 	self#put_errno Unix.ERANGE	
       else
 	(for i = 0 to len - 1 do
-	   store_word list i (Int64.of_int (oc_groups.(i)))
+	   store_word (lea list i 4 0) 0 (Int64.of_int (oc_groups.(i)))
 	 done;
 	 put_return (Int64.of_int len))
+
+  method sys_setgroups32 size list =
+    let oc_groups = Array.init size 
+      (fun i -> Int64.to_int (load_word (lea list i 4 0))) in
+    try
+      Unix.setgroups oc_groups;
+      put_return 0L;
+    with
+      | Unix.Unix_error(err, _, _) -> self#put_errno err
 
   method sys_getuid () = 
     put_return (Int64.of_int (Unix.getuid ()))
@@ -1355,10 +1364,9 @@ object(self)
     (* treat as no-op *)
     put_return 0L
 
-  method sys_open path flags mode =
-    try
-      let oc_flags = self#flags_to_oc_flags flags in
-      let oc_fd = Unix.openfile (chroot path) oc_flags mode and
+  method private open_throw path flags mode =
+    let oc_flags = self#flags_to_oc_flags flags in
+    let oc_fd = Unix.openfile (chroot path) oc_flags mode and
 	  vt_fd = self#fresh_fd () in
 	Array.set unix_fds vt_fd (Some oc_fd);
 	fd_info.(vt_fd).fname <- path;
@@ -1367,6 +1375,24 @@ object(self)
 	if Hashtbl.mem symbolic_fnames path then
 	  Hashtbl.replace symbolic_fds vt_fd ();
 	put_return (Int64.of_int vt_fd)
+
+  method sys_open path flags mode =
+    try
+      self#open_throw path flags mode;
+    with
+      | Unix.Unix_error(err, _, _) -> self#put_errno err
+
+  method sys_openat dirfd path flags mode =
+    try
+      let dirpath = (if dirfd <> -100 then 
+                       ref fd_info.(dirfd).fname 
+                     else ref "" ) in
+      let dirpathlen = (String.length !dirpath) in
+      if dirpathlen > 0 then
+        if !dirpath.[dirpathlen - 1]  <> '/' then
+          dirpath := !dirpath ^ "/"; 
+      let fullpath = !dirpath ^ path in
+      self#open_throw fullpath flags mode;
     with
       | Unix.Unix_error(err, _, _) -> self#put_errno err
 
@@ -1533,6 +1559,18 @@ object(self)
     with
       | Unix.Unix_error(err, _, _) -> self#put_errno err
 
+  method sys_shutdown sockfd how =
+    try
+      let shutdown_cmd = match how with
+        | 0 -> Unix.SHUTDOWN_RECEIVE
+        | 1 -> Unix.SHUTDOWN_SEND
+        | 2 -> Unix.SHUTDOWN_ALL 
+        | _ -> raise (Unix.Unix_error(Unix.EINVAL, "Bad value for how", ""))
+      in
+      Unix.shutdown (self#get_fd sockfd) shutdown_cmd;
+    with
+      | Unix.Unix_error(err, _, _) -> self#put_errno err
+
   method sys_recvmsg sockfd msg flags =
     try
       let iov = load_word (lea msg 0 0 8) and
@@ -1595,13 +1633,16 @@ object(self)
     ignore(pid);
     put_return 0L (* SCHED_OTHER *)
 
+  method private read_timeval_as_secs addr =
+    let secs_f   = (if addr <> 0x0L then Int64.to_float (load_word addr)
+                    else -1.0) and
+        susecs_f = (if addr <> 0x0L then 
+                      Int64.to_float (load_word (lea addr 0 0 4)) 
+                    else 0.0) in
+    let ret = secs_f +. (susecs_f /. 1000000.0) in
+    ret;
+
   method sys_select nfds readfds writefds exceptfds timeout =
-    let read_timeval_as_secs addr =
-      let secs_f = Int64.to_float (load_word addr) and
-          susecs_f = Int64.to_float (load_word (lea addr 0 0 4)) in
-      let ret = secs_f +. (susecs_f /. 1000000.0) in
-      ret
-    in
     let read_bitmap addr =
       if addr = 0L then
         []
@@ -1649,7 +1690,7 @@ object(self)
       let rl_file_descr = map_fd rl and 
           wl_file_descr = map_fd wl and 
           el_file_descr = map_fd el and
-          timeout_f = read_timeval_as_secs timeout in
+          timeout_f = self#read_timeval_as_secs timeout in
       let (r_fds, w_fds, e_fds) = 
         Unix.select rl_file_descr wl_file_descr el_file_descr timeout_f in
       let r_fds_len = (List.length r_fds) and
@@ -1694,29 +1735,50 @@ object(self)
     with
       | Unix.Unix_error(err, _, _) -> self#put_errno err
 
+  method private sendmsg_throw sockfd msg flags =
+    let str = string_of_char_array
+      (self#gather_iovec (load_word (lea msg 0 0 8))
+      (Int64.to_int (load_word (lea msg 0 0 12))))
+    and flags = (if (flags land 1) <> 0 then [Unix.MSG_OOB] else []) @
+                (if (flags land 4) <> 0 then [Unix.MSG_DONTROUTE] else []) @
+                (if (flags land 2) <> 0 then [Unix.MSG_PEEK] else [])
+    and addrbuf = load_word (lea msg 0 0 0) in
+    let num_sent = 
+      if addrbuf = 0L then
+        Unix.send (self#get_fd sockfd) str 0 (String.length str) flags
+      else
+        let sockaddr = self#read_sockaddr addrbuf
+          (Int64.to_int (load_word (lea msg 0 0 4)))
+        in
+        Unix.sendto (self#get_fd sockfd) str 0 (String.length str)
+          flags sockaddr
+    in
+    num_sent ;
+
   method sys_sendmsg sockfd msg flags =
     try
-      let str = string_of_char_array
-	(self#gather_iovec (load_word (lea msg 0 0 8))
-	   (Int64.to_int (load_word (lea msg 0 0 12))))
-      and flags = (if (flags land 1) <> 0 then [Unix.MSG_OOB] else []) @
-	(if (flags land 4) <> 0 then [Unix.MSG_DONTROUTE] else []) @
-	(if (flags land 2) <> 0 then [Unix.MSG_PEEK] else [])
-      and addrbuf = load_word (lea msg 0 0 0) in
-      let num_sent = 
-	if addrbuf = 0L then
-	  Unix.send (self#get_fd sockfd) str 0 (String.length str) flags
-	else
-	  let sockaddr = self#read_sockaddr addrbuf
-	    (Int64.to_int (load_word (lea msg 0 0 4)))
-	  in
-	    Unix.sendto (self#get_fd sockfd) str 0 (String.length str)
-	      flags sockaddr
-      in
-	put_return (Int64.of_int num_sent) (* success *)
+      let ret = self#sendmsg_throw sockfd msg flags in
+      put_return (Int64.of_int ret);
     with
       | Unix.Unix_error(err, _, _) -> self#put_errno err
-    
+
+  method sys_sendmmsg sockfd mmsg vlen flags =
+    try
+      let rec sendmmsg sockfd mmsg vlen flags =
+        let char_sent = self#sendmsg_throw sockfd mmsg flags in 
+        let send_res = (if char_sent < 0 then 0 else 1) in
+        let next_send = 
+          (if vlen > 1 && send_res = 1 then 
+             sendmmsg sockfd (lea mmsg 1 32 0) (vlen-1) flags
+           else 0) in 
+
+        fm#store_word_conc (lea mmsg 7 4 0) (Int64.of_int char_sent);
+        send_res + next_send;
+      in
+      put_return (Int64.of_int(sendmmsg sockfd mmsg vlen flags));
+    with
+      | Unix.Unix_error(err, _, _) -> self#put_errno err
+
   method sys_setgid32 gid =
     Unix.setgid gid;
     put_return 0L (* success *)
@@ -1743,13 +1805,232 @@ object(self)
       let w = load_word valp in
 	w <> 0L
     in
-    let fd = self#get_fd sockfd in
-      match (level, name) with
-	(* 0 = SOL_IP *)
-	| (0, 6) (* IP_RECVOPTS *) -> () (* No OCaml support *)
-	(* 6 = SOL_TCP *)
-	| (6, 1) -> Unix.setsockopt fd Unix.TCP_NODELAY (as_bool ())
-	| _ -> () (* ignore unrecognized options *)
+    try
+      let bool_option = ref false and
+          bool_option_val = ref Unix.SO_DEBUG and
+          int_option = ref false and
+          int_option_val = ref Unix.SO_SNDBUF and
+          float_option = ref false and
+          float_option_val = ref Unix.SO_RCVTIMEO and
+          option_handled = ref false and
+          fd = self#get_fd sockfd in
+      (match (level, name) with
+	  (* 0 = SOL_IP *)
+	  | (0, 6) (* IP_RECVOPTS *) -> () (* No OCaml support *)
+      (* 1 = SOL_SOCKET *)
+      | (1, 1) ->
+        bool_option := true;
+        bool_option_val := Unix.SO_DEBUG;
+      | (1, 2) ->
+        bool_option := true;
+        bool_option_val := Unix.SO_REUSEADDR;
+      | (1, 3) ->
+        int_option := true;
+        int_option_val := Unix.SO_TYPE;
+      | (1, 5) ->
+        bool_option := true;
+        bool_option_val := Unix.SO_DONTROUTE;
+      | (1, 6) ->
+        bool_option := true;
+        bool_option_val := Unix.SO_BROADCAST;
+      | (1, 7) ->
+        int_option := true;
+        int_option_val := Unix.SO_SNDBUF;
+      | (1, 8) ->
+        int_option := true;
+        int_option_val := Unix.SO_RCVBUF;
+      | (1, 9) ->
+        bool_option := true;
+        bool_option_val := Unix.SO_KEEPALIVE;
+      | (1, 10) ->
+        bool_option := true;
+        bool_option_val := Unix.SO_OOBINLINE;
+      | (1, 11) -> (* SO_NO_CHECK *) () (* No OCaml support *)
+      | (1, 12) -> (* SO_PRIORITY *) () (* No OCaml support *)
+      | (1, 13) ->
+        let lonoff = Int64.to_int (load_word valp) and
+            linger = Int64.to_int (load_word (lea valp 1 4 0)) in
+        let linger_oc = (if lonoff <> 0 && linger <> 0 then Some linger
+                         else None) in
+        Unix.setsockopt_optint fd Unix.SO_LINGER linger_oc;
+        option_handled := true;
+      | (1, 14) -> (* SO_BSDCOMPAT *) () (* No OCaml support *)
+      | (1, 15) -> (* SO_REUSEPORT *) () (* No OCaml support *)
+      | (1, 16) -> (* SO_PASSCRED *) () (* No OCaml support *)
+      | (1, 17) -> (* SO_PEERCRED *) () (* No OCaml support *)
+      | (1, 18) ->
+        int_option := true;
+        int_option_val := Unix.SO_RCVLOWAT;
+      | (1, 19) ->
+        int_option := true;
+        int_option_val := Unix.SO_SNDLOWAT;
+      | (1, 20) ->
+        float_option := true;
+        float_option_val := Unix.SO_RCVTIMEO;
+      | (1, 21) ->
+        float_option := true;
+        float_option_val := Unix.SO_SNDTIMEO;
+      | (1, 22) -> (* SO_SECURITY_AUTHENTICATION *) () (* No OCaml support *)
+      | (1, 23) -> (* SO_SECURITY_ENCRYPTION_TRANSPORT *) 
+          () (* No OCaml support *)
+      | (1, 24) -> (* SO_SECURITY_ENCRYPTION_NETWORK *) 
+          () (* No OCaml support *)
+      | (1, 25) -> (* SO_BINDTODEVICE *) () (* No OCaml support *)
+      | (1, 26) -> (* SO_ATTACH_FILTER *) () (* No OCaml support *)
+      | (1, 27) -> (* SO_DETACH_FILTER *) () (* No OCaml support *)
+      | (1, 28) -> (* SO_PEERNAME *) () (* No OCaml support *)
+      | (1, 29) -> (* SO_TIMESTAMP *) () (* No OCaml support *)
+      | (1, 30) ->
+        bool_option := true;
+        bool_option_val := Unix.SO_ACCEPTCONN;
+      (* 6 = SOL_TCP *)
+	  | (6, 1) -> 
+        Unix.setsockopt fd Unix.TCP_NODELAY (as_bool ());
+        option_handled := true;
+	  | _ -> ()); (* ignore unrecognized options *)
+      if !option_handled = false then (
+        if !bool_option = true then (
+          Unix.setsockopt fd !bool_option_val (as_bool ());
+        )
+        else if !int_option = true then (
+          Unix.setsockopt_int fd !int_option_val 
+                              (Int64.to_int (load_word valp));
+        )
+        else if !float_option = true then (
+          let timeval_f = (self#read_timeval_as_secs valp) in
+          Unix.setsockopt_float fd !float_option_val timeval_f;
+        )
+      );
+      put_return 0L;
+    with
+      | Unix.Unix_error(err, _, _) -> self#put_errno err
+
+  method sys_getsockopt sockfd level name valp lenp =
+    let write_timeval_from_secs addr secs_f =
+      let secs   = Int64.of_float secs_f in
+      let susecs = Int64.of_float 
+                     ((secs_f -. (Int64.to_float secs))*.1000000.0) in
+      fm#store_word_conc addr secs;
+      fm#store_word_conc (lea addr 1 4 0) susecs;
+    in
+    try
+      let fd = self#get_fd sockfd and
+          bool_option = ref false and
+          bool_option_val = ref Unix.SO_DEBUG and
+          int_option = ref false and
+          int_option_val = ref Unix.SO_SNDBUF and
+          float_option = ref false and
+          float_option_val = ref Unix.SO_RCVTIMEO and
+          option_handled = ref false in
+      (match (level, name) with
+      (* 0 = SOL_IP *)
+      | (0, 6) (* IP_RECVOPTS *) -> () (* No OCaml support *)
+      (* 1 = SOL_SOCKET *)
+      | (1, 1) ->
+        bool_option := true;
+        bool_option_val := Unix.SO_DEBUG;
+      | (1, 2) ->
+        bool_option := true;
+        bool_option_val := Unix.SO_REUSEADDR;
+      | (1, 3) ->
+        int_option := true;
+        int_option_val := Unix.SO_TYPE;
+      | (1, 4) ->
+        let error = Unix.getsockopt_error fd in
+        (match error with
+        | Some err ->
+          fm#store_word_conc valp (Int64.of_int ~-(self#errno err));
+        | None ->
+          fm#store_word_conc valp 0L;
+        );
+        fm#store_word_conc lenp 4L;
+        option_handled := true; 
+      | (1, 5) ->
+        bool_option := true;
+        bool_option_val := Unix.SO_DONTROUTE;
+      | (1, 6) ->
+        bool_option := true;
+        bool_option_val := Unix.SO_BROADCAST;
+      | (1, 7) ->
+        int_option := true;
+        int_option_val := Unix.SO_SNDBUF;
+      | (1, 8) ->
+        int_option := true;
+        int_option_val := Unix.SO_RCVBUF;
+      | (1, 9) ->
+        bool_option := true;
+        bool_option_val := Unix.SO_KEEPALIVE;
+      | (1, 10) ->
+        bool_option := true;
+        bool_option_val := Unix.SO_OOBINLINE;
+      | (1, 11) -> (* SO_NO_CHECK *) () (* No OCaml support *)
+      | (1, 12) -> (* SO_PRIORITY *) () (* No OCaml support *)
+      | (1, 13) ->
+        let linger_opt = Unix.getsockopt_optint fd Unix.SO_LINGER in
+        (match linger_opt with
+        | Some l_onoff ->
+          fm#store_word_conc valp 1L;
+          fm#store_word_conc (lea valp 1 4 0) (Int64.of_int l_onoff);
+          fm#store_word_conc lenp 8L;
+        | None -> (* Linger disabled *)
+          fm#store_word_conc valp 0L;
+          fm#store_word_conc lenp 4L;
+        );
+        option_handled := true;
+      | (1, 14) -> (* SO_BSDCOMPAT *) () (* No OCaml support *)
+      | (1, 15) -> (* SO_REUSEPORT *) () (* No OCaml support *)
+      | (1, 16) -> (* SO_PASSCRED *) () (* No OCaml support *)
+      | (1, 17) -> (* SO_PEERCRED *) () (* No OCaml support *)
+      | (1, 18) ->
+        int_option := true;
+        int_option_val := Unix.SO_RCVLOWAT;
+      | (1, 19) ->
+        int_option := true;
+        int_option_val := Unix.SO_SNDLOWAT;
+      | (1, 20) ->
+        float_option := true;
+        float_option_val := Unix.SO_RCVTIMEO;
+      | (1, 21) ->
+        float_option := true;
+        float_option_val := Unix.SO_SNDTIMEO;
+      | (1, 22) -> (* SO_SECURITY_AUTHENTICATION *) () (* No OCaml support *)
+      | (1, 23) -> (* SO_SECURITY_ENCRYPTION_TRANSPORT *) 
+          () (* No OCaml support *)
+      | (1, 24) -> (* SO_SECURITY_ENCRYPTION_NETWORK *) 
+          () (* No OCaml support *)
+      | (1, 25) -> (* SO_BINDTODEVICE *) () (* No OCaml support *)
+      | (1, 26) -> (* SO_ATTACH_FILTER *) () (* No OCaml support *)
+      | (1, 27) -> (* SO_DETACH_FILTER *) () (* No OCaml support *)
+      | (1, 28) -> (* SO_PEERNAME *) () (* No OCaml support *)
+      | (1, 29) -> (* SO_TIMESTAMP *) () (* No OCaml support *)
+      | (1, 30) ->
+        bool_option := true;
+        bool_option_val := Unix.SO_ACCEPTCONN;
+      (* 6 = SOL_TCP *)
+      | (6, 1) ->
+        bool_option := true;
+        bool_option_val := Unix.TCP_NODELAY;
+      | _ -> ()); (* ignore unrecognized options *)
+      if !option_handled = false then
+        if !bool_option = true then (
+          let value = (if (Unix.getsockopt fd !bool_option_val) = true then 1L
+                       else 0L) in
+          fm#store_word_conc valp value;
+          fm#store_word_conc lenp 4L;
+        )
+        else if !int_option = true then (
+          let value = Unix.getsockopt_int fd !int_option_val in
+          fm#store_word_conc valp (Int64.of_int value);
+          fm#store_word_conc lenp 4L;
+        )
+        else if !float_option = true then (
+          let secs_f = Unix.getsockopt_float fd !float_option_val in
+          write_timeval_from_secs valp secs_f;
+          fm#store_word_conc lenp 8L;
+        );
+      put_return 0L;
+    with
+      | Unix.Unix_error(err, _, _) -> self#put_errno err
 
   method sys_set_robust_list addr len =
     put_return 0L (* success *)
@@ -2689,7 +2970,12 @@ object(self)
 			    "recvfrom(%d, 0x%08Lx, %d, %d, 0x%08Lx, 0x%08Lx)"
 			    sockfd buf len flags addr addrlen_ptr;
 			self#sys_recvfrom sockfd buf len flags addr addrlen_ptr
-		  | 13 -> uh"Unhandled Linux system call shutdown (102:13)"
+		  | 13 ->
+              let sockfd = Int64.to_int (load_word args) and
+                  how = Int64.to_int (load_word(lea args 0 0 4)) in
+              if !opt_trace_syscalls then
+                Printf.printf "shutdown(%d, %d)" sockfd how;
+              self#sys_shutdown sockfd how 
 		  | 14 ->
 		      let sockfd = Int64.to_int (load_word args) and
 			  level = Int64.to_int (load_word (lea args 0 0 4)) and
@@ -2702,7 +2988,19 @@ object(self)
 			    "setsockopt(%d, %d, %d, 0x%08Lx, %d)"
 			    sockfd level name valp len;
 			self#sys_setsockopt sockfd level name valp len
-		  | 15 -> uh"Unhandled Linux system call getsockopt (102:15)"
+		  | 15 ->
+              let sockfd = Int64.to_int (load_word args) and
+			  level = Int64.to_int (load_word (lea args 0 0 4)) and
+			  name = Int64.to_int (load_word (lea args 0 0 8)) and
+			  valp = load_word (lea args 0 0 12) and
+			  lenp = load_word (lea args 0 0 16)
+		      in
+			if !opt_trace_syscalls then
+			  Printf.printf
+			    "getsockopt(%d, %d, %d, 0x%08Lx, 0x%08Lx)"
+			    sockfd level name valp lenp;
+			self#sys_getsockopt sockfd level name valp lenp
+
 		  | 16 ->
 		      let sockfd = Int64.to_int (load_word args) and
 			  msg = load_word (lea args 0 0 4) and
@@ -3166,7 +3464,12 @@ object(self)
 		 Printf.printf "getgroups32(%d, 0x%08Lx)" size list;
 	       self#sys_getgroups32 size list
 	 | (_, 206) -> (* setgroups32 *)
-	     uh "Unhandled Linux system call setgroups32 (206)"
+         let (ebx, ecx) = read_2_regs () in
+         let size = Int64.to_int ebx and
+         list = ecx in
+         if !opt_trace_syscalls then
+           Printf.printf "setgroups32(%d, 0x%08Lx)" size list;
+         self#sys_setgroups32 size list
 	 | (ARM, 207) -> uh "Check whether ARM fchown32 syscall matches x86"
 	 | (X86, 207) -> (* fchown32 *)
 	     let (ebx, ecx, edx) = read_3_regs () in
@@ -3624,7 +3927,20 @@ object(self)
 	     uh "Unhandled Linux/x86 system call migrate_pages (294)"
 	 | (ARM, 322)    (* openat *)
 	 | (X86, 295) -> (* openat *)
-	     uh "Unhandled Linux system call openat"
+         let (arg1, arg2, arg3) = read_3_regs () in
+         let arg4 = (if (Int64.logand arg3 0o100L) <> 0L then
+                       get_reg arg_regs.(3)
+                     else
+                       0L) in
+         let dirfd    = Int64.to_int arg1 and
+             path_buf = arg2 and
+             flags    = Int64.to_int arg3 and
+             mode     = Int64.to_int arg4 in
+         let path = fm#read_cstr path_buf in
+         if !opt_trace_syscalls then
+           Printf.printf "openat(%d, \"%s\", 0x%x, 0o%o)" dirfd path flags mode;
+         self#sys_openat dirfd path flags mode
+
 	 | (ARM, 323)    (* mkdirat *)
 	 | (X86, 296) -> (* mkdirat *)
 	     uh "Unhandled Linux system call mkdirat"
@@ -3791,7 +4107,18 @@ object(self)
 	     uh "Unhandled Linux system call clock_adjtime (343)"
 	 | (X86, 344) -> (* syncfs *)
 	     uh "Unhandled Linux system call syncfs (344)"
-	 
+       | (X86, 345) -> (* sendmmsg *)
+           let (ebx, ecx, edx, esi) = read_4_regs () in
+           let sockfd = Int64.to_int ebx and
+               msg = ecx and
+               vlen = Int64.to_int edx and
+               flags = Int64.to_int esi
+           in
+           if !opt_trace_syscalls then
+             Printf.printf "sendmmsg(%d, 0x%08Lx, %d, %d)"
+               sockfd msg vlen flags;
+           self#sys_sendmmsg sockfd msg vlen flags
+
 	 | (ARM, 0xf0001) -> (* breakpoint *)
 	     uh "Unhandled Linux/ARM pseudo-syscall breakpoint (0xf0001)"
 	 | (ARM, 0xf0002) -> (* cacheflush *)

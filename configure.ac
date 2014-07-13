@@ -6,7 +6,7 @@ AC_INIT(Vine/FuzzBALL, 20130511, bitblaze-users@googlegroups.com)
 AC_CONFIG_SRCDIR([libasmir/src/vex/vexir.cpp])
 AC_CONFIG_HEADER([libasmir/config.h])
 
-AM_INIT_AUTOMAKE
+AM_INIT_AUTOMAKE([-Wall subdir-objects])
 
 m4_include([./m4/ac_ocaml.m4])
 
@@ -14,6 +14,13 @@ m4_include([./m4/ac_ocaml.m4])
 AC_PROG_CXX
 AC_PROG_CC
 AC_PROG_MAKE_SET
+# If automake defines a special version of AR, request it. The main reason
+# for this is to silence a warning with newer automake versions and -Wall,
+# so we can leave -Wall turned on for other future warnings. The purpose
+# of the underlying feature is to improve portability to systems whose
+# "ar" is not Unix-like. It's not needed now, but might be useful if
+# we ever port Windows, say.
+m4_ifdef([AM_PROG_AR], [AM_PROG_AR])
 AC_PROG_RANLIB
 AC_PROG_OCAML
 AC_PROG_OCAMLFIND
