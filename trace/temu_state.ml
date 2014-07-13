@@ -291,6 +291,7 @@ object(self)
     in
     let num_read = List.length pair_l in
     if (num_read = size) then (
+      assert ((size >= 0) && (size < Sys.max_array_length));
       let arr = Array.make size 0 in
       List.iteri (fun idx (_,c) -> arr.(idx) <- Char.code c) pair_l;
       arr

@@ -28,8 +28,9 @@ class cgcos_special_handler (fm : fragment_machine) =
       with
           NotConcrete(_) -> raise SymbolicSyscall
     else
-      Array.init len
-        (fun i -> Char.chr (load_byte (Int64.add addr (Int64.of_int i))))
+      (assert ((len >= 0) && (len < Sys.max_array_length));
+       Array.init len
+         (fun i -> Char.chr (load_byte (Int64.add addr (Int64.of_int i)))))
   in
   let store_word base idx v =
     let addr = Int64.add base (Int64.of_int idx) in

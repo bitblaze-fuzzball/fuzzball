@@ -111,10 +111,16 @@ class linux_special_handler (fm : fragment_machine) =
       try
 	fm#read_buf addr len (* Works for concrete values only *)
       with
-	  NotConcrete(_) -> raise SymbolicSyscall
-    else
-      Array.init len
-	(fun i -> Char.chr (load_byte (Int64.add addr (Int64.of_int i))))
+	NotConcrete(_) -> raise SymbolicSyscall
+    else if (len < 0)
+    then (Printf.eprintf "Can't create a negative length array\n";
+	  assert false)
+    else if (len >= Sys.max_array_length)
+    then (Printf.eprintf "Can't make an array that big.\n";
+	  assert false)
+    else  Array.init len
+      (fun i -> Char.chr (load_byte (Int64.add addr (Int64.of_int i))))
+
   in
   let lea base i step off =
     Int64.add base (Int64.add (Int64.mul (Int64.of_int i) (Int64.of_int step))
@@ -1392,7 +1398,8 @@ object(self)
 	(List.filter (fun (_,e) -> e land flag <> 0) pollfds)
     in
     let timeout_f = (Int64.to_float timeout_ms) /. 1000.0 in
-    let pollfds_a = Array.init nfds (get_pollfd fds_buf) in
+    let pollfds_a = (assert ((nfds >= 0) && (nfds < Sys.max_array_length));
+		     Array.init nfds (get_pollfd fds_buf)) in
     let pollfds = Array.to_list pollfds_a in
     let readfds = filter_event 0x1 (* POLLIN *) pollfds and
 	writefds = filter_event 0x4 (* POLLOUT *) pollfds and

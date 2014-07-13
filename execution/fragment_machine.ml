@@ -1787,6 +1787,7 @@ struct
       self#store_byte_idx (Int64.add base idx) (String.length str) 0
 
     method read_buf addr len =
+      assert ((len >= 0) && (len < Sys.max_array_length));
       Array.init len
 	(fun i -> Char.chr
 	   (D.to_concrete_8 (mem#load_byte (Int64.add addr (Int64.of_int i)))))
