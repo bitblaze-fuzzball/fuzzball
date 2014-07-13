@@ -76,6 +76,7 @@ let  getParameterTable () =
     add_parameter "-stop-on-symbolic-syscall-args" (Bool EO.opt_stop_on_symbolic_syscall_args);
     add_parameter "-chroot" (StringOpt EO.opt_chroot_path);
     add_parameter "-decree" (Bool EO.opt_decree);
+    add_parameter "-symbolic-receive" (Bool EO.opt_symbolic_receive);
 
 
     (* State_loader.state_loader_cmdline_opts *)

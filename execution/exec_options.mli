@@ -158,7 +158,9 @@ val opt_solve_final_pc : bool ref
 val opt_skip_untainted : bool ref
 val opt_arch : execution_arch ref
 val opt_arch_string : string option ref
+
 val opt_decree : bool ref
+val opt_symbolic_receive : bool ref
 
 val asmir_arch : unit -> Asmir.arch
 

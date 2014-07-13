@@ -67,10 +67,16 @@ let linux_cmdline_opts =
     ("-chroot", Arg.String
        (fun s -> opt_chroot_path := Some s),
      "path Prepend PATH to absolute filenames");
-    ("-decree", Arg.Set(opt_decree),
-     " Use CGC binary format and syscalls (similar to Linux/x86/ELF)");
     ("--", Arg.Rest(fun s -> opt_argv := !opt_argv @ [s]),
      " Pass any remaining arguments to the program");
+
+    (* Decree/CGCEF/CGCOS options. Not yet enough that it makes sense
+       to make a new file for them. *)
+    ("-decree", Arg.Set(opt_decree),
+     " Use CGC binary format and syscalls (similar to Linux/x86/ELF)");
+    ("-symbolic-receive", Arg.Set(opt_symbolic_receive),
+     " Make all data read by receive(2cgc) symbolic");
+
   ]
 
 let apply_linux_cmdline_opts (fm : Fragment_machine.fragment_machine) =
