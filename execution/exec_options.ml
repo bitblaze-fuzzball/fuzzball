@@ -183,6 +183,7 @@ let opt_arch_string = ref None
 
 let opt_decree = ref false
 let opt_symbolic_receive = ref false
+let opt_symbolic_random = ref false
 
 let asmir_arch () =
   asmir_arch_of_execution_arch !opt_arch

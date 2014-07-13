@@ -206,6 +206,21 @@ object(self)
     with
       | Unix.Unix_error(err, _, _) -> self#put_errno err
 
+  method private cgcos_random buf count count_out_p =
+    if !opt_symbolic_random then
+      fm#maybe_start_symbolic
+	(fun () -> (fm#make_symbolic_region buf count;
+			max_input_string_length :=
+			  max (!max_input_string_length) count))
+    else
+      for i = 0 to count - 1 do
+	let byte = Int64.to_int (Int64.logand (fm#random_word) 0xffL)
+	in
+	  fm#store_byte_idx buf i byte
+      done;
+    store_word count_out_p 0 (Int64.of_int count);
+    put_return 0L
+
   method private read_throw fd buf count num_bytes_p =
     let str = self#string_create count in
     let oc_fd = self#get_fd fd in
@@ -261,8 +276,6 @@ object(self)
       else
         fm#get_word_var_concretize r
           !opt_measure_influence_syscall_args "syscall arg"
-    in
-    let uh s = raise (UnhandledSysCall(s))
     in
     let (callnum_reg, arg_regs, ret_reg) = match !opt_arch with
       | X86 -> (R_EAX, [| R_EBX; R_ECX; R_EDX; R_ESI; R_EDI; R_EBP |], R_EAX)
@@ -358,8 +371,17 @@ object(self)
 		  Printf.printf "deallocate(0x%08Lx, %Ld)" addr len;
 		self#cgcos_deallocate addr len;
 		None
-	  | 7 -> (* random *)
-	      uh "Unhandled CGCOS system call random (7)"
+	  | 7 -> (* random, similar to Linux read from /dev/urandom  *)
+	      let (arg1, arg2, arg3) = read_3_regs () in
+	      let buf         = arg1 and
+		  count       = Int64.to_int arg2 and
+		  count_out_p = arg3
+	      in
+		if !opt_trace_syscalls then
+		  Printf.printf "random(0x%08Lx, %d, 0x%08Lx)"
+		    buf count count_out_p;
+		self#cgcos_random buf count count_out_p;
+		Some count_out_p
 	  | _ -> 
 	      self#put_errno Unix.ENOSYS;
 	      None

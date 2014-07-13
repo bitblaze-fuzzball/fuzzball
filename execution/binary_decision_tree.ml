@@ -488,6 +488,12 @@ class binary_decision_tree = object(self)
 	Printf.printf "Flipping a floating coin to get %f\n" f;
       f
 
+  method random_word =
+    let i = Random.State.int64 randomness 0x100000000L in
+      if !opt_trace_randomness then
+	Printf.printf "Flipping a 32-bit coin to get %Ld\n" i;
+      i
+
   method record_unsat b =
     match (b, get_f_child cur, get_t_child cur) with
       | (false, None, _) ->

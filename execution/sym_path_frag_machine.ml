@@ -723,7 +723,9 @@ struct
     method print_tree chan = dt#print_tree chan
 
     method set_iter_seed i = dt#set_iter_seed i
-      
+
+    method random_word = dt#random_word
+
     method reset () =
       fm#reset ();
       form_man#reset_mem_axioms;

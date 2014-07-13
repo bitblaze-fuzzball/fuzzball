@@ -76,6 +76,8 @@ let linux_cmdline_opts =
      " Use CGC binary format and syscalls (similar to Linux/x86/ELF)");
     ("-symbolic-receive", Arg.Set(opt_symbolic_receive),
      " Make all data read by receive(2cgc) symbolic");
+    ("-symbolic-random", Arg.Set(opt_symbolic_random),
+     " Make all data read by random(2cgc) symbolic");
 
   ]
 

@@ -70,7 +70,9 @@ sig
     method print_tree : out_channel -> unit
 
     method set_iter_seed : int -> unit
-      
+
+    method random_word : int64
+
     method reset : unit -> unit
 
     method after_exploration : unit
