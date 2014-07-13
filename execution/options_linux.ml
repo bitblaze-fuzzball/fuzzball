@@ -76,9 +76,13 @@ let linux_cmdline_opts =
      " Use CGC binary format and syscalls (similar to Linux/x86/ELF)");
     ("-symbolic-receive", Arg.Set(opt_symbolic_receive),
      " Make all data read by receive(2cgc) symbolic");
+    ("-max-receives", Arg.Int
+       (fun i -> opt_max_receives := Some i),
+     "NUM Stop path after too many receive(2cgc) calls");
     ("-symbolic-random", Arg.Set(opt_symbolic_random),
      " Make all data read by random(2cgc) symbolic");
-
+    ("-skip-timeouts", Arg.Set(opt_skip_timeouts),
+     " Don't wait when fdwait(2cgc) says to");
   ]
 
 let apply_linux_cmdline_opts (fm : Fragment_machine.fragment_machine) =

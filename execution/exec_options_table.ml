@@ -77,7 +77,9 @@ let  getParameterTable () =
     add_parameter "-chroot" (StringOpt EO.opt_chroot_path);
     add_parameter "-decree" (Bool EO.opt_decree);
     add_parameter "-symbolic-receive" (Bool EO.opt_symbolic_receive);
+    add_parameter "-max-receives" (IntOpt EO.opt_max_receives);
     add_parameter "-symbolic-random" (Bool EO.opt_symbolic_random);
+    add_parameter "-skip-timeouts" (Bool EO.opt_skip_timeouts);
 
 
     (* State_loader.state_loader_cmdline_opts *)

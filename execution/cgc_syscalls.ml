@@ -117,11 +117,22 @@ object(self)
   method private reset_memory_state =
     next_fresh_addr <- saved_next_fresh_addr;
 
+  val mutable num_receives = 0
+  val mutable saved_num_receives = 0
+
+  method private save_depth_state =
+    saved_num_receives <- num_receives
+
+  method private reset_depth_state =
+    num_receives <- saved_num_receives
+
   method make_snap = 
-    self#save_memory_state
+    self#save_memory_state;
+    self#save_depth_state
 
   method reset = 
-    self#reset_memory_state
+    self#reset_memory_state;
+    self#reset_depth_state
 
   method private string_create len =
     try String.create len
@@ -192,7 +203,11 @@ object(self)
       in
       let rl_file_descr = map_fd rl and 
           wl_file_descr = map_fd wl and 
-          timeout_f = read_timeval_as_secs timeout in
+          timeout_f = (if !opt_skip_timeouts then
+			 0.0
+		       else
+			 read_timeval_as_secs timeout)
+      in
       let (r_fds, w_fds, e_fds) = 
         Unix.select rl_file_descr wl_file_descr [] timeout_f in
       let r_fds_len = (List.length r_fds) and
@@ -243,6 +258,12 @@ object(self)
       put_return 0L
 
   method private cgcos_receive fd buf count num_bytes_p =
+    (match !opt_max_receives with
+       | Some m ->
+	   (if num_receives >= m then
+	      raise DeepPath;
+	    num_receives <- num_receives + 1)
+       | None -> ());
     try
       self#read_throw fd buf count num_bytes_p
     with
