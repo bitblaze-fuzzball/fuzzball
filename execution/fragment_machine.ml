@@ -31,7 +31,7 @@ let finish_fuzz s =
   if List.length !fuzz_finish_reasons < 15 then
     fuzz_finish_reasons := s :: !fuzz_finish_reasons
   else
-    if !opt_trace_stopping || not !reason_warned then (
+    if !opt_trace_stopping || !reason_warned then (
       reason_warned := true;
       Printf.printf "fuzz_finish_reasons list exceeded 15... ignoring new reason\n")
 

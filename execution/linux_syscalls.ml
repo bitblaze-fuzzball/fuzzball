@@ -665,6 +665,16 @@ object(self)
     with
       | Unix.Unix_error(err, _, _) -> self#put_errno err
 
+  method sys_accept sockfd addr addrlen_ptr =
+    try
+      let (sockfd_oc,socka_oc) = Unix.accept (self#get_fd sockfd) and
+          vt_fd = self#fresh_fd () in
+      self#write_sockaddr socka_oc addr addrlen_ptr;
+      Array.set unix_fds vt_fd (Some sockfd_oc);
+      put_return (Int64.of_int vt_fd)
+    with
+    | Unix.Unix_error(err, _, _) -> self#put_errno err
+      
   method sys_brk addr =
     let cur_break = match !the_break with
       | Some b -> b
@@ -1564,6 +1574,21 @@ object(self)
 
   method sys_sched_get_priority_min policy =
     assert(policy = 0); (* SCHED_OTHER *)
+    put_return 0L
+
+  method sys_nanosleep req rem =
+    (* This is closely related to the signal handling..
+       but assume we always sleep for as long as we wanted *) 
+    if not !opt_skip_timeouts then (
+      (* I don't know what the difference between the 
+	 load_word_* functions are *)
+      let seconds = fm#load_word_conc req in
+      (* ignore nanoseconds because ocaml only deals with second resolution *)
+      
+      Unix.sleep (Int64.to_int seconds)
+    );
+    store_word rem 0 0L;
+    store_word rem 4 0L;
     put_return 0L
 
   method sys_sched_getscheduler pid =
@@ -2588,7 +2613,15 @@ object(self)
 			if !opt_trace_syscalls then
 			  Printf.printf "listen(%d, %d)" sockfd backlog;
 			self#sys_listen sockfd backlog
-		  | 5 -> uh"Unhandled Linux system call accept (102:5)"
+		  | 5 ->
+		    let sockfd = Int64.to_int (load_word args) and
+			addr = load_word (lea args 0 0 4) and
+			addrlen_ptr = load_word (lea args 0 0 8)
+		    in
+		    if !opt_trace_syscalls then
+		      Printf.printf "accept(%d, 0x%08Lx, 0x%08Lx)"
+			sockfd addr addrlen_ptr;
+		    self#sys_accept sockfd addr addrlen_ptr
 		  | 6 ->
 		      let sockfd = Int64.to_int (load_word args) and
 			  addr = load_word (lea args 0 0 4) and
@@ -2943,7 +2976,11 @@ object(self)
 	 | (_, 161) -> (* sched_rr_get_interval *)
 	     uh "Unhandled Linux system call sched_rr_get_interval (161)"
 	 | (_, 162) -> (* nanosleep *)
-	     uh "Unhandled Linux system call nanosleep (162)"
+	   let (req, rem) = read_2_regs () in
+	   if !opt_trace_syscalls then
+	     Printf.printf "nanosleep(%s, %s)"
+	       (Int64.to_string req) (Int64.to_string rem);
+	   self#sys_nanosleep req rem
 	 | (_, 163) -> (* mremap *)
 	     uh "Unhandled Linux system call mremap (163)"
 	 | (_, 164) -> (* setresuid *)
@@ -3389,7 +3426,7 @@ object(self)
 	       self#sys_clock_getres clkid timep
 	 | (ARM, 265)    (* clock_nanosleep *)
 	 | (X86, 267) -> (* clock_nanosleep *)
-	     uh "Unhandled Linux system call clock_nanosleep"
+	   uh "Unhandled Linux system call clock_nanosleep" 
 	 | (ARM, 266)
 	 | (X86, 268) -> (* statfs64 *)
 	     let (arg1, arg2, arg3) = read_3_regs () in
