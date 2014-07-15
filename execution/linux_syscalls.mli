@@ -37,7 +37,7 @@ object
   method write_fake_statfs64buf : int64 -> unit
   method write_ftime_as_words : float -> int64 -> float -> unit
 
-  method add_symbolic_file : string -> unit
+  method add_symbolic_file : string -> bool -> unit
   method make_snap : unit
   method reset : unit
 
