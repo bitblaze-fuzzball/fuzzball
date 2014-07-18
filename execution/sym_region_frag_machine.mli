@@ -93,7 +93,10 @@ sig
     method set_iter_seed : int -> unit
     method init_prog : Vine.program -> unit
     method set_frag : Vine.program -> unit
+    method get_esp : int64
     method run_eip_hooks : unit
+    method jump_hook : string -> int64 -> int64 -> unit
+    method run_jump_hooks : string -> int64 -> int64 -> unit
     method on_missing_symbol : unit
     method private on_missing_zero_m :
       Granular_memory.GranularMemoryFunctor(D).granular_memory -> unit

@@ -81,6 +81,9 @@ sig
     method get_eip : int64
     method set_eip : int64 -> unit
     method run_eip_hooks : unit
+    method get_esp : int64
+    method jump_hook : string -> int64 -> int64 -> unit
+    method run_jump_hooks : string -> int64 -> int64 -> unit
     method on_missing_symbol : unit
     method private on_missing_zero_m :
       Granular_memory.GranularMemoryFunctor(D).granular_memory -> unit
