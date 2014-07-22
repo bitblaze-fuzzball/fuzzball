@@ -102,7 +102,7 @@ let bb_size = 1
 let decode_insns_cached fm gamma eip =
   with_trans_cache eip (fun () -> decode_insns fm gamma eip bb_size true)
 
-let rec runloop (fm : fragment_machine) eip asmir_gamma until =
+let runloop (fm : fragment_machine) eip asmir_gamma until =
   let rec loop last_eip eip =
     (let old_count =
        (try
@@ -135,10 +135,10 @@ let rec runloop (fm : fragment_machine) eip asmir_gamma until =
 	fm#set_frag prog';
 	(* flush stdout; *)
 	let new_eip = label_to_eip (fm#run ()) in
-	  match (new_eip, until) with
-	    | (e1, e2) when e2 e1 -> ()
-	    | (0L, _) -> raise JumpToNull
-	    | _ -> loop eip new_eip
+	match (new_eip, until) with
+	| (e1, until_fn) when until_fn e1 -> () (* halt recursion when until is true *)
+	| (0L, _) -> raise JumpToNull           (* new eip is null *)
+	| _ -> loop eip new_eip                 (* keep going *)
   in
     Hashtbl.clear loop_detect;
     loop (0L) eip
