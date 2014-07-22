@@ -181,7 +181,7 @@ struct
     let rec loop e =
       match e with
 	| V.BinOp(V.PLUS, e1, e2) -> (loop e1) @ (loop e2)
-(*	| V.BinOp(V.BITAND, e, V.Constant(V.Int(ty, v)))
+	| V.BinOp(V.BITAND, e, V.Constant(V.Int(ty, v)))
 	    when is_high_mask ty v ->
 	    (* x & 0xfffffff0 = x - (x & 0xf), etc. *)
 	    (loop e) @
@@ -189,7 +189,7 @@ struct
 		 (V.UnOp(V.NEG,
 			 V.BinOp(V.BITAND, e,
 				 V.UnOp(V.NOT, V.Constant(V.Int(ty, v)))))))
-	| V.BinOp(V.BITOR, e1, e2) ->
+	(*| V.BinOp(V.BITOR, e1, e2) ->
 	    let (w1, w2) = (narrow_bitwidth e1), (narrow_bitwidth e2) in
 (* 	      Printf.printf "In %s (OR) %s, widths are %d and %d\n" *)
 (* 		(V.exp_to_string e1) (V.exp_to_string e2) w1 w2; *)
