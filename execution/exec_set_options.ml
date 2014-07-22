@@ -359,8 +359,6 @@ let fuzzball_cmdline_opts =
      " Check whether dereferenced values can be null");
     ("-finish-on-null-deref", Arg.Set(opt_finish_on_null_deref),
      " Finish exploration on finding a null dereference");
-    ("-print-callrets", Arg.Set(opt_print_callrets),
-     " Print call and ret instructions executed. Can be used with ./getbacktrace.pl to generate the backtrace at any point.");
     (* This flag is misspelled, and will be renamed in the future. *)
     ("-no-fail-on-huer", Arg.Clear(opt_fail_offset_heuristic),
      " Do not fail when a heuristic (e.g. offset optimization) fails.");
@@ -437,6 +435,8 @@ let cmdline_opts =
      " Print each memory load");
     ("-trace-stores", Arg.Set(opt_trace_stores),
      " Print each memory store");
+    ("-trace-callstack", Arg.Set(opt_trace_callstack),
+     " Print calls and returns");
     ("-trace-regions", Arg.Set(opt_trace_regions),
      " Print symbolic memory regions");
     ("-trace-registers", Arg.Set(opt_trace_registers),

@@ -245,6 +245,9 @@ struct
 	  ret
 
     method query_with_path_cond cond verbose =
+      self#query_with_path_cond_wcache cond verbose true
+
+    method private query_with_path_cond_wcache cond verbose with_cache =
       let module TIMING = (val !Loggers.fuzzball_timing_json : Yojson_logger.JSONLog) in
       self#ensure_extra_conditions;
       if new_path then
@@ -265,13 +268,13 @@ struct
 	in
 	  loop working_ce_cache
       in
-      let (is_sat, ce) = match ce_opt with
-	| Some ce' ->
+      let (is_sat, ce) = match (ce_opt, with_cache) with
+	| (Some ce', true) ->
 	    if !opt_trace_working_ce_cache || !opt_trace_global_ce_cache then
 	      (Printf.printf "CE Cache Hit: ";
 	       self#print_ce ce');
 	    (true, ce')
-	| None -> 
+	| _ ->
 	    let (decls, assigns, cond_e, new_vars) =
 	      form_man#one_cond_for_solving cond var_seen_hash
 	    in
@@ -742,7 +745,7 @@ struct
 	   (List.rev (self#get_path_cond)));
       if !opt_solve_final_pc then
 	assert(let (b,_) =
-		 self#query_with_path_cond V.exp_true true
+		 self#query_with_path_cond_wcache V.exp_true true false
 	       in b);
       dt#try_again_p
 

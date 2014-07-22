@@ -35,6 +35,20 @@ let finish_fuzz s =
       reason_warned := true;
       Printf.printf "fuzz_finish_reasons list exceeded 15... ignoring new reason\n")
 
+let skip_strings =
+  (let h = Hashtbl.create 2 in
+     Hashtbl.replace h "NoOp" ();
+     Hashtbl.replace h "x86g_use_seg_selector" ();
+     h)
+
+(* The interface for Vine to give us the disassembly of an instruction
+   is to put it in a comment, but it uses comments for other things as
+   well. So this code tries to filter out all the things that are not
+   instruction disassemblies. It be cleaner to have a special syntax. *)
+let comment_is_insn s =
+  (not (Hashtbl.mem skip_strings s))
+  && ((String.length s < 13) || (String.sub s 0 13) <> "eflags thunk:")
+
 class virtual special_handler = object(self)
   method virtual handle_special : string -> V.stmt list option
   method virtual make_snap : unit
@@ -164,6 +178,9 @@ class virtual fragment_machine = object
   method virtual get_eip : int64
   method virtual set_eip : int64 -> unit
   method virtual run_eip_hooks : unit
+  method virtual get_esp : int64
+  method virtual jump_hook : string -> int64 -> int64 -> unit
+  method virtual run_jump_hooks : string -> int64 -> int64 -> unit
   
   method virtual set_cjmp_heuristic :
     (int64 -> int64 -> int64 -> float -> bool option -> bool option) -> unit
@@ -496,6 +513,79 @@ struct
 
     method run_eip_hooks =
       self#eip_hook (self#get_eip)
+
+    method get_esp =
+      match !opt_arch with
+	| X86 -> self#get_word_var R_ESP
+	| X64 -> self#get_word_var R_RSP
+	| ARM -> self#get_word_var R13
+
+    val mutable call_stack = []
+
+    method private trace_callstack last_insn last_eip eip =
+      let pop_callstack esp =
+	while match call_stack with
+	  | (old_esp, _, _, _) :: _ when old_esp < esp -> true
+	  | _ -> false do
+	      call_stack <- List.tl call_stack
+	done
+      in
+      let get_retaddr esp =
+	match !opt_arch with
+	  | X86 -> self#load_word_conc esp
+	  | X64 -> self#load_long_conc esp
+	  | ARM -> self#get_word_var R14
+      in
+      let size = match !opt_arch with
+	| X86 -> 4L
+	| X64 -> 8L
+	| ARM -> 4L
+      in
+      let kind =
+	match !opt_arch with
+	  | X86 | X64 ->
+	      let s = last_insn ^ "    " in
+		if (String.sub s 0 4) = "call" then
+		  "call"
+		else if (String.sub s 0 3) = "ret" then
+		  "return"
+		else if (String.sub s 0 3) = "jmp" then
+		  "unconditional jump"
+		else if (String.sub s 0 1) = "j" then
+		  "conditional jump"
+		else
+		  "not a jump"
+	  | ARM ->
+	      (* TODO: add similar parsing for ARM mnemonics *)
+	      "not a jump"
+      in
+	match kind with
+	  | "call" ->
+	      let esp = self#get_esp in
+	      let depth = List.length call_stack and
+		  ret_addr = get_retaddr esp
+	      in
+		for i = 0 to depth - 1 do Printf.printf " " done;
+		Printf.printf
+		  "Call from 0x%08Lx to 0x%08Lx (return to 0x%08Lx)\n"
+		  last_eip eip ret_addr;
+		call_stack <- (esp, last_eip, eip, ret_addr) :: call_stack;
+	  | "return" ->
+	      let esp = self#get_esp in
+		pop_callstack (Int64.sub esp size);
+		let depth = List.length call_stack in
+		  for i = 0 to depth - 2 do Printf.printf " " done;
+		  Printf.printf "Return from 0x%08Lx to 0x%08Lx\n"
+		    last_eip eip;
+		  pop_callstack esp;
+	  | _ -> ()
+
+    method jump_hook last_insn last_eip eip =
+      if !opt_trace_callstack then
+	self#trace_callstack last_insn last_eip eip
+
+    method run_jump_hooks last_insn last_eip eip =
+      self#jump_hook last_insn last_eip eip
 
     method set_cjmp_heuristic
       (func:(int64 -> int64 -> int64 -> float -> bool option -> bool option))
@@ -1473,8 +1563,13 @@ struct
 	    | Some sl ->
 		self#run_sl do_jump sl
 
+    val mutable last_eip = -1L
+    val mutable last_insn = "none"
+    val mutable saw_jump = false
+
     method run_sl do_jump sl =
       let jump lab =
+	saw_jump <- true;
 	if do_jump lab then
 	  self#jump do_jump lab
 	else
@@ -1526,20 +1621,24 @@ struct
 			   (String.sub l 0 5) = "pc_0x") then
 		       (let eip = Vine.label_to_addr l in
 			  self#set_eip eip;
-			  self#run_eip_hooks);
+			  (* saw_jump will be set for the fallthrough
+			     from one instruction to the next unless it's
+			     optimized away (which it won't be when we
+			     translate one instruction at a time), so it's
+			     an overapproximation. *)
+			  if saw_jump then
+			    self#run_jump_hooks last_insn last_eip eip;
+			  self#run_eip_hooks;
+			  last_eip <- eip;
+			  saw_jump <- false);
 		     loop rest
 		 | V.ExpStmt(e) ->
 		     let v = self#eval_int_exp e in
 		       ignore(v);
 		       loop rest
-		 | V.Comment(s) -> 
-		     if (!opt_print_callrets) then (
-		       if (Str.string_match
-			     (Str.regexp ".*\\(call\\|ret\\).*") s 0) then (
-			 let eip = self#get_eip in
-			   Printf.printf "%s @ 0x%Lx\n" s eip
-		       );
-		     );
+		 | V.Comment(s) ->
+		     if comment_is_insn s then
+		       last_insn <- s;
 		     loop rest
 		 | V.Block(_,_) -> failwith "Block unsupported"
 		 | V.Function(_,_,_,_,_) -> failwith "Function unsupported"

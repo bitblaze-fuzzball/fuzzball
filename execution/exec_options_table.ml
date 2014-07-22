@@ -196,7 +196,6 @@ let  getParameterTable () =
 
      add_parameter "-check-for-null"  (Bool EO.opt_check_for_null);
      add_parameter "-finish-on-null-deref" (Bool EO.opt_finish_on_null_deref);
-     add_parameter "-print-callrets" (Bool EO.opt_print_callrets);
      add_parameter "-no-fail-on-huer" (Bool EO.opt_fail_offset_heuristic);
 
     (* Exec_set_options.cmdline_opts *)

@@ -157,12 +157,6 @@ let with_trans_cache (eip:int64) fn =
 	    (Frag_simplify.simplify_frag (noop_known_unknowns (dl, sl)));
 	  Hashtbl.find trans_cache eip
 
-let skip_strings = 
-  (let h = Hashtbl.create 2 in
-     Hashtbl.replace h "NoOp" ();
-     Hashtbl.replace h "x86g_use_seg_selector" ();
-     h)
-
 let print_insns start_eip (_, sl) insn_num endl =
   let eip = ref (Some start_eip) in
   let print_eip () = 
@@ -175,10 +169,7 @@ let print_insns start_eip (_, sl) insn_num endl =
     List.iter
       (function
 	 | V.Comment(s) ->
-	     if not (Hashtbl.mem skip_strings s) &&
-               ((String.length s < 13) ||
-                  (String.sub s 0 13) <> "eflags thunk:")
-	     then
+	     if FM.comment_is_insn s then
 	       (print_eip();
 		Printf.printf "%s%c" s endl)
 	 | V.Label(lab) ->

@@ -14,6 +14,7 @@ let opt_load_extra_regions = ref []
 let opt_core_file_name = ref None
 let opt_use_ids_from_core = ref false
 let opt_symbolic_files = ref []
+let opt_concolic_files = ref []
 
 let set_linux_defaults_for_concrete () =
   opt_linux_syscalls := true
@@ -58,6 +59,9 @@ let linux_cmdline_opts =
     ("-symbolic-file", Arg.String
        (fun s -> opt_symbolic_files := s :: !opt_symbolic_files),
      "fname Make data read from the named file symbolic");
+    ("-concolic-file", Arg.String
+       (fun s -> opt_concolic_files := s :: !opt_concolic_files),
+     "fname Make data read from the named file concolic");
     ("-symbolic-syscall-error", Arg.String
        (fun s -> opt_symbolic_syscall_error := Some (Int64.of_string s)),
      "errno Force syscalls with symbolic args to return given value");
@@ -134,7 +138,8 @@ let apply_linux_cmdline_opts (fm : Fragment_machine.fragment_machine) =
     let lsh = new Linux_syscalls.linux_special_handler fm in
       if !opt_use_ids_from_core then
 	lsh#set_proc_identities !Linux_loader.proc_identities;
-      List.iter lsh#add_symbolic_file !opt_symbolic_files;
+      List.iter (fun f -> lsh#add_symbolic_file f false) !opt_symbolic_files;
+      List.iter (fun f -> lsh#add_symbolic_file f  true) !opt_concolic_files;
       Linux_syscalls.linux_set_up_arm_kuser_page fm;
       fm#add_special_handler (lsh :> Fragment_machine.special_handler)
   else

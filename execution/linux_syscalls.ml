@@ -620,8 +620,8 @@ object(self)
   val symbolic_fnames = Hashtbl.create 11
   val symbolic_fds = Hashtbl.create 11
 
-  method add_symbolic_file s =
-    Hashtbl.replace symbolic_fnames s ()
+  method add_symbolic_file s is_concolic =
+    Hashtbl.replace symbolic_fnames s is_concolic
 
   method private save_sym_fd_positions = 
     Hashtbl.iter
@@ -1373,7 +1373,8 @@ object(self)
 	fd_info.(vt_fd).dirp_offset <- 0;
 	(* XXX: canonicalize filename here? *)
 	if Hashtbl.mem symbolic_fnames path then
-	  Hashtbl.replace symbolic_fds vt_fd ();
+	  Hashtbl.replace symbolic_fds vt_fd
+	    (Hashtbl.find symbolic_fnames path);
 	put_return (Int64.of_int vt_fd)
 
   method sys_open path flags mode =
@@ -1459,10 +1460,15 @@ object(self)
     let oc_fd = self#get_fd fd in
     let num_read = Unix.read oc_fd str 0 count in
       if num_read > 0 && Hashtbl.mem symbolic_fds fd then
-	fm#maybe_start_symbolic
-	  (fun () -> (fm#make_symbolic_region buf num_read;
-		      max_input_string_length :=
-			max (!max_input_string_length) num_read))
+	let is_concolic = Hashtbl.find symbolic_fds fd in
+	  fm#maybe_start_symbolic
+	    (fun () ->
+	       (if is_concolic then
+		  fm#store_concolic_cstr buf (String.sub str 0 num_read) false
+		else
+		  fm#make_symbolic_region buf num_read;
+		max_input_string_length :=
+		  max (!max_input_string_length) num_read))
       else
 	fm#store_str buf 0L (String.sub str 0 num_read);
       put_return (Int64.of_int num_read)
