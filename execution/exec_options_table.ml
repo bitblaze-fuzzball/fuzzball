@@ -220,6 +220,7 @@ let  getParameterTable () =
     add_parameter "-trace-EO.opt_iterations" (Bool EO.opt_trace_iterations);
     add_parameter "-trace-loads" (Bool EO.opt_trace_loads); 
     add_parameter "-trace-stores" (Bool EO.opt_trace_stores);
+    add_parameter "-trace-callstack" (Bool EO.opt_trace_callstack);
     add_parameter "-trace-regions" (Bool EO.opt_trace_regions);
     add_parameter "-trace-registers" (Bool EO.opt_trace_registers);
     add_parameter "-trace-setup" (Bool EO.opt_trace_setup);
