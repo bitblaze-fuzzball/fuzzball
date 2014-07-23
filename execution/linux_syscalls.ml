@@ -1876,6 +1876,18 @@ object(self)
     with
       | Unix.Unix_error(err, _, _) -> self#put_errno err
 
+  method sys_setresuid32 new_ruid new_euid new_suid =
+    try
+      (* Similar to sys_setreuid *)
+      match (Unix.getuid (), Unix.geteuid(), new_ruid, new_euid, new_suid) with
+      | (u1, u2, 65535, 0, 65535) when u1 <> 0 && u1 = u2 ->
+        raise (Unix.Unix_error(Unix.EPERM, "setreuid", ""))
+      | (u1, u2, -1, u4, -1) when u1 <> 0 && u2 = u4 ->
+        put_return 0L (* faked for OpenSSH ssh client *)
+      | _ -> failwith "Unhandled case in setresuid32"
+    with
+      | Unix.Unix_error(err, _, _) -> self#put_errno err
+
   method sys_setuid32 uid =
     Unix.setuid uid;
     put_return 0L (* success *)
@@ -3576,7 +3588,13 @@ object(self)
 		 Printf.printf "fchown32(%d, %d, %d)" fd user group;
 	       self#sys_fchown32 fd user group
 	 | (_, 208) -> (* setresuid32 *)
-	     uh "Unhandled Linux system call setresuid32 (208)"
+         let (ebx, ecx, edx) = read_3_regs () in
+         let ruid = Int64.to_int ebx and
+         euid = Int64.to_int ecx and
+         suid = Int64.to_int edx in
+         if !opt_trace_syscalls then
+           Printf.printf "setresuid32(%d, %d, %d)" ruid euid suid;
+         self#sys_setresuid32 ruid euid suid
 	 | (ARM, 209) -> uh "Check whether ARM getresuid32 syscall matches x86"
 	 | (X86, 209) -> (* getresuid32 *)
 	     let (ebx, ecx, edx) = read_3_regs () in
