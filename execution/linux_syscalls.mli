@@ -65,6 +65,7 @@ object
   method sys_close : int -> unit
   method sys_connect : int -> int64 -> int -> unit
   method sys_dup : int -> unit
+  method sys_dup2 : int -> int -> unit
   method sys_eventfd2 : int64 -> int -> unit
   method sys_exit : int64 -> unit
   method sys_exit_group : int64 -> unit
@@ -96,6 +97,7 @@ object
   method sys_gettid : unit
   method sys_getrusage : int -> int64 -> unit
   method sys_getpeername : int -> int64 -> int64 -> unit
+  method sys_socketpair : int -> int -> int -> int64 -> unit
   method sys_getsockname : int -> int64 -> int64 -> unit
   method sys_gettimeofday : int64 -> int64 -> unit
   method sys_getxattr : string -> string -> int64 -> int -> unit
@@ -159,6 +161,7 @@ object
   method sys_statfs64 : string -> int -> int64 -> unit
   method sys_fsync : int -> unit
   method sys_time : int64 -> unit
+  method sys_alarm : int -> unit
   method sys_times : int64 -> unit
   method sys_tgkill : int -> int -> int -> unit
   method sys_umask : int -> unit
