@@ -1425,27 +1425,29 @@ object(self)
 
   method sys_pipe buf =
     let (oc_fd1, oc_fd2) = Unix.pipe () in
-    let (vt_fd1, vt_fd2) = (self#fresh_fd (), self#fresh_fd ()) in
-      Array.set unix_fds vt_fd1 (Some oc_fd1);
-      Array.set unix_fds vt_fd2 (Some oc_fd2);
-      store_word buf 0 (Int64.of_int vt_fd1);
-      store_word buf 4 (Int64.of_int vt_fd2);
-      put_return 0L (* success *)
+    let vt_fd1 = self#fresh_fd () in
+    Array.set unix_fds vt_fd1 (Some oc_fd1);
+    let vt_fd2 = self#fresh_fd () in
+    Array.set unix_fds vt_fd2 (Some oc_fd2);
+    store_word buf 0 (Int64.of_int vt_fd1);
+    store_word buf 4 (Int64.of_int vt_fd2);
+    put_return 0L (* success *)
 
   method sys_pipe2 buf flags =
     let (oc_fd1, oc_fd2) = Unix.pipe () in
-    let (vt_fd1, vt_fd2) = (self#fresh_fd (), self#fresh_fd ()) in
-      Array.set unix_fds vt_fd1 (Some oc_fd1);
-      Array.set unix_fds vt_fd2 (Some oc_fd2);
-      store_word buf 0 (Int64.of_int vt_fd1);
-      store_word buf 4 (Int64.of_int vt_fd2);
-      if (flags land 0o4000 <> 0) then (* O_NONBLOCK *)
-	(Unix.set_nonblock oc_fd1;
-	 Unix.set_nonblock oc_fd2);
-      if (flags land 0o2000000 <> 0) then (* O_CLOEXEC *)
-	(Unix.set_close_on_exec oc_fd1;
-	 Unix.set_close_on_exec oc_fd2);
-      put_return 0L (* success *)
+    let vt_fd1 = self#fresh_fd () in
+    Array.set unix_fds vt_fd1 (Some oc_fd1);
+    let vt_fd2 = self#fresh_fd () in
+    Array.set unix_fds vt_fd2 (Some oc_fd2);
+    store_word buf 0 (Int64.of_int vt_fd1);
+    store_word buf 4 (Int64.of_int vt_fd2);
+    if (flags land 0o4000 <> 0) then (* O_NONBLOCK *)
+      (Unix.set_nonblock oc_fd1;
+      Unix.set_nonblock oc_fd2);
+    if (flags land 0o2000000 <> 0) then (* O_CLOEXEC *)
+      (Unix.set_close_on_exec oc_fd1;
+      Unix.set_close_on_exec oc_fd2);
+    put_return 0L (* success *)
 
   method sys_poll fds_buf nfds timeout_ms =
     let get_pollfd buf idx =
