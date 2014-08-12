@@ -27,6 +27,10 @@ let fuzz_finish_reasons = ref []
 let reason_warned = ref false
 
 let finish_fuzz s =
+  if !opt_finish_immediately then
+    (Printf.printf "Finishing (immediately), %s\n" s;
+     fuzz_finish_reasons := s :: !fuzz_finish_reasons;
+     raise FinishNow);
   if !opt_trace_stopping then
     Printf.printf "Final iteration (%d previous reasons), %s\n" (List.length !fuzz_finish_reasons) s;
   if List.length !fuzz_finish_reasons < 15 then

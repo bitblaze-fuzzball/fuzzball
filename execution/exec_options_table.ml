@@ -178,6 +178,7 @@ let  getParameterTable () =
     add_parameter "-target-formulas" (StringPairList EO.opt_target_formulas);
     add_parameter "-trace-target" (Bool EO.opt_trace_target);
     add_parameter "-finish-on-target-match" (Bool EO.opt_finish_on_target_match);
+    add_parameter "-finish-immediately" (Bool EO.opt_finish_immediately);
     add_parameter "-target-guidance" (Float EO.opt_target_guidance);
     add_parameter "-trace-guidance" (Bool EO.opt_trace_guidance);    add_parameter "-trace-guidance" (Bool EO.opt_trace_guidance);
     add_parameter "-trace-tables" (Bool EO.opt_trace_tables);

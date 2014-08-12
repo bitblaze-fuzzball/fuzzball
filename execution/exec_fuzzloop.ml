@@ -192,6 +192,9 @@ let fuzz start_eip opt_fuzz_start_eip end_eips
 		  | UnproductivePath ->
 		    log_fuzz_restart Log.trace "on unproductive path";
 		    stop "on unproductive path"
+		  | FinishNow ->
+                    log_fuzz_restart Log.trace "on -finish-immediately";
+		    stop "on -finish_immediately";
 		  | Signal("USR1") -> 
 		    log_fuzz_restart Log.trace "on SIGUSR1";
 		    stop "on SIGUSR1"

@@ -138,6 +138,7 @@ let opt_symbolic_syscall_error = ref None
 let opt_stop_on_symbolic_syscall_args = ref false
 let opt_chroot_path = ref None
 let opt_finish_on_nonfalse_cond = ref false
+let opt_finish_immediately = ref false
 let opt_total_timeout = ref None
 let opt_x87_emulator = ref None
 let opt_x87_entry_point = ref None
