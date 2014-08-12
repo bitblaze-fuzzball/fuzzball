@@ -456,7 +456,10 @@ struct
     val mutable loop_cnt = 0L
     method get_loop_cnt = loop_cnt
 
+    val mutable pm = None
+
     method set_pointer_management ptrmng =
+      pm <- Some ptrmng;
       mem#set_pointer_management ptrmng
 
     method set_frag (dl, sl) =
@@ -1253,6 +1256,13 @@ struct
 							 (D.to_concrete_32 value))
       | _ -> ());
       *)
+      if reg_name = (reg_to_regstr R_ESP) then (
+        let int64Value = (D.to_concrete_32 value) in
+        (match pm with
+        | Some ptrmng -> ptrmng#update_stack_end int64Value;
+        | None -> ());
+      );
+
       try
 	ignore(V.VarHash.find reg_store var);
 	V.VarHash.replace reg_store var value
@@ -1354,6 +1364,35 @@ struct
       (v1, v2)
 
     method private eval_binop op v1 ty1 v2 ty2 =
+      (try
+      (match ty2 with 
+      | V.REG_32 -> if (Int64.compare (D.to_concrete_32 v2) (Int64.of_int 65535)) == 0 then (
+        (match op with
+        | V.PLUS -> Printf.printf "PLUS OPERATOR\n"
+        | V.MINUS -> Printf.printf "MINUS OPERATOR\n"
+        | V.TIMES -> Printf.printf "TIMES OPERATOR\n"
+        | V.DIVIDE -> Printf.printf "DIVIDE OPERATOR\n"
+        | V.SDIVIDE -> Printf.printf "SDIVIDE OPERATOR\n"
+        | V.MOD -> Printf.printf "MOD OPERATOR\n"
+        | V.SMOD -> Printf.printf "SMOD OPERATOR\n"
+        | V.BITAND -> Printf.printf "BITAND OPERATOR\n"
+        | V.BITOR -> Printf.printf "BITOR OPERATOR\n"
+        | V.XOR -> Printf.printf "XOR OPERATOR\n"
+        | V.LSHIFT -> Printf.printf "LSHIFT OPERATOR\n"
+        | V.RSHIFT -> Printf.printf "RSHIFT OPERATOR\n"
+        | V.ARSHIFT -> Printf.printf "ARSHIFT OPERATOR\n"
+        | V.EQ -> Printf.printf "EQ OPERATOR\n"
+        | V.NEQ -> Printf.printf "NEQ OPERATOR\n"
+        | V.LT -> Printf.printf "LT OPERATOR\n"
+        | V.LE -> Printf.printf "LE OPERATOR\n"
+        | V.SLT -> Printf.printf "SLT OPERATOR\n"
+        | V.SLE -> Printf.printf "SLE OPERATOR\n");
+        Printf.printf "%s\t%s" (Int64.to_string (D.to_concrete_32 v1)) (Int64.to_string (D.to_concrete_32 v2));
+      );
+      | _ -> ());
+      with NotConcrete(_) -> ());
+
+
       let ty = 
 	(match op with
 	   | V.PLUS | V.MINUS | V.TIMES
@@ -1533,9 +1572,9 @@ struct
     method eval_int_exp_ty exp =
       match exp with
 	| V.BinOp(op, e1, e2) ->
-	    let (v1, ty1) = self#eval_int_exp_ty e1 and
-		(v2, ty2) = self#eval_int_exp_ty e2 in
-	      self#eval_binop op v1 ty1 v2 ty2
+	    let (v1, ty1) = self#eval_int_exp_ty e1
+		  and (v2, ty2) = self#eval_int_exp_ty e2 in
+	    self#eval_binop op v1 ty1 v2 ty2
 	| V.UnOp(op, e1) ->
 	    let (v1, ty1) = self#eval_int_exp_ty e1 in
 	      self#eval_unop op v1 ty1

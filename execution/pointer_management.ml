@@ -11,13 +11,26 @@ val heap_start = 0x50000000L
 val heap_end = 0x50100001L
 (* Thi is where the stack is supposed to start *)
 val stack_start = 0xbaaab000L
-val mutable stack_end = (fun () -> 0xbaaab000L)
+val mutable stack_end = 0xbaaab000L
 
 val alloc_table = Hashtbl.create 100
 val dealloc_table = Hashtbl.create 100
+val stack_table = Hashtbl.create 100
 
-	method set_esp_lookup get_esp =
-		stack_end <- get_esp
+	method update_stack_end esp =
+		if self#greater_than esp stack_end then (
+			(* Printf.printf "stack pop: %s\n" (Int64.to_string esp); *)
+		 	let removeList = Hashtbl.fold (fun addr _ accum ->
+				if self#less_than addr stack_end then
+					addr :: accum
+				else
+					accum
+				) stack_table [] in
+			List.iter (fun addr -> Hashtbl.remove stack_table addr) removeList
+		)
+		(* else
+			Printf.printf "stack push: %s\n" (Int64.to_string esp) *);
+		stack_end <- esp
 
 	method private less_than a b =
 		(Int64.compare a b) < 0
@@ -60,9 +73,9 @@ val dealloc_table = Hashtbl.create 100
 	method add_alloc addr len = 
 		let start_addr = addr
 		and end_addr = Int64.add addr len in
-		Hashtbl.iter (fun key value ->
+		Hashtbl.iter (fun key set ->
 			let start_addr2 = key
-			and end_addr2 = Int64.add key value in
+			and end_addr2 = Int64.add key (Int64.of_int (Array.length set)) in
 	
 			if self#is_overlapping start_addr end_addr start_addr2 end_addr2 then (
 				 Printf.printf "\nNew block (%s - %s) overlaps with existing block (%s - %s)\n"
@@ -72,7 +85,7 @@ val dealloc_table = Hashtbl.create 100
 
 		) alloc_table;
 		
-		Hashtbl.add alloc_table addr len;
+		Hashtbl.add alloc_table addr (Array.make (Int64.to_int len) false);
 
 		let updated_deallocs =
 			Hashtbl.fold (fun key value accum ->
@@ -160,14 +173,14 @@ method add_dealloc addr len =
 		 free multiple blocks at once (I don't know how you could guarantee
 		 contiguous memory from userspace, but maybe you can?)?
 	*)
-	let old_len = Hashtbl.find alloc_table addr in
+	let old_len = Int64.of_int (Array.length (Hashtbl.find alloc_table addr)) in
 	if (self#not_equal len old_len) then
 		raise Alloc_Dealloc_Length_Mismatch;
 
 	Hashtbl.remove alloc_table addr;
 	Hashtbl.add dealloc_table addr len
 
-method is_safe_access addr len =
+method is_safe_read addr len =
 	let start_addr = addr
 	and end_addr = Int64.add addr len
 	and is_safe = ref false in
@@ -176,11 +189,16 @@ method is_safe_access addr len =
 	if self#is_contained start_addr end_addr heap_start heap_end then (
 		(* is it in an allocated block *)
 		try
-			Hashtbl.iter (fun key value ->
+			Hashtbl.iter (fun key set ->
 				let start_addr2 = key
-				and end_addr2 = Int64.add key value in
+				and end_addr2 = Int64.add key (Int64.of_int (Array.length set)) in
 				(* fully contained within an allocated block *)
 				if self#is_contained start_addr end_addr start_addr2 end_addr2 then (
+					let start_index = Int64.to_int (Int64.sub start_addr start_addr2) in
+					for offset = 0 to ((Int64.to_int len) - 1) do
+						if not (Array.get set (start_index + offset)) then
+							raise Uninitialized_Memory;
+					done;
 					raise Safe
 				)
 			) alloc_table;
@@ -188,17 +206,71 @@ method is_safe_access addr len =
 			| Safe -> is_safe := true;
 	)
 	else (
-		let current_stack_end = stack_end () in
-				(* overlapping unsafe memory between heap and stack *)
-		if (self#is_overlapping start_addr end_addr heap_end current_stack_end)  ||
+		(* overlapping unsafe memory between heap and stack *)
+		if (self#is_overlapping start_addr end_addr heap_end stack_end)  ||
 			 (* overlapping the heap but not contained *)
 			 (self#is_overlapping_not_contained start_addr end_addr heap_start heap_end) then
 			 is_safe := false
-		else
+		else (
+ 			if (self#is_contained start_addr end_addr stack_end stack_start) then (
+				let start_addr_ref = ref start_addr in
+				while (Int64.compare !start_addr_ref end_addr) <> 0 do
+					if not (Hashtbl.mem stack_table !start_addr_ref) then (
+						(* Printf.printf "read: %s\n" (Int64.to_string !start_addr_ref); *)
+						raise Uninitialized_Memory
+					);
+					start_addr_ref := Int64.add !start_addr_ref (Int64.one)
+				done
+			);
 			(* otherwise we assume we're safe for now *)
-			is_safe := true;
+			is_safe := true
+		);
 	);
+	!is_safe
 
+method is_safe_write addr len =
+	let start_addr = addr
+	and end_addr = Int64.add addr len
+	and is_safe = ref false in
+	
+	(* fully in the heap *)
+	if self#is_contained start_addr end_addr heap_start heap_end then (
+		(* is it in an allocated block *)
+		try
+			Hashtbl.iter (fun key set ->
+				let start_addr2 = key
+				and end_addr2 = Int64.add key (Int64.of_int (Array.length set)) in
+				(* fully contained within an allocated block *)
+				if self#is_contained start_addr end_addr start_addr2 end_addr2 then (
+					let start_index = Int64.to_int (Int64.sub start_addr start_addr2) in
+					for offset = 0 to ((Int64.to_int len) - 1) do
+						Array.set set (start_index + offset) true
+					done;
+					raise Safe
+				)
+			) alloc_table;
+		with
+			| Safe -> is_safe := true;
+	)
+	else (
+			(* overlapping unsafe memory between heap and stack *)
+		if (self#is_overlapping start_addr end_addr heap_end stack_end)  ||
+			 (* overlapping the heap but not contained *)
+			 (self#is_overlapping_not_contained start_addr end_addr heap_start heap_end) then
+			 is_safe := false
+		else (
+ 			if (self#is_contained start_addr end_addr stack_end stack_start) then (
+				let start_addr_ref = ref start_addr in
+				while (Int64.compare !start_addr_ref end_addr) <> 0 do
+					(* Printf.printf "write: %s\n" (Int64.to_string !start_addr_ref); *)
+					Hashtbl.replace stack_table !start_addr_ref true;
+					start_addr_ref := Int64.add !start_addr_ref (Int64.one)
+				done
+			);
+			(* otherwise we assume we're safe for now *)
+			is_safe := true
+		)
+	);
 	!is_safe
 
 	method clear =
@@ -210,19 +282,19 @@ method is_safe_access addr len =
 		Hashtbl.clear alloc_table;
 		Hashtbl.clear dealloc_table;
 
-	method add_alloc_dirty addr len =
-		Hashtbl.add alloc_table addr len
+	method add_alloc_dirty addr set =
+		Hashtbl.add alloc_table addr set
 
 	method add_dealloc_dirty addr len =
 		Hashtbl.add dealloc_table addr len
 
 	method construct_deep_copy =
 		let copy = new pointer_management in
-		Hashtbl.iter (fun key value ->
-			copy#add_alloc_dirty key value
+		Hashtbl.iter (fun key set ->
+			copy#add_alloc_dirty key set
 		) alloc_table;
-		Hashtbl.iter (fun key value ->
-			copy#add_dealloc_dirty key value
+		Hashtbl.iter (fun key len ->
+			copy#add_dealloc_dirty key len
 		) dealloc_table;
 		copy
 

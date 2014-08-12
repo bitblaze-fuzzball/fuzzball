@@ -289,10 +289,17 @@ struct
     method set_pointer_management (ptrmng : Pointer_management.pointer_management) =
       pm <- Some ptrmng
 
-    method private validate_safe_addr_range addr len =
+    method private validate_safe_read_addr_range addr len =
       match pm with
       | Some ptrmng ->
-        if not (ptrmng#is_safe_access addr len) then
+        if not (ptrmng#is_safe_read addr len) then
+          raise Unsafe_Memory_Access
+      | _ -> ()
+
+    method private validate_safe_write_addr_range addr len =
+      match pm with
+      | Some ptrmng ->
+        if not (ptrmng#is_safe_write addr len) then
           raise Unsafe_Memory_Access
       | _ -> ()
 
@@ -316,12 +323,12 @@ struct
 		Some (assemble b0 b1)
 
     method maybe_load_byte addr =
-      self#validate_safe_addr_range addr (Int64.of_int 1);
+      self#validate_safe_read_addr_range addr (Int64.of_int 1);
       self#with_chunk addr
 	(fun chunk caddr which -> gran64_get_byte chunk missing caddr which)
 
     method maybe_load_short addr =
-      self#validate_safe_addr_range addr (Int64.of_int 2);
+      self#validate_safe_read_addr_range addr (Int64.of_int 2);
       if (Int64.logand addr 1L) = 0L then
 	self#with_chunk addr
 	  (fun chunk caddr which -> gran64_get_short chunk missing caddr which)
@@ -329,7 +336,7 @@ struct
 	self#maybe_load_divided addr 8 1L self#maybe_load_byte D.reassemble16
 
     method maybe_load_word addr =
-      self#validate_safe_addr_range addr (Int64.of_int 4);
+      self#validate_safe_read_addr_range addr (Int64.of_int 4);
       if (Int64.logand addr 3L) = 0L then
 	self#with_chunk addr
 	  (fun chunk caddr which -> gran64_get_word chunk missing caddr which)
@@ -337,7 +344,7 @@ struct
 	self#maybe_load_divided addr 16 2L self#maybe_load_short D.reassemble32
 
     method maybe_load_long addr =
-      self#validate_safe_addr_range addr (Int64.of_int 8);
+      self#validate_safe_read_addr_range addr (Int64.of_int 8);
       if (Int64.logand addr 7L) = 0L then
 	self#with_chunk addr
 	  (fun chunk caddr _ -> gran64_get_long chunk missing caddr)
@@ -380,12 +387,12 @@ struct
       (gran64 -> int -> gran64) -> unit
 
     method store_byte addr b =
-      self#validate_safe_addr_range addr (Int64.of_int 1);
+      self#validate_safe_write_addr_range addr (Int64.of_int 1);
       self#store_common_fast addr
 	(fun chunk which -> gran64_put_byte chunk which b)
 	
     method store_short addr s =
-      self#validate_safe_addr_range addr (Int64.of_int 2);
+      self#validate_safe_write_addr_range addr (Int64.of_int 2);
       if (Int64.logand addr 1L) = 0L then
 	self#store_common_fast addr
 	  (fun chunk which -> gran64_put_short chunk which s)
@@ -396,7 +403,7 @@ struct
 	  self#store_byte (Int64.add addr 1L) b1
 
     method store_word addr w =
-      self#validate_safe_addr_range addr (Int64.of_int 4);
+      self#validate_safe_write_addr_range addr (Int64.of_int 4);
       if (Int64.logand addr 3L) = 0L then
 	self#store_common_fast addr
 	  (fun chunk which -> gran64_put_word chunk which w)
@@ -407,7 +414,7 @@ struct
 	  self#store_short (Int64.add addr 2L) s1
 
     method store_long addr l =
-      self#validate_safe_addr_range addr (Int64.of_int 8);
+      self#validate_safe_write_addr_range addr (Int64.of_int 8);
       if (Int64.logand addr 7L) = 0L then
 	self#store_common_fast addr
 	  (fun _ _ -> Long(l))

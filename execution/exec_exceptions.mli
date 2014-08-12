@@ -31,3 +31,4 @@ exception Double_Free
 exception Dealloc_Not_Alloc
 exception Alloc_Dealloc_Length_Mismatch
 exception Unsafe_Memory_Access
+exception Uninitialized_Memory

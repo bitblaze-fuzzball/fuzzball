@@ -207,6 +207,9 @@ let fuzz start_eip opt_fuzz_start_eip end_eips
 			| Unsafe_Memory_Access ->
 			  log_fuzz_restart Log.trace "on unsafe memory access";
 		    stop "on unsafe memory access"
+			| Uninitialized_Memory ->
+			  log_fuzz_restart Log.trace "use of uninitialized memory";
+		    stop "use of uninitialized memory"
 
 		  (* | NotConcrete(_) -> () (* shouldn't happen *)
 		     | Simplify_failure(_) -> () (* shouldn't happen *)*)

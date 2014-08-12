@@ -113,7 +113,6 @@ object(self)
   val mutable pm = new Pointer_management.pointer_management
   
   method enablePointerManagementMemoryChecking =
-    pm#set_esp_lookup (fun () -> fm#get_esp);
     fm#set_pointer_management pm
 
   val mutable saved_next_fresh_addr = 0L
