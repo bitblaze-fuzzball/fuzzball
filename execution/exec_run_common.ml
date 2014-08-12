@@ -205,3 +205,25 @@ let run_one_insn fm gamma eip bytes =
 	fm#print_regs;
       label_to_eip next_lab
 
+let decode_insn_at fm gamma eipT =
+  try
+    let insn_addr = match !opt_arch with
+      | ARM ->
+	  (* For a Thumb instruction, change the last bit to zero to
+	     find the real instruction address *)
+	  if Int64.logand eipT 1L = 1L then
+	    Int64.logand eipT (Int64.lognot 1L)
+	  else
+	    eipT
+      | _ -> eipT
+    in
+    let bytes = Array.init 16
+      (fun i -> Char.chr (fm#load_byte_conc
+			    (Int64.add insn_addr (Int64.of_int i))))
+    in
+    let prog = decode_insn gamma eipT bytes in
+      prog
+  with
+      NotConcrete(_) ->
+	Printf.printf "Jump to symbolic memory 0x%08Lx\n" eipT;
+	raise IllegalInstruction

@@ -4,11 +4,13 @@
 
 module V = Vine
 
+open Exec_veritesting
 open Exec_exceptions
 open Exec_options
 open Frag_simplify
 open Fragment_machine
-open Exec_run_common
+open Exec_run_common 
+open Exec_veritesting
 
 let call_replacements fm last_eip eip =
   let ret_reg = match !opt_arch with
@@ -52,30 +54,6 @@ let call_replacements fm last_eip eip =
 
 let loop_detect = Hashtbl.create 1000
 
-let decode_insn_at fm gamma eipT =
-  try
-    let insn_addr = match !opt_arch with
-      | ARM ->
-	  (* For a Thumb instruction, change the last bit to zero to
-	     find the real instruction address *)
-	  if Int64.logand eipT 1L = 1L then
-	    Int64.logand eipT (Int64.lognot 1L)
-	  else
-	    eipT
-      | _ -> eipT
-    in
-    let bytes = Array.init 16
-      (fun i -> Char.chr (fm#load_byte_conc
-			    (Int64.add insn_addr (Int64.of_int i))))
-    in
-    let prog = decode_insn gamma eipT bytes in
-      prog
-  with
-      NotConcrete(_) ->
-	Printf.printf "Jump to symbolic memory 0x%08Lx\n" eipT;
-	raise IllegalInstruction
-
-
 let rec last l =
   match l with
   | [e] -> e
@@ -91,9 +69,10 @@ let rec has_special = function
     | _ -> has_special tl
 
 
+let tuple_push (dl,sl) (dl',sl') = dl::dl', sl::sl'
+
 let decode_insns fm gamma starting_eip k =
-  let tuple_push (dl,sl) (dl',sl') = dl::dl', sl::sl'
-  and bottom = ([] , []) in
+  let bottom = ([] , []) in
   let rec decode_insns_int eip remaining =
     if remaining = 0
     then bottom (* base case -- exceeded maximum block size *)
@@ -108,14 +87,18 @@ let decode_insns fm gamma starting_eip k =
 	   let next_eip = label_to_eip lab
 	   and remaining' = remaining - 1 in
 	   tuple_push cur_tup (decode_insns_int next_eip remaining')
-	 | _ -> tuple_push cur_tup bottom (* end of basic block, e.g. indirect jump *) in
+	 | _ -> tuple_push cur_tup bottom in (* end of basic block, e.g. indirect jump *)
   let decl_list_list, statement_list_list = decode_insns_int starting_eip k in
   List.concat decl_list_list,
   List.concat statement_list_list
-
-
+    
 let decode_insns_cached fm gamma eip =
   let decode_call _ = decode_insns fm gamma eip !opt_bb_size in
+
+  (** Uncomment me if you want to play with the veritesting region identification code.
+      Comment me out again if you want to be able to run fuzzball. **)
+  
+  (* ignore(find_veritesting_region_m2 fm gamma eip !opt_bb_size); *)
   with_trans_cache eip decode_call
 
 let runloop (fm : fragment_machine) eip asmir_gamma until =
@@ -129,9 +112,8 @@ let runloop (fm : fragment_machine) eip asmir_gamma until =
      in
        Hashtbl.replace loop_detect eip (Int64.succ old_count);
        if old_count > !opt_iteration_limit then raise TooManyIterations);
-    let (dl, sl) = decode_insns_cached fm asmir_gamma eip in
-    let prog = (dl, sl) in
-      let prog' = match call_replacements fm last_eip eip with
+    let (dl, sl) as prog = decode_insns_cached fm asmir_gamma eip in
+    let prog' = match call_replacements fm last_eip eip with
 	| None -> prog
 	| Some thunk ->
 	    thunk ();
@@ -144,10 +126,10 @@ let runloop (fm : fragment_machine) eip asmir_gamma until =
 	    in
 	      decode_insn asmir_gamma eip fake_ret
       in
-	if !opt_trace_insns then
-	  print_insns eip prog' None '\n';
-	if !opt_trace_ir then
-	  V.pp_program print_string prog';
+	if !opt_trace_insns
+	then print_insns eip prog' None '\n';
+	if !opt_trace_ir
+	then V.pp_program print_string prog';
 	fm#set_frag prog';
 	(* flush stdout; *)
 	let new_eip = label_to_eip (fm#run ()) in

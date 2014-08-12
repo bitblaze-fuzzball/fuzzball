@@ -15,3 +15,5 @@ val print_insns : int64 -> Vine.program -> int64 option -> char -> unit
 
 val run_one_insn : Fragment_machine.fragment_machine -> Asmir.varctx -> int64
   -> char array -> int64
+
+val decode_insn_at : Fragment_machine.fragment_machine -> Asmir.varctx -> int64 -> Vine.decl list * Vine.stmt list
