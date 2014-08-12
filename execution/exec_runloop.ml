@@ -75,30 +75,48 @@ let decode_insn_at fm gamma eipT =
 	Printf.printf "Jump to symbolic memory 0x%08Lx\n" eipT;
 	raise IllegalInstruction
 
+
 let rec last l =
   match l with
-    | [e] -> e
-    | a :: r -> last r
-    | [] -> failwith "Empty list in last"
+  | [e] -> e
+  | a :: r -> last r
+  | [] -> failwith "Empty list in last"
 
-let rec decode_insns fm gamma eip k first =
-  if k = 0 then ([], []) else
-    let (dl, sl) = decode_insn_at fm gamma eip in
-      if
-	List.exists (function V.Special("int 0x80") -> true | _ -> false) sl
-      then
-	(* Make a system call be alone in its basic block *)
-	if first then (dl, sl) else ([], [])
-      else
-	match last (rm_unused_stmts sl) with
-	  | V.Jmp(V.Name(lab)) when lab <> "pc_0x0" ->
-	      let next_eip = label_to_eip lab in
-	      let (dl', sl') = decode_insns fm gamma next_eip (k - 1) false in
-		(dl @ dl', sl @ sl')
-	  | _ -> (dl, sl) (* end of basic block, e.g. indirect jump *)
+
+let rec has_special = function
+  | [] -> false
+  | hd::tl ->
+    match hd with
+    | V.Special("int 0x80") -> true
+    | _ -> has_special tl
+
+
+let decode_insns fm gamma starting_eip k =
+  let tuple_push (dl,sl) (dl',sl') = dl::dl', sl::sl'
+  and bottom = ([] , []) in
+  let rec decode_insns_int eip remaining =
+    if remaining = 0
+    then bottom (* base case -- exceeded maximum block size *)
+    else let (_,sl) as cur_tup = decode_insn_at fm gamma eip in
+	 if has_special sl
+	 then
+	   if (remaining = k) (* this is the first recursive call *)
+	   then tuple_push cur_tup bottom (* base case -- first inst is a system call *)
+	   else bottom
+	 else match last (rm_unused_stmts sl) with
+	 | V.Jmp(V.Name(lab)) when lab <> "pc_0x0" ->
+	   let next_eip = label_to_eip lab
+	   and remaining' = remaining - 1 in
+	   tuple_push cur_tup (decode_insns_int next_eip remaining')
+	 | _ -> tuple_push cur_tup bottom (* end of basic block, e.g. indirect jump *) in
+  let decl_list_list, statement_list_list = decode_insns_int starting_eip k in
+  List.concat decl_list_list,
+  List.concat statement_list_list
+
 
 let decode_insns_cached fm gamma eip =
-  with_trans_cache eip (fun () -> decode_insns fm gamma eip !opt_bb_size true)
+  let decode_call _ = decode_insns fm gamma eip !opt_bb_size in
+  with_trans_cache eip decode_call
 
 let runloop (fm : fragment_machine) eip asmir_gamma until =
   let rec loop last_eip eip =
