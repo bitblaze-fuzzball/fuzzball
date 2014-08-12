@@ -1584,6 +1584,18 @@ struct
       in
 	((func v1), ty)
 
+    method private eval_ite v_c v_t v_f ty_t =
+      let func =
+	match ty_t with
+	  | V.REG_1  -> D.ite1
+	  | V.REG_8  -> D.ite8
+	  | V.REG_16 -> D.ite16
+	  | V.REG_32 -> D.ite32
+	  | V.REG_64 -> D.ite64
+	  | _ -> failwith "unexpeceted type in eval_ite"
+      in
+	((func v_c v_t v_f), ty_t)
+
     method eval_int_exp_ty exp =
       match exp with
 	| V.BinOp(op, e1, e2) ->
@@ -1608,9 +1620,21 @@ struct
 	| V.Cast(kind, ty, e) ->
 	    let (v1, ty1) = self#eval_int_exp_ty e in
 	      self#eval_cast kind ty v1 ty1
-		(* XXX move this to something like a special handler: *)
+	| V.Ite(cond, true_e, false_e) ->
+	    let (v_c, ty_c) = self#eval_int_exp_ty cond and
+		(v_t, ty_t) = self#eval_int_exp_ty true_e and
+		(v_f, ty_f) = self#eval_int_exp_ty false_e in
+	      assert(ty_c = V.REG_1);
+	      assert(ty_t = ty_f);
+	      self#eval_ite v_c v_t v_f ty_t
+	(* XXX move this to something like a special handler: *)
 	| V.Unknown("rdtsc") -> ((D.from_concrete_64 1L), V.REG_64) 
-	| _ -> failwith "Unsupported (or non-int) expr type in eval_int_exp_ty"
+	| V.Unknown(_) ->
+	    failwith "Unsupported unknown in eval_int_exp_ty"
+	| V.Let(_,_,_)
+	| V.Name(_)
+	| V.Constant(V.Str(_))
+	  -> failwith "Unsupported (or non-int) expr type in eval_int_exp_ty"
 	    
     method private eval_int_exp exp =
       let (v, _) = self#eval_int_exp_ty exp in
@@ -1921,6 +1945,8 @@ struct
 	      (D.from_concrete_16 (Int64.to_int i)),V.REG_16
 	  | V.Constant(V.Int(V.REG_32,i)) -> (D.from_concrete_32 i),V.REG_32
 	  | V.Constant(V.Int(V.REG_64,i)) -> (D.from_concrete_64 i),V.REG_64
+	  | V.Constant(V.Int(_, _)) ->
+	      failwith "Unhandled weird-typed integer constant in concolic_exp"
 	  | V.BinOp(op, e1, e2) ->
 	      let (v1, ty1) = rw_loop e1 and
 		  (v2, ty2) = rw_loop e2 in
@@ -1931,7 +1957,16 @@ struct
 	  | V.Cast(kind, ty, e1) ->
 	      let (v1, ty1) = rw_loop e1 in
 		self#eval_cast kind ty v1 ty1
-	  | _ -> failwith "Unhandled expression type in concolic_exp"
+	  | V.Ite(ce, te, fe) ->
+	    let (v_c, ty_c) = rw_loop ce and
+		(v_t, ty_t) = rw_loop te and
+		(v_f, ty_f) = rw_loop fe in
+	      self#eval_ite v_c v_t v_f ty_t
+	  | V.Let(_, _, _)
+	  | V.Name(_)
+	  | V.Lval(_)
+	  | V.Constant(V.Str(_))
+	    -> failwith "Unhandled expression type in concolic_exp"
       in
 	rw_loop exp
 

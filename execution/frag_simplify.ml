@@ -18,6 +18,10 @@ let rec constant_fold_rec e =
 	Vine_opt.constant_fold_more (fun _ -> None)
 	  (V.Cast(op, ty, constant_fold_rec e))
     | V.Lval(lv) -> V.Lval(constant_fold_rec_lv lv)
+    | V.Ite(ce, te, fe) ->
+	Vine_opt.constant_fold_more (fun _ -> None)
+	  (V.Ite(constant_fold_rec ce, constant_fold_rec te,
+		 constant_fold_rec fe))
     | _ -> e
 and constant_fold_rec_lv lv =
   match lv with
@@ -159,6 +163,9 @@ let rec simplify_rec e =
 	Vine_opt.constant_fold_more (fun _ -> None)
 	  (V.Cast(op, ty, simplify_rec e))
     | V.Lval(lv) -> V.Lval(simplify_rec_lv lv)
+    | V.Ite(ce, te, fe) ->
+	Vine_opt.constant_fold_more (fun _ -> None)
+	  (V.Ite(simplify_rec ce, simplify_rec te, simplify_rec fe))
     | _ -> e
 and simplify_rec_lv lv =
   match lv with
@@ -191,6 +198,7 @@ let rec expr_size e =
     | V.Let(V.Temp(_), e1, e2) -> 2 + (expr_size e1) + (expr_size e2)
     | V.Let(V.Mem(_,e0,_), e1, e2) ->
 	2 + (expr_size e0) + (expr_size e1) + (expr_size e2)
+    | V.Ite(ce, te, fe) -> 1 + (expr_size ce) + (expr_size te) + (expr_size fe)
 
 let rec stmt_size = function
   | V.Jmp(e) -> 1 + (expr_size e)
@@ -272,6 +280,14 @@ let rec cfold_with_type e =
 	    (e1', _) = cfold_with_type e1 and
 	    (e2', ty2) = cfold_with_type e2 in
 	  (V.Let(V.Mem(mem,e0',mem_ty), e1', e2), ty2)
+    | V.Ite(ce, te, fe) ->
+	let (ce', ty_c) = cfold_with_type ce and
+	    (te', ty_t) = cfold_with_type te and
+	    (fe', ty_f) = cfold_with_type fe
+	in
+	  assert(ty_c = V.REG_1);
+	  assert(ty_t = ty_f);
+	  (V.Ite(ce', te', fe'), ty_t)
 
 let cfold_exprs_w_type (dl, sl) =
   let fold e =
@@ -350,7 +366,12 @@ let rec count_uses_e var e =
     | V.Lval(lv) -> count_uses_lv var lv
     | V.Let(lv, e1, e2) ->
 	(count_uses_lv var lv) + (count_uses_e var e1) + (count_uses_e var e2)
-    | _ -> 0
+    | V.Ite(ce, te, fe) -> (count_uses_e var ce) + (count_uses_e var te)
+	+ (count_uses_e var fe)
+    | V.Unknown(_)
+    | V.Name(_)
+    | V.Constant(_)
+      -> 0
 and count_uses_lv var lv =
   match lv with
     | V.Temp(v) -> (if v = var then 1 else 0)
@@ -418,6 +439,8 @@ let copy_const_prop (dl, sl) =
 	  V.Cast(op, ty, replace_uses_e e)
       | V.Lval(V.Temp(v)) when V.VarHash.mem map v ->
 	  V.VarHash.find map v
+      | V.Lval(V.Temp(_)) ->
+	  expr
       | V.Lval(V.Mem(v, idx, ty)) ->
 	  V.Lval(V.Mem(v, replace_uses_e idx, ty))
       | V.Let(V.Temp(v), e1, e2) ->
@@ -427,7 +450,12 @@ let copy_const_prop (dl, sl) =
 	  assert(not (V.VarHash.mem map v));
 	  V.Let(V.Mem(v, (replace_uses_e idx), mem_ty),
 		(replace_uses_e e1), (replace_uses_e e2))
-      | _ -> expr
+      | V.Ite(ce, te, fe) ->
+	  V.Ite(replace_uses_e ce, replace_uses_e te, replace_uses_e fe)
+      | V.Unknown(_)
+      | V.Name(_)
+      | V.Constant(_)
+	-> expr
   in
   let replace_uses st =
     match st with
@@ -495,7 +523,14 @@ let rec rm_set_used_e hash e =
 	(rm_set_used_lv hash lv) ;
 	(rm_set_used_e hash e1);
 	(rm_set_used_e hash e2)
-    | _ -> ()
+    | V.Ite(ce, te, fe) ->
+	rm_set_used_e hash ce;
+	rm_set_used_e hash te;
+	rm_set_used_e hash fe
+    | V.Unknown(_)
+    | V.Name(_)
+    | V.Constant(_)
+      -> ()
 and rm_set_used_lv hash lv =
   match lv with
     | V.Temp(v) -> Hashtbl.remove hash v
@@ -596,10 +631,15 @@ let split_divmod (dl, sl) =
 	when V.VarHash.mem vars t1 ->
 	let (div_var, _) = V.VarHash.find vars t1 in
 	  V.Lval(V.Temp(div_var))
+    | V.Cast(_, _, _) as other -> other
     | V.BinOp(op, e1, e2) -> V.BinOp(op, (walk e1), (walk e2))
     | V.UnOp(op, e1) -> V.UnOp(op, (walk e1))
     | V.Let(lv, e1, e2) -> V.Let(lv, (walk e1), (walk e2))
-    | other -> other
+    | V.Ite(ce, te, fe) -> V.Ite((walk ce), (walk te), (walk fe))
+    | V.Unknown(_) as other -> other
+    | V.Name(_) as other -> other
+    | V.Lval(_) as other -> other
+    | V.Constant(_) as other -> other
   in
   let rec stmt_loop sl =
       match sl with
@@ -683,6 +723,11 @@ let lets_to_moves (dl, sl) =
 	  (bl1 @ [v, e1'] @ bl2, e2')
     | V.Let(V.Mem(_,_,_), _, _) ->
 	failwith "Let mem unhandled in lets_to_moves"
+    | V.Ite(ce, te, fe) ->
+	let (bl1, ce') = expr_loop ce in
+	let (bl2, te') = expr_loop te in
+	let (bl3, fe') = expr_loop fe in
+	  (bl1 @ bl2 @ bl3, V.Ite(ce', te', fe'))
   in
   let rec stmt_loop = function
     | st :: rest ->

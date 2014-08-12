@@ -138,6 +138,7 @@ object
   method sys_setgid32 : int -> unit
   method sys_setuid32 : int -> unit
   method sys_setreuid : int -> int -> unit
+  method sys_setresuid32 : int -> int -> int -> unit
   method sys_setsockopt : int -> int -> int -> int64 -> int -> unit
   method sys_getsockopt : int -> int -> int -> int64 -> int64 -> unit
   method sys_set_robust_list : int64 -> int64 -> unit

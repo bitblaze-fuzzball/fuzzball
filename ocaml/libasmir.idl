@@ -59,7 +59,7 @@ typedef [abstract] void* vine_symbols_t;
 
 enum exp_type_t {
   BINOP, UNOP, CONSTANT, MEM, TEMP, PHI, CAST,
-  NAME, UNKNOWN, LET, EXTENSION };
+  NAME, UNKNOWN, LET, ITE, EXTENSION };
 
 enum reg_t { REG_1, REG_8, REG_16, REG_32, REG_64 };
 
@@ -105,6 +105,9 @@ Exp cast_subexp([in] Exp e);
 Exp let_var([in] Exp e);
 Exp let_exp([in] Exp e);
 Exp let_in([in] Exp e);
+Exp ite_cond([in] Exp e);
+Exp ite_true_e([in] Exp e);
+Exp ite_false_e([in] Exp e);
 
 enum stmt_type_t stmt_type([in] Stmt s);
 Exp move_lhs([in] Stmt s);

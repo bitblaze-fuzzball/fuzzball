@@ -8,6 +8,7 @@ class UnOp;
 class BinOp;
 class Constant;
 class Phi;
+class Ite;
 class Special;
 class Jmp;
 class CJmp;
@@ -33,6 +34,7 @@ class IRVisitor {
   virtual void visitConstant(Constant *) = 0;
   virtual void visitTemp(Temp *) = 0;
   virtual void visitPhi(Phi *) = 0;
+  virtual void visitIte(Ite *) = 0;
   virtual void visitSpecial(Special *) = 0;
   virtual void visitMem(Mem *) = 0;
   virtual void visitUnknown(Unknown *) = 0;
@@ -61,6 +63,7 @@ class DefaultIRVisitor : public virtual IRVisitor {
   virtual void visitConstant(Constant *);
   virtual void visitTemp(Temp *);
   virtual void visitPhi(Phi *);
+  virtual void visitIte(Ite *);
   virtual void visitSpecial(Special *);
   virtual void visitMem(Mem *);
   virtual void visitUnknown(Unknown *);
@@ -91,6 +94,7 @@ class IRChangeVisitor : public IRVisitor {
   virtual void visitConstant(Constant *);
   virtual void visitTemp(Temp *);
   virtual void visitPhi(Phi *);
+  virtual void visitIte(Ite *);
   virtual void visitSpecial(Special *);
   virtual void visitMem(Mem *);
   virtual void visitUnknown(Unknown *);

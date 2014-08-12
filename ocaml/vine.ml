@@ -158,6 +158,7 @@ and exp = BinOp of binop_type * exp * exp
 	       (* Note: We allow binding memory in an expression, so we don't
 		  need to replace all memory references in the subexpression with
 		  ITEs, when calculating the WP. *)
+	   | Ite of exp * exp * exp (** Functional if-then-else *)
 
 (** The IR statement type. *)
 type stmt = Jmp of exp (** Jump to a label/address *)
@@ -234,11 +235,8 @@ let exp_not e = UnOp(NOT, e)
 let exp_implies e1 e2 = exp_or (exp_not e1) e2
 let exp_plus e1 e2 = BinOp(PLUS, e1, e2)
 let exp_ite cond typ e1 e2 =
-  let cond_mask_temp = Temp(newvar "cond_mask" typ) in
-  let cond_mask = Lval cond_mask_temp in
-    Let(cond_mask_temp,
-	Cast(CAST_SIGNED, typ, cond),
-	exp_or (exp_and cond_mask e1) (exp_and (exp_not cond_mask) e2))
+  ignore(typ);
+  Ite(cond, e1, e2)
 
 let const_of_int64 t i = Constant(Int(t, i))
 let const_of_int t i = Constant(Int(t, Int64.of_int i))
@@ -484,6 +482,7 @@ let rec format_exp ft e =
        to be parenthesized. Larger numbers means it has higher precedence.
        Maximum prec before paretheses are added are as follows:
        100 LET
+       150 ? :
        200 OR XOR AND
        300 EQUAL NEQ
        400 LT SLT SLE LE
@@ -513,6 +512,20 @@ let rec format_exp ft e =
 	   space();
 	   fe 0 e2;
 	   rparen 100;
+       | Ite(cond_e, true_e, false_e) ->
+	   lparen 150;
+	   open_box 1;
+	   fe 151 cond_e;
+	   space ();
+	   pp "?";
+	   space ();
+	   fe 151 true_e;
+	   space ();
+	   pp ":";
+	   space ();
+	   fe 151 false_e;
+	   close_box ();
+	   rparen 150;
        | BinOp(b,e1,e2) ->
 	   let op_prec = match b with
                BITOR | XOR | BITAND	 -> 200
@@ -904,6 +917,12 @@ let rec exp_accept visitor expression =
 	  let e2' = vis e2 in
 	    if vis_avoid_alloc && v' == v && e1' == e1 && e2' == e2 then exp
 	    else Let(v', e1', e2')
+      | Ite(ce, te, fe) ->
+	  let ce' = vis ce in
+	  let te' = vis te in
+	  let fe' = vis fe in
+	    if vis_avoid_alloc && ce' == ce && te' == te && fe' == fe then exp
+	    else Ite(ce', te', fe')
       | Lval l ->
 	  let l' = rlvalue_accept visitor l in
 	    if vis_avoid_alloc && l' == l then exp

@@ -120,6 +120,7 @@ void Exp::destroy( Exp *expr )
     case CAST:      Cast::destroy((Cast *)expr);            break;
     case NAME:      Name::destroy((Name *)expr);            break;
     case LET:       Let::destroy((Let *)expr);              break; 
+    case ITE:       Ite::destroy((Ite *)expr);              break;
     case EXTENSION:   
       // Fixme: need to make a destroy virtual function that all
       // exp have. 
@@ -422,6 +423,50 @@ void Phi::destroy( Phi *expr )
     {
         Exp::destroy(expr->vars.at(i));
     }
+
+    delete expr;
+}
+
+Ite::Ite(Exp *c, Exp *t, Exp *f)
+  : Exp(ITE), cond(c), true_e(t), false_e(f)
+{
+
+}
+
+Ite::Ite(const Ite &copy)
+  : Exp(ITE)
+{
+  cond = copy.cond->clone();
+  true_e = copy.true_e->clone();
+  false_e = copy.false_e->clone();
+}
+
+Ite *
+Ite::clone() const
+{
+  return new Ite(*this);
+}
+
+string
+Ite::tostring() const
+{
+  string ret = "(";
+  ret += cond->tostring();
+  ret += " ? ";
+  ret += true_e->tostring();
+  ret += " : ";
+  ret += false_e->tostring();
+  ret += ")";
+  return ret;
+}
+
+void Ite::destroy( Ite *expr )
+{
+    assert(expr);
+
+    Exp::destroy(expr->cond);
+    Exp::destroy(expr->true_e);
+    Exp::destroy(expr->false_e);
 
     delete expr;
 }
@@ -1031,3 +1076,10 @@ Cast *ex_rf_cast( Exp *arg, reg_t width )
     return new Cast(arg, width, CAST_RFLOAT);
 }
 
+Ite *_ex_ite( Exp *c, Exp *t, Exp *f) {
+    return new Ite(c, t, f);
+}
+
+Ite *ex_ite( Exp *c, Exp *t, Exp *f) {
+    return _ex_ite(c->clone(), t->clone(), f->clone());
+}

@@ -88,6 +88,7 @@ and exp =
   | Cast of cast_type * typ * exp
   | Unknown of string
   | Let of lvalue * exp * exp
+  | Ite of exp * exp * exp
 type stmt =
     Jmp of exp
   | CJmp of exp * exp * exp

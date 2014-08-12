@@ -159,6 +159,11 @@ let rec tr_exp g e =
         let letin = tr_exp g (let_in e) in 
 	  unextend();
 	  Let(letv, lete, letin)
+    | ITE ->
+	let cond_e = tr_exp g (ite_cond e) and
+	    true_e = tr_exp g (ite_true_e e) and
+	    false_e = tr_exp g (ite_false_e e) in
+	  Ite(cond_e, true_e, false_e)
     | EXTENSION ->
         failwith "Unknown extension type."
     | _ -> failwith "Unsupported stmt type"

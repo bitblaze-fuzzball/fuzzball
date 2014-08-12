@@ -297,5 +297,13 @@ module ConcreteDomain : Exec_domain.DOMAIN = struct
   let cast64h16 = cast_high 48
   let cast64h32 = cast_high 32
 
+  let as_bool v = (fix_u1 v) <> 0L
+
+  let ite1  cond t f = if as_bool cond then t else f
+  let ite8  cond t f = if as_bool cond then t else f
+  let ite16 cond t f = if as_bool cond then t else f
+  let ite32 cond t f = if as_bool cond then t else f
+  let ite64 cond t f = if as_bool cond then t else f
+
   let get_tag v = 0L
 end

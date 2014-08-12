@@ -81,13 +81,28 @@ struct
 	| V.Cast(V.CAST_HIGH, V.REG_16, e1) -> 16
 	| V.Cast(V.CAST_HIGH, V.REG_8,  e1) -> 8
 	| V.Cast(V.CAST_HIGH, V.REG_1,  e1) -> 1
+	| V.Cast(_, _, _) ->
+	    V.bits_of_width (Vine_typecheck.infer_type_fast e)
 	| V.Lval(V.Mem(_, _, V.REG_8))  ->  8
 	| V.Lval(V.Mem(_, _, V.REG_16)) -> 16
 	| V.Lval(V.Mem(_, _, V.REG_32)) -> 32
+	| V.Lval(V.Mem(_, _, _))
+	| V.Lval(V.Temp(_)) ->
+	    V.bits_of_width (Vine_typecheck.infer_type_fast e)
 	| V.BinOp((V.EQ|V.NEQ|V.LT|V.LE|V.SLT|V.SLE), _, _) -> 1
 	| V.BinOp(V.LSHIFT, e1, V.Constant(V.Int(_, v))) ->
 	    (loop e1) + (Int64.to_int v)
-	| _ -> V.bits_of_width (Vine_typecheck.infer_type_fast e)
+	| V.BinOp(_, _, _) ->
+	    V.bits_of_width (Vine_typecheck.infer_type_fast e)
+	| V.Ite(_, te, fe) -> max (loop te) (loop fe)
+	| V.UnOp(_)
+	| V.Let(_, _, _)
+	| V.Name(_) ->
+	    V.bits_of_width (Vine_typecheck.infer_type_fast e)
+	| V.Constant(V.Str(_)) ->
+	    failwith "Unhandled string in narrow_bitwidth"
+	| V.Unknown(_) ->
+	    failwith "Unhandled unknown in narrow_bitwidth"
     in
       FormMan.map_expr_temp form_man e f combine
 
@@ -122,6 +137,7 @@ struct
 	| V.Cast(_, V.REG_16, e1) -> min 16 (loop e1)
 	| V.Cast(_, V.REG_8, e1)  -> min 8  (loop e1)
 	| V.Cast(_, V.REG_1, e1)  -> min 1  (loop e1)
+	| V.Ite(_, te, fe) -> min (loop te) (loop fe)
 	| _ -> 0
     in
       FormMan.map_expr_temp form_man e f combine
@@ -296,6 +312,7 @@ struct
 		V.BinOp(V.BITAND, x, V.Cast(V.CAST_SIGNED, _, _)),
 		V.BinOp(V.BITAND, y,
 			V.UnOp(V.NOT, V.Cast(V.CAST_SIGNED, _, _))))
+      | V.Ite(_, x, y)
 	->
 	  (* ITE expression "_ ? x : y" *)
 	  (match (classify_term form_man x), (classify_term form_man y) with
@@ -318,7 +335,7 @@ struct
 		 ExprOffset(e)
 	     | _ -> AmbiguousExpr(e)
 	  )
-      (* Occurs as an optimized ITE: *)
+      (* Occurs as an optimization of bitwise ITE: *)
       | V.BinOp(V.BITAND, x, V.UnOp(V.NOT, V.Cast(V.CAST_SIGNED, _, _)))
       | V.BinOp(V.BITAND, V.UnOp(V.NOT, V.Cast(V.CAST_SIGNED, _, _)), x)
       | V.BinOp(V.BITAND, x, V.Cast(V.CAST_SIGNED, _, _))
