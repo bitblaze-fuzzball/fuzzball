@@ -18,7 +18,7 @@ module ConcreteDomain : Exec_domain.DOMAIN = struct
 
   let to_concrete_1  v = Int64.to_int (Int64.logand v 0x1L)
   let to_concrete_8  v = Int64.to_int (Int64.logand v 0xffL)
-  let to_concrete_16 v = Int64.to_int (Int64.logand v 0xffffL)
+  let to_concrete_16 v = Int64.to_int (fix_u16 v)
   let to_concrete_32 v = Int64.logand v 0xffffffffL
   let to_concrete_64 v = v
 

@@ -1216,13 +1216,23 @@ struct
       form_man#concolic_eval_64
 	(self#get_int_var (Hashtbl.find reg_to_var reg))
 
-    method private set_int_var ((_,_,ty) as var) value =
+    method private set_int_var ((reg_num, reg_name, typ) as var) value =
+      (* var is a triple where the last element is the type information *)
+      (* rewrite this call -- JTT *)
+      (*
+      (match typ with
+      | V.REG_16 -> Printf.printf "Storing 16 : %d\n" (D.to_concrete_16 value)
+      | V.REG_32 -> Printf.printf "Storing 32 : %s\n" (Int64.to_string
+							 (D.to_concrete_32 value))
+      | _ -> ());
+      *)
       try
 	ignore(V.VarHash.find reg_store var);
 	V.VarHash.replace reg_store var value
       with
 	  Not_found ->
-	    V.VarHash.replace temps var value
+	    V.VarHash.replace temps var value;
+
 
     method set_bit_var reg v =
       self#set_int_var (Hashtbl.find reg_to_var reg) (D.from_concrete_1 v)
