@@ -89,3 +89,15 @@ let_in(Exp *e)
 {
   return ((Let *)e)->in;
 }
+
+Exp *ite_cond(Exp *e) {
+  return ((Ite *)e)->cond;
+}
+
+Exp *ite_true_e(Exp *e) {
+  return ((Ite *)e)->true_e;
+}
+
+Exp *ite_false_e(Exp *e) {
+  return ((Ite *)e)->false_e;
+}

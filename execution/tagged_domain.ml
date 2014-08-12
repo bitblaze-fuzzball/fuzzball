@@ -241,5 +241,13 @@ struct
   let cast64h16 (tg,v) = (unary_tag tg, D.cast64h16 v)
   let cast64h32 (tg,v) = (unary_tag tg, D.cast64h32 v)
 
+  let ite op (cond_tg, cond_v) (t_tg, t_v) (f_tg, f_v) =
+    ((binary_tag t_tg f_tg), (op cond_v t_v f_v))
+  let ite1  = ite D.ite1
+  let ite8  = ite D.ite8
+  let ite16 = ite D.ite16
+  let ite32 = ite D.ite32
+  let ite64 = ite D.ite64
+
   let get_tag (tg,v) = tg
 end

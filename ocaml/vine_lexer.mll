@@ -186,6 +186,7 @@ rule token = parse
   | '!'          { NOT }
   | "="          { ASSIGN }
   | ':'          { COLON } 
+  | '?'          { QUESTION }
   | ';'          { SEMI }
   | '('          { LPAREN }
   | ')'          { RPAREN }

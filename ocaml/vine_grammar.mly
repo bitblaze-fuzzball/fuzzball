@@ -1,13 +1,6 @@
 %{
-(* IR Grammer file *)
-(* Author: David Brumley *)
-(* 
-
-   Lacks support for: 
-      - Comment : We could have the lexer return any comment
-                  strings, or have a Comment("foo") recognizer. It's
-   not clear how to add comments to the grammar, though.  
-*)
+(* IR Grammar file *)
+(* Orignal author: David Brumley *)
 
  open Vine_absyn;;
  open Vine;;
@@ -28,7 +21,7 @@
 %token <string> COMMENT
 %token <Vine.typ> TYP
 
-%token LPAREN RPAREN SEMI EOF  LCURLY RCURLY COLON
+%token LPAREN RPAREN SEMI EOF  LCURLY RCURLY COLON QUESTION
 %token LSQUARE RSQUARE COMMA 
 %token CJMP NAME JMP CAST INIT VAR LET IN TRUE FALSE LABEL
 %token ATTR CALL ASSERT HALT
@@ -49,6 +42,7 @@
 %nonassoc ASSIGN
 /* If the precedence for any of these changes, vine.ml needs to be updated
    accordingly, so that it can parethesize things properly */
+%right QUESTION COLON
 %left OR XOR AND
 %left EQUAL NEQ
 %left LT SLT SLE LE   GT GE SGT SGE
@@ -239,7 +233,8 @@ lval:
   } 
 
 opttyp:
-| { None }
+| { None } %prec IN /* low prec means in case of conflict, the typ
+                       is not optional */
 | COLON typ { Some($2) } 
 
 optindex:
@@ -302,6 +297,8 @@ expr:
 		       Let(x,y, $3) } 
 | CAST LPAREN expr RPAREN ID  COLON typ  
     { Cast(casttype_of_string $5, $7, $3) }	  
+| expr QUESTION expr COLON expr
+                     { $3 }
 
 constexp:
 | TRUE               { Vine.exp_true } 

@@ -26,6 +26,7 @@ let collect_let_vars e =
     | V.Let(V.Mem(_, _, _), _, _)
 	-> failwith "Let-mem unsupported in collect_let_vars"
     | V.Let(V.Temp(var), e1, e2) -> var :: (loop e1) @ (loop e2)
+    | V.Ite(ce, te, fe) -> (loop ce) @ (loop te) @ (loop fe)
   in
     loop e
 

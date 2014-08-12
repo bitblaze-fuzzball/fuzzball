@@ -313,6 +313,8 @@ struct
 	      V.Let(V.Temp(v), (loop e1), (loop e2))
 	  | V.Let(V.Mem(_,_,_), _, _) ->	      
 	      failwith "Unexpected memory let in rewrite_for_solver"
+	  | V.Ite(ce, te, fe) ->
+	      V.Ite((loop ce), (loop te), (loop fe))
       in
 	loop e
 
@@ -446,8 +448,13 @@ struct
 		| V.REG_64 -> D.to_concrete_64 d
 		| _ -> failwith "Unexpected type in eval_expr"
 	      in
-		V.Constant(V.Int(ty, v))	      
-	  | _ ->
+		V.Constant(V.Int(ty, v))
+	  | V.Ite(ce, te, fe) -> cf_eval (V.Ite(loop ce, loop te, loop fe))
+	  | V.Let(_, _, _)
+	  | V.Unknown(_)
+	  | V.Name(_)
+	  | V.Constant(V.Str(_))
+	    ->
 	      Printf.printf "Can't evaluate %s\n" (V.exp_to_string e);
 	      failwith "Unexpected expr in eval_expr"
       in
@@ -511,7 +518,12 @@ struct
 		->
 	      loop (V.VarHash.find mem_axioms memvar)
 	  | V.Lval(lv) -> self#eval_var_from_ce ce lv
-	  | _ ->
+	  | V.Ite(ce, te, fe) -> cf_eval (V.Ite(loop ce, loop te, loop fe))
+	  | V.Let(_, _, _)
+	  | V.Unknown(_)
+	  | V.Name(_)
+	  | V.Constant(V.Str(_))
+	    ->
 	      Printf.printf "Can't evaluate %s\n" (V.exp_to_string e);
 	      failwith "Unexpected expr in eval_expr_from_ce"
       in
@@ -544,7 +556,12 @@ struct
 		       b)
 	  | V.Lval(V.Temp(_,s,_)) ->
 	      String.length s >= 3 && String.sub s 0 3 = "LTC"
-	  | _ ->
+	  | V.Ite(ce, te, fe) -> (loop ce) || (loop te) || (loop fe)
+	  | V.Let(_, _, _)
+	  | V.Unknown(_)
+	  | V.Name(_)
+	  | V.Constant(V.Str(_))
+	    ->
 	      failwith "Unexpected expr in has_loop_var"
       in
 	loop (D.to_symbolic_32 d)
@@ -644,24 +661,16 @@ struct
 	if v_true' = v_false' then
 	  v_true'
 	else
-	  let mask = match ty with
-	    | V.REG_1  ->            cond_v'
-	    | V.REG_8  -> D.cast1s8  cond_v'
-	    | V.REG_16 -> D.cast1s16 cond_v'
-	    | V.REG_32 -> D.cast1s32 cond_v'
-	    | V.REG_64 -> D.cast1s64 cond_v'
-	    | _ -> failwith "Unexpected type in mask_ite"
-	  in
-	  let (andop, orop, notop) =
+	  let func =
 	    match ty with
-	      | V.REG_1  -> (D.bitand1,  D.bitor1,  D.not1)
-	      | V.REG_8  -> (D.bitand8,  D.bitor8,  D.not8)
-	      | V.REG_16 -> (D.bitand16, D.bitor16, D.not16)
-	      | V.REG_32 -> (D.bitand32, D.bitor32, D.not32)
-	      | V.REG_64 -> (D.bitand64, D.bitor64, D.not64)
-	      | _ -> failwith "Unexpected type (2) in mask_ite"
+	      | V.REG_1  -> D.ite1
+	      | V.REG_8  -> D.ite8
+	      | V.REG_16 -> D.ite16
+	      | V.REG_32 -> D.ite32
+	      | V.REG_64 -> D.ite64
+	      | _ -> failwith "Unexpected type in make_ite"
 	  in
-	    orop (andop mask v_true') (andop (notop mask) v_false')
+	    func cond_v' v_true' v_false'
 
     method if_expr_temp_unit (n,_,_) (fn_t: V.exp option  -> unit) =
       (* The slightly weird structure here is because we *don't*
@@ -703,6 +712,7 @@ struct
 	| V.Cast(_, _, e1) -> walk e1
 	| V.Unknown(_) -> ()
 	| V.Let(_, e1, e2) -> walk e1; walk e2 
+	| V.Ite(ce, te, fe) -> walk ce; walk te; walk fe
       in
 	walk exp;
 	((List.rev !nontemps), (List.rev !temps))

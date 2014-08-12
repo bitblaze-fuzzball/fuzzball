@@ -463,6 +463,15 @@ object (self)
 	   ignore(exp_accept (self :> vine_visitor) y);
 	   puts " ENDIF";
 	   SkipChildren);
+      | Ite(cond, x, y) ->
+	  (puts "IF ";
+	   ignore(exp_accept (self :> vine_visitor) cond);
+	   puts " THEN ";
+	   ignore(exp_accept (self :> vine_visitor) x);
+	   puts " ELSE ";
+	   ignore(exp_accept (self :> vine_visitor) y);
+	   puts " ENDIF";
+	   SkipChildren);
       | BinOp(bop, e1, e2) ->
 	  let t = Vine_typecheck.infer_type_fast e1 in
 	  let bits = if is_integer_type t then  bits_of_width t else -1 in

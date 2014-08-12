@@ -1391,25 +1391,42 @@ void get_thunk_index(vector<Stmt *> *ir,
 #ifdef MUX_AS_CJMP
 	  if (match_ite(ir, i-6, NULL, NULL, NULL, NULL) >= 0)
 	    *mux0x = i-6;
-#else
-	  if (match_ite(ir, i-3, NULL, NULL, NULL, NULL) >= 0) {
-	    if (i >= 3) {
-	      Stmt *prev_stmt = ir->at(i - 1);
-	      if ( prev_stmt->stmt_type == MOVE ) {
-		Move *prev_mv = (Move*)prev_stmt;
-		if ( prev_mv->lhs->exp_type == TEMP ) {
-		  Temp *prev_temp = (Temp *)prev_mv->lhs;
-		  if ( mv->rhs->exp_type == TEMP ) {
-		    Temp *rhs_temp = (Temp *)mv->rhs;
-		    if ( prev_temp->name == rhs_temp->name ) {
-		      *op = i-2;
-		      *mux0x = i-3;
-		    }
+#elif defined(MUX_AS_BITS)
+	  if (i >= 3 && match_ite(ir, i-3, NULL, NULL, NULL, NULL) >= 0) {
+	    Stmt *prev_stmt = ir->at(i - 1);
+	    if ( prev_stmt->stmt_type == MOVE ) {
+	      Move *prev_mv = (Move*)prev_stmt;
+	      if ( prev_mv->lhs->exp_type == TEMP ) {
+		Temp *prev_temp = (Temp *)prev_mv->lhs;
+		if ( mv->rhs->exp_type == TEMP ) {
+		  Temp *rhs_temp = (Temp *)mv->rhs;
+		  if ( prev_temp->name == rhs_temp->name ) {
+		    *op = i-2;
+		    *mux0x = i-3;
 		  }
 		}
 	      }
 	    }
-	  } else if (cc_op_copy && mv->rhs->exp_type == TEMP) {
+	  }
+#else
+	  if (i >= 2 && match_ite(ir, i-2, NULL, NULL, NULL, NULL) >= 0) {
+	    Stmt *prev_stmt = ir->at(i - 1);
+	    if ( prev_stmt->stmt_type == MOVE ) {
+	      Move *prev_mv = (Move*)prev_stmt;
+	      if ( prev_mv->lhs->exp_type == TEMP ) {
+		Temp *prev_temp = (Temp *)prev_mv->lhs;
+		if ( mv->rhs->exp_type == TEMP ) {
+		  Temp *rhs_temp = (Temp *)mv->rhs;
+		  if ( prev_temp->name == rhs_temp->name ) {
+		    *op = i-1;
+		    *mux0x = i-2;
+		  }
+		}
+	      }
+	    }
+	  }
+#endif
+	  if (cc_op_copy && mv->rhs->exp_type == TEMP) {
 	    Temp *rhs_temp = (Temp *)mv->rhs;
 	    if (rhs_temp->name == cc_op_copy->name) {
 	      // We saw t = CC_OP; ...; CC_OP = t, so the thunk is actually
@@ -1417,7 +1434,6 @@ void get_thunk_index(vector<Stmt *> *ir,
 	      *nop = i;
 	    }
 	  }
-#endif
 	}
 	else if ( temp->name.find("CC_DEP1") != string::npos )
 	  *dep1 = i;
@@ -2455,6 +2471,11 @@ static void modify_eflags_helper( string op, reg_t type, vector<Stmt *> *ir, int
 	// easier and more reliable to do this here than to figure out
 	// the condition ourselves in the individual flags functions.
 	if (mux0x != -1) {
+	  // Note that there's no check here that we're getting the
+	  // sense of the condition correct: we don't look at exp_t or
+	  // exp_f. For now we just assume that VEX uses the convention
+	  // that true means "update the flags", and no intermediate
+	  // layer negates the condition.
 	  Exp *cond, *exp_t, *exp_f, *res;
 	  match_ite(ir, mux0x, &cond, &exp_t, &exp_f, &res);
 	  Label *mod = mk_label();
@@ -2462,7 +2483,7 @@ static void modify_eflags_helper( string op, reg_t type, vector<Stmt *> *ir, int
 	  mods.insert(mods.begin(), mod);
 	  mods.insert(mods.begin(),
 		      new CJmp(ecl(cond),
-			       new Name(nomod->label), new Name(mod->label)) );
+			       new Name(mod->label), new Name(nomod->label)) );
 	  mods.push_back(nomod);
 	}
 

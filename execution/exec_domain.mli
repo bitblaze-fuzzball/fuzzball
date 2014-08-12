@@ -222,5 +222,11 @@ module type DOMAIN = sig
   val cast64h16 : t -> t
   val cast64h32 : t -> t
 
+  val ite1  : t -> t -> t -> t
+  val ite8  : t -> t -> t -> t
+  val ite16 : t -> t -> t -> t
+  val ite32 : t -> t -> t -> t
+  val ite64 : t -> t -> t -> t
+
   val get_tag : t -> int64
 end
