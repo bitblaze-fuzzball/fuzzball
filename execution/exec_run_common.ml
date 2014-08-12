@@ -111,10 +111,13 @@ let decode_insn asmir_gamma eip insn_bytes =
       | _ -> failwith "expected asm_addr_to_vine to give single block"
 
 let label_to_eip s =
-  let len = String.length s in
-  let hex = String.sub s 3 (len - 3) in (* remove "pc_" *)
-  let eip = Int64.of_string hex in
+  if (s.[0] = 'p') && (s.[1] = 'c') && (s.[2] = '_')
+  then
+    let len = String.length s in
+    let hex = String.sub s 3 (len - 3) in (* remove "pc_" *)
+    let eip = Int64.of_string hex in
     eip
+  else failwith (Printf.sprintf "label_to_eip: %s isn't of the expected form pc_<hex>" s)
 
 let known_unknowns = (
   let h = Hashtbl.create 11 in
