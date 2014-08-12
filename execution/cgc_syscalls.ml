@@ -110,13 +110,24 @@ object(self)
         (Int64.add next_fresh_addr 0x0fffL); (* page align *)
       ret
 
+  val mutable pm = new Pointer_management.pointer_management
+  
+  method enablePointerManagementMemoryChecking =
+    pm#set_esp_lookup (fun () -> fm#get_esp);
+    fm#set_pointer_management pm
+
   val mutable saved_next_fresh_addr = 0L
+  val mutable saved_pointer_managment = None
 
   method private save_memory_state =
     saved_next_fresh_addr <- next_fresh_addr;
+    saved_pointer_managment <- Some pm#construct_deep_copy;
 
   method private reset_memory_state =
     next_fresh_addr <- saved_next_fresh_addr;
+    match saved_pointer_managment with
+    | Some ptrmng -> pm <- ptrmng
+    | _ -> failwith "no was pointer management snapshot created!"
 
   val mutable num_receives = 0
   val mutable saved_num_receives = 0
@@ -143,6 +154,8 @@ object(self)
   method private cgcos_allocate length is_exec addr_p =
     ignore(is_exec); (* We have no page permissions yet *)
     let fresh = self#fresh_addr length in
+      if !opt_memory_watching then
+        pm#add_alloc fresh length;
       zero_region fresh (Int64.to_int length);
       store_word addr_p 0 fresh;
       put_return 0L
@@ -150,6 +163,8 @@ object(self)
   method private cgcos_deallocate addr len =
     ignore(addr);
     ignore(len);
+    if !opt_memory_watching then
+      pm#add_dealloc addr len;
     put_return 0L
 
   method private cgcos_fdwait nfds readfds writefds timeout ready_cnt_p =

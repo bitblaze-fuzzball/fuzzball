@@ -30,6 +30,7 @@ export SOURCES = \
 	query_engine.mli query_engine.ml \
 	stpvc_engine.mli stpvc_engine.ml \
 	stp_external_engine.mli stp_external_engine.ml \
+	pointer_management.mli pointer_management.ml \
 	concrete_memory.mli concrete_memory.ml \
 	granular_memory.mli granular_memory.ml \
 	fragment_machine.mli fragment_machine.ml \
@@ -43,7 +44,7 @@ export SOURCES = \
 	cgc_syscalls.mli cgc_syscalls.ml \
 	linux_syscalls.mli linux_syscalls.ml \
 	linux_loader.mli linux_loader.ml \
-        decree_loader.mli decree_loader.ml \
+  decree_loader.mli decree_loader.ml \
 	state_loader.mli state_loader.ml \
 	exec_run_common.mli exec_run_common.ml \
 	exec_runloop.mli exec_runloop.ml \

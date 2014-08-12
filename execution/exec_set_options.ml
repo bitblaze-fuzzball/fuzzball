@@ -507,6 +507,8 @@ let cmdline_opts =
 	 opt_svn_version := true;
 	 Printf.printf "SVN version %s\n" Svn_version.svn_version),
      " Print SVN revision number");
+    ("-memory-watching", Arg.Set(opt_memory_watching),
+     " Pay attention to memory related issues");
   ]
 
 let trace_replay_cmdline_opts =

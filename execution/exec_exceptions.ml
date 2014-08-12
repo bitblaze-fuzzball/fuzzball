@@ -27,3 +27,7 @@ exception TooManyIterations
 exception UnhandledSysCall of string
 exception UnhandledTrap
 exception UnproductivePath
+exception Double_Free
+exception Dealloc_Not_Alloc
+exception Alloc_Dealloc_Length_Mismatch
+exception Unsafe_Memory_Access

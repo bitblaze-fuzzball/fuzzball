@@ -77,6 +77,7 @@ sig
 
     method after_exploration : unit
 
+    method set_pointer_management : Pointer_management.pointer_management -> unit
     method init_prog : Vine.program -> unit
     method set_frag : Vine.program -> unit
     method concretize_misc : unit

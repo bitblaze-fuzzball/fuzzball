@@ -169,6 +169,7 @@ let regstr_to_reg s = match s with
   | _ -> failwith ("Unrecognized register name " ^ s)
 
 class virtual fragment_machine = object
+  method virtual set_pointer_management : Pointer_management.pointer_management -> unit
   method virtual init_prog : Vine.program -> unit
   method virtual set_frag : Vine.program -> unit
   method virtual concretize_misc : unit
@@ -453,6 +454,9 @@ struct
 
     val mutable loop_cnt = 0L
     method get_loop_cnt = loop_cnt
+
+    method set_pointer_management ptrmng =
+      mem#set_pointer_management ptrmng
 
     method set_frag (dl, sl) =
       frag <- (dl, sl);
@@ -1655,7 +1659,8 @@ struct
       in
 	loop sl
 
-    method run () = self#run_sl (fun lab -> true) insns
+    method run () =
+      self#run_sl (fun lab -> true) insns
 
     method run_to_jump () =
       self#run_sl (fun lab -> (String.sub lab 0 3) <> "pc_") insns

@@ -188,6 +188,8 @@ let opt_max_receives = ref None
 let opt_symbolic_random = ref false
 let opt_skip_timeouts = ref false
 
+let opt_memory_watching = ref false
+
 let asmir_arch () =
   asmir_arch_of_execution_arch !opt_arch
 

@@ -28,7 +28,7 @@ sig
 
   type missing_t = int -> int64 -> D.t
 
-  val  gran8_get_byte  : gran8  -> missing_t -> int64 ->        (D.t * gran8)
+  val gran8_get_byte   : gran8  -> missing_t -> int64 ->        (D.t * gran8)
   val gran16_get_byte  : gran16 -> missing_t -> int64 -> int -> (D.t * gran16)
   val gran32_get_byte  : gran32 -> missing_t -> int64 -> int -> (D.t * gran32)
   val gran64_get_byte  : gran64 -> missing_t -> int64 -> int -> (D.t * gran64)
@@ -61,6 +61,8 @@ sig
   val gran64_size : gran64 -> int
 
   class virtual granular_memory : object
+    method set_pointer_management : Pointer_management.pointer_management -> unit
+
     method on_missing : missing_t -> unit
 
     method private virtual store_common_fast :
@@ -174,6 +176,7 @@ sig
 
   class granular_snapshot_memory : granular_memory -> granular_memory ->
   object
+    method set_pointer_management : Pointer_management.pointer_management -> unit
     method on_missing : missing_t -> unit
     method maybe_load_byte  : int64 -> D.t option
     method maybe_load_short : int64 -> D.t option
@@ -198,6 +201,7 @@ sig
   class granular_second_snapshot_memory :
     granular_snapshot_memory -> granular_memory ->
   object
+    method set_pointer_management : Pointer_management.pointer_management -> unit
     method on_missing : missing_t -> unit
     method maybe_load_byte  : int64 -> D.t option
     method maybe_load_short : int64 -> D.t option
@@ -242,6 +246,7 @@ sig
   class concrete_maybe_adaptor_memory :
     Concrete_memory.concrete_memory ->
   object
+    method set_pointer_management : Pointer_management.pointer_management -> unit
     method on_missing : missing_t -> unit
     method maybe_load_byte  : int64 -> D.t option
     method maybe_load_short : int64 -> D.t option

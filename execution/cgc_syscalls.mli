@@ -3,4 +3,5 @@ object
   method handle_special : string -> Vine.stmt list option
   method make_snap : unit
   method reset : unit
+  method enablePointerManagementMemoryChecking : unit
 end

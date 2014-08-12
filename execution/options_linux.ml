@@ -133,6 +133,10 @@ let apply_linux_cmdline_opts (fm : Fragment_machine.fragment_machine) =
      | None -> ());
   if !opt_decree then
     let csh = new Cgc_syscalls.cgcos_special_handler fm in
+      
+     if !opt_memory_watching then
+       csh#enablePointerManagementMemoryChecking;
+
       fm#add_special_handler (csh :> Fragment_machine.special_handler)      
   else if !opt_linux_syscalls then
     let lsh = new Linux_syscalls.linux_special_handler fm in

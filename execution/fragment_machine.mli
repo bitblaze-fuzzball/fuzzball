@@ -51,6 +51,7 @@ val comment_is_insn : string -> bool
    hiding internal methods. It's also convenient that it hides the domain
    functors. *)
 class virtual fragment_machine : object
+  method virtual set_pointer_management : Pointer_management.pointer_management -> unit
   method virtual init_prog : Vine.program -> unit
   method virtual set_frag : Vine.program -> unit
   method virtual concretize_misc : unit
@@ -241,6 +242,7 @@ module FragmentMachineFunctor :
   functor (D : Exec_domain.DOMAIN) ->
 sig
   class frag_machine : object
+    method set_pointer_management : Pointer_management.pointer_management -> unit
     method init_prog : Vine.program -> unit
     method set_frag : Vine.program -> unit
     method concretize_misc : unit

@@ -92,6 +92,7 @@ sig
     method print_tree : out_channel -> unit
     method set_iter_seed : int -> unit
     method random_word : int64
+    method set_pointer_management : Pointer_management.pointer_management -> unit
     method init_prog : Vine.program -> unit
     method set_frag : Vine.program -> unit
     method get_esp : int64

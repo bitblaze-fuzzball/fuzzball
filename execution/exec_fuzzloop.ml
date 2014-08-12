@@ -16,47 +16,6 @@ open Decision_tree;;
 open Exec_run_common;;
 open Exec_runloop;;
 open Exec_stats;;
-
-let loop_w_probing count (dt : decision_tree) (frag : fragment_machine) fn =
-(*  let outer_iteration = ref 0L 
-  and num_probes = 2L 
-  and best_path = ref ""
-  and probe_depth = 3L in
-  opt_path_depth_limit := (-1L);
-  
-  while true
-  do
-    opt_path_depth_limit := Int64.add !opt_path_depth_limit probe_depth;
-    Printf.printf "Probe depth: %s\n" (Int64.to_string !opt_path_depth_limit);
-    Printf.printf "Using prefix: [%s]\n" !opt_follow_path;
-    outer_iteration := Int64.add !outer_iteration 1L;
-    
-    (* reset our probe counter *)
-    let inner_iteration = ref 0L in
-    (try
-       while (!inner_iteration < num_probes)
-       do
-	 inner_iteration := Int64.add !inner_iteration 1L;
-	 Printf.printf "Iteration #%s Probe #%s\n" 
-	   (Int64.to_string !outer_iteration)
-	   (Int64.to_string !inner_iteration);
-
-
-	 fn !inner_iteration;
-	 let cur_path = dt#get_most_recent_traversal in
-	 Printf.printf "recent path: %s\n%!" cur_path;
-(*	 if Random.bool () then *)
-	 best_path := cur_path
-       done
-     with
-       LastIteration -> Printf.printf "LastIteration Thrown\n");
-
-    (* update the path prefix with the best we've seen *)
-    opt_follow_path := !best_path
-	  
-  done;*)
-  Printf.printf "DID NOTHING\n";
-  Printf.printf "Exited loop\n"
       
 let loop_w_stats count fn =
   let iter = ref 0L and
@@ -105,9 +64,9 @@ let log_fuzz_restart log str =
     )
   )
 
+(* opt_fuzz_start_eip comes... sometimes... fuzz_start_addr *)
 let fuzz start_eip opt_fuzz_start_eip end_eips
-    (fm : fragment_machine) asmir_gamma symbolic_init reset_cb
-    (*(dt : decision_tree)*)  =
+    (fm : fragment_machine) asmir_gamma symbolic_init reset_cb =
   if !opt_trace_setup then
     (Printf.printf "Initial registers:\n";
      fm#print_regs);
@@ -157,7 +116,6 @@ let fuzz start_eip opt_fuzz_start_eip end_eips
        (Printf.printf "Took snapshot\n"; flush stdout);
      (try
  	loop_w_stats !opt_num_paths
-(*	loop_w_probing !opt_num_paths dt fm *)
 	  (fun iter ->
 	     let old_tcs = Hashtbl.length trans_cache in
 	     let stop str = if !opt_trace_stopping then
@@ -237,6 +195,19 @@ let fuzz start_eip opt_fuzz_start_eip end_eips
 		  | Signal("USR1") -> 
 		    log_fuzz_restart Log.trace "on SIGUSR1";
 		    stop "on SIGUSR1"
+			| Double_Free ->
+			  log_fuzz_restart Log.trace "on double free";
+		    stop "on double free"
+			| Dealloc_Not_Alloc ->
+			  log_fuzz_restart Log.trace "on deallocating something not allocated";
+		    stop "on deallocating something not allocated"
+			| Alloc_Dealloc_Length_Mismatch ->
+			  log_fuzz_restart Log.trace "on deallocating a size different than that allocated";
+		    stop "on deallocating a size different than that allocated"
+			| Unsafe_Memory_Access ->
+			  log_fuzz_restart Log.trace "on unsafe memory access";
+		    stop "on unsafe memory access"
+
 		  (* | NotConcrete(_) -> () (* shouldn't happen *)
 		     | Simplify_failure(_) -> () (* shouldn't happen *)*)
 	       ); 

@@ -164,6 +164,7 @@ class concrete_hash_memory = object(self)
 
   method clear () =
     Hashtbl.clear mem
+
 end
 
 class concrete_snapshot_memory
