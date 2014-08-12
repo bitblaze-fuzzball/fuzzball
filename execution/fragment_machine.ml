@@ -16,7 +16,12 @@ open Stp_external_engine;;
 open Concrete_memory;;
 open Granular_memory;;
 
-let bool64 f = fun a b -> if (f a b) then 1L else 0L
+let bool64 f a b =
+  if (f a b)
+  then 1L
+  else 0L
+
+let is_true _ = true
 
 let move_hash src dest =
   let add a b = V.VarHash.add dest a b in
@@ -442,6 +447,12 @@ struct
     val mutable insns = []
 
     val mutable snap = (V.VarHash.create 1, V.VarHash.create 1)
+
+    method private concretize8 base_addr offset =
+      D.to_concrete_8 (mem#load_byte
+			 (Int64.add base_addr
+			    (Int64.of_int offset)))
+
 
     method init_prog (dl, sl) =
       let add_reg ((n,s,t) as v) =
@@ -1740,7 +1751,7 @@ struct
 	loop sl
 
     method run () =
-      self#run_sl (fun lab -> true) insns
+      self#run_sl is_true insns
 
     method run_to_jump () =
       let check_for_pc lab = (String.sub lab 0 3) <> "pc_" in
@@ -1759,10 +1770,9 @@ struct
 	| _ -> failwith "Unsupported arch in fake_call_to_from"
 
     method disasm_insn_at eip = 
-      let bytes = Array.init 16
-	(fun i -> Char.chr (self#load_byte_conc
-			      (Int64.add eip (Int64.of_int i))))
-      in
+      let array_init i = Char.chr (self#load_byte_conc
+				     (Int64.add eip (Int64.of_int i))) in
+      let bytes = Array.init 16 array_init in
 	Libasmir.sprintf_disasm_rawbytes
 	  (libasmir_arch_of_execution_arch !opt_arch)
 	  false eip bytes
@@ -1888,18 +1898,10 @@ struct
 
     method private assemble_concolic_exp exp 
       byte_vars short_vars word_vars long_vars =
-      let byte_ds =
-	List.map (fun (s, v) -> (s, form_man#make_concolic_8 s v))
-	  byte_vars in
-      let short_ds =
-	List.map (fun (s, v) -> (s, form_man#make_concolic_16 s v))
-	  short_vars in
-      let word_ds =
-	List.map (fun (s, v) -> (s, form_man#make_concolic_32 s v))
-	  word_vars in
-      let long_ds =
-	List.map (fun (s, v) -> (s, form_man#make_concolic_64 s v))
-	  long_vars in
+      let byte_ds  = List.map form_man#make_concolic_8_tuple byte_vars in
+      let short_ds = List.map form_man#make_concolic_16_tuple short_vars in
+      let word_ds  = List.map form_man#make_concolic_32_tuple word_vars in
+      let long_ds  = List.map form_man#make_concolic_64_tuple long_vars in
       let rec rw_loop e =
 	match e with
 	  | V.Unknown(s) ->
@@ -1971,20 +1973,15 @@ struct
 
     method read_buf addr len =
       assert ((len >= 0) && (len < Sys.max_array_length));
-      Array.init len
-	(fun i -> Char.chr
-	   (D.to_concrete_8 (mem#load_byte (Int64.add addr (Int64.of_int i)))))
+      Array.init len (fun i -> Char.chr (self#concretize8 addr i))
 
     method read_cstr addr =
-      let rec bytes_loop i =
-	let b = D.to_concrete_8 (mem#load_byte
-				   (Int64.add addr (Int64.of_int i)))
-	in
-	  if b = 0 then [] else b :: bytes_loop (i + 1)
-      in
-	String.concat ""
-	  (List.map (fun b -> String.make 1 (Char.chr b))
-	     (bytes_loop 0))
+      let rec read_loop i =
+	let b = self#concretize8 addr i in
+	if b = 0 (* found \0 *)
+	then []
+	else (String.make 1 (Char.chr b))::(read_loop (i + 1)) in
+      String.concat "" (read_loop 0)
 
     method zero_fill vaddr n =
       for i = 0 to n - 1 do

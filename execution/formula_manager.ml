@@ -189,9 +189,13 @@ struct
 	var
 
     method make_concolic_8  s v = self#make_concolic V.REG_8  s(Int64.of_int v)
+    method make_concolic_8_tuple (s,v) = s, self#make_concolic_8 s v
     method make_concolic_16 s v = self#make_concolic V.REG_16 s(Int64.of_int v)
+    method make_concolic_16_tuple (s,v) = s, self#make_concolic_16 s v
     method make_concolic_32 s v = self#make_concolic V.REG_32 s v
+    method make_concolic_32_tuple (s,v) = s, self#make_concolic_32 s v
     method make_concolic_64 s v = self#make_concolic V.REG_64 s v
+    method make_concolic_64_tuple (s,v) = s, self#make_concolic_64 s v
 
     method fresh_region_base_concolic s v =
       assert(not (Hashtbl.mem region_base_vars s));

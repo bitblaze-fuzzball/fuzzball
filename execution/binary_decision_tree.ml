@@ -21,6 +21,11 @@ type decision_tree_node = {
 and
   dt_node_ref = int
 
+let bool_to_string b =
+  if b
+  then "1"
+  else "0" 
+
 (* Mask to restrict an OCaml "int" to be at most 32 bits. This is a
    no-op on a 32-bit system, but not on a 64-bit system. And it's a
    little tricky to write, becuse the code has to compile correctly on
@@ -108,7 +113,7 @@ let string_to_dt_node ident_arg s =
 
 let next_dt_ident = ref 0
 
-let ident_to_node_table = Array.init 1024 (fun _ -> None)
+let ident_to_node_table = Array.make 1024 None
 
 let nodes_fd_or = ref None
 
@@ -224,13 +229,13 @@ let new_dt_node the_parent =
        let t2 = match ident_to_node_table.(i1) with
 	 | Some t -> t
 	 | None ->
-	     let t = Array.init 1024 (fun _ -> None) in
+	     let t = Array.create 1024 None in
 	       ident_to_node_table.(i1) <- Some t; t
        in
        let t3 = match t2.(i2) with
 	 | Some t -> t
 	 | None ->
-	     let t = Array.init 1024 (fun _ -> "") in
+	     let t = Array.create 1024 "" in
 	       t2.(i2) <- Some t; t
        in
 	 ignore(i3);
@@ -344,8 +349,9 @@ class binary_decision_tree = object(self)
       loop cur
 
   method get_hist_str = 
-    String.concat ""
-      (List.map (fun b -> if b then "1" else "0") (List.rev self#get_hist));
+    let append accum next = (bool_to_string next) ^ accum in
+    List.fold_left append "" self#get_hist
+
 
   method private get_hist_queries =
     let kid n b =
@@ -382,15 +388,15 @@ class binary_decision_tree = object(self)
   method get_hist_str_queries = 
     String.concat "-"
       (List.map
-	 (fun q -> String.concat ""
-	    (List.map (fun b -> if b then "1" else "0") q))
+	 (fun q -> String.concat "" 
+	    (List.map bool_to_string q))
 	 self#get_hist_queries)
 
   method get_hist_str_bracketed = 
     String.concat ""
       (List.map
 	 (fun q -> let s = String.concat ""
-	    (List.map (fun b -> if b then "1" else "0") q) in
+	    (List.map bool_to_string q) in
 	    if String.length s = 1 then s else "[" ^ s ^ "]")
 	 self#get_hist_queries)
 

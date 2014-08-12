@@ -35,6 +35,11 @@ sig
     method make_concolic_32 : string -> int64 -> D.t
     method make_concolic_64 : string -> int64 -> D.t
 
+    method make_concolic_8_tuple  : string * int   -> string * D.t
+    method make_concolic_16_tuple : string * int   -> string * D.t
+    method make_concolic_32_tuple : string * int64 -> string * D.t
+    method make_concolic_64_tuple : string * int64 -> string * D.t
+
     method fresh_region_base_concolic : string -> int64 -> D.t
 
     method make_concolic_mem_8 : string -> int64 -> int -> D.t
