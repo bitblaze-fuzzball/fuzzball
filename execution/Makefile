@@ -66,12 +66,26 @@ export PACKS = str extlib unix yojson
 export YFLAGS = -v
 
 export CLIBS = asmir vex opcodes bfd iberty stdc++ 
-export CFLAGS = -g
-export LDFLAGS = $(LIBASMIR_LDFLAGS) 
-export CLIBFLAGS= $(LDFLAGS)
+
+CFLAGS := 
+ifdef DEBUG
+CFLAGS += -g
+endif
+ifdef PROFILE
+CFLAGS += -p
+endif
+
+export CFLAGS
+export LDFLAGS = -p $(LIBASMIR_LDFLAGS) 
+export CLIBFLAGS= -p $(LDFLAGS)
 export LIBDIRS = $(LIBASMIR)/src # ../appreplay ../stp ../stp/ocaml
 
-OCAMLFLAGS = -warn-error Aelz  #-w A
+OCAMLFLAGS := -warn-error Aelz
+ifdef PROFILE
+OCAMLFLAGS += -p
+endif
+export OCAMLFLAGS
+
 # merge everything but descriptions.
 OCAMLDOCFLAGS = -m avlsoper
 

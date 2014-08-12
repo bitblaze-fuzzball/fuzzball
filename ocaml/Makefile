@@ -64,12 +64,19 @@ export YFLAGS = -v
 
 
 export CLIBS = asmir vex opcodes bfd iberty z stdc++ 
+ifdef DEBUG
 export CFLAGS = -g
+endif
 export LDFLAGS = $(LIBASMIR_LDFLAGS) 
 export CLIBFLAGS= $(LDFLAGS)
 export LIBDIRS = $(LIBASMIR)/src # ../appreplay ../stp ../stp/ocaml
 
-OCAMLFLAGS = -warn-error Aelz  #-w A
+OCAMLFLAGS := -warn-error Aelz
+ifdef PROFILE
+OCAMLFLAGS += -p
+endif
+export OCAMLFLAGS
+
 # merge everything but descriptions.
 OCAMLDOCFLAGS = -m avlsoper
 

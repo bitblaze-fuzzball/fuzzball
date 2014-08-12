@@ -15,8 +15,11 @@ export LIBS = execution
 export INCDIRS = ../execution
 export OCAMLDEP = ocamldep -I ../execution
 
-
-OCAMLFLAGS = -warn-error Aelz  #-w A
+OCAMLFLAGS := -warn-error Aelz
+ifdef PROFILE
+OCAMLFLAGS += -p
+endif
+export OCAMLFLAGS
 
 all: dncl
 

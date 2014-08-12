@@ -225,7 +225,7 @@ endif
 export OCAML
 
 ifndef OCAMLC
-  OCAMLC := ocamlc
+  OCAMLC := ocamlopt
 endif
 export OCAMLC
 
