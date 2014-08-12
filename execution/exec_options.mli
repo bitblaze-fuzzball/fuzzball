@@ -81,6 +81,7 @@ val opt_check_for_null : bool ref
 val opt_finish_on_null_deref : bool ref
 val opt_check_for_jump_to : int64 list ref
 val opt_finish_on_controlled_jump : bool ref
+val opt_check_for_ret_addr_overwrite : bool ref
 val opt_offset_strategy : offset_strategy ref
 val opt_offset_strategy_string : string ref
 val opt_concretize_divisors : bool ref

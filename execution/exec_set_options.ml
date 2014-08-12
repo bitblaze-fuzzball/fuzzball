@@ -486,6 +486,9 @@ let cmdline_opts =
      "addr Check if symbolic jump target can take given value");
     ("-finish-on-controlled-jump", Arg.Set(opt_finish_on_controlled_jump),
      " Finish exploration if -check-for-jump-to succeeds");
+    ("-check-for-ret-addr-overwrite",
+     Arg.Set(opt_check_for_ret_addr_overwrite),
+     " Check if a non-call instruction stores to a return address");
     ("-omit-pf-af", Arg.Set(opt_omit_pf_af),
      " Omit computation of the (rarely used) PF and AF flags");
     ("-nop-system-insns", Arg.Set(opt_nop_system_insns),

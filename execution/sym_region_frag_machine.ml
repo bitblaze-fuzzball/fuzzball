@@ -1318,7 +1318,149 @@ struct
 		       ));
 		  true
 
+    val mutable call_stack = []
+    val ret_addrs = Hashtbl.create 101
+
+    (* TODO: avoid code duplication with FM.trace_callstack *)
+    method private update_ret_addrs last_insn last_eip eip =
+      let pop_callstack esp =
+	while match call_stack with
+	  | (old_esp, _, _, _) :: _ when old_esp < esp -> true
+	  | _ -> false
+	do
+	      match call_stack with
+		| (ret_addr_addr, _, _, _) :: _ ->
+		    Hashtbl.remove ret_addrs ret_addr_addr;
+		    call_stack <- List.tl call_stack
+		| _ -> failwith "Can't happen, loop invariant"
+	done
+      in
+      let get_retaddr esp =
+	match !opt_arch with
+	  | X86 -> self#load_word_conc esp
+	  | X64 -> self#load_long_conc esp
+	  | ARM -> self#get_word_var R14
+      in
+      let kind =
+	match !opt_arch with
+	  | X86 | X64 ->
+	      let s = last_insn ^ "    " in
+		if (String.sub s 0 4) = "call" then
+		  "call"
+		else if (String.sub s 0 3) = "ret" then
+		  "return"
+		else if (String.sub s 0 3) = "jmp" then
+		  "unconditional jump"
+		else if (String.sub s 0 1) = "j" then
+		  "conditional jump"
+		else
+		  "not a jump"
+	  | ARM ->
+	      (* TODO: add similar parsing for ARM mnemonics *)
+	      "not a jump"
+      in
+	match kind with
+	  | "call" ->
+	      let esp = self#get_esp in
+	      let ret_addr_addr = match !opt_arch with
+		| X86 -> esp
+		| X64 -> esp
+		| ARM -> failwith "Return address tracking not implemented for ARM"
+	      in
+	      let ret_addr = get_retaddr esp
+	      in
+		call_stack <- (esp, last_eip, eip, ret_addr) :: call_stack;
+		Hashtbl.replace ret_addrs ret_addr_addr ret_addr;
+		if !opt_trace_callstack then
+		  (Printf.printf "After call, ret addrs are: ";
+		   Hashtbl.iter
+		     (fun a _ ->
+			Printf.printf "%Lx " a)
+		     ret_addrs;
+		   Printf.printf "\n";
+		  )
+	  | "return" ->
+	      let esp = self#get_esp in
+		pop_callstack esp;
+		if !opt_trace_callstack then
+		  (Printf.printf "After return, ret addrs are: ";
+		   Hashtbl.iter
+		     (fun a _ ->
+			Printf.printf "%Lx " a)
+		     ret_addrs;
+		   Printf.printf "\n";
+		  )
+	  | _ -> ()
+
+    method jump_hook last_insn last_eip eip =
+      spfm#jump_hook last_insn last_eip eip;
+      if !opt_check_for_ret_addr_overwrite then
+	self#update_ret_addrs last_insn last_eip eip
+
+    method private check_for_ret_addr_store addr_e ty =
+      if !opt_check_for_ret_addr_overwrite then
+	let size = (V.bits_of_width ty)/8 and
+	    ret_addr_size = match !opt_arch with
+	      | X86 -> 4
+	      | X64 -> 8
+	      | ARM -> 4
+	in
+	let v = self#eval_int_exp_simplify addr_e in
+	  try
+	    let addr = D.to_concrete_32 v in
+	      Printf.printf "Store to concrete location 0x%08Lx\n" addr;
+	      for offset = 1 - ret_addr_size to size - 1 do
+		let addr' = Int64.add addr (Int64.of_int offset) in
+		  (* Printf.printf " Checking 0x%08Lx\n" addr'; *)
+		  if Hashtbl.mem ret_addrs addr' then
+		    Printf.printf
+		      " Store to 0x%08Lx overwrites return address 0x%08Lx\n"
+		      addr' addr;
+	      done
+	  with NotConcrete _ ->
+	    let e = D.to_symbolic_32 v in
+	      (* We want to signal a problem if there's any overlap
+		 between the store of size "size" and the return address
+		 of size say 4.  This will happen if the store adddress
+		 is the range (loc - size + 1) to (loc + 4 - 1)
+		 inclusive. With some algebra we can rewrite this to use
+		 only a single unsigned comparison:
+
+		 loc - size + 1 <= a <= loc + 4 - 1
+		 -size + 1 <= a - loc <= 4 - 1
+		 0 <= a - loc + size - 1 <= 4 + size - 2
+		 0 <= a - (loc - (size - 1)) <= 4 + size - 2
+	      *)
+	    let size_bound = Int64.of_int (ret_addr_size + size - 2) in
+	    let bound_c = V.Constant(V.Int(V.REG_32, size_bound)) in
+	      Hashtbl.iter
+		(fun loc _ ->
+		   let first_overlap =
+		     Int64.sub loc (Int64.of_int (size - 1))
+		   in
+		   let start_c = V.Constant(V.Int(V.REG_32, first_overlap)) in
+		   let overlap_cond = V.BinOp(V.LE,
+					      V.BinOp(V.MINUS, e, start_c),
+					      bound_c)
+		   in
+		     match 
+		       self#check_cond overlap_cond
+		     with
+		       | (None|Some true) ->
+			   Printf.printf
+			     "Store to %s might overwrite return addr 0x%Lx.\n"
+			     (V.exp_to_string e) loc
+			     (* if !opt_finish_on_controlled_jump then
+				finish_fuzz "controlled jump" *)
+		       | Some false ->
+			   Printf.printf
+			     "Store to %s cannot overwite 0x%Lx.\n" 
+			     (V.exp_to_string e) loc
+		)
+		ret_addrs
+
     method private handle_store addr_e ty rhs_e =
+      self#check_for_ret_addr_store addr_e ty;
       let value = self#eval_int_exp_simplify rhs_e in
       if not (self#maybe_table_store addr_e ty value) then
       let (r, addr) = self#eval_addr_exp_region addr_e in
