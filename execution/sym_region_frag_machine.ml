@@ -1344,10 +1344,13 @@ struct
       let kind =
 	match !opt_arch with
 	  | X86 | X64 ->
-	      let s = last_insn ^ "    " in
-		if (String.sub s 0 4) = "call" then
+	      let s = last_insn ^ "        " in
+		if (String.sub s 0 4) = "call" &&
+		  (Int64.sub eip last_eip) <> 5L then
 		  "call"
 		else if (String.sub s 0 3) = "ret" then
+		  "return"
+		else if (String.sub s 0 8) = "repz ret" then
 		  "return"
 		else if (String.sub s 0 3) = "jmp" then
 		  "unconditional jump"
@@ -1371,25 +1374,9 @@ struct
 	      in
 		call_stack <- (esp, last_eip, eip, ret_addr) :: call_stack;
 		Hashtbl.replace ret_addrs ret_addr_addr ret_addr;
-		if !opt_trace_callstack then
-		  (Printf.printf "After call, ret addrs are: ";
-		   Hashtbl.iter
-		     (fun a _ ->
-			Printf.printf "%Lx " a)
-		     ret_addrs;
-		   Printf.printf "\n";
-		  )
 	  | "return" ->
 	      let esp = self#get_esp in
 		pop_callstack esp;
-		if !opt_trace_callstack then
-		  (Printf.printf "After return, ret addrs are: ";
-		   Hashtbl.iter
-		     (fun a _ ->
-			Printf.printf "%Lx " a)
-		     ret_addrs;
-		   Printf.printf "\n";
-		  )
 	  | _ -> ()
 
     method jump_hook last_insn last_eip eip =
@@ -1408,14 +1395,14 @@ struct
 	let v = self#eval_int_exp_simplify addr_e in
 	  try
 	    let addr = D.to_concrete_32 v in
-	      Printf.printf "Store to concrete location 0x%08Lx\n" addr;
 	      for offset = 1 - ret_addr_size to size - 1 do
 		let addr' = Int64.add addr (Int64.of_int offset) in
-		  (* Printf.printf " Checking 0x%08Lx\n" addr'; *)
 		  if Hashtbl.mem ret_addrs addr' then
-		    Printf.printf
-		      " Store to 0x%08Lx overwrites return address 0x%08Lx\n"
-		      addr' addr;
+		    (Printf.printf
+		       "Store to 0x%08Lx overwrites return address 0x%08Lx\n"
+		       addr' addr;
+		     if !opt_finish_on_ret_addr_overwrite then
+		       finish_fuzz "return address overwrite")
 	      done
 	  with NotConcrete _ ->
 	    let e = D.to_symbolic_32 v in
@@ -1449,9 +1436,9 @@ struct
 		       | (None|Some true) ->
 			   Printf.printf
 			     "Store to %s might overwrite return addr 0x%Lx.\n"
-			     (V.exp_to_string e) loc
-			     (* if !opt_finish_on_controlled_jump then
-				finish_fuzz "controlled jump" *)
+			     (V.exp_to_string e) loc;
+			   if !opt_finish_on_ret_addr_overwrite then
+			     finish_fuzz "return address overwrite"
 		       | Some false ->
 			   Printf.printf
 			     "Store to %s cannot overwite 0x%Lx.\n" 
@@ -1532,6 +1519,7 @@ struct
       let clear gm = gm#clear () in
       spfm#reset ();
       List.iter clear regions;
-      Hashtbl.clear concrete_cache
+      Hashtbl.clear concrete_cache;
+      Hashtbl.clear ret_addrs
   end
 end

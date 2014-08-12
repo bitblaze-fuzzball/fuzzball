@@ -489,6 +489,9 @@ let cmdline_opts =
     ("-check-for-ret-addr-overwrite",
      Arg.Set(opt_check_for_ret_addr_overwrite),
      " Check if a non-call instruction stores to a return address");
+    ("-finish-on-ret-addr-overwrite",
+     Arg.Set(opt_finish_on_ret_addr_overwrite),
+     " Finish exploration if -check-for-ret-addr-overwrite triggers");
     ("-omit-pf-af", Arg.Set(opt_omit_pf_af),
      " Omit computation of the (rarely used) PF and AF flags");
     ("-nop-system-insns", Arg.Set(opt_nop_system_insns),

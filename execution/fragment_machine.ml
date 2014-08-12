@@ -527,6 +527,16 @@ struct
     val mutable call_stack = []
 
     method private trace_callstack last_insn last_eip eip =
+      let rec is_sorted = function
+	| (s1, _, _, _) :: (((s2, _, _, _) :: _) as rest) ->
+	    if s1 < s2 then
+	      is_sorted rest
+	    else
+	      false
+	| [_]
+	| []
+	    -> true
+      in
       let pop_callstack esp =
 	while match call_stack with
 	  | (old_esp, _, _, _) :: _ when old_esp < esp -> true
@@ -548,10 +558,18 @@ struct
       let kind =
 	match !opt_arch with
 	  | X86 | X64 ->
-	      let s = last_insn ^ "    " in
-		if (String.sub s 0 4) = "call" then
+	      let s = last_insn ^ "        " in
+		if (String.sub s 0 4) = "call" &&
+		  (Int64.sub eip last_eip) <> 5L then
+		    (* Call with a direct target right after the call
+		       is essentially "push %eip", and usually used for PIC
+		       setup instead of a real call. *)
 		  "call"
 		else if (String.sub s 0 3) = "ret" then
+		  "return"
+		else if (String.sub s 0 8) = "repz ret" then
+		  (* "repz ret" is a weird historical synonym for "ret"
+		     that was once faster on some processors in some cases *)
 		  "return"
 		else if (String.sub s 0 3) = "jmp" then
 		  "unconditional jump"
@@ -574,14 +592,23 @@ struct
 		  "Call from 0x%08Lx to 0x%08Lx (return to 0x%08Lx)\n"
 		  last_eip eip ret_addr;
 		call_stack <- (esp, last_eip, eip, ret_addr) :: call_stack;
+		(* If we had a command-line option for expensive sanity
+		   checks, we could use it here. For now, just comment it
+		   out: *)
+		if false then
+		  assert(is_sorted call_stack);
 	  | "return" ->
 	      let esp = self#get_esp in
 		pop_callstack (Int64.sub esp size);
+		if false then
+		  assert(is_sorted call_stack);
 		let depth = List.length call_stack in
 		  for i = 0 to depth - 2 do Printf.printf " " done;
 		  Printf.printf "Return from 0x%08Lx to 0x%08Lx\n"
 		    last_eip eip;
 		  pop_callstack esp;
+		  if false then
+		    assert(is_sorted call_stack);
 	  | _ -> ()
 
     method jump_hook last_insn last_eip eip =

@@ -104,6 +104,7 @@ let opt_finish_on_null_deref = ref false
 let opt_check_for_jump_to = ref []
 let opt_finish_on_controlled_jump = ref false
 let opt_check_for_ret_addr_overwrite = ref false
+let opt_finish_on_ret_addr_overwrite = ref false
 let opt_offset_strategy = ref UniformStrat
 let opt_offset_strategy_string = ref "uniform"
 let opt_concretize_divisors = ref false

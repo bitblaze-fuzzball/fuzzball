@@ -239,6 +239,8 @@ let  getParameterTable () =
     add_parameter "-extra-condition" (StringList ESO.opt_extra_condition_strings);
     add_parameter "-check-for-jump-to" (Int64List EO.opt_check_for_jump_to);
     add_parameter "-finish-on-controlled-jump" (Bool EO.opt_finish_on_controlled_jump);
+    add_parameter "-check-for-ret-addr-overwrite" (Bool EO.opt_check_for_ret_addr_overwrite);
+    add_parameter "-finish-on-ret-addr-overwrite" (Bool EO.opt_finish_on_ret_addr_overwrite);
     add_parameter "-omit-pf-af" (Bool EO.opt_omit_pf_af);
     add_parameter "-nop-system-insns" (Bool EO.opt_nop_system_insns);
     add_parameter "-x87-emulator" (StringOpt EO.opt_x87_emulator);

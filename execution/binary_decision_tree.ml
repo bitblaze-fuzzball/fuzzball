@@ -451,7 +451,10 @@ class binary_decision_tree = object(self)
     self#start_new_query;
     match cur_query.query_children with
       |	None | Some 0 | Some 1 | Some 2 -> ()
-      | _ -> failwith "Too many children in start_new_query_binary"
+      | Some n ->
+	  Printf.printf "Current query node is %d with %d children\n"
+	    cur_query.ident n;
+	  failwith "Too many children in start_new_query_binary"
 
   method count_query =
     let rec finish_internal_nodes n top =
