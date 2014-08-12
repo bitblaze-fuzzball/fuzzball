@@ -19,8 +19,9 @@ open Granular_memory;;
 let bool64 f = fun a b -> if (f a b) then 1L else 0L
 
 let move_hash src dest =
+  let add a b = V.VarHash.add dest a b in
   V.VarHash.clear dest;
-  V.VarHash.iter (fun a b -> V.VarHash.add dest a b) src
+  V.VarHash.iter add src
 
 let fuzz_finish_reasons = ref []
 let reason_warned = ref false
@@ -439,13 +440,13 @@ struct
     val mutable snap = (V.VarHash.create 1, V.VarHash.create 1)
 
     method init_prog (dl, sl) =
-      List.iter
-	(fun ((n,s,t) as v) ->
-	   if s = "mem" then
-	     mem_var <- v
-	   else
-	     (V.VarHash.add reg_store v (D.uninit);
-	      Hashtbl.add reg_to_var (regstr_to_reg s) v)) dl;
+      let add_reg ((n,s,t) as v) =
+	if s = "mem"
+	then mem_var <- v
+	else
+	  (V.VarHash.add reg_store v (D.uninit);
+	   Hashtbl.add reg_to_var (regstr_to_reg s) v) in
+      List.iter add_reg dl;
       self#set_frag (dl, sl);
       let result = self#run () in
 	match result with
@@ -481,26 +482,25 @@ struct
     method eip_hook eip =
       (* Shouldn't be needed; we instead simplify the registers when
 	 writing to them: *)
+      let apply_eip_hook fn =
+	 (fn (self :> fragment_machine) eip) in
       (* self#simplify_regs; *)
-      (match deferred_start_symbolic with
-	 | Some setup ->
-	     deferred_start_symbolic <- None;
-	     raise (StartSymbolic(eip, setup))
-	 | None -> ());
-      if !opt_trace_registers then
-	self#print_regs;
-      if !opt_trace_eip then
-	Printf.printf "EIP is 0x%08Lx\n" eip;
-      (if !opt_trace_unique_eips then
-	 (if Hashtbl.mem unique_eips eip then
-	    ()
-	  else
-	    (Printf.printf "Saw new EIP 0x%08Lx\n" eip;
-	     Hashtbl.add unique_eips eip ())));
+       (match deferred_start_symbolic with
+       | Some setup ->
+	 deferred_start_symbolic <- None;
+	 raise (StartSymbolic(eip, setup))
+       | None -> ());
+       if !opt_trace_registers then
+	 self#print_regs;
+       if !opt_trace_eip then
+	 Printf.printf "EIP is 0x%08Lx\n" eip;
+       (if !opt_trace_unique_eips then
+	   (if not (Hashtbl.mem unique_eips eip) then
+	       (Printf.printf "Saw new EIP 0x%08Lx\n" eip;
+		Hashtbl.add unique_eips eip ())));
       (* Libasmir.print_disasm_rawbytes Libasmir.Bfd_arch_i386 eip insn_bytes;
 	 print_string "\n"; *)
-      List.iter (fun fn -> (fn (self :> fragment_machine) eip))
-	extra_eip_hooks;
+      List.iter apply_eip_hook extra_eip_hooks;
       self#watchpoint
 
     method get_eip =
@@ -596,26 +596,27 @@ struct
       = ()
 
     method private on_missing_zero_m (m:GM.granular_memory) =
-      m#on_missing
-	(fun size _ -> match size with
-	   | 8  -> D.from_concrete_8  0
-	   | 16 -> D.from_concrete_16 0
-	   | 32 -> D.from_concrete_32 0L
-	   | 64 -> D.from_concrete_64 0L
-	   | _ -> failwith "Bad size in on_missing_zero")
+      let size_converter size _ =
+	match size with
+	| 8  -> D.from_concrete_8  0
+	| 16 -> D.from_concrete_16 0
+	| 32 -> D.from_concrete_32 0L
+	| 64 -> D.from_concrete_64 0L
+	| _ -> failwith "Bad size in on_missing_zero" in
+      m#on_missing size_converter 
 
     method on_missing_zero =
       self#on_missing_zero_m (mem :> GM.granular_memory)
 
     method private on_missing_symbol_m (m:GM.granular_memory) name =
-      m#on_missing
-	(fun size addr -> 
-	   match size with
-	     | 8  -> form_man#fresh_symbolic_mem_8  name addr
-	     | 16 -> form_man#fresh_symbolic_mem_16 name addr
-	     | 32 -> form_man#fresh_symbolic_mem_32 name addr
-	     | 64 -> form_man#fresh_symbolic_mem_64 name addr
-	     | _ -> failwith "Bad size in on_missing_symbol")
+      let size_converter size addr =
+	match size with
+	| 8  -> form_man#fresh_symbolic_mem_8  name addr
+	| 16 -> form_man#fresh_symbolic_mem_16 name addr
+	| 32 -> form_man#fresh_symbolic_mem_32 name addr
+	| 64 -> form_man#fresh_symbolic_mem_64 name addr
+	| _ -> failwith "Bad size in on_missing_symbol" in
+      m#on_missing size_converter
 
     method on_missing_symbol =
       self#on_missing_symbol_m (mem :> GM.granular_memory) "mem"
@@ -1144,32 +1145,31 @@ struct
     val mutable special_handler_list = ([] : #special_handler list)
 
     method make_snap () =
+      let snap_handler h = h#make_snap in
       mem#make_snap ();
       snap <- (V.VarHash.copy reg_store, V.VarHash.copy temps);
-      List.iter (fun h -> h#make_snap) special_handler_list
+      List.iter snap_handler special_handler_list
 
     method reset () =
+      let reset h = h#reset in
       mem#reset ();
       (match snap with (r, t) ->
 	 move_hash r reg_store;
 	 move_hash t temps);
-      List.iter (fun h -> h#reset) special_handler_list
+      List.iter reset special_handler_list
 
     method add_special_handler (h:special_handler) =
       special_handler_list <- h :: special_handler_list
 
     method handle_special str =
-      try
-	let sl_r = ref [] in
-	  ignore(List.find
-		   (fun h ->
-		      match h#handle_special str with
-			| None -> false
-			| Some sl -> sl_r := sl; true)
-		   special_handler_list);
-	  Some !sl_r
-      with
-	  Not_found -> None
+      (* We don't care about the return value, but we need the side effect. *)
+      let rec find_some_sl = function
+	| [] -> None
+	| hd::tl ->
+	  match hd#handle_special str with
+	  | Some sl -> Some sl
+	  | _ -> find_some_sl tl in
+      find_some_sl special_handler_list
 
     method private get_int_var ((_,vname,ty) as var) =
       try
@@ -1663,7 +1663,8 @@ struct
       self#run_sl (fun lab -> true) insns
 
     method run_to_jump () =
-      self#run_sl (fun lab -> (String.sub lab 0 3) <> "pc_") insns
+      let check_for_pc lab = (String.sub lab 0 3) <> "pc_" in
+      self#run_sl check_for_pc insns
 
     method fake_call_to_from func_addr ret_addr =
       match !opt_arch with
@@ -1788,7 +1789,7 @@ struct
       let var = Hashtbl.find reg_to_var reg in
       let old_d = self#get_int_var var in
       let new_d =
-	change_func old_d byte_array (fun b -> D.from_concrete_8 b)
+	change_func old_d byte_array D.from_concrete_8
       in
 	self#set_int_var var new_d
 
@@ -1801,10 +1802,8 @@ struct
       in
       let var = Hashtbl.find reg_to_var reg in
       let old_d = self#get_int_var var in
-      let new_d =
-	change_func old_d byte_array
-	  (fun (s,i,v) -> form_man#make_concolic_mem_8 s i v)
-      in
+      let concolicify (s,i,v) = form_man#make_concolic_mem_8 s i v in
+      let new_d = change_func old_d byte_array concolicify in
 	self#set_int_var var new_d
 
     method private assemble_concolic_exp exp 

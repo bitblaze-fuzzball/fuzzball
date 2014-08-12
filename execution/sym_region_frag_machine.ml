@@ -1529,8 +1529,9 @@ struct
 	self#store_word_region (Some region) addr (D.from_concrete_32 v)
 
     method reset () =
+      let clear gm = gm#clear () in
       spfm#reset ();
-      List.iter (fun gm -> gm#clear ()) regions;
+      List.iter clear regions;
       Hashtbl.clear concrete_cache
   end
 end
