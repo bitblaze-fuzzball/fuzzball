@@ -188,4 +188,5 @@ val opt_argv : string list ref
 val state_start_addr : int64 option ref
 
 val opt_memory_watching : bool ref
+val opt_bb_size : int ref
 

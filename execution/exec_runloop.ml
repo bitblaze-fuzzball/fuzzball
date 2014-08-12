@@ -97,10 +97,8 @@ let rec decode_insns fm gamma eip k first =
 		(dl @ dl', sl @ sl')
 	  | _ -> (dl, sl) (* end of basic block, e.g. indirect jump *)
 
-let bb_size = 1
-
 let decode_insns_cached fm gamma eip =
-  with_trans_cache eip (fun () -> decode_insns fm gamma eip bb_size true)
+  with_trans_cache eip (fun () -> decode_insns fm gamma eip !opt_bb_size true)
 
 let runloop (fm : fragment_machine) eip asmir_gamma until =
   let rec loop last_eip eip =

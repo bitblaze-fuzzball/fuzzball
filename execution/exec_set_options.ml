@@ -514,6 +514,7 @@ let cmdline_opts =
      " Print SVN revision number");
     ("-memory-watching", Arg.Set(opt_memory_watching),
      " Pay attention to memory related issues");
+    ("-basic-block-size", Arg.Set_int(opt_bb_size), "N Sets basic block size to N.  Default 1."); 
   ]
 
 let trace_replay_cmdline_opts =

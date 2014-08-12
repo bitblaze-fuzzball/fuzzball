@@ -192,6 +192,8 @@ let opt_skip_timeouts = ref false
 
 let opt_memory_watching = ref false
 
+let opt_bb_size = ref 1
+
 let asmir_arch () =
   asmir_arch_of_execution_arch !opt_arch
 
