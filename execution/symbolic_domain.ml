@@ -381,5 +381,13 @@ module SymbolicDomain : Exec_domain.DOMAIN = struct
   let cast64h16 = cast V.CAST_HIGH V.REG_16
   let cast64h32 = cast V.CAST_HIGH V.REG_32
 
+  let ite cond t f = V.Ite(cond, t, f)
+
+  let ite1  = ite
+  let ite8  = ite
+  let ite16 = ite
+  let ite32 = ite
+  let ite64 = ite
+
   let get_tag v = 0L
 end

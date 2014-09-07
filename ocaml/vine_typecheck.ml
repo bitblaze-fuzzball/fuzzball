@@ -189,6 +189,23 @@ and typecheck_exp names gamma (e:exp)  =
 	      in
 		raise (TypeError(msg))
       )
+    | Ite(cond_e, true_e, false_e) ->
+	let (names, cond_t) = typecheck_exp names gamma cond_e in
+	  (if cond_t <> REG_1 then
+	     let msg = "Condition in ? : should be of type REG_1, not "
+	       ^ (type_to_string cond_t)
+	     in
+	       raise (TypeError(msg)));
+	  let (names, true_t) = typecheck_exp names gamma true_e in
+	  let (names, false_t) = typecheck_exp names gamma false_e in
+	    if not (tcompat true_t false_t) then
+	      let msg = "Second and third args to ? : must have " ^
+		"compatible type, not " ^ (type_to_string true_t) ^ " and " ^
+		(type_to_string false_t)
+	      in
+	       raise (TypeError(msg))
+	    else
+	      (names, true_t)
     | Unknown _ -> raise (TypeError("Cannot typecheck unknown's"))
     | Cast(ct, t, e') -> ( 
 	let (names,t1) = typecheck_exp names gamma e' in
@@ -443,6 +460,8 @@ let infer_type_fast e =
       | Cast(_, t, _) -> t
       | Name(_) -> Vine.addr_t
       | Let(_, _, e2) -> loop e2
+      | Ite(_, e1, e2) ->
+	  loop (if Random.bool () then e1 else e2)
   in
     loop e
 ;;

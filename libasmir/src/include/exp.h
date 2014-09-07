@@ -13,7 +13,7 @@
 // Stuff in Exp
 enum exp_type_t {
   BINOP, UNOP, CONSTANT, MEM, TEMP, PHI, CAST,
-  NAME, UNKNOWN, LET, EXTENSION };
+  NAME, UNKNOWN, LET, ITE, EXTENSION };
 
 enum reg_t { REG_1, REG_8, REG_16, REG_32, REG_64 };
 
@@ -81,6 +81,7 @@ using namespace std;
 ///     abstract registers.
 ///   - Phi is the SSA Phi node.  Although not technically necessary,
 ///     we expect it will be useful to have.
+///   - Ite is a functional if-then-else, like C's ? : ternary operator.
 ///  Temp, Mem, and Constant's are all operands, and have associated
 /// with them their bit-width and a type of register
 /// (floating/unsigned/signed).  
@@ -102,7 +103,6 @@ class Exp {
   virtual ~Exp() {};
   exp_type_t   exp_type;
 };
-
 
 class BinOp : public Exp {
  public:
@@ -261,6 +261,22 @@ class Let : public Exp {
     Exp *var, *exp, *in;
 };
 
+class Ite : public Exp {
+ public:
+  Ite(Exp *cond, Exp *t, Exp *f);
+  virtual void accept(IRVisitor *v) { v->visitIte(this); }
+  virtual ~Ite() {};
+  Ite(const Ite& copy);
+  virtual string tostring() const;
+  virtual Ite *clone() const;
+
+  static void destroy( Ite *expr );
+
+  Exp *cond;
+  Exp *true_e;
+  Exp *false_e;
+};
+
 //======================================================================
 //
 // Shorthand functions for creating expressions
@@ -333,6 +349,8 @@ Cast *ex_i_cast( Exp *arg, reg_t width );
 Cast *ex_f_cast( Exp *arg, reg_t width );
 Cast *ex_ri_cast( Exp *arg, reg_t width );
 Cast *ex_rf_cast( Exp *arg, reg_t width );
+Ite *ex_ite( Exp *cond, Exp *t, Exp *f );
+Ite *_ex_ite( Exp *cond, Exp *t, Exp *f );
 
 extern "C" {
 #endif // def __cplusplus
@@ -360,6 +378,9 @@ extern "C" {
   extern Exp *let_var(Exp *);
   extern Exp *let_exp(Exp *);
   extern Exp *let_in(Exp *);
+  extern Exp *ite_cond(Exp *);
+  extern Exp *ite_true_e(Exp *);
+  extern Exp *ite_false_e(Exp *);
 
 #ifdef __cplusplus
 }

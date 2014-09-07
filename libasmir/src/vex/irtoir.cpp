@@ -969,7 +969,7 @@ Exp *emit_ite( vector<Stmt *> *irout, reg_t type,
 
     Temp *temp = mk_temp(type,irout);
 
-#ifndef MUX_AS_CJMP
+#ifdef MUX_AS_BITS
     Exp *widened_cond;
     widened_cond = mk_temp(type,irout);
     irout->push_back(new Move(ecl(widened_cond),
@@ -986,7 +986,7 @@ Exp *emit_ite( vector<Stmt *> *irout, reg_t type,
 						  exp_f,
 						  new UnOp(NOT, 
 							   widened_cond)))));
-#else // def MUX_AS_CJMP
+#elif defined(MUX_AS_CJMP)
     Label *label_f = mk_label();
     Label *done = mk_label();
 
@@ -997,6 +997,10 @@ Exp *emit_ite( vector<Stmt *> *irout, reg_t type,
     irout->push_back( label_f );
     irout->push_back( new Move( new Temp(*temp), exp_f ) );
     irout->push_back( done );
+#else
+    irout->push_back( new Move( new Temp(*temp),
+				_ex_ite(cond, exp_t, exp_f)));
+
 #endif
 
     return temp;
@@ -1033,9 +1037,16 @@ Exp *translate_mux0x( IRExpr *expr, IRSB *irbb, vector<Stmt *> *irout )
     Exp *exp_t = translate_expr(expr_t, irbb, irout);
     Exp *exp_f = translate_expr(expr_f, irbb, irout);
 
-    condE = _ex_eq(condE, ex_const(cond_type, 0));
-
-    return emit_ite(irout, type, condE, exp_f, exp_t);
+    if (cond_type == REG_1) {
+      // Condition is already a boolean: simple.
+      return emit_ite(irout, type, condE, exp_t, exp_f);
+    } else {
+      // Condition is wider. Add "!= 0" check. We used to add a "== 0"
+      // check and flip the two sides of the branch, but flipping makes
+      // things more confusing later.
+      condE = _ex_neq(condE, ex_const(cond_type, 0));
+      return emit_ite(irout, type, condE, exp_t, exp_f);
+    }
 }
 
 Exp *translate_load( IRExpr *expr, IRSB *irbb, vector<Stmt *> *irout )
@@ -1848,7 +1859,22 @@ int match_ite(vector<Stmt*> *ir, unsigned int i,
 
   if (i < 0 || i >= ir->size())
     return -1;
-  if (ir->at(i)->stmt_type == MOVE
+  if (ir->at(i)->stmt_type == MOVE &&
+      ((Move *)(ir->at(i)))->rhs->exp_type == ITE) {
+    Move *s0 = (Move*)ir->at(i);
+    if (s0->lhs->exp_type != TEMP)
+      return -1;
+    Ite *ite = (Ite *)s0->rhs;
+    //cout <<"match_ite (ite case) matched!\n";
+    if (cond)
+      *cond = ite->cond;
+    if (exp_t)
+      *exp_t = ite->true_e;
+    if (exp_f)
+      *exp_f = ite->false_e;
+    if (res)
+      *res = s0->lhs;
+  } else if (ir->at(i)->stmt_type == MOVE
       && ir->at(i+3)->stmt_type == MOVE
       && ir->at(i+2)->stmt_type == LABEL
       && ir->at(i+4)->stmt_type == LABEL

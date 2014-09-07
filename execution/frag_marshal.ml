@@ -186,12 +186,16 @@ let encode_exp_flags e printable =
     | V.Constant(V.Int(V.REG_16, c)) -> push '1'; push_int64 c
     | V.Constant(V.Int(V.REG_32, c)) -> push '3'; push_int64 c
     | V.Constant(V.Int(V.REG_64, c)) -> push '6'; push_int64 c
+    | V.Constant(V.Int(_, _)) ->
+	failwith "Unsupported weird-type integer constant in encode_exp"
     | V.Constant(V.Str(s)) -> push 'S'; push_string s
     | V.Lval(V.Temp(var)) -> push 't'; push_var var
     | V.Lval(V.Mem(mvar, e1, V.REG_8))  -> push 'm'; push_var mvar; loop e1
     | V.Lval(V.Mem(mvar, e1, V.REG_16)) -> push 'n'; push_var mvar; loop e1
     | V.Lval(V.Mem(mvar, e1, V.REG_32)) -> push 'M'; push_var mvar; loop e1
     | V.Lval(V.Mem(mvar, e1, V.REG_64)) -> push 'N'; push_var mvar; loop e1
+    | V.Lval(V.Mem(_, _, _)) ->
+	failwith "Unsupported weird-type memory lval in encode_exp"
     | V.Name(s) -> push 'l'; push_string s
     | V.Cast(ctype, ty, e1) ->
 	let ty_char =
@@ -216,8 +220,10 @@ let encode_exp_flags e printable =
 	  push 'C';
 	  push ty_char;
 	  loop e1
+    | V.Ite(ce, te, fe) -> push '?'; loop ce; loop te; loop fe
     | V.Unknown(s) -> push 'U'; push_string s
-    | _ -> 
+    | V.Let(_, _, _)
+      ->
 	Printf.printf "Offending exp: %s\n" (V.exp_to_string e);
 	failwith "Unexpected expr type in encode_exp"
   in
@@ -382,6 +388,11 @@ let decode_exp s =
 		 | _ -> failwith "Unknown cast type in decode_exp") in
 	    let (i2, e1) = parse (i' + 1) in
 	      (i2, V.Cast(ctype, ty, e1))
+	| '?' ->
+	    let (i2, e1) = parse (i + 1) in
+	    let (i3, e2) = parse i2 in
+	    let (i4, e3) = parse i3 in
+	      (i4, V.Ite(e1, e2, e3))
 	| 'U' ->
 	    let (i2, s) = parse_string i' in
 	      (i2, V.Unknown(s))
