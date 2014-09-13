@@ -22,13 +22,16 @@ let move_hash src dest =
   V.VarHash.clear dest;
   V.VarHash.iter (fun a b -> V.VarHash.add dest a b) src
 
-let fuzz_finish_reason = ref None
+let fuzz_finish_reasons = ref []
 
 let finish_fuzz s =
-  assert(!fuzz_finish_reason = None);
-  fuzz_finish_reason := Some s;
+  fuzz_finish_reasons := s :: !fuzz_finish_reasons;
   if !opt_trace_stopping then
     Printf.printf "Final iteration, %s\n" s
+
+let unfinish_fuzz s =
+  if !opt_trace_stopping then
+    Printf.printf "Non-finish condition %s\n" s
 
 let skip_strings =
   (let h = Hashtbl.create 2 in
@@ -39,7 +42,8 @@ let skip_strings =
 (* The interface for Vine to give us the disassembly of an instruction
    is to put it in a comment, but it uses comments for other things as
    well. So this code tries to filter out all the things that are not
-   instruction disassemblies. It be cleaner to have a special syntax. *)
+   instruction disassemblies. It would be cleaner to have a special
+   syntax. *)
 let comment_is_insn s =
   (not (Hashtbl.mem skip_strings s))
   && ((String.length s < 13) || (String.sub s 0 13) <> "eflags thunk:")

@@ -108,6 +108,7 @@ val opt_symbolic_syscall_error : int64 option ref
 val opt_stop_on_symbolic_syscall_args : bool ref
 val opt_chroot_path : string option ref
 val opt_finish_on_nonfalse_cond : bool ref
+val opt_finish_reasons_needed : int ref
 val opt_total_timeout : float option ref
 val opt_x87_emulator : string option ref
 val opt_x87_entry_point : int64 option ref
