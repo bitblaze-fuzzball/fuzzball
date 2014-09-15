@@ -42,9 +42,6 @@ type register_name =
 val reg_to_regstr : register_name -> string
 val regstr_to_reg : string -> register_name
 
-val fuzz_finish_reason : string option ref
-val finish_fuzz : string -> unit
-
 val comment_is_insn : string -> bool
 
 (* This virtual class is the outside interface to a fragment machine,
@@ -96,6 +93,10 @@ class virtual fragment_machine : object
   method virtual started_symbolic : bool
   method virtual maybe_start_symbolic : (unit -> unit) -> unit
   method virtual start_symbolic : unit
+
+  method virtual finish_fuzz : string -> unit
+  method virtual unfinish_fuzz : string -> unit
+  method virtual finish_reasons : string list
 
   method virtual make_snap : unit -> unit
   method virtual reset : unit -> unit
@@ -298,6 +299,10 @@ sig
     method started_symbolic : bool
     method maybe_start_symbolic : (unit -> unit) -> unit
     method start_symbolic : unit
+
+    method finish_fuzz : string -> unit
+    method unfinish_fuzz : string -> unit
+    method finish_reasons : string list
 
     method make_snap : unit -> unit
     method reset : unit -> unit

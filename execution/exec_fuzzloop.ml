@@ -147,12 +147,15 @@ let fuzz start_eip opt_fuzz_start_eip end_eips
 	       periodic_stats fm false false;
 	       if not fm#finish_path then raise LastIteration;
 	       if !opt_concrete_path then raise LastIteration;
-	       (match !Fragment_machine.fuzz_finish_reason with
-		  | Some s ->
+	       (match fm#finish_reasons with
+		  | (s :: rest) as l
+		      when (List.length l) >= !opt_finish_reasons_needed
+			->
 		      if !opt_trace_stopping then
-			Printf.printf "Finished, %s\n" s;
+			Printf.printf "Finished, %s%s\n" s
+			  (if rest = [] then "" else ", ...");
 		      raise LastIteration
-		  | None -> ());
+		  | _ -> ());
 	       if !opt_concrete_path_simulate then
 		 opt_concrete_path_simulate := false; (* First iter. only *)
 	       reset_cb ();
