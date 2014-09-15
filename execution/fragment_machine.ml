@@ -22,17 +22,6 @@ let move_hash src dest =
   V.VarHash.clear dest;
   V.VarHash.iter (fun a b -> V.VarHash.add dest a b) src
 
-let fuzz_finish_reasons = ref []
-
-let finish_fuzz s =
-  fuzz_finish_reasons := s :: !fuzz_finish_reasons;
-  if !opt_trace_stopping then
-    Printf.printf "Final iteration, %s\n" s
-
-let unfinish_fuzz s =
-  if !opt_trace_stopping then
-    Printf.printf "Non-finish condition %s\n" s
-
 let skip_strings =
   (let h = Hashtbl.create 2 in
      Hashtbl.replace h "NoOp" ();
@@ -213,6 +202,10 @@ class virtual fragment_machine = object
   method virtual started_symbolic : bool
   method virtual maybe_start_symbolic : (unit -> unit) -> unit
   method virtual start_symbolic : unit
+
+  method virtual finish_fuzz : string -> unit
+  method virtual unfinish_fuzz : string -> unit
+  method virtual finish_reasons : string list
 
   method virtual make_snap : unit -> unit
   method virtual reset : unit -> unit
@@ -1141,11 +1134,26 @@ struct
       snap <- (V.VarHash.copy reg_store, V.VarHash.copy temps);
       List.iter (fun h -> h#make_snap) special_handler_list
 
+    val mutable fuzz_finish_reasons = []
+
+    method finish_fuzz s =
+      fuzz_finish_reasons <- s :: fuzz_finish_reasons;
+      if !opt_trace_stopping then
+	Printf.printf "Final iteration, %s\n" s
+
+    method unfinish_fuzz s =
+      if !opt_trace_stopping then
+	Printf.printf "Non-finish condition %s\n" s
+
+    method finish_reasons =
+      fuzz_finish_reasons
+
     method reset () =
       mem#reset ();
       (match snap with (r, t) ->
 	 move_hash r reg_store;
 	 move_hash t temps);
+      fuzz_finish_reasons <- [];
       List.iter (fun h -> h#reset) special_handler_list
 
     method add_special_handler (h:special_handler) =

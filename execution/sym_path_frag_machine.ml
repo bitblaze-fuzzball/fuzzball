@@ -688,9 +688,9 @@ struct
 		    | None -> "can be true or false");
 	       (if !opt_finish_on_nonfalse_cond then
 		 if choices <> Some false then
-		   finish_fuzz "supplied condition non-false"
+		   self#finish_fuzz "supplied condition non-false"
 		 else
-		   unfinish_fuzz "supplied condition false"))
+		   self#unfinish_fuzz "supplied condition false"))
 	!opt_check_condition_at;
       List.iter
 	(fun (_, t_eip) -> 
