@@ -1110,6 +1110,9 @@ object(self)
         Unix.ENOSYS "getpeername(2) on netlink socket fd not implemented";
       let socka_oc = Unix.getpeername (self#get_fd sockfd) in
       self#write_sockaddr socka_oc addr addrlen_ptr;
+      let len = ref (Int64.to_int (load_word addrlen_ptr)) in
+      if !len < 16 then (* Hack needed to get past getnameinfo(3) *)
+        store_word addrlen_ptr 0 16L;
       put_return 0L (* success *)
     with
       | Unix.Unix_error(err, _, _) -> self#put_errno err
@@ -1144,7 +1147,10 @@ object(self)
     try
       if sockfd <> !netlink_sim_sockfd then (
         let socka_oc = Unix.getsockname (self#get_fd sockfd) in
-        self#write_sockaddr socka_oc addr addrlen_ptr;)
+        self#write_sockaddr socka_oc addr addrlen_ptr;
+        let len = ref (Int64.to_int (load_word addrlen_ptr)) in
+        if !len < 16 then (* Hack needed to get past getnameinfo(3) *)
+          store_word addrlen_ptr 0 16L;)
       else (
         (* Storing nl_pid to be the PID of the userspace process *)
 	    store_word addr 4 (Int64.of_int (self#get_pid));
