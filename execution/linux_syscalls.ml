@@ -2071,6 +2071,8 @@ object(self)
           option_handled = ref false in
       (match (level, name) with
       (* 0 = SOL_IP *)
+      | (0, 4) (* IP_OPTIONS *) -> 
+        (fm#store_word_conc lenp 0L;) (* No OCaml support *)
       | (0, 6) (* IP_RECVOPTS *) -> () (* No OCaml support *)
       (* 1 = SOL_SOCKET *)
       | (1, 1) ->
