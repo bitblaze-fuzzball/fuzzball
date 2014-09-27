@@ -10,7 +10,7 @@ open Exec_exceptions;;
 open Exec_options;;
 open Formula_manager;;
 open Query_engine;;
-open Stp_external_engine;;
+open Smtlib_external_engine;;
 open Exec_no_influence;;
 open Granular_memory;;
 open Fragment_machine;;
@@ -38,7 +38,7 @@ struct
 
     method set_influence_manager im = infl_man <- im
 
-    val mutable query_engine = new stp_external_engine "fuzz"
+    val mutable query_engine = new smtlib_external_engine "fuzz"
 
     method set_query_engine qe = query_engine <- qe
 

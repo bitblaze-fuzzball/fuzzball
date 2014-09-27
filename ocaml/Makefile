@@ -31,6 +31,9 @@ CORE_SOURCES = $(TYPECHECK_SOURCES) $(OPT_SOURCES)
 
 # Non-core modules, which depend only on core modules:
 
+# SMTLIB2 interface
+SMTLIB_SOURCES = smt_lib2.ml
+
 # The text-based STP interface
 STP_SOURCES = stp.ml
 
@@ -50,7 +53,7 @@ PARSER_SOURCES = \
 	vine_parser.mli vine_parser.ml
 
 OTHER_SOURCES = $(STP_SOURCES) $(STPVC_SOURCES) $(ASMIR_SOURCES) \
-		$(PARSER_SOURCES)
+		$(SMTLIB_SOURCES) $(PARSER_SOURCES)
 
 export SOURCES = $(BASE_SOURCES) $(CORE_SOURCES) $(OTHER_SOURCES)
 
