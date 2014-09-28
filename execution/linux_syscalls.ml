@@ -1932,10 +1932,22 @@ object(self)
       (* Similar to sys_setreuid *)
       match (Unix.getuid (), Unix.geteuid(), new_ruid, new_euid, new_suid) with
       | (u1, u2, 65535, 0, 65535) when u1 <> 0 && u1 = u2 ->
-        raise (Unix.Unix_error(Unix.EPERM, "setreuid", ""))
+        raise (Unix.Unix_error(Unix.EPERM, "setresuid32", ""))
       | (u1, u2, -1, u4, -1) when u1 <> 0 && u2 = u4 ->
         put_return 0L (* faked for OpenSSH ssh client *)
       | _ -> failwith "Unhandled case in setresuid32"
+    with
+      | Unix.Unix_error(err, _, _) -> self#put_errno err
+
+  method sys_setresgid32 new_ruid new_euid new_suid =
+    try
+      (* Similar to sys_setreuid *)
+      match (Unix.getuid (), Unix.geteuid(), new_ruid, new_euid, new_suid) with
+      | (u1, u2, 65535, 0, 65535) when u1 <> 0 && u1 = u2 ->
+        raise (Unix.Unix_error(Unix.EPERM, "setresgid32", ""))
+      | (u1, u2, -1, u4, -1) when u1 <> 0 && u2 = u4 ->
+        put_return 0L (* faked for OpenSSH sshd *)
+      | _ -> failwith "Unhandled case in setresgid32"
     with
       | Unix.Unix_error(err, _, _) -> self#put_errno err
 
@@ -3683,7 +3695,14 @@ object(self)
 		 ruid_ptr euid_ptr suid_ptr;
 	     self#sys_getresuid32 ruid_ptr euid_ptr suid_ptr;
 	 | (_, 210) -> (* setresgid32 *)
-	     uh "Unhandled Linux system call setresgid32 (210)"
+         let (ebx, ecx, edx) = read_3_regs () in
+         let ruid_ptr = ebx and
+         euid_ptr = ecx and
+         suid_ptr = edx in
+         if !opt_trace_syscalls then
+           Printf.printf "setresgid32(0x%08Lx, 0x%08Lx, 0x%08Lx)"
+             ruid_ptr euid_ptr suid_ptr;
+         self#sys_getresgid32 ruid_ptr euid_ptr suid_ptr;
 	 | (ARM, 211) -> uh "Check whether ARM getresgid32 syscall matches x86"
 	 | (X86, 211) -> (* getresgid32 *)
 	     let (ebx, ecx, edx) = read_3_regs () in
