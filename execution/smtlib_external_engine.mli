@@ -1,4 +1,5 @@
 (*
+  Based on stp_external_engine.mli, which bears the following notice:
   Copyright (C) BitBlaze, 2009-2011, and copyright (C) 2010 Ensighta
   Security Inc.  All rights reserved.
 *)

@@ -1,11 +1,12 @@
 (**
-    Translation from VinE expressions to SMT-LIB2 format.
+    Translation from Vine expressions to SMT-LIB2 format.
  *)
+(* Modeled after stp.ml, originally by Ivan Jager *)
 
 open Vine
 open Printf
 module VH = Vine.VarHash
-module List = ExtList.List 
+module List = ExtList.List
 
 module D = Debug.Make(struct let name = "SMT" and default=`NoDebug end)
 open D
@@ -13,7 +14,7 @@ open D
 (* Translate a variable to conform to SMT-LIB2's syntax *)
 let transvar s = s
 
-let is_not_memory t = 
+let is_not_memory t =
   match unwind_type t with
       TMem _ -> false
     | _ -> true
@@ -22,7 +23,7 @@ let is_not_memory t =
 let rec repeat = function 0 -> (fun _ -> ())
   | n -> (fun f -> ( f(); repeat (n-1) f))
 
-let width_cvt t1 t2 e = 
+let width_cvt t1 t2 e =
   let wd1 = Vine.bits_of_width t1 and
       wd2 = Vine.bits_of_width t2 in
     if wd1 = wd2 then
@@ -71,7 +72,7 @@ class vine_smtlib_print_visitor puts =
         failwith("Bitvector arrays not supported for SMT-LIB2 translation")
     | x ->
 	failwith("Unsupported type for SMT-LIB translation: "^type_to_string x)
-	
+
   in
   let unique_names = Hashtbl.create 1001 in
   let var2s (num,name,_) =
@@ -108,17 +109,17 @@ object (self)
       dprintf "Translating %s -> %s" (var2s v) v';
       v'
 
-  method declare_var ((_,_,t) as v) = 
+  method declare_var ((_,_,t) as v) =
     puts(sprintf "(declare-fun %s () %s)\n" (var2s v) (type2s t))
 
-  method declare_var_value ((_,_,t) as v) e = 
+  method declare_var_value ((_,_,t) as v) e =
     puts(sprintf "(declare-fun %s () %s)\n" (var2s v) (type2s t));
     puts(sprintf "(assert (= %s " (var2s v));
     ignore(exp_accept (self :> vine_visitor) e);
     puts "))\n"
 
   method declare_freevars e =
-    let fvs = get_req_ctx e in 
+    let fvs = get_req_ctx e in
       dprintf "%d free variables\n%!" (List.length fvs);
       List.iter self#declare_var fvs
 
@@ -136,15 +137,15 @@ object (self)
 		  | REG_32 -> (format_of_string "#x%08Lx", 0xffffffffL)
 		  | REG_64 -> (format_of_string "#x%016Lx",
 			       0xffffffffffffffffL)
-		  | _ -> 
+		  | _ ->
 		      raise (Invalid_argument 
 			       "Only constant integers supported")
 		in
 		let maskedval = Int64.logand i mask
 		in
 		  puts(sprintf format maskedval)
-	     | _ -> 
-		 raise (Invalid_argument 
+	     | _ ->
+		 raise (Invalid_argument
 			  "Only constant integer types supported")
 	  );
 	  SkipChildren
@@ -241,7 +242,7 @@ object (self)
 	| BinOp(
 	    BITOR,
 	    BinOp(
-	      BITOR,	      
+	      BITOR,
 	      Cast(CAST_UNSIGNED, REG_32, e1),
 	      BinOp(LSHIFT, Cast(CAST_UNSIGNED, REG_32, e2),
 		    Constant(Int(_, 8L)))),
@@ -432,19 +433,19 @@ object (self)
 	    puts "))";
 	    SkipChildren
       | Cast(ct,t, e1) ->
-	  let make_zeros k = 
+	  let make_zeros k =
 	    if k mod 4 = 0 then
 	      "#x" ^ (String.make (k / 4) '0')
 	    else
 	      "#b" ^ (String.make k '0')
 	  in
-	  let make_ones k = 
+	  let make_ones k =
 	    if k mod 4 = 0 then
 	      "#x" ^ (String.make (k / 4) 'f')
 	    else
 	      "#b" ^ (String.make k '1')
 	  in
-	  let make_one k = 
+	  let make_one k =
 	    if k mod 4 = 0 then
 	      (make_zeros (k - 4)) ^ "1"
 	    else
@@ -479,12 +480,12 @@ object (self)
 	  let () = puts pre in
 	  ChangeDoChildrenPost(e, fun x-> puts post; x)
       | Unknown s ->
-	  puts ("unknown_"^string_of_int unknown_counter^" %"); 
-	  puts s;  
+	  puts ("unknown_"^string_of_int unknown_counter^" %");
+	  puts s;
 	  puts "\n";
 	  unknown_counter <- unknown_counter + 1;
 	  DoChildren
-      | Name _ -> raise (Invalid_argument "Names should be here") 
+      | Name _ -> raise (Invalid_argument "Names should be here")
 
 (*
       | Name of string

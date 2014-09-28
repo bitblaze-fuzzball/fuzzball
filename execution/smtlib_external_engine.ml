@@ -1,4 +1,5 @@
 (*
+  Based on stp_external_engine.ml, which bears the following notice:
   Copyright (C) BitBlaze, 2009-2011, and copyright (C) 2010 Ensighta
   Security Inc.  All rights reserved.
 *)
@@ -87,8 +88,8 @@ class smtlib_external_engine fname = object(self)
 		 name)
 	  in
 	    loop 1
-		  
-  method private get_fresh_fname = 
+
+  method private get_fresh_fname =
     let split_limbs n m =
       let rec loop n =
 	if n < m then
@@ -142,7 +143,7 @@ class smtlib_external_engine fname = object(self)
 
   method add_free_var var =
     free_vars <- var :: free_vars
- 
+
   method private real_add_free_var var =
     self#visitor#declare_var var
 
@@ -214,7 +215,7 @@ class smtlib_external_engine fname = object(self)
       | Some s -> "-g " ^ (string_of_int s) ^ " "
       | None -> ""
     in
-    let cmd = !opt_stp_path ^ " --SMTLIB2 -p " ^ timeout_opt ^ curr_fname 
+    let cmd = !opt_stp_path ^ " --SMTLIB2 -p " ^ timeout_opt ^ curr_fname
       ^ ".stp >" ^ curr_fname ^ ".stp.out" in
       if !opt_trace_solver then
 	Printf.printf "Solver command: %s\n" cmd;
@@ -223,7 +224,7 @@ class smtlib_external_engine fname = object(self)
       let results = open_in (curr_fname ^ ".stp.out") in
 	if rcode <> 0 then
 	  (Printf.printf "STP died with result code %d\n" rcode;
-	   (match rcode with 
+	   (match rcode with
 	      | 127 ->
 		  if !opt_stp_path = "stp" then
 		    Printf.printf

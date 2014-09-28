@@ -5,7 +5,7 @@
 
 open Exec_options;;
 
-let opt_solver = ref "smtlib"
+let opt_solver = ref "stp-external"
 let opt_solver_check_against = ref "none"
 
 let solver_cmdline_opts =
