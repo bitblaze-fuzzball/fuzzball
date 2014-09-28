@@ -173,26 +173,6 @@ struct
       done;
       !l
 
-  let rec lookup_tree form_man e bits ty expr_list = 
-    let rec nth_tail n l = match (n, l) with
-      | (0, l) -> l
-      | (_, []) -> failwith "List too short in nth_tail"
-      | (n, l) -> nth_tail (n-1) (List.tl l)
-    in
-      assert((List.length expr_list) >= (1 lsl bits));
-      if bits = 0 then
-	List.hd expr_list
-      else
-	let shift_amt = Int64.of_int (bits - 1) in
-	let cond_e = V.Cast(V.CAST_LOW, V.REG_1,
-			    V.BinOp(V.RSHIFT, e, 
-				    V.Constant(V.Int(V.REG_8, shift_amt))))
-	in
-	let half_two = nth_tail (1 lsl (bits - 1)) expr_list in
-	  form_man#make_ite (D.from_symbolic cond_e) ty
-	    (lookup_tree form_man e (bits - 1) ty half_two)
-	    (lookup_tree form_man e (bits - 1) ty expr_list)
-
   let split_terms e form_man =
     let rec loop e =
       match e with
@@ -941,54 +921,6 @@ struct
 		    Hashtbl.replace maxval_cache key limit;
 		    limit
 
-    val tables = Hashtbl.create 101
-
-    method private save_and_print_table table ty = 
-      try Hashtbl.find tables table with
-	| Not_found ->
-	    let i = Hashtbl.length tables in
-	      Hashtbl.replace tables table i;
-	      if !opt_trace_tables then
-		(Printf.printf "Table %d is: " i;
-		 let cnt = ref 0 in
-		   List.iter
-		     (fun v ->
-			incr cnt;
-			if !cnt < 2048 (* 100 *) then
-			  Printf.printf "%s "
-			    (match ty with
-			       | V.REG_1  -> D.to_string_1  v
-			       | V.REG_8  -> D.to_string_8  v
-			       | V.REG_16 -> D.to_string_16 v
-			       | V.REG_32 -> D.to_string_32 v
-			       | V.REG_64 -> D.to_string_64 v
-			       | _ -> failwith "Can't happen"))
-		     table;
-		   if !cnt > 2048 then
-		     Printf.printf "...";
-		   Printf.printf "\n");
-	      i
-
-    val table_trees_cache = Hashtbl.create 101
-
-    method private make_table_tree table table_num idx_exp idx_wd ty =
-      try
-	let v = 
-	  Hashtbl.find table_trees_cache (table_num, idx_exp) in
-	  if !opt_trace_tables then
-	    (Printf.printf " (hit cache)\n";
-	     flush stdout);
-	  v
-      with
-	| Not_found ->
-	    if !opt_trace_tables then
-	      (Printf.printf "\n";
-	       flush stdout);
-	    let v = lookup_tree form_man idx_exp idx_wd ty table
-	    in
-	      Hashtbl.replace table_trees_cache (table_num, idx_exp) v;
-	      v
-
     method private maybe_table_load addr_e ty =
       let e = D.to_symbolic_32 (self#eval_int_exp_simplify addr_e) in
       let (cbases, coffs, eoffs, ambig, syms) = classify_terms e form_man in
@@ -1029,14 +961,13 @@ struct
 		let table = map_n
 		  (fun i -> load_ent (Int64.add cloc 
 					(Int64.of_int (i * stride))))
-		  (num_ents - 1) in
-		let table_num = self#save_and_print_table table ty in
+		  (num_ents - 1)
+		in
 		  if !opt_trace_tables then
 		    Printf.printf
-		      "Load with base %08Lx, size 2**%d, stride %d is table %d"
-		      cloc idx_wd stride table_num;
-		  Some
-		    (self#make_table_tree table table_num idx_exp idx_wd ty)
+		      "Load with base %08Lx, size 2**%d, stride %d"
+		      cloc idx_wd stride;
+		  Some (form_man#make_table_lookup table idx_exp idx_wd ty)
 
     method private handle_load addr_e ty =
       match self#maybe_table_load addr_e ty with
@@ -1192,6 +1123,7 @@ struct
 	       | None -> "possible") b;
 	if not b then
 	  (dt#set_heur 0;
+	   self#unfinish_fuzz "Target match failure";
 	   raise DisqualifiedPath);
 	true
 

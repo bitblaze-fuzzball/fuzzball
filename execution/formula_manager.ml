@@ -672,6 +672,104 @@ struct
 	  in
 	    func cond_v' v_true' v_false'
 
+    method private lookup_tree e bits ty expr_list =
+      let rec nth_tail n l = match (n, l) with
+	| (0, l) -> l
+	| (_, []) -> failwith "List too short in nth_tail"
+	| (n, l) -> nth_tail (n-1) (List.tl l)
+      in
+	assert((List.length expr_list) >= (1 lsl bits));
+	if bits = 0 then
+	  List.hd expr_list
+	else
+	  let shift_amt = Int64.of_int (bits - 1) in
+	  let cond_e = V.Cast(V.CAST_LOW, V.REG_1,
+			      V.BinOp(V.RSHIFT, e,
+				      V.Constant(V.Int(V.REG_8, shift_amt))))
+	  in
+	  let half_two = nth_tail (1 lsl (bits - 1)) expr_list in
+	    self#make_ite (D.from_symbolic cond_e) ty
+	      (self#lookup_tree e (bits - 1) ty half_two)
+	      (self#lookup_tree e (bits - 1) ty expr_list)
+
+
+    val table_trees_cache = Hashtbl.create 101
+
+    method private table_lookup_cached table table_num idx_exp0 idx_wd ty =
+      let idx_ty = Vine_typecheck.infer_type_fast idx_exp0 in
+      let idx_v = self#tempify (D.from_symbolic idx_exp0) idx_ty in
+      let idx_exp = match idx_ty with
+	| V.REG_1  -> D.to_symbolic_1  idx_v
+	| V.REG_8  -> D.to_symbolic_8  idx_v
+	| V.REG_16 -> D.to_symbolic_16 idx_v
+	| V.REG_32 -> D.to_symbolic_32 idx_v
+	| V.REG_64 -> D.to_symbolic_64 idx_v
+	| _ -> failwith "Unexpected type in make_table_lookup"
+      in
+	try
+	  let v =
+	    Hashtbl.find table_trees_cache (table_num, idx_exp) in
+	    if !opt_trace_tables then
+	      (Printf.printf " (hit cache)\n";
+	       Printf.printf "Select from table %d at %s is %s\n"
+		 table_num (V.exp_to_string idx_exp) (D.to_string_64 v);
+	       flush stdout);
+	    v
+	with
+	  | Not_found ->
+	      let v = self#lookup_tree idx_exp idx_wd ty table in
+	      let v' = self#tempify v ty
+	      in
+		if !opt_trace_tables then
+		  (Printf.printf "\n";
+		   Printf.printf "Select from table %d at %s is %s\n"
+		     table_num (V.exp_to_string idx_exp) (D.to_string_64 v');
+		   flush stdout);
+		Hashtbl.replace table_trees_cache (table_num, idx_exp) v';
+		v'
+
+    val tables = Hashtbl.create 101
+
+    method private save_table table ty =
+      try
+	(Hashtbl.find tables table, false)
+      with
+	| Not_found ->
+	    let i = Hashtbl.length tables in
+	      Hashtbl.replace tables table i;
+	      (i, true)
+
+    method private print_table table ty i =
+      Printf.printf "Table %d is: " i;
+      let cnt = ref 0 in
+	List.iter
+	  (fun v ->
+	     incr cnt;
+	     if !cnt < 2048 (* 100 *) then
+	       Printf.printf "%s "
+		 (match ty with
+		    | V.REG_1  -> D.to_string_1  v
+		    | V.REG_8  -> D.to_string_8  v
+		    | V.REG_16 -> D.to_string_16 v
+		    | V.REG_32 -> D.to_string_32 v
+		    | V.REG_64 -> D.to_string_64 v
+		    | _ -> failwith "Can't happen"))
+	  table;
+	if !cnt > 2048 then
+	  Printf.printf "...";
+	Printf.printf "\n"
+
+    method make_table_lookup table idx_exp idx_wd ty =
+      let (table_num, is_new) = self#save_table table ty in
+	if !opt_trace_tables then
+	  Printf.printf " is table %d" table_num;
+	let v =
+	  self#table_lookup_cached table table_num idx_exp idx_wd ty
+	in
+	  if is_new && !opt_trace_tables then
+	    self#print_table table ty table_num;
+	  v
+
     method if_expr_temp_unit (n,_,_) (fn_t: V.exp option  -> unit) =
       (* The slightly weird structure here is because we *don't*
 	 want to catch a Not_found thrown by decode_exp. *)
