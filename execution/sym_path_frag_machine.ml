@@ -11,6 +11,7 @@ open Exec_options;;
 open Formula_manager;;
 open Query_engine;;
 open Stp_external_engine;;
+open Smtlib_external_engine;;
 open Exec_no_influence;;
 open Granular_memory;;
 open Fragment_machine;;

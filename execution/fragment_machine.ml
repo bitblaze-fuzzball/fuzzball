@@ -1142,6 +1142,7 @@ struct
 	Printf.printf "Final iteration, %s\n" s
 
     method unfinish_fuzz s =
+      fuzz_finish_reasons <- [];
       if !opt_trace_stopping then
 	Printf.printf "Non-finish condition %s\n" s
 

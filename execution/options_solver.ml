@@ -11,7 +11,7 @@ let opt_solver_check_against = ref "none"
 let solver_cmdline_opts =
   [
     ("-solver", Arg.Set_string(opt_solver),
-     "solver stpvc (internal) or stp-external (cf. -stp-path)");
+     "solver smtlib or stpvc (internal) or stp-external (cf. -stp-path)");
     ("-solver-check-against", Arg.Set_string(opt_solver_check_against),
      "solver Compare solver results with the given one");
     ("-stp-path", Arg.Set_string(opt_stp_path),
@@ -44,6 +44,9 @@ let solvers_table =
      Hashtbl.replace h "stp-external"
        (fun s ->
 	  Some (new Stp_external_engine.stp_external_engine ("fuzz" ^ s)));
+     Hashtbl.replace h "smtlib"
+       (fun s ->
+	  Some (new Smtlib_external_engine.smtlib_external_engine ("fuzz"^s)));
      h)
 
 let construct_solver suffix =
