@@ -362,10 +362,23 @@ struct
 		 Printf.printf "Unique!\n%!";
 	       Some v)
 
+    method private check_concolic_value exp ty =
+      let conc_val = form_man#eval_expr exp in
+      let conc_e = V.Constant(V.Int(ty, conc_val)) in
+      let cond = V.BinOp(V.EQ, exp, conc_e) in
+      let (is_sat, ce) = self#query_with_path_cond cond true in
+	if not is_sat then
+	  Printf.printf "Concolic value 0x%Lx for %s is infeasible\n"
+	    conc_val (V.exp_to_string exp);
+	assert(is_sat);
+	Printf.printf "Concolic value 0x%Lx for %s is feasible\n"
+	  conc_val (V.exp_to_string exp)
+
     method eval_int_exp_simplify exp =
       let (d, ty) = self#eval_int_exp_ty exp in
 	form_man#simplify_with_callback
 	  (fun e2 ty ->
+	     (* self#check_concolic_value e2 ty; *)
 	     if !opt_implied_value_conc then
 	       match self#query_unique_value e2 ty with
 		 | Some v ->
