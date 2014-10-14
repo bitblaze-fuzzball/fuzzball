@@ -826,6 +826,9 @@ let val_to_string = format2string format_value
 let rec stmt_to_channel oc =
   pp_stmt (output_string oc)
 
+let rec decl_to_channel oc =
+  pp_var (output_string oc)
+
 
 (* stolen from Cil *)
 (** Different visiting actions. 'a will be instantiated with [exp], [stmt],

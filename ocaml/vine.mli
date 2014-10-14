@@ -156,6 +156,7 @@ val decl_to_string : decl -> string
 val var_to_string : var -> string
 val stmt_to_string : stmt -> string
 val stmt_to_channel : out_channel -> stmt -> unit
+val decl_to_channel : out_channel -> decl -> unit
 val pp_stmt : (string -> unit) -> stmt -> unit
 val pp_program : (string -> unit) -> program -> unit
 val format_value : Format.formatter -> value -> unit
