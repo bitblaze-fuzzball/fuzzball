@@ -13,20 +13,6 @@ type supported_searches =
 | Linear
 | Diamond of int
 
-
-let rec print_region ?offset:(offset = 1) node =
-  (for i=1 to offset do Printf.printf "\t" done);
-  Printf.printf "%s\n" (node_to_string node);
-  List.iter (print_region ~offset:(offset + 1)) node.children
-
-let make_root fm gamma eip =
-  let decode_call _ = decode_insns fm gamma eip 1 in
-  let decls, stmts = with_trans_cache eip decode_call in
-  Instruction { eip = eip;
-		test = None;
-		vine_stmts = stmts;
-		vine_decls = decls; }
-
 let find_veritesting_region search fm gamma starting_eip max_depth =
   let search_root =  make_root fm gamma starting_eip
   and expand = expand fm gamma in
@@ -46,9 +32,10 @@ let find_veritesting_region search fm gamma starting_eip max_depth =
   | None -> None
   | Some root_of_region ->
     print_region root_of_region;
-    Printf.printf "\n";
     let decls, stmts = Encode.encode_region root_of_region in
+    Printf.printf "Printing statement list:\n";
     List.iter (fun s -> V.stmt_to_channel stdout s) stmts;
-    Printf.printf "\n";
+    Printf.printf "End statement list\n";
+    if true then assert false;
     Some (decls, stmts)
       

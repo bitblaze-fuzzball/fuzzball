@@ -10,8 +10,8 @@ open Exec_run_common
 type pointer_statements = {
   eip : int64;
   test : V.exp option;
-  vine_stmts : V.stmt list;
-  vine_decls : V.decl list;
+  mutable vine_stmts : V.stmt list;
+  mutable vine_decls : V.decl list;
 }
   
 type breakloop = {
@@ -76,15 +76,6 @@ let decode_eip str =
   then (let num = String.sub str 2 ((String.length str) - 2) in
 	Internal (int_of_string num))
   else X86eip (label_to_eip str)
-
-
-let check_label label seen_labels = 
-  match decode_eip label with 
-  | X86eip(_) -> true
-  | Internal(ilabel) -> 
-    if (List.mem ilabel seen_labels)
-    then false
-    else true
 
 
 let walk_to_label target_label tail =
@@ -154,8 +145,32 @@ let check_cycle (lookfor : node) (root : node) =
 	then accum
 	else check_cycle_int child) false next.parent in
   check_cycle_int root
-    
 
+(**
+   Case 1: No Labels, No Jumps.  
+           Just a straight away leading to a single node and no children
+
+   Case 2: Something I can't encode as part of the statement list.
+           Just the entering eip to the non-decodable region is what we have to capture.
+
+   Case 3: x86 LABEL -- STATEMENTS BEFORE LABEL :: REST 
+                        create the current node based on statements before label and handed in eip.
+                        recur, creating the single child node starting at eip LABEL
+
+   Case 4: JMP to x86  -- STATEMENTS INCLUDING JMP :: REST
+                          discard rest -- you can't reach it. Statements up to and including jmp become this node.
+                          singleton child starting at jmp label.
+
+   Case 5: JMP to internal -- try to walk to the label in the current statement list. 
+                              If it doesn't exist, there's a cycle, abort.
+                              Otherwise, keep going beyond this case to another
+                              terminating case.
+
+   Case 6: CJMP to x86, x86 -- two external jumps
+   Case 7: CJMP to int, int -- two internal jumps
+   CASE 8: CJMP to x86, int -- a mixed jump
+**)
+    
 let expand fm gamma (node : veritesting_data) =
   match node with
   | InternalLoop _
@@ -173,17 +188,24 @@ let expand fm gamma (node : veritesting_data) =
      of the statement list, so I'm not looking for them here.
      Instead, we're just collecting exit points for the region
      and statement lists executed up until that point. *)
-    let rec walk_statement_list stmts = function
-      | [] -> [ Instruction {eip = Int64.add i1.eip Int64.one;
-			     test = None;
-			     vine_stmts = stmts;
-			     vine_decls = decls}]
+    let rec walk_statement_list current_eip stmts = function
+      | [] ->
+	(match current_eip with
+	| Some eip -> [ Instruction {eip = eip;
+				     test = None;
+				     vine_stmts = stmts;
+				     vine_decls = decls}]
+	| None -> failwith "Don't know what eip to associate with an instruction.")
       | stmt::tl ->
 	begin
 	  match stmt with
           | V.Jmp(V.Name(label)) ->
 	    begin
 	      match decode_eip label with
+	    (* this captures the wrong thing entirely.  The
+	       statements preceeding a jump are not the statements
+	       associated with the jump, so setting the eip value
+	       for the statement list at the jump is insane. *)
 	    | X86eip value -> [Instruction {eip = value;
 					    test = None;
 					    vine_stmts = stmts;
@@ -195,22 +217,23 @@ let expand fm gamma (node : veritesting_data) =
 	      begin
 		match walk_to_label label tl with
 		| None -> [InternalLoop i1.eip]
-		| Some next -> walk_statement_list (stmt::stmts) next
+		| Some next -> walk_statement_list current_eip (stmt::stmts) next
 	      end
 	    end
           | V.CJmp(test, V.Name(true_lab), V.Name(false_lab)) ->
 	    begin
+	      (** These internal jumps are wrong because we aren't capturing the path conditions that
+		  they're a part of. JTT 9-8-2014 *)
 	      match (decode_eip true_lab), (decode_eip false_lab) with
 	      | X86eip tval, X86eip fval ->
 		[ Instruction {eip = tval;
 			       test = Some test;
 			       vine_stmts = V.ExpStmt test :: stmts;
 			       vine_decls = decls;};
-		  (* this is wrong -- we want to capture the branch condition on the node. *)
-		Instruction {eip = fval;
-			     test = Some (V.UnOp (V.NOT, test));
-			     vine_stmts = stmts;
-			     vine_decls = decls;}]
+		  Instruction {eip = fval;
+			       test = Some (V.UnOp (V.NOT, test));
+			       vine_stmts = stmts;
+			       vine_decls = decls;}]
 	      | X86eip tval, Internal fval ->
 		(Instruction {eip = tval;
 			      test = Some test;
@@ -218,7 +241,7 @@ let expand fm gamma (node : veritesting_data) =
 			      vine_decls = decls}) ::
 		  (match walk_to_label false_lab tl with
 		  | None -> [InternalLoop i1.eip]
-		  | Some next -> walk_statement_list (stmt::stmts) next)
+		  | Some next -> walk_statement_list current_eip (stmt::stmts) next)
 	      | Internal tval, X86eip fval ->
 		(Instruction {eip = fval;
 			      test = Some (V.UnOp (V.NOT, test));
@@ -226,10 +249,10 @@ let expand fm gamma (node : veritesting_data) =
 			      vine_decls = decls }) ::
 		  (match walk_to_label true_lab tl with
 		  | None -> [InternalLoop i1.eip]
-		  | Some next -> walk_statement_list (stmt::stmts) next)
+		  | Some next -> walk_statement_list current_eip (stmt::stmts) next)
 	      | Internal tval, Internal fval ->
 		begin
-		  let next = walk_statement_list (stmt::stmts) in
+		  let next = walk_statement_list current_eip (stmt::stmts) in
 		  match (walk_to_label true_lab tl), (walk_to_label false_lab tl) with
 		  | None, None -> [InternalLoop i1.eip; InternalLoop i1.eip;]
 		  | Some rem, None
@@ -237,12 +260,32 @@ let expand fm gamma (node : veritesting_data) =
 		  | Some r1, Some r2 -> List.rev_append (next r1) (next r2)
 		end
 	    end
-	      (* Why One? *)
-	  | V.Special("int 0x80") -> [SysCall (Int64.add i1.eip Int64.one);]
+	      (* Why One?  -*)
+	  | V.Label(l)
+	    -> (match (decode_eip l) with
+	    | X86eip eip -> (assert (None = current_eip); (* this label shows which EIP controls this block *)
+			     walk_statement_list (Some eip) (stmt::stmts) tl)
+	    | Internal name -> walk_statement_list current_eip (stmt::stmts) tl)
+	    
+	  | V.Special("int 0x80") -> [SysCall i1.eip;]
 	  | V.Special _ -> [Special i1.eip]
 	  | V.Return _ -> [Return i1.eip]
 	  | V.Call _ -> [FunCall i1.eip]
 	  | V.Halt _  -> [Halt i1.eip]
-	  | _ -> walk_statement_list (stmt::stmts) tl
+	  | _ -> walk_statement_list current_eip (stmt::stmts) tl
 	end in
-      walk_statement_list [] statement_list
+      walk_statement_list None [] statement_list
+
+
+let rec print_region ?offset:(offset = 1) node =
+  (for i=1 to offset do Printf.printf "\t" done);
+  Printf.printf "%s\n" (node_to_string node);
+  List.iter (print_region ~offset:(offset + 1)) node.children
+
+let make_root fm gamma eip =
+  let decode_call _ = decode_insns fm gamma eip 1 in
+  let decls, stmts = with_trans_cache eip decode_call in
+  Instruction { eip = eip;
+		test = None;
+		vine_stmts = stmts;
+		vine_decls = decls; }

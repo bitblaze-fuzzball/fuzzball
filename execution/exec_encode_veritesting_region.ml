@@ -110,8 +110,8 @@ let stmts_of_data = function
   | Search.Halt eip
   | Search.Special eip
   | Search.SearchLimit eip
-  | Search.FunCall eip -> let str = Printf.sprintf "pc_0x%Lx" eip in
-			  [V.Jmp (V.Name str) ]
+  | Search.FunCall eip -> (* let str = Printf.sprintf "pc_0x%Lx" eip in
+			    [(*V.Jmp*) V.ExpStmt(V.Name str) ] *) []
   | Search.Instruction pointer_statements -> pointer_statements.Search.vine_stmts
   | Search.BreakLoop eip -> failwith "BreakLoop stmts_of_data: stub"
 
@@ -149,7 +149,14 @@ let encode_region ?context:(context = []) (root : Search.node) =
     add_declarations node;
     match node.Search.children with 
     | [] -> [stmts_of_data node.Search.data]
-    | [one] -> (stmts_of_data node.Search.data) :: (encode_region_int one)
+    | [one] ->
+      begin
+	let this = (stmts_of_data node.Search.data) in
+	Printf.printf "%s\n" (Search.node_to_string node);
+	List.iter (fun s -> V.stmt_to_channel stdout s) this;
+	Printf.printf "\n";
+	this:: (encode_region_int one)
+      end
     | head::tail -> failwith "Cant' handle branches at the moment." in
   let stmt_list = List.concat (encode_region_int root) in
   let ret_decl = Hashtbl.fold get_decl_list region_decls [] in
