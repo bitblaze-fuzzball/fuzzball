@@ -1,9 +1,9 @@
 module V = Vine
 
-open Exec_veritesting_general_search_components_m2
+open Exec_veritesting_general_search_components
 
 
-let find_linear_region ?maxdepth:(maxdepth = 2) root expansion =
+let find_linear_region ?maxdepth:(maxdepth = 10) root expansion =
   (* Note, there must always be a linear veritesting region of at least
      one node in length.*)
   let add_child parent child =
@@ -17,11 +17,12 @@ let find_linear_region ?maxdepth:(maxdepth = 2) root expansion =
 	| _ -> Some child)
       | _ -> Some child in
   let expand node =
+    Printf.printf "Expanding %s\n" (node_to_string node);
     let children = expansion node in
     match children with
     | [child] -> add_child node child
     | []
-    | _::_ -> None in
+    | _::_ -> (Printf.printf "Node was infertile. Line ends.\n"; None) in
   let rec loop depth node =
     if (depth = maxdepth)
     then (truncate_node node)

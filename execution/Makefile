@@ -48,7 +48,6 @@ export SOURCES = \
 	state_loader.mli state_loader.ml \
 	exec_run_common.mli exec_run_common.ml \
 	exec_veritesting_general_search_components.ml \
-	exec_veritesting_general_search_components_m2.ml \
 	exec_veritesting_breadth_first_search.ml \
 	exec_veritesting_depth_first_search.ml \
 	exec_veritesting_special_structures.ml \

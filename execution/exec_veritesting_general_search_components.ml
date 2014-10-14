@@ -1,5 +1,4 @@
 module V = Vine
-module VOpt = Vine_opt
 
 open Exec_exceptions
 open Exec_options
@@ -7,35 +6,46 @@ open Frag_simplify
 open Fragment_machine
 open Exec_run_common
 
-type pointer_statements = {
+type 'a common = {
   eip : int64;
-  test : V.exp option;
-  mutable vine_stmts : V.stmt list;
-  mutable vine_decls : V.decl list;
-}
-  
-type breakloop = {
-  source_eip : int64;
-  dest_eip : int64;
+  parent : 'a;
 }
 
-type veritesting_data = 
-| BreakLoop of breakloop         (* loops in program *)
-| InternalLoop of int64          (* loops in vine's decoding of an instruction *)
-| Return of int64
-| Halt of int64
-| FunCall of int64
+type 'a minimal = {
+  m_core : 'a common ;
+  mutable next : 'a option;
+}
+
+type 'a progn = {
+  p_core : 'a minimal;
+  decls : V.decl list;
+  stmts : V.stmt list;
+}
+
+type 'a branch = {
+  b_core : 'a common;
+  test : V.exp;
+  mutable true_child : 'a;
+  mutable false_child: 'a;
+}
+
+type 'a finished_type =
+| ExternalLoop of int64   (* instruction jumps to ancestor eip *)
+| InternalLoop of int64   (* instruction contains cycle in statement list *)
+| Return of int64         (* statement list had a return, exit to the eip containing that statement *)
+| Halt of int64           (* as above, with halt. *)
+| FunCall of int64        (* etc. *)
 | SysCall of int64
 | Special of int64
-| SearchLimit of int64
-| Instruction of pointer_statements
+| SearchLimit of int64    (* search went too deep, halt with the next instruction being this EIP *)
+| Branch of 'a branch     (* encode the test and continuations *)
+| Segment of 'a progn     (* completely interpreted segment *)
 
+type veritesting_node =
+| Undecoded of veritesting_node minimal
+| Raw of veritesting_node progn
+| Completed of veritesting_node finished_type
 
-type node = {
-  data : veritesting_data;
-  mutable parent : node list;
-  mutable children : node list;
-}
 
 type vineLabel =
 | X86eip of int64
@@ -43,39 +53,99 @@ type vineLabel =
 
 exception UnexpectedEIP
 
-let make_exit parent =
-  match parent.data with
-  | Instruction pdata ->
-    let child = {data = SearchLimit (Int64.add Int64.one pdata.eip);
-		 parent = [parent];
-		 children = [];} in
-    parent.children <- child::parent.children;
-    Some child
-  | _ -> None
+let key (ft : veritesting_node finished_type) =
+  (** uniquely identify a node *)
+  match ft with
+  | ExternalLoop eip
+  | InternalLoop eip
+  | Return eip
+  | Halt eip
+  | FunCall eip
+  | SysCall eip
+  | Special eip
+  | SearchLimit eip -> eip
+  | Branch b -> Int64.neg b.b_core.eip (* don't want it to colide with prev. block *)
+  | Segment progn -> progn.p_core.m_core.eip
 
 
-let veritesting_data_to_string = function
-  | BreakLoop at  -> (Printf.sprintf "BreakLoop From 0x%LX To 0x%LX"
-			at.source_eip at.dest_eip)
-  | InternalLoop at -> Printf.sprintf "Instruction @ 0x%LX has self loop" at
-  | SysCall at -> Printf.sprintf "SysCall @ 0x%LX" at
-  | Special at -> Printf.sprintf "Special Call @ 0x%LX" at
-  | Return at -> Printf.sprintf "Return @ 0x%LX" at
-  | Halt at ->  Printf.sprintf "Halt @ 0x%LX" at
-  | FunCall at ->  Printf.sprintf "Fun. Call @ 0x%LX" at
-  | SearchLimit at ->  Printf.sprintf "Search Limit @ 0x%LX" at
-  | Instruction i -> (Printf.sprintf "@ 0x%LX" i.eip)
+let key (node : veritesting_node) =
+(** uniquely identify a node *)
+  match node with
+  | Undecoded m -> m.m_core.eip
+  | Raw progn -> progn.p_core.m_core.eip
+  | Completed ft -> key ft
 
 
-let node_to_string (node : node) =
-  veritesting_data_to_string node.data
+let equal (a : veritesting_node) (b : veritesting_node) =
+  (** quick test to see if nodes are equivalent *)
+  match a,b with
+  | Undecoded a, Undecoded b -> a.m_core.eip = b.m_core.eip
+  | Raw aprgn, Raw bprgn -> aprgn.p_core.m_core.eip = bprgn.p_core.m_core.eip
+  | Completed _, Completed _ -> (key a) = (key b)
+  | _, _ -> false
+
+
+let finished_type_to_string = function
+| ExternalLoop eip -> (Printf.sprintf "ExternalLoop @ 0x%Lx" eip)
+| InternalLoop eip -> (Printf.sprintf "ExternalLoop @ 0x%Lx" eip)
+| Return eip -> (Printf.sprintf "ExternalLoop @ 0x%Lx" eip)
+| Halt eip -> (Printf.sprintf "ExternalLoop @ 0x%Lx" eip)
+| FunCall eip -> (Printf.sprintf "ExternalLoop @ 0x%Lx" eip)
+| SysCall eip -> (Printf.sprintf "ExternalLoop @ 0x%Lx" eip)
+| Special eip -> (Printf.sprintf "ExternalLoop @ 0x%Lx" eip)
+| SearchLimit eip -> (Printf.sprintf "ExternalLoop @ 0x%Lx" eip)
+| Branch b -> (Printf.sprintf "Branch @ 0x%Lx" b.b_core.eip)
+| Segment s -> (Printf.sprintf "Code Segment @ 0x%Lx" s.p_core.m_core.eip)
+
+
+let node_to_string = function
+  | Undecoded a -> (Printf.sprintf "Undecoded Region @ 0x%Lx" a.m_core.eip)
+  | Raw progn -> (Printf.sprintf "Raw Region @ 0x%Lx" progn.p_core.m_core.eip)
+  | Completed c -> finished_type_to_string c
 
 
 let decode_eip str =
+  (** helper function converting a string into the logically correct value *)
   if (str.[0] = 'L' && str.[1] = '_')
   then (let num = String.sub str 2 ((String.length str) - 2) in
 	Internal (int_of_string num))
   else X86eip (label_to_eip str)
+
+
+let ordered_p (a : veritesting_node finished_type) (b : veritesting_node finished_type) =
+  match a,b with
+  | _, _ -> true
+
+
+let ordered_p (a : veritesting_node) (b : veritesting_node) =
+  match a,b with
+  | Undecoded aeip, Undecoded beip -> aeip < beip
+  | Raw aprgn, Raw bprgn -> aprgn.p_core.m_core.eip < bprgn.p_core.m_core.eip
+  | Completed ac, Completed bc -> ordered_p ac bc
+  | _, _ -> true
+
+
+let rec print_region_ft ?offset:(offset = 1) (node : veritesting_node finished_type) =
+  match node with
+  | Branch b ->
+    begin
+      print_region ~offset:(offset+1) b.true_child;
+      print_region ~offset:(offset+1) b.false_child
+    end
+  | Segment progn -> (*  this isn't very promising *)
+    (match progn.p_core.next with
+    | Some child -> print_region ~offset:(offset+1) child
+    | None -> ())
+  | _ -> ()
+
+
+and print_region ?offset:(offset = 1) (node : veritesting_node) =
+  (for i=1 to offset do Printf.printf "\t" done);
+  Printf.printf "%s\n" (node_to_string node);
+  match node with
+  | Undecoded _
+  | Raw _ -> ()
+  | Completed c -> print_region_ft ~offset c
 
 
 let walk_to_label target_label tail =
@@ -97,195 +167,299 @@ let walk_to_label target_label tail =
   | Internal(ilabel) -> walk_to_label_help ilabel tail
 
 
-let equal (a : veritesting_data) (b : veritesting_data) =
-  let rec check_vine_stmts = function
-    | [], [] -> true
-    | _::_, []
-    | [], _::_ -> false
-    | hd1::tl1, hd2::tl2 ->
-      hd1 = hd2 && check_vine_stmts (tl1,tl2) in
-  match (a,b) with
-  | BreakLoop i1, BreakLoop i2 -> ((i1.source_eip = i2.source_eip)
-				   && (i1.dest_eip = i2.dest_eip))
-  | InternalLoop i1 , InternalLoop i2
-  | Return i1, Return i2
-  | Halt i1, Halt i2
-  | SysCall i1, SysCall i2
-  | Special i1, Special i2
-  | SearchLimit i1, SearchLimit i2
-  | FunCall i1, FunCall i2 -> i1 = i2
-  | Instruction i1, Instruction i2 ->
-    (i1.eip = i2.eip) && check_vine_stmts (i1.vine_stmts, i2.vine_stmts)
-  | _, _ -> false
+let complete_node (raw_node : veritesting_node) (child : veritesting_node)
+    (sl : V.stmt list) (dl: V.decl list) =
+  assert(sl != []);
+  (match raw_node with
+  | Raw progn -> 
+    begin
+     (* stitch the completed child into the code segment. *)
+      let closed_variant =
+	Completed
+	  (Segment {p_core = {m_core = {eip = (key raw_node);
+					parent = raw_node;};
+			      next = Some child;};
+		    stmts = sl;
+		    decls = dl;}) in
+      progn.p_core.next <- Some closed_variant
+    end
+  | _ -> failwith "Should only be able to call complete node on a raw_node");
+  child
 
 
-let ordered_p (a : veritesting_data) (b : veritesting_data) =
-  match a,b with
-  | Instruction i1, Instruction i2 -> i1.eip < i2.eip
-  | _, Instruction _ ->  false
-  | Instruction _, _ -> true
-  | _ , _ -> true
+let rec truncate_node = function
+  (** If you're doing a truncated expand of a veritesting node, this is
+      the way you tell the search that the area beyond this point was
+      intentionally not considered because it was too far afield from
+      the root. *)
+  | Undecoded m -> m.next <- Some (Completed (SearchLimit m.m_core.eip))
+  | Raw progn -> progn.p_core.next <- Some (Completed (SearchLimit progn.p_core.m_core.eip))
+  | Completed ft -> match ft with
+    | Segment progn -> progn.p_core.next <- Some (Completed (SearchLimit progn.p_core.m_core.eip))
+    | Branch b -> 
+      begin
+	truncate_node b.true_child;
+	truncate_node b.false_child
+      end
+    | _ -> () (* everything else is a terminal anyway. You'd never expand it. *)
 
-let ordered_p (a : node) (b : node) =  ordered_p a.data b.data
-    
 
-let key (a : node) = a.data
+let children = function
+  (** Standardized function for getting the successors of a veritesting
+      node after it has been generated *)
+  | Undecoded m ->
+    (match m.next with
+    |Some s -> [s]
+    | _ -> [])
+  | Raw progn ->
+    (match progn.p_core.next with
+    | Some s -> [s]
+    | _ -> [])
+  | Completed ft ->
+    (match ft with
+    | Segment progn ->
+      (match progn.p_core.next with 
+      | Some s -> [s]
+      | _ -> [])
+    | Branch b -> [b.true_child; b.false_child]
+    | _ -> [])
 
-let check_cycle (lookfor : node) (root : node) =
-  let me = key lookfor in 
-  let check_this_gen found_cycle child =
-    if not found_cycle
-    then (equal me (key child))
-    else found_cycle in
-  let rec check_cycle_int next =
-    (List.fold_left check_this_gen false next.children)
-  || List.fold_left
-      (fun accum child ->
-	if accum
-	then accum
-	else check_cycle_int child) false next.parent in
-  check_cycle_int root
-
-(**
-   Case 1: No Labels, No Jumps.  
-           Just a straight away leading to a single node and no children
-
-   Case 2: Something I can't encode as part of the statement list.
-           Just the entering eip to the non-decodable region is what we have to capture.
-
-   Case 3: x86 LABEL -- STATEMENTS BEFORE LABEL :: REST 
-                        create the current node based on statements before label and handed in eip.
-                        recur, creating the single child node starting at eip LABEL
-
-   Case 4: JMP to x86  -- STATEMENTS INCLUDING JMP :: REST
-                          discard rest -- you can't reach it. Statements up to and including jmp become this node.
-                          singleton child starting at jmp label.
-
-   Case 5: JMP to internal -- try to walk to the label in the current statement list. 
-                              If it doesn't exist, there's a cycle, abort.
-                              Otherwise, keep going beyond this case to another
-                              terminating case.
-
-   Case 6: CJMP to x86, x86 -- two external jumps
-   Case 7: CJMP to int, int -- two internal jumps
-   CASE 8: CJMP to x86, int -- a mixed jump
-**)
-    
-let expand fm gamma (node : veritesting_data) =
-  match node with
-  | InternalLoop _
-  | BreakLoop _
-  | SysCall _
-  | Return _
-  | Halt _
-  | Special _
-  | FunCall _
-  | SearchLimit _ -> [] (* these are non child-bearing nodes *)
-  | Instruction i1 ->
-    (* the first member is the declaration list *)
-    let decls, statement_list = decode_insn_at fm gamma i1.eip in
-  (* right now the legality check is going to catch self loops inside
-     of the statement list, so I'm not looking for them here.
-     Instead, we're just collecting exit points for the region
-     and statement lists executed up until that point. *)
-    let rec walk_statement_list current_eip stmts = function
-      | [] ->
-	(match current_eip with
-	| Some eip -> [ Instruction {eip = eip;
-				     test = None;
-				     vine_stmts = stmts;
-				     vine_decls = decls}]
-	| None -> failwith "Don't know what eip to associate with an instruction.")
-      | stmt::tl ->
-	begin
-	  match stmt with
-          | V.Jmp(V.Name(label)) ->
-	    begin
-	      match decode_eip label with
-	    (* this captures the wrong thing entirely.  The
-	       statements preceeding a jump are not the statements
-	       associated with the jump, so setting the eip value
-	       for the statement list at the jump is insane. *)
-	    | X86eip value -> [Instruction {eip = value;
-					    test = None;
-					    vine_stmts = stmts;
-					    vine_decls = decls;}]
-	    | Internal value -> 
-	      (* if we walk off, it should be because the label is
-		 behind us iff labels are only valid local to a vine
-		 decoding *)
+let consider_statements (node : veritesting_node) = 
+  let progn = match node with
+    |Raw progn -> progn
+    | _ -> failwith "only for raw nodes" in
+  let rec wsl accum = function
+    | [] -> Completed (Segment progn)
+    | stmt::rest ->
+      begin
+	match stmt with
+	| V.Special("int 0x80") -> Completed (SysCall progn.p_core.m_core.eip)
+	| V.Special _ ->           Completed (Special progn.p_core.m_core.eip)
+	| V.Return _ ->            Completed (Return progn.p_core.m_core.eip)
+	| V.Call _ ->              Completed (FunCall progn.p_core.m_core.eip)
+	| V.Halt _  ->             Completed (Halt progn.p_core.m_core.eip)
+	| V.Label(l) ->
+	  begin
+	    match (decode_eip l) with
+	    (* update this node to finished.  It's stmt list is just the current accum.
+	       then, generate the raw child, which is an undecoded of the target eip *)  
+	    | X86eip eip ->
+	      if progn.p_core.m_core.eip = eip
+	      then wsl accum rest (* drop the label identifying this segment as itself *)
+	      else
+	      (* this eip = nodes eip, skip it? *)
+		complete_node node (Undecoded 
+				      {m_core = {eip = eip;
+						 parent = node;};
+				       next = None;}) accum progn.decls
+	    | Internal _ -> wsl accum rest (* drop internal labels on the floor *)
+	  end
+        | V.Jmp(V.Name(l)) ->
+	  begin
+	    match (decode_eip l) with
+	    | X86eip eip -> complete_node node (Undecoded {m_core = {eip = eip;
+								     parent = node;};
+							   next = None;}) accum progn.decls
+	    | Internal _ ->
+	      match walk_to_label l rest with
+	      | None -> Completed (InternalLoop progn.p_core.m_core.eip)
+	      | Some rest' -> wsl accum rest'
+	  end 
+        | V.CJmp(test, V.Name(true_lab), V.Name(false_lab)) ->
+	  begin
+	    match (decode_eip true_lab, decode_eip false_lab) with
+	    | X86eip teip, X86eip feip -> 
+	      let rec branch = Completed (Branch { test = test;
+						   b_core = {eip = progn.p_core.m_core.eip;
+							     parent = node;};
+						   true_child =  Undecoded {m_core = {eip = teip; 
+										      parent = branch;};
+									    next = None;};
+						   false_child = Undecoded {m_core = {eip = feip;
+										      parent = branch;};
+									    next = None;}}) in
+	      complete_node node branch accum progn.decls
+	    | X86eip teip, Internal flabel ->
 	      begin
-		match walk_to_label label tl with
-		| None -> [InternalLoop i1.eip]
-		| Some next -> walk_statement_list current_eip (stmt::stmts) next
+		match walk_to_label false_lab rest with
+		| None -> Completed (InternalLoop progn.p_core.m_core.eip)
+		| Some rest' ->
+		  begin
+		    let rec branch = 
+		      Completed (Branch { test = test;
+					  b_core = {eip = progn.p_core.m_core.eip;
+						    parent = node;};
+					  true_child = Undecoded {m_core = {eip = teip;
+									    parent = branch;};
+								  next = None};
+					  false_child = Raw {p_core = {m_core = {eip = progn.p_core.m_core.eip; (* dangerous!  should be the label. *)
+										 parent = branch;};
+								       next = None;};
+							     decls = [];
+							     stmts = rest';}}) in
+		    complete_node node branch accum progn.decls
+		  end
 	      end
-	    end
-          | V.CJmp(test, V.Name(true_lab), V.Name(false_lab)) ->
-	    begin
-	      (** These internal jumps are wrong because we aren't capturing the path conditions that
-		  they're a part of. JTT 9-8-2014 *)
-	      match (decode_eip true_lab), (decode_eip false_lab) with
-	      | X86eip tval, X86eip fval ->
-		[ Instruction {eip = tval;
-			       test = Some test;
-			       vine_stmts = V.ExpStmt test :: stmts;
-			       vine_decls = decls;};
-		  Instruction {eip = fval;
-			       test = Some (V.UnOp (V.NOT, test));
-			       vine_stmts = stmts;
-			       vine_decls = decls;}]
-	      | X86eip tval, Internal fval ->
-		(Instruction {eip = tval;
-			      test = Some test;
-			      vine_stmts = V.ExpStmt test :: stmts;
-			      vine_decls = decls}) ::
-		  (match walk_to_label false_lab tl with
-		  | None -> [InternalLoop i1.eip]
-		  | Some next -> walk_statement_list current_eip (stmt::stmts) next)
-	      | Internal tval, X86eip fval ->
-		(Instruction {eip = fval;
-			      test = Some (V.UnOp (V.NOT, test));
-			      vine_stmts = V.ExpStmt (V.UnOp (V.NOT, test)) :: stmts;
-			      vine_decls = decls }) ::
-		  (match walk_to_label true_lab tl with
-		  | None -> [InternalLoop i1.eip]
-		  | Some next -> walk_statement_list current_eip (stmt::stmts) next)
-	      | Internal tval, Internal fval ->
-		begin
-		  let next = walk_statement_list current_eip (stmt::stmts) in
-		  match (walk_to_label true_lab tl), (walk_to_label false_lab tl) with
-		  | None, None -> [InternalLoop i1.eip; InternalLoop i1.eip;]
-		  | Some rem, None
-		  | None, Some rem -> InternalLoop i1.eip :: (next rem)
-		  | Some r1, Some r2 -> List.rev_append (next r1) (next r2)
-		end
-	    end
-	      (* Why One?  -*)
-	  | V.Label(l)
-	    -> (match (decode_eip l) with
-	    | X86eip eip -> (assert (None = current_eip); (* this label shows which EIP controls this block *)
-			     walk_statement_list (Some eip) (stmt::stmts) tl)
-	    | Internal name -> walk_statement_list current_eip (stmt::stmts) tl)
-	    
-	  | V.Special("int 0x80") -> [SysCall i1.eip;]
-	  | V.Special _ -> [Special i1.eip]
-	  | V.Return _ -> [Return i1.eip]
-	  | V.Call _ -> [FunCall i1.eip]
-	  | V.Halt _  -> [Halt i1.eip]
-	  | _ -> walk_statement_list current_eip (stmt::stmts) tl
-	end in
-      walk_statement_list None [] statement_list
+	    | Internal tlabel, X86eip feip ->
+	      begin
+		match walk_to_label true_lab rest with
+		| None -> Completed (InternalLoop progn.p_core.m_core.eip)
+		| Some rest' ->
+		  begin
+		    let rec branch = Completed (Branch { test = test;
+							 b_core = {eip = progn.p_core.m_core.eip;
+								   parent = node;};
+							 true_child = Raw {p_core = {m_core = {eip = progn.p_core.m_core.eip; (* dangerous!  should be the label. *)
+											       parent = branch;};
+										     next = None;};
+									   decls = [];
+									   stmts = rest';};
+						     false_child = Undecoded {m_core = {eip = feip;
+											parent = branch};
+									      next = None}}) in
+		    complete_node node branch accum progn.decls
+		  end
+	      end
+	    | Internal tlabel, Internal flabel ->
+	      begin
+		match (walk_to_label true_lab rest), (walk_to_label false_lab rest) with
+		| Some traw, Some fraw ->
+		  let rec branch = Completed (Branch {test = test;
+						      b_core = {eip = progn.p_core.m_core.eip;
+								parent = node;};
+						      true_child = Raw {p_core = {m_core = {eip = progn.p_core.m_core.eip;
+											    parent = branch;};
+										  next = None;};
+									decls = [];
+									stmts = traw};
+						      false_child = Raw {p_core = {m_core = {eip = progn.p_core.m_core.eip;
+											     parent = branch;};
+										   next = None};
+									 decls = [];
+									 stmts = fraw}}) in
+		  complete_node node branch accum progn.decls
+		| _ -> Completed (InternalLoop progn.p_core.m_core.eip)
+	      end
+	  end
+	| _ -> wsl (stmt::accum) rest
+	  end
+  in
+  wsl [] progn.stmts
 
 
-let rec print_region ?offset:(offset = 1) node =
-  (for i=1 to offset do Printf.printf "\t" done);
-  Printf.printf "%s\n" (node_to_string node);
-  List.iter (print_region ~offset:(offset + 1)) node.children
+let generate_children fm gamma = function
+  | Undecoded a as node->
+    begin
+      assert(None = a.next);
+      let decls, stmts = decode_insn_at fm gamma a.m_core.eip in
+      let child = Raw { p_core = {m_core = {eip = a.m_core.eip;
+					    parent = node;};
+				  next = None;};
+			decls = decls;
+			stmts = stmts} in
+      a.next <- Some child;
+      [child]
+    end
+  | Raw progn as node -> [consider_statements node] (* this has to replace the current node with the appropriate structure? *)
+  | Completed ft ->
+    begin
+      match ft with
+      | ExternalLoop _
+      | InternalLoop _ 
+      | Return _
+      | Halt _
+      | FunCall _
+      | SysCall _
+      | Special _
+      | SearchLimit _
+      | Segment _ -> [] (* maybe this is progn.next *)
+      | Branch b -> [b.true_child; b.false_child]
+    end
 
-let make_root fm gamma eip =
-  let decode_call _ = decode_insns fm gamma eip 1 in
-  let decls, stmts = with_trans_cache eip decode_call in
-  Instruction { eip = eip;
-		test = None;
-		vine_stmts = stmts;
-		vine_decls = decls; }
+let expand fm gamma (node : veritesting_node) =
+  generate_children fm gamma node
+
+
+let make_root eip = 
+  let rec root = Undecoded {m_core = {eip = eip;
+				      parent = root;};
+			    next = None;} in
+  root
+
+let parent = function
+    (* this is dangerous-- clearly some of the leaves have parents,
+       but since we only really use parent pointers for cycle checking,
+       it doesn't matter if we return their actual parent, or none. If
+       we're testing them, they're the lookfor value, and they can't
+       occur anywhere else along their ancestors as they are defined to
+       be terminal. *)
+    | Undecoded a -> Some a.m_core.parent
+    | Raw progn -> Some progn.p_core.m_core.parent
+    | Completed c ->
+      (match c with
+      | ExternalLoop a
+      | InternalLoop a
+      | Return a
+      | Halt a
+      | FunCall a
+      | SysCall a
+      | Special a
+      | SearchLimit a -> None
+      | Branch b -> Some b.b_core.parent 
+      | Segment s -> Some s.p_core.m_core.parent)
+
+let check_cycle (lookfor : veritesting_node) (root : veritesting_node) =
+  let rec walk_parents (current : veritesting_node) =
+    if (lookfor == current)
+    then true
+    else (let parent = parent current in
+	  match parent with
+	  | None -> true
+	  | Some p ->
+	    if current == p
+	    then false
+	    else walk_parents p) in
+  walk_parents root
+
+let replace_child current_node replacement =
+  match (parent current_node) with
+  | None -> ()
+  | Some p ->
+    match p with
+    | Undecoded a -> a.next <- Some replacement
+    | Raw a -> a.p_core.next <- Some replacement
+    | Completed c ->
+      (match c with
+      | ExternalLoop _
+      | InternalLoop _
+      | Return _
+      | Halt _
+      | FunCall _
+      | SysCall _
+      | Special _
+      | SearchLimit _ -> failwith "Illegal parent type!"
+      | Segment s -> s.p_core.next <- Some replacement
+      | Branch b ->
+	(if current_node == b.true_child
+	 then b.true_child <- replacement
+	 else if b.false_child == current_node
+	 then b.false_child <- replacement
+	 else failwith "current_node isn't a child to its parent?"))
+
+
+let successor = function
+    | Undecoded a -> a.next
+    | Raw progn -> progn.p_core.next
+    | Completed c ->
+      (match c with
+      | ExternalLoop _
+      | InternalLoop _
+      | Return _
+      | Halt _
+      | FunCall _
+      | SysCall _
+      | Special _
+      | SearchLimit _ -> None
+      | Branch b -> None (* this is a lie *)
+      | Segment s -> s.p_core.next)
+  

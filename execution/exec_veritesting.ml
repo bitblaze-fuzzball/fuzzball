@@ -1,4 +1,4 @@
-open Exec_veritesting_general_search_components_m2
+open Exec_veritesting_general_search_components
 open Exec_run_common
 
 module EO = Exec_options
@@ -29,12 +29,8 @@ let find_veritesting_region fm gamma starting_eip max_depth =
   | None -> None
   | Some root_of_region ->
     print_region root_of_region;
-      (*
-    let decls, stmts = Encode.encode_region root_of_region in
+    let stmts, decls = Encode.encode_region root_of_region in
     Printf.printf "Printing statement list:\n";
     List.iter (fun s -> V.stmt_to_channel stdout s) stmts;
     Printf.printf "End statement list\n";
-    if true then assert false;
     Some (decls, stmts)
-      *)
-      None

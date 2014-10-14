@@ -1,4 +1,4 @@
-open Exec_veritesting_general_search_components_m2
+open Exec_veritesting_general_search_components
 
 let depth_first_search ?max_depth:(max_depth = max_int) root expansion =
   let closed = Hashtbl.create 100 in
