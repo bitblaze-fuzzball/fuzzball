@@ -49,6 +49,7 @@ export SOURCES = \
 	exec_run_common.mli exec_run_common.ml \
 	exec_veritesting_general_search_components.ml \
 	exec_veritesting_breadth_first_search.ml \
+	exec_veritesting_depth_first_search.ml \
 	exec_veritesting.ml \
 	exec_runloop.mli exec_runloop.ml \
 	exec_stats.mli exec_stats.ml \

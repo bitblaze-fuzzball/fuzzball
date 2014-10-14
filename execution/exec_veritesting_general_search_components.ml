@@ -1,15 +1,11 @@
 module V = Vine
+module VOpt = Vine_opt
 
 open Exec_exceptions
 open Exec_options
 open Frag_simplify
 open Fragment_machine
 open Exec_run_common
-
-type veritesting_region =
-| Statement of V.stmt
-| Exit of V.stmt option (* None for the bottoming out case *)
-| Branch of (V.exp * veritesting_region list) list
 
 type pointer_statements = {
   eip : int64;
@@ -27,12 +23,12 @@ type veritesting_data =
 | Return of int64
 | Halt of int64
 | FunCall of int64
-| SysCall of     pointer_statements
+| SysCall of pointer_statements
 | Instruction of pointer_statements
 
 
 type node = {
- data : veritesting_data;
+  data : veritesting_data;
   mutable parent : node list;
   mutable children : node list;
 }
@@ -42,6 +38,7 @@ type vineLabel =
 | Internal of int
 
 exception UnexpectedEIP
+
 
 let veritesting_data_to_string = function
   | BreakLoop at  -> (Printf.sprintf "BreakLoop From 0x%LX To 0x%LX"
@@ -53,14 +50,17 @@ let veritesting_data_to_string = function
   | FunCall at ->  Printf.sprintf "Fun. Call @ 0x%LX" at 
   | Instruction i -> (Printf.sprintf "@ 0x%LX" i.eip)
 
+
 let node_to_string (node : node) =
   veritesting_data_to_string node.data
+
 
 let decode_eip str =
   if (str.[0] = 'L' && str.[1] = '_')
   then (let num = String.sub str 2 ((String.length str) - 2) in
- Internal (int_of_string num))
+	Internal (int_of_string num))
   else X86eip (label_to_eip str)
+
 
 let check_label label seen_labels = 
   match decode_eip label with 
@@ -69,6 +69,7 @@ let check_label label seen_labels =
     if (List.mem ilabel seen_labels)
     then false
     else true
+
 
 let walk_to_label target_label tail =
   let rec walk_to_label_help target_label = function
@@ -87,6 +88,7 @@ let walk_to_label target_label tail =
   match (decode_eip target_label) with
   | X86eip(_) -> raise UnexpectedEIP
   | Internal(ilabel) -> walk_to_label_help ilabel tail
+
 
 let equal (a : veritesting_data) (b : veritesting_data) =
   let rec check_vine_stmts = function
@@ -211,18 +213,20 @@ let expand fm gamma (node : veritesting_data) =
 	end in
       walk_statement_list [] statement_list
 
+
 let rec exp_of_stmt = function
   | V.Jmp exp 
   | V.ExpStmt exp 
   | V.Assert exp
   | V.Halt exp -> Some exp
   | V.Label label -> Some (V.Name label)
-  | V.Special string -> assert false
-  | V.Move (lvalue, exp) -> failwith "punt for later" (** equation rewriting *)
+  | V.Special string -> None (* failwith "Don't know what to do with magic" *)
+  | V.Move (lvalue, exp) -> None (* failwith "punt for later" (** equation rewriting *) *)
   | V.Comment string -> None
-  | V.Block (decls, stmts) -> failwith "punt for later"
+  | V.Block (decls, stmts) -> None (* failwith "punt for later" *)
   | V.Attr (stmt, _) -> exp_of_stmt stmt
   | _ -> assert false
+
 
 let stmts_of_data = function
   | SysCall pointer_statements
@@ -230,32 +234,78 @@ let stmts_of_data = function
   | InternalLoop _
   | Return _
   | Halt _
-  | FunCall _ -> []
+  | FunCall _
   | BreakLoop _ -> []
 
-let rec build_equations (node : node) =
-  let rec walk_statement_list = function 
-    | [] ->
-      V.exp_true
+
+(*
+
+  Just a couple of notes on the translation:
+
+  It will likely be faster if we go bottom up (that is, exits first).
+  Common subexpression caching works best with that direction of an
+  approach.  It's akin to dynamic programming.
+
+  For truly big regions, we could blow the stack here.  Rewriting the code with a
+  heap based stack insted of the stack being the call stack should be easy enough.
+
+  There's probably a better way to approach this than 4 mutually recursive functions,
+  but I can't find it.
+
+*)
+    
+let build_equations ?context:(context = []) (root : node) =
+  let cached_statments = Hashtbl.create 50
+  and common_expressions = Hashtbl.create 50 in
+  let rec be_int context node =
+    let id = (key node) in
+    try
+      Hashtbl.find common_expressions id
+    with Not_found ->
+      match node.children with
+      | [] -> 
+	begin 
+	  let to_add = VOpt.simplify (walk_statement_list id node) in
+	  Hashtbl.add common_expressions id to_add;
+	  to_add
+	end
+      | [singleton] ->
+	begin
+	  let to_add = VOpt.simplify (V.BinOp (V.BITAND,
+					       walk_statement_list id node, 
+					       be_int context singleton)) in
+	  Hashtbl.add common_expressions id to_add;
+	  to_add
+	end
+      | head::tail ->
+	begin
+	  let to_add = VOpt.simplify (V.BinOp (V.BITAND, 
+					       walk_statement_list id node,
+					       walk_child_list node.children)) in
+	  Hashtbl.add common_expressions id to_add;
+	  to_add
+	end
+  and walk_statement_list id node =
+    try
+      Hashtbl.find cached_statments id
+    with Not_found ->
+      let to_add = VOpt.simplify (wsl_int (stmts_of_data node.data)) in
+      Hashtbl.add cached_statments id to_add;
+      to_add
+  and wsl_int = function 
+    | [] ->  V.exp_true
     | head::tail ->
       begin
         match exp_of_stmt head with
-          | None -> walk_statement_list tail
-          | Some exp ->  V.BinOp (V.BITAND, exp, walk_statement_list tail)
+          | None -> wsl_int tail
+          | Some exp ->  V.BinOp (V.BITAND, exp, wsl_int tail)
       end 
-  in
-  let rec walk_child_list = function
-    | [] ->
-      V.exp_false
-    | head::tail ->
-      V.BinOp (V.BITOR, build_equations head, walk_child_list tail)
-  in
-  match node.children with
-  | [] ->
-    walk_statement_list (stmts_of_data node.data)
-  | [singleton] ->
-    V.BinOp (V.BITAND, walk_statement_list (stmts_of_data node.data), 
-             build_equations singleton)
-  | head::tail ->
-    V.BinOp (V.BITAND, walk_statement_list (stmts_of_data node.data),
-             walk_child_list node.children)
+  and walk_child_list = function
+    | [one] -> be_int context one
+    | [one; two] -> V.BinOp (V.BITOR,
+			     be_int context one,
+			     be_int context two)
+    | _ -> failwith "assert 0 < |child_list| < 3 failed" in
+  be_int context root
+
+

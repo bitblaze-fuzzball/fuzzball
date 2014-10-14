@@ -1,6 +1,6 @@
 open Exec_veritesting_general_search_components
 
-let breadth_first_search ?max_it:(max_it = max_int) root expansion =
+let depth_first_search ?max_depth:(max_depth = max_int) root expansion =
   let closed = Hashtbl.create 100 in
   let add_child parent accum data =
     let child = 
@@ -25,16 +25,14 @@ let breadth_first_search ?max_it:(max_it = max_int) root expansion =
       List.fold_left (add_child node) [] (expansion node.data);
     assert (2 >= List.length node.children);
     node.children in
-  let rec loop it = function 
-    | [] -> ()
-    | head::tail ->
-      if (it > max_it)
-      then ()
-      else loop (it + 1) (List.rev_append tail (expansion head)) in
+  let rec loop depth node =
+    if (depth > max_depth)
+    then ()
+    else List.iter (loop (depth + 1)) (expansion node) in
   let rec root_node =
     { data = root;
       parent = [];
       children = []; } in 
   Hashtbl.add closed (key root_node) root_node;
-  loop 0 [root_node];
+  loop 0 root_node;
   root_node
