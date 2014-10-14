@@ -25,6 +25,7 @@ type typ =  REG_1
 
 
 type var = int * string * typ
+val key : var -> int
 
 module Var :
 sig

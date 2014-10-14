@@ -37,16 +37,17 @@ type attributes = attr list
 type endian = Little | Big
 
 (** The IR type of a Vine expression *)
-type typ =  REG_1    (** a boolean *)
-	   | REG_8   (** an 8-bit byte *)
-	   | REG_16  (** a 16-bit int *)
-	   | REG_32  (** a 32-bit int *)
-	   | REG_64  (** a 64-bit int *)
-	   | TString 
-	   | TMem of typ * endian (** Memory of given index type and endianness*)
-	   | TFun of typ option * typ list * bool
-	   | Array  of typ * int64 (** Array of element type, size. *)
-	   | TAttr of typ * attributes
+type typ =
+| REG_1    (** a boolean *)
+| REG_8   (** an 8-bit byte *)
+| REG_16  (** a 16-bit int *)
+| REG_32  (** a 32-bit int *)
+| REG_64  (** a 64-bit int *)
+| TString 
+| TMem of typ * endian (** Memory of given index type and endianness*)
+| TFun of typ option * typ list * bool
+| Array  of typ * int64 (** Array of element type, size. *)
+| TAttr of typ * attributes
 
 type var = int * string * typ
 (** The type for a variable identifier.
@@ -58,6 +59,11 @@ type var = int * string * typ
     of it, as that is a waste of memory. In other words, if two vars refer to
     the same thing, they should be [==].
  *)
+
+let key (v:var) =
+  (** strip out the unique identifier for the var, use as a hash-key *)
+  match v with
+  | (id,name,typ) -> id
 
 module Var =
 struct
@@ -142,8 +148,8 @@ type attribute =
     | AReturn
 
 type lvalue = 
-    Temp of var (** A global or local variable *)
-    | Mem of var * exp * typ (** A memory reference *)
+| Temp of var (** A global or local variable *)
+| Mem of var * exp * typ (** A memory reference *)
 
 (** An expression in the IR *)
 and exp = BinOp of binop_type * exp * exp
