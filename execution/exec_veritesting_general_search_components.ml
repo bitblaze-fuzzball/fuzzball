@@ -23,7 +23,7 @@ type veritesting_data =
 | Return of int64
 | Halt of int64
 | FunCall of int64
-| SysCall of pointer_statements
+| SysCall of int64
 | Instruction of pointer_statements
 
 
@@ -44,7 +44,7 @@ let veritesting_data_to_string = function
   | BreakLoop at  -> (Printf.sprintf "BreakLoop From 0x%LX To 0x%LX"
 			at.source_eip at.dest_eip)
   | InternalLoop at -> Printf.sprintf "Instruction @ 0x%LX has self loop" at
-  | SysCall at -> Printf.sprintf "SysCall @ 0x%LX" at.eip
+  | SysCall at -> Printf.sprintf "SysCall @ 0x%LX" at
   | Return at -> Printf.sprintf "Return @ 0x%LX" at
   | Halt at ->  Printf.sprintf "Halt @ 0x%LX" at
   | FunCall at ->  Printf.sprintf "Fun. Call @ 0x%LX" at 
@@ -103,8 +103,8 @@ let equal (a : veritesting_data) (b : veritesting_data) =
   | InternalLoop i1 , InternalLoop i2
   | Return i1, Return i2
   | Halt i1, Halt i2
-  | FunCall i1, FunCall i2 -> i1 = i2
   | SysCall i1, SysCall i2
+  | FunCall i1, FunCall i2 -> i1 = i2
   | Instruction i1, Instruction i2 ->
     (i1.eip = i2.eip) && check_vine_stmts (i1.vine_stmts, i2.vine_stmts)
   | _, _ -> false
@@ -204,8 +204,7 @@ let expand fm gamma (node : veritesting_data) =
 		  | Some r1, Some r2 -> List.rev_append (next r1) (next r2)
 		end
 	    end
-	  | V.Special("int 0x80") -> [SysCall {eip = Int64.add i1.eip Int64.one;
-					       vine_stmts = accum; }]
+	  | V.Special("int 0x80") -> [SysCall (Int64.add i1.eip Int64.one);]
 	  | V.Return _ -> [Return i1.eip]
 	  | V.Call _ -> [FunCall i1.eip]
 	  | V.Halt _  -> [Halt i1.eip]

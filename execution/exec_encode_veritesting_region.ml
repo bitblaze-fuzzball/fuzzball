@@ -39,7 +39,7 @@ let clear_caches _ =
   Hashtbl.clear common_expressions
 
 
-let substitute_context context lvalue assignment =
+let update_context context lvalue assignment =
   let rec helper = function 
     | [] -> [lvalue, assignment] (* hit the end without update, add. *)
     | hd::tl ->
@@ -49,13 +49,25 @@ let substitute_context context lvalue assignment =
   helper context
 
 
+let rec context_of_decl_list context = function
+    | [] -> []
+    | decl::tl ->
+      (context_of_decl_list
+	 (update_context context (V.Temp decl) (V.Name "Foo"))
+	 tl)
+
+
 let rec handle_context context = function
-  | V.Let (lvalue, e1, e2) -> handle_context (substitute_context context lvalue e1) e2
+  | V.Let (lvalue, e1, e2) -> handle_context (update_context context lvalue e1) e2
   | V.Lval lvalue -> List.assoc lvalue context
+  | V.BinOp (typ, e1, e2) -> V.BinOp (typ,
+				      (handle_context context e1),
+				      (handle_context context e2))
+  | V.UnOp (typ , e1) -> V.UnOp (typ, (handle_context context e1))
   | exp -> exp
 
 
-let rec exp_of_stmt = function
+let rec exp_of_stmt context = function
   | V.Jmp exp 
   | V.ExpStmt exp 
   | V.Assert exp
@@ -64,14 +76,31 @@ let rec exp_of_stmt = function
   | V.Special string ->failwith "Don't know what to do with magic"
   | V.Move (lval, exp) -> ContextUpdate (lval, exp)
   | V.Comment string -> Nothing
-  | V.Block (decls, stmts) -> Nothing (* failwith "punt for later" *)
-  | V.Attr (stmt, _) -> exp_of_stmt stmt
+  | V.Block (decls, stmts) -> Expression 
+    (walk_statement_list (context_of_decl_list context decls) stmts)
+  | V.Attr (stmt, _) -> exp_of_stmt context stmt
   | _ -> assert false
 
+and walk_statement_list context list =
+  VOpt.simplify (wsl_int context list)
+
+and wsl_int context = function 
+  | [] ->  V.exp_true
+  | head::tail ->
+    begin
+      match exp_of_stmt context head with
+      | Nothing -> wsl_int context tail
+      | Expression exp ->  V.BinOp (V.BITAND, exp, wsl_int context tail)
+      | ContextUpdate (lval, exp) ->
+	begin
+	  wsl_int (update_context context lval exp) tail
+	end 
+    end
+    
 
 let stmts_of_data = function
-  | Search.SysCall pointer_statements
   | Search.Instruction pointer_statements -> pointer_statements.Search.vine_stmts
+  | Search.SysCall _
   | Search.InternalLoop _
   | Search.Return _
   | Search.Halt _
@@ -79,25 +108,15 @@ let stmts_of_data = function
   | Search.BreakLoop _ -> []
 
 
-let rec walk_statement_list context id node =
+let walk_statements context id (node : Search.node) =
   try
     Hashtbl.find cached_statments id
   with Not_found ->
-    let to_add = VOpt.simplify (wsl_int context (stmts_of_data node.Search.data)) in
+    let node_data = node.Search.data in
+    let to_add = walk_statement_list context (stmts_of_data node_data) in
     Hashtbl.add cached_statments id to_add;
-    to_add
-and wsl_int context = function 
-  | [] ->  V.exp_true
-  | head::tail ->
-    begin
-      match exp_of_stmt head with
-      | Nothing -> wsl_int context tail
-      | Expression exp ->  V.BinOp (V.BITAND, exp, wsl_int context tail)
-      | ContextUpdate (lval, exp) ->
-	begin
-	  wsl_int (substitute_context context lval exp) tail
-	end 
-    end
+    (* do the substitution at the last moment *)
+    (handle_context context to_add)
 
 
 let build_equations ?context:(context = []) (root : Search.node) =
@@ -109,14 +128,14 @@ let build_equations ?context:(context = []) (root : Search.node) =
       match node.Search.children with
       | [] -> 
 	begin 
-	  let to_add = VOpt.simplify (walk_statement_list context id node) in
+	  let to_add = VOpt.simplify (walk_statements context id node) in
 	  Hashtbl.add common_expressions id to_add;
 	  to_add
 	end
       | [singleton] ->
 	begin
 	  let to_add = VOpt.simplify (V.BinOp (V.BITAND,
-					       walk_statement_list context id node, 
+					       walk_statements context id node, 
 					       be_int context singleton)) in
 	  Hashtbl.add common_expressions id to_add;
 	  to_add
@@ -124,7 +143,7 @@ let build_equations ?context:(context = []) (root : Search.node) =
       | head::tail ->
 	begin
 	  let to_add = VOpt.simplify (V.BinOp (V.BITAND, 
-					       walk_statement_list context id node,
+					       walk_statements context id node,
 					       walk_child_list node.Search.children)) in
 	  Hashtbl.add common_expressions id to_add;
 	  to_add
