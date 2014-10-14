@@ -25,7 +25,78 @@ let make_exit eip =
 	    (Printf.sprintf "pc_0x%Lx" eip))],
   []
 
-let data_of_ft (ft : Search.veritesting_node Search.finished_type) =
+type branch_move = {
+  var : V.lvalue;
+  true_val : V.exp option;
+  false_val : V.exp option;
+}
+
+exception BranchMerge of string
+
+let branch_move_to_ite (bmove : branch_move) test =
+  match bmove.true_val, bmove.false_val with
+  | Some tv, Some fv ->
+    V.Move (bmove.var, (V.Ite (test, tv, fv)))
+  | _ -> raise (BranchMerge "branch_move_to_ite: Don't know what to do when move isn't in both branches.")
+
+
+let merge_diamond test (true_path, false_path) =
+  (*we're looking for the moves. *)
+  let stmts = Hashtbl.create 100
+  and decls = (snd true_path) @ (snd false_path)
+  and kv_to_v _ value accum = (branch_move_to_ite value test)::accum in
+  let rec stmt_helper side = function
+    | [] -> ()
+    | hd::tl ->
+      begin
+	(match hd with 
+	| V.Move (lvalue, exp) ->
+	  begin
+	    try
+	      let prev = Hashtbl.find stmts lvalue in
+	      if side
+	      then Hashtbl.replace stmts lvalue {var = lvalue; true_val = Some exp; false_val = prev.false_val;}
+	      else Hashtbl.replace stmts lvalue {var = lvalue; false_val = Some exp; true_val = prev.false_val;}
+	    with Not_found ->
+	      if side
+	      then Hashtbl.add stmts lvalue {var = lvalue; true_val = Some exp; false_val = None;}
+	      else Hashtbl.add stmts lvalue {var = lvalue; true_val = None; false_val = Some exp;}
+	  end
+	| _ -> ());
+	stmt_helper side tl
+      end in
+  stmt_helper true (fst true_path);
+  stmt_helper false (fst false_path);
+  Hashtbl.fold kv_to_v stmts [], decls
+
+
+(** I'd really rather not have the next three functions be mutually
+    recursive, but we need to be able to get data from regions that
+    are part of a branching structure being considered for
+    veritesting. There's no performance hit (that I know of), it's
+    just needlessly complicated. *)
+let rec recover_diamond (ft : Search.veritesting_node Search.finished_type) =
+  let tuple_append (dl,sl) (dl',sl') = dl@dl', sl@sl' in
+  let rec helper true_node false_node true_accum false_accum =
+    if Search.equal true_node false_node
+    then true_accum, false_accum
+    else 
+      begin
+	let next_true = Search.successor true_node
+	and next_false = Search.successor false_node in
+	match next_true, next_false with
+	| Some t, Some f ->
+	  helper t f 
+	    (tuple_append (data_of_node true_node) true_accum)
+	    (tuple_append (data_of_node false_node) false_accum)
+	| _ -> raise (BranchMerge ":recover_diamond: Diamond didn't rejoin")
+      end in
+  match ft with
+  | Search.Branch b -> merge_diamond b.Search.test (helper b.Search.true_child b.Search.false_child ([],[]) ([],[]))
+  | _ -> raise (BranchMerge "recover_diamond: not a branch, how did you call this?")
+
+
+and data_of_ft (ft : Search.veritesting_node Search.finished_type) =
   match ft with
   | Search.ExternalLoop eip
   | Search.InternalLoop eip
@@ -35,13 +106,13 @@ let data_of_ft (ft : Search.veritesting_node Search.finished_type) =
   | Search.SysCall eip
   | Search.Special eip
   | Search.SearchLimit eip -> make_exit eip
-  | Search.Branch _ -> failwith "Branch: stub" 
+  | Search.Branch _ -> recover_diamond ft
   | Search.Segment s -> s.Search.stmts, s.Search.decls
 
 
-let data_of_node (n : Search.veritesting_node) =
+and data_of_node (n : Search.veritesting_node) =
   match n with
-  | Search.Undecoded _
+  | Search.Undecoded _ -> no_data
   | Search.Raw _ -> no_data
   | Search.Completed ft -> data_of_ft ft
 
@@ -58,8 +129,8 @@ let build_simplest_equations root =
     | Some s -> internal s in
   internal root;
   List.concat (List.rev !stmt_accum), List.concat (List.rev !decl_accum)
-  
+    
 
 let encode_region root =
   build_simplest_equations root
-  
+    

@@ -28,8 +28,10 @@ let find_veritesting_region fm gamma starting_eip max_depth =
   match root_of_region with
   | None -> None
   | Some root_of_region ->
-    let stmts, decls = Encode.encode_region root_of_region in
+    try
+      let stmts, decls = Encode.encode_region root_of_region in
     (* HACK HACK HACK -- We should find a better way to detect valid regions *)
-    if ((List.length stmts) > 1)
-    then Some (decls, stmts)
-    else None
+      if ((List.length stmts) > 1)
+      then Some (decls, stmts)
+      else None
+    with _ -> None
