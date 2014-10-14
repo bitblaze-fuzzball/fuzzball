@@ -35,7 +35,7 @@ let data_of_ft (ft : Search.veritesting_node Search.finished_type) =
   | Search.SysCall eip
   | Search.Special eip
   | Search.SearchLimit eip -> make_exit eip
-  | Search.Branch _ -> failwith "stub" 
+  | Search.Branch _ -> failwith "Branch: stub" 
   | Search.Segment s -> s.Search.stmts, s.Search.decls
 
 

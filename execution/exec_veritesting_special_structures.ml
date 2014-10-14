@@ -3,7 +3,7 @@ module V = Vine
 open Exec_veritesting_general_search_components
 
 
-let find_linear_region ?maxdepth:(maxdepth = 1) root expansion =
+let find_linear_region ?maxdepth:(maxdepth = 100) root expansion =
   (* Note, there must always be a linear veritesting region of at least
      one node in length.*)
   let add_child parent child =
@@ -13,7 +13,8 @@ let find_linear_region ?maxdepth:(maxdepth = 1) root expansion =
       match child with
       | Completed c ->
 	(match c with
-	| Branch b -> None
+	| Branch b -> (truncate_node parent;
+		       None)
 	| _ -> Some child)
       | _ -> Some child in
   let expand node =
@@ -21,7 +22,7 @@ let find_linear_region ?maxdepth:(maxdepth = 1) root expansion =
     match children with
     | [child] -> add_child node child
     | []
-    | _::_ -> None in
+    | _::_ -> (truncate_node node; None) in
   let rec loop depth node =
     if (depth = maxdepth)
     then (truncate_node node)

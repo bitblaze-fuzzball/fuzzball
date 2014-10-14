@@ -1580,7 +1580,12 @@ struct
 	  | (V.CAST_HIGH, V.REG_16, V.REG_8)  -> D.cast16h8
 	  | (V.CAST_HIGH, V.REG_16, V.REG_1)  -> D.cast16h1
 	  | (V.CAST_HIGH, V.REG_8,  V.REG_1)  -> D.cast8h1
-	  | _ -> failwith "bad cast kind in eval_int_exp_ty"
+	  | _ -> 
+	    failwith (Printf.sprintf
+			"bad cast kind in eval_int_exp_ty: %s %s %s"
+			(V.cast_to_string kind)
+			(V.typ_to_string ty)
+			(V.typ_to_string ty1))
       in
 	((func v1), ty)
 

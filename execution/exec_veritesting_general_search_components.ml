@@ -357,7 +357,9 @@ let generate_children fm gamma = function
   | Undecoded a as node->
     begin
       assert(None = a.next);
-      let decls, stmts = decode_insn_at fm gamma a.m_core.eip in
+      let decls, stmts = 
+	(with_trans_cache a.m_core.eip
+	   (fun () -> decode_insns fm gamma a.m_core.eip !opt_bb_size)) in
       let child = Raw { p_core = {m_core = {eip = a.m_core.eip;
 					    parent = node;};
 				  next = None;};

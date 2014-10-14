@@ -63,7 +63,7 @@ let decode_insns_cached fm gamma eip =
   if false
   then (Printf.printf "Printing statement list:\n";
 	List.iter (fun s -> V.stmt_to_channel stdout s) stmts;
-	Printf.printf "End statement list\n";
+	Printf.printf "End statement list: %d\n" (List.length stmts);
 	Printf.printf "Printing decls:\n";
 	List.iter (fun s -> V.decl_to_channel stdout s; Printf.printf "\n") decls;
 	Printf.printf "End decls\n");
