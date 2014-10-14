@@ -75,14 +75,28 @@ class vine_smtlib_print_visitor puts =
 
   in
   let unique_names = Hashtbl.create 1001 in
+  let rename_var name =
+    let need_bars = ref false
+    and new_name = ref "" in
+      for i = 0 to (String.length name) - 1 do
+	match name.[i] with
+	  | '_' -> new_name := !new_name ^ "-"
+	  | '-' -> new_name := !new_name ^ "_"; need_bars := true
+	  | _ -> new_name := !new_name ^ (Char.escaped name.[i])
+      done;
+      if !need_bars then
+	"|" ^ !new_name ^ "|"
+      else
+	!new_name
+  in
   let var2s (num,name,_) =
     let first = try Hashtbl.find unique_names name with
 	Not_found -> Hashtbl.add unique_names name num; num
     in
       if first = num then
-	"|"^name^"|"
+	rename_var name
       else
-	"|"^name^"_"^(string_of_int num)^"|"
+	rename_var (name^"_"^(string_of_int num))
   in
 object (self)
   inherit nop_vine_visitor
