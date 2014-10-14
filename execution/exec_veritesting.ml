@@ -11,6 +11,11 @@ type supported_searches =
 | Linear
 | Diamond of int
 
+let rec print_region ?offset:(offset = 1) node =
+  (for i=1 to offset do Printf.printf "\t" done);
+  Printf.printf "%s\n" (node_to_string node);
+  List.iter (print_region ~offset:(offset + 1)) node.children
+
 let find_veritesting_region search fm gamma starting_eip max_depth =
   let search_root = Instruction { eip = starting_eip;
   				  vine_stmts = [];
@@ -27,15 +32,14 @@ let find_veritesting_region search fm gamma starting_eip max_depth =
     | Linear -> VSS.find_linear_region search_root expand
     | Diamond size -> VSS.detect_diamond ~max_depth:size search_root expand
   in
-  let rec print_region ?offset:(offset = 1) node =
-    (for i=1 to offset do Printf.printf "\t" done);
-    Printf.printf "%s\n" (node_to_string node);
-    List.iter (print_region ~offset:(offset + 1)) node.children in
+
   match root_of_region with
-  | None -> ()
+  | None -> None
   | Some root_of_region ->
     print_region root_of_region;
     Printf.printf "\n";
-    V.stmt_to_channel stdout (V.ExpStmt (Encode.build_equations root_of_region));
-    Printf.printf "\n"
+    let decls, stmts = Encode.build_equations root_of_region in
+    V.stmt_to_channel stdout (V.ExpStmt stmts);
+    Printf.printf "\n";
+    Some (decls, [V.ExpStmt stmts])
       

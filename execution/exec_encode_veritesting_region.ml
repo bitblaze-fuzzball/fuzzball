@@ -24,6 +24,7 @@ type exp_of_stmt_return =
 
 let cached_statments = Hashtbl.create 50
 and common_expressions = Hashtbl.create 50
+and region_decls = Hashtbl.create 50
 
 
 let clear_caches _ =
@@ -36,7 +37,8 @@ let clear_caches _ =
       reconstructing them for every call to encode region is cheaper
       because we don't have to regrow the tables every time.  **)
   Hashtbl.clear cached_statments;
-  Hashtbl.clear common_expressions
+  Hashtbl.clear common_expressions;
+  Hashtbl.clear region_decls
 
 
 let update_context context lvalue assignment =
@@ -73,7 +75,7 @@ let rec exp_of_stmt context = function
   | V.Assert exp
   | V.Halt exp -> Expression exp
   | V.Label label -> Expression (V.Name label)
-  | V.Special string ->failwith "Don't know what to do with magic"
+  | V.Special string -> Nothing (* failwith "Don't know what to do with magic"*)
   | V.Move (lval, exp) -> ContextUpdate (lval, exp)
   | V.Comment string -> Nothing
   | V.Block (decls, stmts) -> Expression 
@@ -100,23 +102,39 @@ and wsl_int context = function
 
 let stmts_of_data = function
   | Search.Instruction pointer_statements -> pointer_statements.Search.vine_stmts
-  | Search.SysCall _
-  | Search.InternalLoop _
-  | Search.Return _
-  | Search.Halt _
-  | Search.FunCall _
-  | Search.BreakLoop _ -> []
+  | Search.SysCall eip
+  | Search.InternalLoop eip
+  | Search.Return eip
+  | Search.Halt eip
+  | Search.FunCall eip -> [V.Jmp (V.Name (Printf.sprintf "pc_%Lx" eip)) ]
+  | Search.BreakLoop eip -> failwith "BreakLoop stmts_of_data: stub"
 
+let decls_of_data = function 
+  | Search.Instruction pointer_statements -> pointer_statements.Search.vine_decls
+  | _ -> []
+
+let add_declarations (node : Search.node) =
+  let rec inner = function
+    | [] -> ()
+    | hd::tl ->
+      begin
+	Hashtbl.replace region_decls (V.key hd) hd;
+	inner tl
+      end in
+  inner (decls_of_data node.Search.data)
 
 let walk_statements context id (node : Search.node) =
   try
     Hashtbl.find cached_statments id
   with Not_found ->
+    add_declarations node;
     let node_data = node.Search.data in
     let to_add = walk_statement_list context (stmts_of_data node_data) in
     Hashtbl.add cached_statments id to_add;
     (* do the substitution at the last moment *)
     (handle_context context to_add)
+
+let get_decl_list key value accum = value::accum
 
 
 let build_equations ?context:(context = []) (root : Search.node) =
@@ -154,6 +172,8 @@ let build_equations ?context:(context = []) (root : Search.node) =
 			     be_int context one,
 			     be_int context two)
     | _ -> failwith "assert 0 < |child_list| < 3 failed" in
-  let ret = be_int context root in
+  let ret_stmt = be_int context root
+  and ret_decl = Hashtbl.fold get_decl_list region_decls [] in
   Hashtbl.clear common_expressions; (* can't keep common subexpressions between calls. *)
-  ret
+  Hashtbl.clear region_decls; (* probably want to feed the minimum decl list *)
+  ret_decl, ret_stmt

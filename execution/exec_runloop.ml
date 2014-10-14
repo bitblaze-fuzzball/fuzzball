@@ -88,18 +88,20 @@ let decode_insns fm gamma starting_eip k =
 	   and remaining' = remaining - 1 in
 	   tuple_push cur_tup (decode_insns_int next_eip remaining')
 	 | _ -> tuple_push cur_tup bottom in (* end of basic block, e.g. indirect jump *)
-  let decl_list_list, statement_list_list = decode_insns_int starting_eip k in
+  let decl_list_list, statement_list_list = decode_insns_int starting_eip k in  
   List.concat decl_list_list,
   List.concat statement_list_list
     
 let decode_insns_cached fm gamma eip =
   let decode_call _ = decode_insns fm gamma eip !opt_bb_size in
 
-  (** Uncomment me if you want to play with the veritesting region identification code.
-      Comment me out again if you want to be able to run fuzzball. **)
-  
-  (* ignore(find_veritesting_region BFS fm gamma eip !opt_bb_size); *)
-  with_trans_cache eip decode_call
+  (** Uncomment me if you want to play with the veritesting region
+      identification code.  Comment me out again if you want to be
+      able to run fuzzball. **)
+  (*
+  match (find_veritesting_region Linear fm gamma eip !opt_bb_size) with
+  | None -> with_trans_cache eip decode_call
+  | Some progn -> (* progn *)*) with_trans_cache eip decode_call
 
 let runloop (fm : fragment_machine) eip asmir_gamma until =
   let rec loop last_eip eip =
