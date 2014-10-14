@@ -121,7 +121,7 @@ let build_simplest_equations root =
   let stmt_accum = ref []
   and decl_accum = ref [] in
   let rec internal node =
-    let stmts,decls as this_data = data_of_node node in
+    let stmts,decls = data_of_node node in
     stmt_accum := stmts::!stmt_accum;
     decl_accum := decls::!decl_accum;
     match Search.successor node with
