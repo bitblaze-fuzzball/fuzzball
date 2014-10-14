@@ -1,3 +1,5 @@
+#! /bin/bash
+
 aclocal
 autoconf
 autoheader
