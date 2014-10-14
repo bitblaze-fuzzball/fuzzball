@@ -18,7 +18,7 @@ type veritesting_data = {
 
 type 'a node = {
   data : 'a;
-  parent : 'a node;
+  mutable parent : 'a node list;
   mutable children : 'a node list;
 }
 
@@ -76,6 +76,23 @@ let equal (a : veritesting_data) (b : veritesting_data) =
   && check_vine_stmts (a.vine_stmts, b.vine_stmts)
 
 let key a = a
+
+
+let check_cycle key (lookfor : 'a node) (root : 'a node) =
+  let me = key lookfor in 
+  let check_this_gen found_cycle child =
+    if not found_cycle
+    then (me = (key child))
+    else found_cycle in
+  let rec check_cycle_int next =
+    (List.fold_left check_this_gen false next.children)
+  || List.fold_left
+      (fun accum child ->
+	if accum
+	then accum
+	else check_cycle_int child) false next.children in
+  check_cycle_int root
+    
 
 let expand fm gamma (node : veritesting_data) =
   let _, statement_list = decode_insn_at fm gamma node.entry_point in

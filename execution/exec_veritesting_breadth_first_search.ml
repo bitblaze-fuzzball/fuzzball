@@ -6,12 +6,20 @@ let breadth_first_search ?max_it:(max_it = max_int) root expansion key =
   let add_child parent accum data =
     let child = 
       { data = data;
-	parent = parent;
+	parent = [parent];
 	children = []; } in
-    if (Hashtbl.mem closed (key child))
-    then accum
-    else (Hashtbl.add closed (key child) child;
-	  child::accum) in
+    try
+      let prev = Hashtbl.find closed (key child) in
+      if (check_cycle key child parent)
+      then accum (* this isn't DAG any more, do I want to bail? *)
+      else
+	begin
+	  prev.parent <- parent::prev.parent;
+	  accum
+	end
+    with Not_found ->
+      (Hashtbl.add closed (key child) child;
+       child::accum) in
   let expansion node =
     assert(node.children = []); (* not yet expanded *)
     node.children <-
@@ -25,7 +33,7 @@ let breadth_first_search ?max_it:(max_it = max_int) root expansion key =
       else loop (it + 1) (List.rev_append tail (expansion head)) in
   let rec root_node =
     { data = root;
-      parent = root_node;
+      parent = [];
       children = []; } in 
   Hashtbl.add closed (key root_node) root_node;
   loop 0 [root_node];
