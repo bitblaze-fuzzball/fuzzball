@@ -5,6 +5,14 @@
 
 type offset_strategy = UniformStrat | BiasedSmallStrat
 
+type supported_veritesting =
+| NoVeritesting
+| BFS
+| DFS
+| Linear
+| Diamond of int
+
+
 val offset_strategy_of_string : string -> offset_strategy
 
 type execution_arch = X86 | X64 | ARM
@@ -189,4 +197,5 @@ val state_start_addr : int64 option ref
 
 val opt_memory_watching : bool ref
 val opt_bb_size : int ref
-
+val set_opt_veritesting : string -> unit
+val opt_veritesting : supported_veritesting ref

@@ -3,8 +3,15 @@
   Security Inc.  All rights reserved.
 *)
 
-
 type offset_strategy = UniformStrat | BiasedSmallStrat
+
+type supported_veritesting =
+| NoVeritesting
+| BFS
+| DFS
+| Linear
+| Diamond of int
+
 
 let offset_strategy_of_string s =
   match s with
@@ -193,6 +200,27 @@ let opt_skip_timeouts = ref false
 let opt_memory_watching = ref false
 
 let opt_bb_size = ref 1
+let opt_veritesting = ref NoVeritesting
+
+
+let convert_string_to_veritesting str =
+  let str' = String.uppercase str in
+  if (String.compare "NOVERITESTING" str') = 0
+  then NoVeritesting
+  else if (String.compare "BFS" str') = 0
+  then BFS
+  else if (String.compare "DFS" str') = 0
+  then DFS
+  else if (String.compare "LINEAR" str') = 0
+  then Linear
+  else if (String.compare "DIAMOND" str') = 0
+  then Diamond 2 (* fix this later.  Should be able to supply a size as well in that stirng! *)
+  else
+    failwith (Printf.sprintf "Unrecognized: %s\n Expected NoVeritesting, BFS, DFS, Linear, or Diamond." str)
+
+let set_opt_veritesting str =
+  opt_veritesting := (convert_string_to_veritesting str)
+
 
 let asmir_arch () =
   asmir_arch_of_execution_arch !opt_arch

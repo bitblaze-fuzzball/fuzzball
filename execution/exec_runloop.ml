@@ -61,7 +61,7 @@ let decode_insns_cached fm gamma eip =
       identification code.  Comment me out again if you want to be
       able to run fuzzball. **)
 
-  match (find_veritesting_region Linear fm gamma eip !opt_bb_size) with
+  match (find_veritesting_region fm gamma eip !opt_bb_size) with
   | None -> with_trans_cache eip decode_call
   | Some progn -> progn
 

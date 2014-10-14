@@ -515,6 +515,7 @@ let cmdline_opts =
     ("-memory-watching", Arg.Set(opt_memory_watching),
      " Pay attention to memory related issues");
     ("-basic-block-size", Arg.Set_int(opt_bb_size), "N Sets basic block size to N.  Default 1."); 
+    ("-veritesting-style", Arg.String set_opt_veritesting, "String Sets veritesting strategy.  Default NoVeritesting.");     
   ]
 
 let trace_replay_cmdline_opts =
