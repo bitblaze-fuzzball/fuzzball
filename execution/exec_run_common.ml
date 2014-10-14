@@ -147,20 +147,42 @@ let noop_known_unknowns (dl, sl) =
 
 let trans_cache = Hashtbl.create 100001
 
+let clear_trans_cache () =
+  match !opt_translation_cache_size with
+  | Some limit ->
+    if Hashtbl.length trans_cache > limit then
+      Hashtbl.clear trans_cache
+  | None -> ()
+
 let with_trans_cache (eip:int64) fn =
-  (match !opt_translation_cache_size with
-     | Some limit ->
-	 if Hashtbl.length trans_cache > limit then
-	   Hashtbl.clear trans_cache
-     | None -> ());
+  clear_trans_cache ();
   try
     Hashtbl.find trans_cache eip
   with
       Not_found ->
 	let (dl, sl) = (fn ()) in
-	  Hashtbl.add trans_cache eip
-	    (Frag_simplify.simplify_frag (noop_known_unknowns (dl, sl)));
-	  Hashtbl.find trans_cache eip
+	let to_add = Frag_simplify.simplify_frag (noop_known_unknowns (dl, sl)) in
+	Hashtbl.add trans_cache eip to_add;
+	to_add
+
+let some_none_trans_cache (eip:int64) fn =
+  clear_trans_cache ();
+  try
+    Some (Hashtbl.find trans_cache eip)
+  with
+      Not_found ->
+	begin
+	  match (fn ()) with
+	  | None -> None
+	  | Some (dl,sl) ->
+	    begin
+	      let to_add = Frag_simplify.simplify_frag (noop_known_unknowns (dl, sl)) in
+	      Hashtbl.add trans_cache eip to_add;
+	      Some to_add
+	    end
+	end
+
+
 
 let print_insns start_eip (_, sl) insn_num endl =
   let eip = ref (Some start_eip) in

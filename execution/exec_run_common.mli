@@ -10,6 +10,7 @@ val label_to_eip : string -> int64
 val trans_cache : (int64, Vine.program) Hashtbl.t
 
 val with_trans_cache : int64 -> (unit -> Vine.program) -> Vine.program
+val some_none_trans_cache : int64 -> (unit -> Vine.program option) -> Vine.program option
 
 val print_insns : int64 -> Vine.program -> int64 option -> char -> unit
 

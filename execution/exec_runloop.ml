@@ -55,9 +55,10 @@ let call_replacements fm last_eip eip =
 let loop_detect = Hashtbl.create 1000
     
 let decode_insns_cached fm gamma eip =
-  let decode_call _ = decode_insns fm gamma eip !opt_bb_size in
+  let decode_call _ = decode_insns fm gamma eip !opt_bb_size
+  and veritest_call _ = find_veritesting_region fm gamma eip !opt_bb_size in
   let (decls, stmts) as return =
-    match (find_veritesting_region fm gamma eip !opt_bb_size) with
+    match (some_none_trans_cache eip veritest_call) with
     | None -> with_trans_cache eip decode_call
     | Some progn -> progn in
   if false

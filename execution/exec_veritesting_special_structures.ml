@@ -65,7 +65,9 @@ let detect_diamond ?max_depth:(max_depth = 2) root expansion =
 	  then Some root
 	  else None
 	end
-      else loop (it + 1) (List.rev_append tail (expansion head)) in
+      else (match head with
+      | Undecoded _ -> loop (it + 1) (List.rev_append tail (expansion head))
+      | _ -> loop it (List.rev_append tail (expansion head))) in
   Hashtbl.add closed (key root) root;
   loop 0 [root]
        
