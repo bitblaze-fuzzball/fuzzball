@@ -147,6 +147,8 @@ class virtual fragment_machine : object
 
   method virtual store_str : int64 -> int64 -> string -> unit
 
+  method virtual populate_symbolic_region :
+    string -> int -> int64 -> int -> unit
   method virtual make_symbolic_region : int64 -> int -> unit
 
   method virtual store_symbolic_cstr : int64 -> int -> bool -> bool -> unit
@@ -383,6 +385,7 @@ sig
 
     method store_str : int64 -> int64 -> string -> unit
 
+    method populate_symbolic_region : string -> int -> int64 -> int -> unit
     method make_symbolic_region : int64 -> int -> unit
 
     method store_symbolic_cstr : int64 -> int -> bool -> bool -> unit

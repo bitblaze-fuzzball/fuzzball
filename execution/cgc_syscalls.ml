@@ -131,11 +131,24 @@ object(self)
   val mutable num_receives = 0
   val mutable saved_num_receives = 0
 
+  val mutable receive_pos = 0
+  val mutable saved_receive_pos = 0
+
+  val mutable random_pos = 0
+  val mutable saved_random_pos = 0
+
+  val mutable randomness = Random.State.make [|!opt_random_seed; 1|]
+  val mutable saved_randomness = Random.State.make [|0|]
+
   method private save_depth_state =
-    saved_num_receives <- num_receives
+    saved_num_receives <- num_receives;
+    saved_receive_pos <- receive_pos;
+    saved_randomness <- randomness
 
   method private reset_depth_state =
-    num_receives <- saved_num_receives
+    num_receives <- saved_num_receives;
+    receive_pos <- saved_receive_pos;
+    randomness <- saved_randomness
 
   method make_snap = 
     self#save_memory_state;
@@ -239,12 +252,20 @@ object(self)
   method private cgcos_random buf count count_out_p =
     if !opt_symbolic_random then
       fm#maybe_start_symbolic
-	(fun () -> (fm#make_symbolic_region buf count;
-			max_input_string_length :=
-			  max (!max_input_string_length) count))
+	(fun () -> 
+	   (fm#populate_symbolic_region "random" random_pos buf count;
+	    random_pos <- receive_pos + count))
     else
       for i = 0 to count - 1 do
-	let byte = Int64.to_int (Int64.logand (fm#random_word) 0xffL)
+	let byte = 
+	  if !opt_one_random then
+	    (* Deterministic PRNG, with a standard state at the beginning
+	       of execution *)
+	    (Random.State.bits randomness) land 255
+	  else
+	    (* Randomness from the decision tree is different on each
+	       path *)
+	    Int64.to_int (Int64.logand (fm#random_word) 0xffL)
 	in
 	  fm#store_byte_idx buf i byte
       done;
@@ -260,9 +281,11 @@ object(self)
 	   always returns the maximum length of data. *)
 	let num_read = count in
 	  fm#maybe_start_symbolic
-	    (fun () -> (fm#make_symbolic_region buf num_read;
-			max_input_string_length :=
-			  max (!max_input_string_length) num_read));
+	    (fun () ->
+	       (fm#populate_symbolic_region "input0" receive_pos buf num_read;
+		receive_pos <- receive_pos + num_read;
+		max_input_string_length :=
+		  max (!max_input_string_length) receive_pos));
 	  num_read
       else
 	let num_read = Unix.read oc_fd str 0 count in

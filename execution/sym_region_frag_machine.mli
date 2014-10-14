@@ -188,6 +188,7 @@ sig
     method measure_size : int * int
     method store_byte_idx : int64 -> int -> int -> unit
     method store_str : int64 -> int64 -> string -> unit
+    method populate_symbolic_region : string -> int -> int64 -> int -> unit
     method make_symbolic_region : int64 -> int -> unit
     method store_symbolic_cstr : int64 -> int -> bool -> bool -> unit
     method store_concolic_cstr : int64 -> string -> bool -> unit

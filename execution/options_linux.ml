@@ -85,6 +85,8 @@ let linux_cmdline_opts =
      "NUM Stop path after too many receive(2cgc) calls");
     ("-symbolic-random", Arg.Set(opt_symbolic_random),
      " Make all data read by random(2cgc) symbolic");
+    ("-one-random", Arg.Set(opt_one_random),
+     " Make random(2cgc) deterministic");
     ("-skip-timeouts", Arg.Set(opt_skip_timeouts),
      " Don't wait when fdwait(2cgc) says to");
   ]
