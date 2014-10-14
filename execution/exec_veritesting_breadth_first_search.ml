@@ -22,7 +22,7 @@ let breadth_first_search ?max_it:(max_it = max_int) root expansion key =
     | head::tail ->
       if (it > max_it)
       then ()
-      else loop (it + 1) (tail@(expansion head)) in
+      else loop (it + 1) (List.rev_append tail (expansion head)) in
   let rec root_node =
     { data = root;
       parent = root_node;
