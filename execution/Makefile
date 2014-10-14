@@ -50,6 +50,7 @@ export SOURCES = \
 	exec_veritesting_general_search_components.ml \
 	exec_veritesting_breadth_first_search.ml \
 	exec_veritesting_depth_first_search.ml \
+	exec_veritesting_special_structures.ml \
 	exec_encode_veritesting_region.ml \
 	exec_veritesting.ml \
 	exec_runloop.mli exec_runloop.ml \

@@ -10,6 +10,7 @@ open Exec_run_common
 type pointer_statements = {
   eip : int64;
   vine_stmts : V.stmt list;
+  vine_decls : V.decl list;
 }
   
 type breakloop = {
@@ -147,14 +148,16 @@ let expand fm gamma (node : veritesting_data) =
   | Halt _
   | FunCall _ -> [] (* these are non child-bearing nodes *)
   | Instruction i1 ->
-    let _, statement_list = decode_insn_at fm gamma i1.eip in
+    (* the first member is the declaration list *)
+    let decls, statement_list = decode_insn_at fm gamma i1.eip in
   (* right now the legality check is going to catch self loops inside
      of the statement list, so I'm not looking for them here.
      Instead, we're just collecting exit points for the region
      and statement lists executed up until that point. *)
-    let rec walk_statement_list accum = function
+    let rec walk_statement_list stmts = function
       | [] -> [ Instruction {eip = Int64.add i1.eip Int64.one;
-			     vine_stmts = accum;}]
+			     vine_stmts = stmts;
+			     vine_decls = decls}]
       | stmt::tl ->
 	begin
 	  match stmt with
@@ -162,7 +165,8 @@ let expand fm gamma (node : veritesting_data) =
 	    begin
 	      match decode_eip label with
 	    | X86eip value -> [Instruction {eip = value;
-					    vine_stmts = accum }]
+					    vine_stmts = stmts;
+					    vine_decls = decls;}]
 	    | Internal value -> 
 	      (* if we walk off, it should be because the label is
 		 behind us iff labels are only valid local to a vine
@@ -170,7 +174,7 @@ let expand fm gamma (node : veritesting_data) =
 	      begin
 		match walk_to_label label tl with
 		| None -> [InternalLoop i1.eip]
-		| Some next -> walk_statement_list (stmt::accum) next
+		| Some next -> walk_statement_list (stmt::stmts) next
 	      end
 	    end
           | V.CJmp(test, V.Name(true_lab), V.Name(false_lab)) ->
@@ -178,25 +182,29 @@ let expand fm gamma (node : veritesting_data) =
 	      match (decode_eip true_lab), (decode_eip false_lab) with
 	      | X86eip tval, X86eip fval ->
 		[ Instruction {eip = tval;
-			       vine_stmts = V.ExpStmt test :: accum};
+			       vine_stmts = V.ExpStmt test :: stmts;
+			       vine_decls = decls;};
 		  (* this not is bitwise -- might be wrong JTT *)
 		Instruction {eip = fval;
-			     vine_stmts = V.ExpStmt (V.UnOp (V.NOT, test)) :: accum}]
+			     vine_stmts = V.ExpStmt (V.UnOp (V.NOT, test)) :: stmts;
+			     vine_decls = decls;}]
 	      | X86eip tval, Internal fval ->
 		(Instruction {eip = tval;
-			      vine_stmts = V.ExpStmt test :: accum}) ::
+			      vine_stmts = V.ExpStmt test :: stmts;
+			      vine_decls = decls}) ::
 		  (match walk_to_label false_lab tl with
 		  | None -> [InternalLoop i1.eip]
-		  | Some next -> walk_statement_list (stmt::accum) next)
+		  | Some next -> walk_statement_list (stmt::stmts) next)
 	      | Internal tval, X86eip fval ->
 		(Instruction {eip = fval;
-			      vine_stmts = V.ExpStmt (V.UnOp (V.NOT, test)) :: accum}) ::
+			      vine_stmts = V.ExpStmt (V.UnOp (V.NOT, test)) :: stmts;
+			      vine_decls = decls }) ::
 		  (match walk_to_label true_lab tl with
 		  | None -> [InternalLoop i1.eip]
-		  | Some next -> walk_statement_list (stmt::accum) next)
+		  | Some next -> walk_statement_list (stmt::stmts) next)
 	      | Internal tval, Internal fval ->
 		begin
-		  let next = walk_statement_list (stmt::accum) in
+		  let next = walk_statement_list (stmt::stmts) in
 		  match (walk_to_label true_lab tl), (walk_to_label false_lab tl) with
 		  | None, None -> [InternalLoop i1.eip; InternalLoop i1.eip;]
 		  | Some rem, None
@@ -208,6 +216,6 @@ let expand fm gamma (node : veritesting_data) =
 	  | V.Return _ -> [Return i1.eip]
 	  | V.Call _ -> [FunCall i1.eip]
 	  | V.Halt _  -> [Halt i1.eip]
-	  | _ -> walk_statement_list (stmt::accum) tl
+	  | _ -> walk_statement_list (stmt::stmts) tl
 	end in
       walk_statement_list [] statement_list
