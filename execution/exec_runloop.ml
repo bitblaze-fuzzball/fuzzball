@@ -53,44 +53,6 @@ let call_replacements fm last_eip eip =
       | _ -> failwith "Contradictory replacement options"
 
 let loop_detect = Hashtbl.create 1000
-
-let rec last l =
-  match l with
-  | [e] -> e
-  | a :: r -> last r
-  | [] -> failwith "Empty list in last"
-
-
-let rec has_special = function
-  | [] -> false
-  | hd::tl ->
-    match hd with
-    | V.Special("int 0x80") -> true
-    | _ -> has_special tl
-
-
-let tuple_push (dl,sl) (dl',sl') = dl::dl', sl::sl'
-
-let decode_insns fm gamma starting_eip k =
-  let bottom = ([] , []) in
-  let rec decode_insns_int eip remaining =
-    if remaining = 0
-    then bottom (* base case -- exceeded maximum block size *)
-    else let (_,sl) as cur_tup = decode_insn_at fm gamma eip in
-	 if has_special sl
-	 then
-	   if (remaining = k) (* this is the first recursive call *)
-	   then tuple_push cur_tup bottom (* base case -- first inst is a system call *)
-	   else bottom
-	 else match last (rm_unused_stmts sl) with
-	 | V.Jmp(V.Name(lab)) when lab <> "pc_0x0" ->
-	   let next_eip = label_to_eip lab
-	   and remaining' = remaining - 1 in
-	   tuple_push cur_tup (decode_insns_int next_eip remaining')
-	 | _ -> tuple_push cur_tup bottom in (* end of basic block, e.g. indirect jump *)
-  let decl_list_list, statement_list_list = decode_insns_int starting_eip k in  
-  List.concat decl_list_list,
-  List.concat statement_list_list
     
 let decode_insns_cached fm gamma eip =
   let decode_call _ = decode_insns fm gamma eip !opt_bb_size in
@@ -98,10 +60,11 @@ let decode_insns_cached fm gamma eip =
   (** Uncomment me if you want to play with the veritesting region
       identification code.  Comment me out again if you want to be
       able to run fuzzball. **)
-  (*
+
   match (find_veritesting_region Linear fm gamma eip !opt_bb_size) with
   | None -> with_trans_cache eip decode_call
-  | Some progn -> (* progn *)*) with_trans_cache eip decode_call
+  | Some progn -> progn
+
 
 let runloop (fm : fragment_machine) eip asmir_gamma until =
   let rec loop last_eip eip =

@@ -4,7 +4,7 @@ module VOpt = Vine_opt
 open Exec_veritesting_general_search_components
 
 
-let find_linear_region root expansion =
+let find_linear_region ?maxdepth:(maxdepth = 2) root expansion =
   (* Note, there must always be a linear veritesting region of at least
      one node in length.*)
   let closed = Hashtbl.create 100 in
@@ -27,15 +27,18 @@ let find_linear_region root expansion =
     | [child] -> add_child node child
     | []
     | _::_ -> None in
-  let rec loop node =
-    match expand node with
-    | None -> None
-    | Some next -> loop next in
+  let rec loop depth node =
+    if (depth = maxdepth)
+    then make_exit node
+    else
+      match expand node with
+      | None -> None
+      | Some next -> loop (depth + 1) next in
   let rec root_node =
     { data = root;
       parent = [];
       children = []; } in 
-  ignore(loop root_node);
+  ignore(loop 0 root_node);
   Some root_node
 
 

@@ -75,7 +75,7 @@ let rec exp_of_stmt context = function
   | V.Assert exp
   | V.Halt exp -> Expression exp
   | V.Label label -> Expression (V.Name label)
-  | V.Special string -> Nothing (* failwith "Don't know what to do with magic"*)
+  | V.Special string -> failwith "Don't know what to do with magic"
   | V.Move (lval, exp) -> ContextUpdate (lval, exp)
   | V.Comment string -> Nothing
   | V.Block (decls, stmts) -> Expression 
@@ -101,12 +101,18 @@ and wsl_int context = function
     
 
 let stmts_of_data = function
-  | Search.Instruction pointer_statements -> pointer_statements.Search.vine_stmts
+  (** most vine statements just break out of the veritesting region, so
+      we encode these as the JMP statement to the first instruction
+     that ended the veritesting region. *)
   | Search.SysCall eip
   | Search.InternalLoop eip
   | Search.Return eip
   | Search.Halt eip
-  | Search.FunCall eip -> [V.Jmp (V.Name (Printf.sprintf "pc_%Lx" eip)) ]
+  | Search.Special eip
+  | Search.SearchLimit eip
+  | Search.FunCall eip -> let str = Printf.sprintf "pc_0x%Lx" eip in
+			  [V.Jmp (V.Name str) ]
+  | Search.Instruction pointer_statements -> pointer_statements.Search.vine_stmts
   | Search.BreakLoop eip -> failwith "BreakLoop stmts_of_data: stub"
 
 let decls_of_data = function 
@@ -132,10 +138,22 @@ let walk_statements context id (node : Search.node) =
     let to_add = walk_statement_list context (stmts_of_data node_data) in
     Hashtbl.add cached_statments id to_add;
     (* do the substitution at the last moment *)
-    (handle_context context to_add)
+    (* (handle_context context to_add) *)
+    to_add
 
 let get_decl_list key value accum = value::accum
 
+
+let encode_region ?context:(context = []) (root : Search.node) =
+  let rec encode_region_int node =
+    add_declarations node;
+    match node.Search.children with 
+    | [] -> [stmts_of_data node.Search.data]
+    | [one] -> (stmts_of_data node.Search.data) :: (encode_region_int one)
+    | head::tail -> failwith "Cant' handle branches at the moment." in
+  let stmt_list = List.concat (encode_region_int root) in
+  let ret_decl = Hashtbl.fold get_decl_list region_decls [] in
+  ret_decl, stmt_list
 
 let build_equations ?context:(context = []) (root : Search.node) =
   let rec be_int context node =

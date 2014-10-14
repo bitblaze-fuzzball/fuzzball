@@ -9,6 +9,7 @@ open Exec_run_common
 
 type pointer_statements = {
   eip : int64;
+  test : V.exp option;
   vine_stmts : V.stmt list;
   vine_decls : V.decl list;
 }
@@ -25,6 +26,8 @@ type veritesting_data =
 | Halt of int64
 | FunCall of int64
 | SysCall of int64
+| Special of int64
+| SearchLimit of int64
 | Instruction of pointer_statements
 
 
@@ -40,15 +43,27 @@ type vineLabel =
 
 exception UnexpectedEIP
 
+let make_exit parent =
+  match parent.data with
+  | Instruction pdata ->
+    let child = {data = SearchLimit (Int64.add Int64.one pdata.eip);
+		 parent = [parent];
+		 children = [];} in
+    parent.children <- child::parent.children;
+    Some child
+  | _ -> None
+
 
 let veritesting_data_to_string = function
   | BreakLoop at  -> (Printf.sprintf "BreakLoop From 0x%LX To 0x%LX"
 			at.source_eip at.dest_eip)
   | InternalLoop at -> Printf.sprintf "Instruction @ 0x%LX has self loop" at
   | SysCall at -> Printf.sprintf "SysCall @ 0x%LX" at
+  | Special at -> Printf.sprintf "Special Call @ 0x%LX" at
   | Return at -> Printf.sprintf "Return @ 0x%LX" at
   | Halt at ->  Printf.sprintf "Halt @ 0x%LX" at
-  | FunCall at ->  Printf.sprintf "Fun. Call @ 0x%LX" at 
+  | FunCall at ->  Printf.sprintf "Fun. Call @ 0x%LX" at
+  | SearchLimit at ->  Printf.sprintf "Search Limit @ 0x%LX" at
   | Instruction i -> (Printf.sprintf "@ 0x%LX" i.eip)
 
 
@@ -105,6 +120,8 @@ let equal (a : veritesting_data) (b : veritesting_data) =
   | Return i1, Return i2
   | Halt i1, Halt i2
   | SysCall i1, SysCall i2
+  | Special i1, Special i2
+  | SearchLimit i1, SearchLimit i2
   | FunCall i1, FunCall i2 -> i1 = i2
   | Instruction i1, Instruction i2 ->
     (i1.eip = i2.eip) && check_vine_stmts (i1.vine_stmts, i2.vine_stmts)
@@ -146,7 +163,9 @@ let expand fm gamma (node : veritesting_data) =
   | SysCall _
   | Return _
   | Halt _
-  | FunCall _ -> [] (* these are non child-bearing nodes *)
+  | Special _
+  | FunCall _
+  | SearchLimit _ -> [] (* these are non child-bearing nodes *)
   | Instruction i1 ->
     (* the first member is the declaration list *)
     let decls, statement_list = decode_insn_at fm gamma i1.eip in
@@ -156,6 +175,7 @@ let expand fm gamma (node : veritesting_data) =
      and statement lists executed up until that point. *)
     let rec walk_statement_list stmts = function
       | [] -> [ Instruction {eip = Int64.add i1.eip Int64.one;
+			     test = None;
 			     vine_stmts = stmts;
 			     vine_decls = decls}]
       | stmt::tl ->
@@ -165,6 +185,7 @@ let expand fm gamma (node : veritesting_data) =
 	    begin
 	      match decode_eip label with
 	    | X86eip value -> [Instruction {eip = value;
+					    test = None;
 					    vine_stmts = stmts;
 					    vine_decls = decls;}]
 	    | Internal value -> 
@@ -182,14 +203,17 @@ let expand fm gamma (node : veritesting_data) =
 	      match (decode_eip true_lab), (decode_eip false_lab) with
 	      | X86eip tval, X86eip fval ->
 		[ Instruction {eip = tval;
+			       test = Some test;
 			       vine_stmts = V.ExpStmt test :: stmts;
 			       vine_decls = decls;};
-		  (* this not is bitwise -- might be wrong JTT *)
+		  (* this is wrong -- we want to capture the branch condition on the node. *)
 		Instruction {eip = fval;
-			     vine_stmts = V.ExpStmt (V.UnOp (V.NOT, test)) :: stmts;
+			     test = Some (V.UnOp (V.NOT, test));
+			     vine_stmts = stmts;
 			     vine_decls = decls;}]
 	      | X86eip tval, Internal fval ->
 		(Instruction {eip = tval;
+			      test = Some test;
 			      vine_stmts = V.ExpStmt test :: stmts;
 			      vine_decls = decls}) ::
 		  (match walk_to_label false_lab tl with
@@ -197,6 +221,7 @@ let expand fm gamma (node : veritesting_data) =
 		  | Some next -> walk_statement_list (stmt::stmts) next)
 	      | Internal tval, X86eip fval ->
 		(Instruction {eip = fval;
+			      test = Some (V.UnOp (V.NOT, test));
 			      vine_stmts = V.ExpStmt (V.UnOp (V.NOT, test)) :: stmts;
 			      vine_decls = decls }) ::
 		  (match walk_to_label true_lab tl with
@@ -212,7 +237,9 @@ let expand fm gamma (node : veritesting_data) =
 		  | Some r1, Some r2 -> List.rev_append (next r1) (next r2)
 		end
 	    end
+	      (* Why One? *)
 	  | V.Special("int 0x80") -> [SysCall (Int64.add i1.eip Int64.one);]
+	  | V.Special _ -> [Special i1.eip]
 	  | V.Return _ -> [Return i1.eip]
 	  | V.Call _ -> [FunCall i1.eip]
 	  | V.Halt _  -> [Halt i1.eip]

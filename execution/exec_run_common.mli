@@ -17,3 +17,11 @@ val run_one_insn : Fragment_machine.fragment_machine -> Asmir.varctx -> int64
   -> char array -> int64
 
 val decode_insn_at : Fragment_machine.fragment_machine -> Asmir.varctx -> int64 -> Vine.decl list * Vine.stmt list
+
+val decode_insns : Fragment_machine.fragment_machine -> Asmir.varctx -> int64 -> int -> Vine.decl list * Vine.stmt list
+
+val last : 'a list -> 'a
+
+val has_special : Vine.stmt list -> bool
+
+val tuple_push : 'a * 'b -> 'a list * 'b list -> 'a list * 'b list
