@@ -28,17 +28,17 @@ let rename_var name =
     done;
     !new_name
 
-let map_lines f chan =
+let map_lines f chan solver =
   let results = ref [] in
     (try while true do
-       match (f (input_line chan)) with
+       match (f (input_line chan) solver) with
 	 | Some x -> results := x :: !results
 	 | None -> ()
      done
      with End_of_file -> ());
     List.rev !results
 
-let parse_counterex line =
+let parse_stp_ce line =
   if line = "sat" then
     raise End_of_file
   else
@@ -81,18 +81,71 @@ let parse_counterex line =
        in
 	 Some (varname, value))
 
+let parse_cvc4_ce line =
+  if line = ")" then
+    raise End_of_file
+  else if line = "(model" then
+    None
+  else
+    (assert((String.sub line 0 12) = "(define-fun ");
+     assert((String.sub line ((String.length line) - 1) 1) = ")");
+     let trimmed1 = String.sub line 12 ((String.length line) - 13) in
+     let var_end = String.index trimmed1 ' ' in
+     let varname = String.sub trimmed1 0 var_end in
+     let trimmed2 = String.sub trimmed1 (var_end + 4)
+       ((String.length trimmed1) - (var_end + 4))
+     in
+       assert(((String.sub trimmed2 0 4) = "Bool") ||
+		 ((String.sub trimmed2 0 10) = "(_ BitVec "));
+       let trimmed3 =
+	 if (String.sub trimmed2 0 4) = "Bool" then
+	   String.sub trimmed2 5 ((String.length trimmed2) - 5)
+	 else
+	   let type_end = String.index trimmed2 ')' in
+	     String.sub trimmed2 (type_end + 2)
+	       ((String.length trimmed2) - (type_end + 2))
+       in
+         assert(((String.sub trimmed3 0 4) = "true") ||
+		   ((String.sub trimmed3 0 5) = "false") ||
+		   ((String.sub trimmed3 0 5) = "(_ bv"));
+	 let value = Int64.of_string
+	   (if (String.sub trimmed3 0 4) = "true" then
+	      "1"
+	    else if (String.sub trimmed3 0 5) = "false" then
+	      "0"
+	    else
+              let trimmed4 = String.sub trimmed3 5
+		((String.length trimmed3) - 5)
+	      in
+	      let val_end = String.index trimmed4 ' ' in
+	        String.sub trimmed4 0 val_end)
+	 in
+	   Some ((rename_var varname), value))
 
-class smtlib_external_engine fname = object(self)
+let parse_counterex line solver =
+  if solver = "cvc4" then
+    parse_cvc4_ce line
+  else
+    parse_stp_ce line
+
+class smtlib_external_engine solver = object(self)
   inherit query_engine
 
   val mutable visitor = None
   val mutable first_query = true
   val mutable solver_chans =
-    let timeout_opt = match !opt_solver_timeout with
-      | Some s -> "-g " ^ (string_of_int s) ^ " "
-      | None -> ""
-    in
-      Unix.open_process (!opt_stp_path ^ " --SMTLIB2 -p " ^ timeout_opt)
+    if solver = "cvc4" then
+      let timeout_opt = match !opt_solver_timeout with
+	| Some s -> "--tlimit-per " ^ (string_of_int s) ^ "000 "
+	| None -> ""
+      in
+        Unix.open_process (!opt_solver_path ^ " --lang smt -im " ^ timeout_opt)
+    else
+      let timeout_opt = match !opt_solver_timeout with
+	| Some s -> "-g " ^ (string_of_int s) ^ " "
+	| None -> ""
+      in
+        Unix.open_process (!opt_solver_path ^ " --SMTLIB2 -p " ^ timeout_opt)
 
   val mutable log_file =
     if !opt_save_solver_files then
@@ -170,20 +223,26 @@ class smtlib_external_engine fname = object(self)
       let result_s = input_line solver_in in
       let first_assert = (String.sub result_s 0 3) = "ASS" in
       let result = match result_s with
-       | "unsat" -> Some true
-       | "Timed Out." -> Printf.printf "STP timeout\n"; None
-       | "sat" -> Some false
-       | _ when first_assert -> Some false
-       | _ -> failwith ("Unexpected first output line " ^ result_s)
+	| "unsat" -> Some true
+	| "Timed Out." -> Printf.printf "STP timeout\n"; None
+	| "unknown" -> Printf.printf "Solver timeout\n"; None
+	| "sat" -> Some false
+	| _ when first_assert -> Some false
+	| _ -> failwith ("Unexpected first output line " ^ result_s)
       in
       let first_assign = if first_assert then
-         [(match parse_counterex result_s with
-         | Some ce -> ce | None -> failwith "Unexpected parse failure")]
-      else
-        [] in
+	  [(match parse_counterex result_s solver with
+	  | Some ce -> ce | None -> failwith "Unexpected parse failure")]
+	else
+	  [] in
       let ce =
 	if (result = Some false) && first_assert then
-          map_lines parse_counterex solver_in
+	  map_lines parse_counterex solver_in solver
+	else if (result = Some false) && solver = "cvc4" then
+	  (output_string_log log_file solver_out "(get-model)\n";
+	  flush solver_out;
+	  if !opt_save_solver_files then flush log_file;
+	  map_lines parse_counterex solver_in solver)
 	else
           []
       in
@@ -193,16 +252,26 @@ class smtlib_external_engine fname = object(self)
     if save_results then
       Printf.printf "Solver queries are in solver_input.smt\n"
 
+  method private reset_solver_chans =
+    solver_chans <-
+      if solver = "cvc4" then
+	let timeout_opt = match !opt_solver_timeout with
+	  | Some s -> "--tlimit-per " ^ (string_of_int s) ^ " "
+	  | None -> ""
+	in
+          Unix.open_process (!opt_solver_path ^ " --lang smt -im " ^ timeout_opt)
+      else
+	let timeout_opt = match !opt_solver_timeout with
+	  | Some s -> "-g " ^ (string_of_int s) ^ " "
+	  | None -> ""
+	in
+          Unix.open_process (!opt_solver_path ^ " --SMTLIB2 -p " ^ timeout_opt)
+
   method reset =
-    let (solver_in, solver_out) = solver_chans
-    and timeout_opt = match !opt_solver_timeout with
-      | Some s -> "-g " ^ (string_of_int s) ^ " "
-      | None -> ""
-    in
+    let (solver_in, solver_out) = solver_chans in
       output_string_log log_file solver_out "(exit)\n\n\n\n\n";
       ignore(Unix.close_process solver_chans);
-      solver_chans <-
-       Unix.open_process (!opt_stp_path ^ " --SMTLIB2 -p " ^ timeout_opt);
+      self#reset_solver_chans;
       first_query <- true;
       visitor <- None;
 

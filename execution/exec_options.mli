@@ -29,7 +29,7 @@ val opt_measure_influence_syscall_args : bool ref
 val opt_solver_timeout : int option ref
 val opt_solver_slow_time : float ref
 val opt_save_solver_files : bool ref
-val opt_stp_path : string ref
+val opt_solver_path : string ref
 val opt_follow_path : string ref
 val opt_branch_preference : (int64, int64) Hashtbl.t
 val opt_iteration_limit : int64 ref
