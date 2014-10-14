@@ -98,7 +98,7 @@ let decode_insns_cached fm gamma eip =
   (** Uncomment me if you want to play with the veritesting region identification code.
       Comment me out again if you want to be able to run fuzzball. **)
   
-  (* ignore(find_veritesting_region_m2 fm gamma eip !opt_bb_size); *)
+  (* ignore(find_veritesting_region BFS fm gamma eip !opt_bb_size); *)
   with_trans_cache eip decode_call
 
 let runloop (fm : fragment_machine) eip asmir_gamma until =
