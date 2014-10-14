@@ -49,6 +49,18 @@ type typ =
 | Array  of typ * int64 (** Array of element type, size. *)
 | TAttr of typ * attributes
 
+let typ_to_string = function
+| REG_1 -> "REG_1"
+| REG_8 -> "REG_8"
+| REG_16 -> "REG_16"
+| REG_32 -> "REG_32"
+| REG_64 -> "REG_64"
+| TString -> "TString"
+| TMem _ -> "TMem"
+| TFun _ -> "TFun" 
+| Array  _ -> "Array" 
+| TAttr _ -> "TAttr"  
+
 type var = int * string * typ
 (** The type for a variable identifier.
     The int should uniquely identify the variable. The string is simply to make
@@ -94,31 +106,39 @@ module VarMap = Map.Make(Var)
 module VarSet = Set.Make(Var)
 
 (** Different forms of casting *)
-type cast_type = CAST_UNSIGNED (** 0-padding widening cast. *)
-		 | CAST_SIGNED (** Sign-extending widening cast. *)
-		 | CAST_HIGH (** Narrowning cast. Keeps the high bits. *)
-		 | CAST_LOW (** Narrowing cast. Keeps the low bits. *)
+type cast_type = 
+| CAST_UNSIGNED (** 0-padding widening cast. *)
+| CAST_SIGNED (** Sign-extending widening cast. *)
+| CAST_HIGH (** Narrowning cast. Keeps the high bits. *)
+| CAST_LOW (** Narrowing cast. Keeps the low bits. *)
+
+let cast_to_string = function
+  | CAST_UNSIGNED -> "Cast Unsigned"
+  | CAST_SIGNED -> "Cast Signed"
+  | CAST_HIGH -> "Cast High"
+  | CAST_LOW -> "Cast Low"
 
 (** Binary operations implemented in the IR *)
-type binop_type = PLUS (** Integer addition. (commutative, associative) *)
-		  | MINUS (** Subtract second integer from first. *)
-		  | TIMES (** Integer multiplication. (commutative, associative)*)
-		  | DIVIDE (** Unsigned integer division. *)
-		  | SDIVIDE (** Signed integer division. *)
-		  | MOD (** Unsigned modulus. *)
-		  | SMOD (** Signed modulus. *)
-		  | LSHIFT (** Left shift. *)
-		  | RSHIFT (** Right shift, fill with 0. *)
-		  | ARSHIFT (** Right shift, sign extend. *)
-		  | BITAND (** Bitwise and. (commutative, associative) *)
-		  | BITOR (** Bitwise or. (commutative, associative) *)
-		  | XOR (** Bitwise xor. (commutative, associative) *)
-		  | EQ (** Equals (commutative) (associative on booleans) *)
-		  | NEQ (** Not equals (commutative) (associative on booleans) *)
-		  | LT (** Unsigned less than *)
-		  | LE (** Unsigned less than or equal to *)
-		  | SLT (** Signed less than *)
-		  | SLE (** Signed less than or equal to *)
+type binop_type = 
+| PLUS (** Integer addition. (commutative, associative) *)
+| MINUS (** Subtract second integer from first. *)
+| TIMES (** Integer multiplication. (commutative, associative)*)
+| DIVIDE (** Unsigned integer division. *)
+| SDIVIDE (** Signed integer division. *)
+| MOD (** Unsigned modulus. *)
+| SMOD (** Signed modulus. *)
+| LSHIFT (** Left shift. *)
+| RSHIFT (** Right shift, fill with 0. *)
+| ARSHIFT (** Right shift, sign extend. *)
+| BITAND (** Bitwise and. (commutative, associative) *)
+| BITOR (** Bitwise or. (commutative, associative) *)
+| XOR (** Bitwise xor. (commutative, associative) *)
+| EQ (** Equals (commutative) (associative on booleans) *)
+| NEQ (** Not equals (commutative) (associative on booleans) *)
+| LT (** Unsigned less than *)
+| LE (** Unsigned less than or equal to *)
+| SLT (** Signed less than *)
+| SLE (** Signed less than or equal to *)
                   
 
 (** Unary operations implemented in the IR *)

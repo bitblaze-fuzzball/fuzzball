@@ -153,6 +153,8 @@ val pp_typ : (string -> unit) -> typ -> unit
 val exp_to_string : exp -> string
 val lval_to_string : lvalue -> string
 val decl_to_string : decl -> string
+val typ_to_string : typ -> string
+val cast_to_string : cast_type -> string
 val var_to_string : var -> string
 val stmt_to_string : stmt -> string
 val stmt_to_channel : out_channel -> stmt -> unit
