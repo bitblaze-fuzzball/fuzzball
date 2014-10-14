@@ -1,8 +1,7 @@
 open Exec_veritesting_general_search_components
 
-let breadth_first_search ?max_it:(max_it = max_int) root expansion key =
-  let closed = Hashtbl.create 100
-  and key node = key node.data in
+let breadth_first_search ?max_it:(max_it = max_int) root expansion =
+  let closed = Hashtbl.create 100 in
   let add_child parent accum data =
     let child = 
       { data = data;
@@ -10,7 +9,7 @@ let breadth_first_search ?max_it:(max_it = max_int) root expansion key =
 	children = []; } in
     try
       let prev = Hashtbl.find closed (key child) in
-      if (check_cycle key child parent)
+      if (check_cycle child parent)
       then accum (* this isn't DAG any more, do I want to bail? *)
       else
 	begin
