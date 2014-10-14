@@ -1,7 +1,8 @@
 open Exec_veritesting_general_search_components
-open Exec_veritesting_breadth_first_search
-open Exec_veritesting_depth_first_search
+module BFS = Exec_veritesting_breadth_first_search
+module DFS = Exec_veritesting_depth_first_search
 module V = Vine
+module Encode = Exec_encode_veritesting_region
 
 type supported_searches =
 | BFS
@@ -11,12 +12,12 @@ let find_veritesting_region search fm gamma starting_eip max_depth =
   let root_of_region =
     match search with
     | BFS ->
-      breadth_first_search ~max_it:max_depth
+      BFS.breadth_first_search ~max_it:max_depth
         (Instruction { eip = starting_eip;
   		       vine_stmts = []; })
 	(expand fm gamma)
     | DFS ->
-      depth_first_search ~max_depth:max_depth
+      DFS.depth_first_search ~max_depth:max_depth
         (Instruction { eip = starting_eip;
   		       vine_stmts = []; })
 	(expand fm gamma)
@@ -27,5 +28,5 @@ let find_veritesting_region search fm gamma starting_eip max_depth =
     List.iter (print_region ~offset:(offset + 1)) node.children in
   print_region root_of_region;
   Printf.printf "\n";
-  V.stmt_to_channel stdout (V.ExpStmt (build_equations root_of_region));
+  V.stmt_to_channel stdout (V.ExpStmt (Encode.build_equations root_of_region));
   Printf.printf "\n"
