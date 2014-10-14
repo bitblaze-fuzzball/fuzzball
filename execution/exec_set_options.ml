@@ -478,6 +478,8 @@ let cmdline_opts =
      "eip:expr Check boolean assertion at address");
     ("-finish-on-nonfalse-cond", Arg.Set(opt_finish_on_nonfalse_cond),
      " Finish exploration if -c-c-a condition could be true");
+    ("-finish-reasons-needed", Arg.Set_int(opt_finish_reasons_needed),
+     "n Require N finish reasons to finish");
     ("-extra-condition", Arg.String
        (fun s -> opt_extra_condition_strings :=
 	  s :: !opt_extra_condition_strings),

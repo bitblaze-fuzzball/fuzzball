@@ -8,16 +8,27 @@ open Exec_options;;
 let opt_solver = ref "stp-external"
 let opt_solver_check_against = ref "none"
 
+let opt_smtlib_solver_type = ref None
+
 let solver_cmdline_opts =
   [
     ("-solver", Arg.Set_string(opt_solver),
-     "solver stpvc (internal) or stp-external (cf. -stp-path)");
+     "solver smtlib or stpvc (internal) or stp-external (cf. -stp-path)");
     ("-solver-check-against", Arg.Set_string(opt_solver_check_against),
      "solver Compare solver results with the given one");
-    ("-stp-path", Arg.Set_string(opt_stp_path),
-     "path Location of external STP binary");
+    ("-solver-path", Arg.Set_string(opt_solver_path),
+     "path Location of external SMT solver binary");
+    ("-stp-path", Arg.Set_string(opt_solver_path),
+     "path Former name of -solver-path");
+    ("-smtlib-solver-type", Arg.String
+       (function
+	  | "stp" -> opt_smtlib_solver_type := Some "stp"
+	  | "cvc4" -> opt_smtlib_solver_type := Some "cvc4"
+	  | _ -> failwith "Unrecognized -smtlib-solver-type"
+       ),
+     "type stp,cvc4 (default is guessed from path)");
     ("-save-solver-files", Arg.Set(opt_save_solver_files),
-     " Retain STP input and output files");
+     " Retain solver input and output files");
     ("-solver-slow-time", Arg.Set_float(opt_solver_slow_time),
      "secs Save queries that take longer than SECS");
     ("-solver-timeout", Arg.String
@@ -35,6 +46,15 @@ let solver_cmdline_opts =
      " Keep going even if the solver fails/crashes");
   ]
 
+let ends_with long suffix =
+  let long_len = String.length long and
+      suffix_len = String.length suffix
+  in
+  if long_len < suffix_len then
+    false
+  else
+    (String.sub long (long_len - suffix_len) suffix_len) = suffix
+
 let solvers_table = 
   (let h = Hashtbl.create 7 in
      Hashtbl.replace h "none" (fun _ -> None);
@@ -44,6 +64,19 @@ let solvers_table =
      Hashtbl.replace h "stp-external"
        (fun s ->
 	  Some (new Stp_external_engine.stp_external_engine ("fuzz" ^ s)));
+     Hashtbl.replace h "smtlib"
+       (fun s ->
+	  let stype = match !opt_smtlib_solver_type with
+	    | Some s -> s
+	    | None ->
+		if ends_with !opt_solver_path "stp" then
+		  "stp"
+		else if ends_with !opt_solver_path "cvc4" then
+		  "cvc4"
+		else
+		  failwith "Please specify -smtlib-solver-type"
+	  in
+	    Some (new Smtlib_external_engine.smtlib_external_engine stype));
      h)
 
 let construct_solver suffix =

@@ -600,6 +600,7 @@ struct
     method eip_hook eip =
       if List.mem eip !opt_disqualify_addrs then
 	(self#disqualify_path;
+	 fm#unfinish_fuzz "Disqualified path";
 	 raise DisqualifiedPath);
       (if !opt_measure_influence_reploops then
 	 let prefix = fm#load_byte_conc eip in

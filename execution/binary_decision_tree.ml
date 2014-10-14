@@ -689,7 +689,12 @@ class binary_decision_tree = object(self)
       (* check the invariant that a node can only be marked all_seen
 	 if all of its children are. *)
       (match get_f_child n with
-	 | Some(Some kid) -> assert(kid.all_seen);
+	 | Some(Some kid) ->
+	     if not kid.all_seen then
+	       (Printf.printf "all_seen invariant failure: parent %d is all seen, but not true child %d%!\n"
+		  n.ident kid.ident;
+		self#print_tree stdout;
+		assert(kid.all_seen));
 	 | _ -> ());
       (match get_t_child n with
 	 | Some(Some kid) ->

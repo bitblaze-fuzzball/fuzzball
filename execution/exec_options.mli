@@ -39,7 +39,7 @@ val opt_measure_influence_syscall_args : bool ref
 val opt_solver_timeout : int option ref
 val opt_solver_slow_time : float ref
 val opt_save_solver_files : bool ref
-val opt_stp_path : string ref
+val opt_solver_path : string ref
 val opt_follow_path : string ref
 val opt_branch_preference : (int64, int64) Hashtbl.t
 val opt_iteration_limit : int64 ref
@@ -125,6 +125,7 @@ val opt_stop_on_symbolic_syscall_args : bool ref
 val opt_chroot_path : string option ref
 val opt_finish_on_nonfalse_cond : bool ref
 val opt_finish_immediately : bool ref
+val opt_finish_reasons_needed : int ref
 val opt_total_timeout : float option ref
 val opt_x87_emulator : string option ref
 val opt_x87_entry_point : int64 option ref

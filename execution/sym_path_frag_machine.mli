@@ -121,6 +121,9 @@ sig
     method started_symbolic : bool
     method maybe_start_symbolic : (unit -> unit) -> unit
     method start_symbolic : unit
+    method finish_fuzz : string -> unit
+    method unfinish_fuzz : string -> unit
+    method finish_reasons : string list
     method make_snap : unit -> unit
     method add_special_handler : Fragment_machine.special_handler -> unit
     method handle_special : string -> Vine.stmt list option

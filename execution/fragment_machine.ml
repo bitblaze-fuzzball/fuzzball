@@ -28,23 +28,6 @@ let move_hash src dest =
   V.VarHash.clear dest;
   V.VarHash.iter add src
 
-let fuzz_finish_reasons = ref []
-let reason_warned = ref false
-
-let finish_fuzz s =
-  if !opt_finish_immediately then
-    (Printf.printf "Finishing (immediately), %s\n" s;
-     fuzz_finish_reasons := s :: !fuzz_finish_reasons;
-     raise FinishNow);
-  if !opt_trace_stopping then
-    Printf.printf "Final iteration (%d previous reasons), %s\n" (List.length !fuzz_finish_reasons) s;
-  if List.length !fuzz_finish_reasons < 15 then
-    fuzz_finish_reasons := s :: !fuzz_finish_reasons
-  else
-    if !opt_trace_stopping || !reason_warned then (
-      reason_warned := true;
-      Printf.printf "fuzz_finish_reasons list exceeded 15... ignoring new reason\n")
-
 let skip_strings =
   (let h = Hashtbl.create 2 in
      Hashtbl.replace h "NoOp" ();
@@ -54,7 +37,8 @@ let skip_strings =
 (* The interface for Vine to give us the disassembly of an instruction
    is to put it in a comment, but it uses comments for other things as
    well. So this code tries to filter out all the things that are not
-   instruction disassemblies. It be cleaner to have a special syntax. *)
+   instruction disassemblies. It would be cleaner to have a special
+   syntax. *)
 let comment_is_insn s =
   (not (Hashtbl.mem skip_strings s))
   && ((String.length s < 13) || (String.sub s 0 13) <> "eflags thunk:")
@@ -225,6 +209,10 @@ class virtual fragment_machine = object
   method virtual started_symbolic : bool
   method virtual maybe_start_symbolic : (unit -> unit) -> unit
   method virtual start_symbolic : unit
+
+  method virtual finish_fuzz : string -> unit
+  method virtual unfinish_fuzz : string -> unit
+  method virtual finish_reasons : string list
 
   method virtual make_snap : unit -> unit
   method virtual reset : unit -> unit
@@ -1197,12 +1185,40 @@ struct
       snap <- (V.VarHash.copy reg_store, V.VarHash.copy temps);
       List.iter snap_handler special_handler_list
 
+    val mutable fuzz_finish_reasons = []
+    val mutable reason_warned = false
+
+    method finish_fuzz s =
+      if !opt_finish_immediately then
+	(Printf.printf "Finishing (immediately), %s\n" s;
+	 fuzz_finish_reasons <- s :: fuzz_finish_reasons;
+	 raise FinishNow);
+      if !opt_trace_stopping then
+	Printf.printf "Final iteration (%d previous reasons), %s\n"
+	  (List.length fuzz_finish_reasons) s;
+      if List.length fuzz_finish_reasons < 15 then
+	fuzz_finish_reasons <- s :: fuzz_finish_reasons
+      else
+	if !opt_trace_stopping || reason_warned then (
+	  reason_warned <- true;
+	  Printf.printf ("fuzz_finish_reasons list exceeded 15..."
+			 ^^" ignoring new reason\n"))
+
+    method unfinish_fuzz s =
+      fuzz_finish_reasons <- [];
+      if !opt_trace_stopping then
+	Printf.printf "Non-finish condition %s\n" s
+
+    method finish_reasons =
+      fuzz_finish_reasons
+
     method reset () =
       let reset h = h#reset in
       mem#reset ();
       (match snap with (r, t) ->
 	 move_hash r reg_store;
 	 move_hash t temps);
+      fuzz_finish_reasons <- [];
       List.iter reset special_handler_list
 
     method add_special_handler (h:special_handler) =

@@ -148,7 +148,7 @@ let fuzz start_eip opt_fuzz_start_eip end_eips
 		  | NullDereference ->
 		    if !opt_finish_on_null_deref then (
 		      log_fuzz_restart Log.trace "concrete null dereference";
-		      finish_fuzz "concrete null dereference"
+		      fm#finish_fuzz "concrete null dereference"
 		    );
 		    log_fuzz_restart Log.trace "at null deref";
 		    stop "at null deref"
@@ -224,15 +224,18 @@ let fuzz start_eip opt_fuzz_start_eip end_eips
 	       periodic_stats fm false false;
 	       if not fm#finish_path then raise LastIteration;
 	       if !opt_concrete_path then raise LastIteration;
-	       (match !Fragment_machine.fuzz_finish_reasons with
-	       | [] -> ()
-	       | _ ->
-		 if !opt_trace_stopping then (
-		   Printf.printf "Finished, %s\n" (List.fold_left (fun a s ->
-		     if a = "" then s
-		     else a ^ ", " ^ s
-		   ) "" !Fragment_machine.fuzz_finish_reasons);
-		 ); raise LastIteration);
+	       (match fm#finish_reasons with
+		  | (_ :: _) as l
+		      when (List.length l) >= !opt_finish_reasons_needed
+			->
+		      if !opt_trace_stopping then
+			Printf.printf "Finished, %s\n"
+			  (List.fold_left (fun a s ->
+					     if a = "" then s
+					     else a ^ ", " ^ s)
+			     "" l);
+			  raise LastIteration
+		  | _ -> ());
 	       if !opt_concrete_path_simulate then
 		 opt_concrete_path_simulate := false; (* First iter. only *)
 	       reset_cb ();

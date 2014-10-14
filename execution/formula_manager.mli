@@ -75,6 +75,8 @@ sig
 
     method make_ite : D.t -> Vine.typ -> D.t -> D.t -> D.t
 
+    method make_table_lookup : (D.t list) -> Vine.exp -> int -> Vine.typ -> D.t
+
     method if_expr_temp_unit : Vine.var -> (Vine.exp option -> unit) -> unit
 
     method walk_temps : (Vine.var -> Vine.exp -> (Vine.var * Vine.exp)) ->

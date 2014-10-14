@@ -30,6 +30,7 @@ export SOURCES = \
 	query_engine.mli query_engine.ml \
 	stpvc_engine.mli stpvc_engine.ml \
 	stp_external_engine.mli stp_external_engine.ml \
+	smtlib_external_engine.mli smtlib_external_engine.ml \
 	pointer_management.mli pointer_management.ml \
 	concrete_memory.mli concrete_memory.ml \
 	granular_memory.mli granular_memory.ml \

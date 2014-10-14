@@ -1,0 +1,195 @@
+From 46d64a98ab1380646695b0ebc8964350428799fa Mon Sep 17 00:00:00 2001
+From: Matt Morehouse <mattmorehouse@gmail.com>
+Date: Sat, 27 Sep 2014 10:24:32 -0500
+Subject: [PATCH 394/395] Replaced functions deprecated in OCaml 4.02.
+
+String.create and String.set were replaced with Bytes.create and Bytes.set,
+respectively.  Format.pp_get_all_formatter_output_functions and
+Format.pp_set_all_formatter_output_functions were replaced with
+Format.pp_get_formatter_out_functions and
+Format.pp_set_formatter_out_functions, respectively.
+---
+ execution/binary_decision_tree.ml  |  2 +-
+ execution/concrete_memory.ml       |  6 +++---
+ execution/exec_options.ml          |  6 +++---
+ execution/exec_set_options.ml      |  2 +-
+ execution/frag_marshal.ml          |  4 ++--
+ execution/linux_syscalls.ml        |  6 +++---
+ execution/sym_path_frag_machine.ml |  3 +--
+ ocaml/vine.ml                      | 14 +++++++++++---
+ 8 files changed, 25 insertions(+), 18 deletions(-)
+
+diff --git a/execution/binary_decision_tree.ml b/execution/binary_decision_tree.ml
+index ef5b520..39f2deb 100644
+--- a/execution/binary_decision_tree.ml
++++ b/execution/binary_decision_tree.ml
+@@ -127,7 +127,7 @@ let ident_to_node i =
+   if !opt_decision_tree_use_file then
+     ((let off = Unix.lseek (nodes_fd ()) (46 * (i-1)) Unix.SEEK_SET in
+ 	assert(off = 46 * (i-1)));
+-     let buf = String.create 46 in
++     let buf = Bytes.create 46 in
+      let len = Unix.read (nodes_fd ()) buf 0 46 in
+        assert(len = 46);
+        assert(String.sub buf 45 1 = "\n");
+diff --git a/execution/concrete_memory.ml b/execution/concrete_memory.ml
+index e465409..edd52b6 100644
+--- a/execution/concrete_memory.ml
++++ b/execution/concrete_memory.ml
+@@ -117,7 +117,7 @@ class concrete_string_memory = object(self)
+ 	    mem.(page) <- Some new_page;
+ 	    new_page
+     in
+-      page_str.[idx] <- Char.chr b
++      Bytes.set page_str idx (Char.chr b)
+ 
+   method store_page addr newstr =
+     assert(Int64.logand addr 0xfffL = 0L);
+@@ -303,10 +303,10 @@ class string_maybe_memory = object(self)
+ 
+   method store_byte addr b =
+     let (page_str, bitmap, idx) = self#get_pages addr in
+-      page_str.[idx] <- Char.chr b;
++      Bytes.set page_str idx (Char.chr b);
+       let bit = 1 lsl (idx land 7) and
+ 	  bidx = idx lsr 3 in
+-	bitmap.[bidx] <- (Char.chr ((Char.code bitmap.[bidx]) lor bit))
++	Bytes.set bitmap bidx (Char.chr ((Char.code bitmap.[bidx]) lor bit))
+ 	
+   method store_page addr newstr =
+     assert(Int64.logand addr 0xfffL = 0L);
+diff --git a/execution/exec_options.ml b/execution/exec_options.ml
+index 0b1e6b9..6818d26 100644
+--- a/execution/exec_options.ml
++++ b/execution/exec_options.ml
+@@ -183,7 +183,7 @@ let split_string char s =
+ 
+ let unescape str =
+   let len = String.length str in
+-  let s' = String.create len in
++  let s' = Bytes.create len in
+   let rec loop i j =
+     if i >= len then
+       j
+@@ -191,7 +191,7 @@ let unescape str =
+       match str.[i] with
+ 	| '\\' when i + 1 < len ->
+ 	    let char inc c =
+-	      s'.[j] <- c;
++	      Bytes.set s' j c;
+ 	      loop (i + inc + 1) (j + 1)
+ 	    in
+ 	      (match str.[i+1] with
+@@ -212,7 +212,7 @@ let unescape str =
+ 		 | _ -> failwith "Unexpected escape in string unescape"
+ 	      )
+ 	| _ ->
+-	    s'.[j] <- str.[i];
++	    Bytes.set s' j str.[i];
+ 	    loop (i+1) (j+1)
+   in
+   let len' = loop 0 0 in
+diff --git a/execution/exec_set_options.ml b/execution/exec_set_options.ml
+index dbf014d..db93aca 100644
+--- a/execution/exec_set_options.ml
++++ b/execution/exec_set_options.ml
+@@ -195,7 +195,7 @@ let symbolic_state_cmdline_opts =
+ let slurp_file fname =
+   let ic = open_in fname in
+   let len = in_channel_length ic in
+-  let str = String.create len in
++  let str = Bytes.create len in
+     really_input ic str 0 len;
+     close_in ic;
+     str
+diff --git a/execution/frag_marshal.ml b/execution/frag_marshal.ml
+index 3326092..f07cb80 100644
+--- a/execution/frag_marshal.ml
++++ b/execution/frag_marshal.ml
+@@ -230,9 +230,9 @@ let encode_exp_flags e printable =
+     loop e;
+     let len = List.length !chars and
+ 	l = ref (List.rev !chars) in
+-    let str = String.create len in
++    let str = Bytes.create len in
+       for i = 0 to len - 1 do
+-	str.[i] <- (List.hd !l);
++	Bytes.set str i (List.hd !l);
+ 	l := List.tl !l
+       done;
+       (str, !vars)
+diff --git a/execution/linux_syscalls.ml b/execution/linux_syscalls.ml
+index 3939aac..ed23dcc 100644
+--- a/execution/linux_syscalls.ml
++++ b/execution/linux_syscalls.ml
+@@ -134,9 +134,9 @@ class linux_special_handler (fm : fragment_machine) =
+     done
+   in
+   let string_of_char_array ca =
+-    let s = String.create (Array.length ca) in
++    let s = Bytes.create (Array.length ca) in
+       for i = 0 to (Array.length ca) - 1 do
+-	s.[i] <- ca.(i)
++	Bytes.set s i ca.(i)
+       done;
+       s
+   in
+@@ -275,7 +275,7 @@ object(self)
+     the_break := saved_the_break
+ 
+   method string_create len =
+-    try String.create len
++    try Bytes.create len
+     with Invalid_argument("String.create")
+ 	-> raise (Unix.Unix_error(Unix.EFAULT, "String.create", ""))
+ 
+diff --git a/execution/sym_path_frag_machine.ml b/execution/sym_path_frag_machine.ml
+index 41d9315..81dc9df 100644
+--- a/execution/sym_path_frag_machine.ml
++++ b/execution/sym_path_frag_machine.ml
+@@ -76,8 +76,7 @@ struct
+ 	     match self#match_input_var var_s with
+ 	       | Some n -> 
+ 		   assert(n < !max_input_string_length);
+-		   str.[n] <-
+-		     char_of_int_unbounded (Int64.to_int value)
++		   Bytes.set str n (char_of_int_unbounded (Int64.to_int value))
+ 	       | None -> ())
+ 	  ce;
+ 	let str' = ref str in
+diff --git a/ocaml/vine.ml b/ocaml/vine.ml
+index 1b38b4a..c8168a6 100644
+--- a/ocaml/vine.ml
++++ b/ocaml/vine.ml
+@@ -11,6 +11,7 @@
+ 
+ open Vine_util
+ open ExtList
++open Format
+ 
+ module D = Debug.Make(struct let name="Vine" and default=`Debug end)
+ open D
+@@ -746,10 +747,17 @@ let format2string format_fun x =
+   let buf = Buffer.create 1000 in
+   let ft = Format.formatter_of_buffer buf in
+   let (out,flush,newline,spaces) =
+-    Format.pp_get_all_formatter_output_functions ft ()
++    let funcs = Format.pp_get_formatter_out_functions ft () in
++      (funcs.out_string, funcs.out_flush, funcs.out_newline, funcs.out_spaces)
+   in
+-  let () = Format.pp_set_all_formatter_output_functions ft
+-    ~out:out ~flush:flush ~newline:newline ~spaces:(fun _ -> spaces 1)
++  let () = 
++    let funcs = {
++      out_string = out;
++      out_flush = flush;
++      out_newline = newline;
++      out_spaces = (fun _ -> spaces 1);
++    } in
++      Format.pp_set_formatter_out_functions ft funcs
+   in
+   let () = format_fun ft x in
+   let () = Format.pp_print_flush ft () in
+-- 
+2.1.0
+
