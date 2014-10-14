@@ -152,45 +152,47 @@ type lvalue =
 | Mem of var * exp * typ (** A memory reference *)
 
 (** An expression in the IR *)
-and exp = BinOp of binop_type * exp * exp
-	   | UnOp of unop_type * exp
-	   | Constant of  value
-	   | Lval of lvalue
-	   | Name of label (** The address of a label *)
-	   | Cast of cast_type * typ * exp (** Cast to a new type. *)
-	   | Unknown of string (* FIXME: * register_type *)
-	   | Let of lvalue * exp * exp (** Let(lv,e1,e2) binds lv to e1 in
-					   the scope of e2 *)
-	       (* Note: We allow binding memory in an expression, so we don't
-		  need to replace all memory references in the subexpression with
-		  ITEs, when calculating the WP. *)
-	   | Ite of exp * exp * exp (** Functional if-then-else *)
+and exp =
+| BinOp of binop_type * exp * exp
+| UnOp of unop_type * exp
+| Constant of  value
+| Lval of lvalue
+| Name of label (** The address of a label *)
+| Cast of cast_type * typ * exp (** Cast to a new type. *)
+| Unknown of string (* FIXME: * register_type *)
+| Let of lvalue * exp * exp (** Let(lv,e1,e2) binds lv to e1 in
+				the scope of e2 *)
+	   (* Note: We allow binding memory in an expression, so we don't
+	      need to replace all memory references in the subexpression with
+	      ITEs, when calculating the WP. *)
+| Ite of exp * exp * exp (** Functional if-then-else *)
 
 (** The IR statement type. *)
-type stmt = Jmp of exp (** Jump to a label/address *)
-	    | CJmp of exp * exp * exp (** Conditional jump.
-					  If e1 is true, jumps to e2,
-					  otherwise jumps to e3 *)
-	    | Move of lvalue * exp (** Copy the value on the right to the
-				       lvalue on the left *)
-	    | Special of string (** A "special" statement. (does magic) *)
-	    | Label of label (** A label we can jump to *)
-	    | ExpStmt of exp (** An expression which is to be ignored *)
-	    | Comment of string (** A comment to be ignored *)
-	    | Block of decl list * stmt list (** A local scope. Any variables
-						 declared in the block fall
-						 out of scope upon leaving the
-						 block. *)
-	    | Function of label * typ option * decl list * bool * stmt option
-		(** A function: name, return type, formal arguments, true if
-		    external, some stmt if this is the definition or None if
-		    it is just a declaration *)
-	    | Return of exp option (** Return a value from a function *)
-	    | Call of lvalue option * exp * exp list 
-		(** A call to a function. *)
-	    | Attr of stmt *  attribute (** A statment with attributes *)
-	    | Assert of exp (** an assertion *)
-	    | Halt of exp (** halt execution normally *)
+type stmt =
+| Jmp of exp (** Jump to a label/address *)
+| CJmp of exp * exp * exp (** Conditional jump.
+			      If e1 is true, jumps to e2,
+			      otherwise jumps to e3 *)
+| Move of lvalue * exp (** Copy the value on the right to the
+			   lvalue on the left *)
+| Special of string (** A "special" statement. (does magic) *)
+| Label of label (** A label we can jump to *)
+| ExpStmt of exp (** An expression which is to be ignored *)
+| Comment of string (** A comment to be ignored *)
+| Block of decl list * stmt list (** A local scope. Any variables
+				     declared in the block fall
+				     out of scope upon leaving the
+				     block. *)
+| Function of label * typ option * decl list * bool * stmt option
+	    (** A function: name, return type, formal arguments, true if
+		external, some stmt if this is the definition or None if
+		it is just a declaration *)
+| Return of exp option (** Return a value from a function *)
+| Call of lvalue option * exp * exp list 
+	    (** A call to a function. *)
+| Attr of stmt *  attribute (** A statment with attributes *)
+| Assert of exp (** an assertion *)
+| Halt of exp (** halt execution normally *)
 
 type program = decl list * stmt list
 
