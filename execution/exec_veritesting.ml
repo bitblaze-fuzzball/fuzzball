@@ -28,9 +28,8 @@ let find_veritesting_region fm gamma starting_eip max_depth =
   match root_of_region with
   | None -> None
   | Some root_of_region ->
-    print_region root_of_region;
     let stmts, decls = Encode.encode_region root_of_region in
-    Printf.printf "Printing statement list:\n";
-    List.iter (fun s -> V.stmt_to_channel stdout s) stmts;
-    Printf.printf "End statement list\n";
-    Some (decls, stmts)
+    (* HACK HACK HACK -- We should find a better way to detect valid regions *)
+    if ((List.length stmts) > 1)
+    then Some (decls, stmts)
+    else None

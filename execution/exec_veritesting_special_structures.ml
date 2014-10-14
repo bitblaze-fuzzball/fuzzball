@@ -17,12 +17,11 @@ let find_linear_region ?maxdepth:(maxdepth = 10) root expansion =
 	| _ -> Some child)
       | _ -> Some child in
   let expand node =
-    Printf.printf "Expanding %s\n" (node_to_string node);
     let children = expansion node in
     match children with
     | [child] -> add_child node child
     | []
-    | _::_ -> (Printf.printf "Node was infertile. Line ends.\n"; None) in
+    | _::_ -> None in
   let rec loop depth node =
     if (depth = maxdepth)
     then (truncate_node node)

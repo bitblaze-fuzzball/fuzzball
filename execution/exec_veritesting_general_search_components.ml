@@ -87,13 +87,13 @@ let equal (a : veritesting_node) (b : veritesting_node) =
 
 let finished_type_to_string = function
 | ExternalLoop eip -> (Printf.sprintf "ExternalLoop @ 0x%Lx" eip)
-| InternalLoop eip -> (Printf.sprintf "ExternalLoop @ 0x%Lx" eip)
-| Return eip -> (Printf.sprintf "ExternalLoop @ 0x%Lx" eip)
-| Halt eip -> (Printf.sprintf "ExternalLoop @ 0x%Lx" eip)
-| FunCall eip -> (Printf.sprintf "ExternalLoop @ 0x%Lx" eip)
-| SysCall eip -> (Printf.sprintf "ExternalLoop @ 0x%Lx" eip)
-| Special eip -> (Printf.sprintf "ExternalLoop @ 0x%Lx" eip)
-| SearchLimit eip -> (Printf.sprintf "ExternalLoop @ 0x%Lx" eip)
+| InternalLoop eip -> (Printf.sprintf "InternalLoop @ 0x%Lx" eip)
+| Return eip -> (Printf.sprintf "Return @ 0x%Lx" eip)
+| Halt eip -> (Printf.sprintf "Halt @ 0x%Lx" eip)
+| FunCall eip -> (Printf.sprintf "FunCall @ 0x%Lx" eip)
+| SysCall eip -> (Printf.sprintf "SysCall @ 0x%Lx" eip)
+| Special eip -> (Printf.sprintf "Special @ 0x%Lx" eip)
+| SearchLimit eip -> (Printf.sprintf "SearchLimit @ 0x%Lx" eip)
 | Branch b -> (Printf.sprintf "Branch @ 0x%Lx" b.b_core.eip)
 | Segment s -> (Printf.sprintf "Code Segment @ 0x%Lx" s.p_core.m_core.eip)
 
@@ -179,12 +179,18 @@ let complete_node (raw_node : veritesting_node) (child : veritesting_node)
 	  (Segment {p_core = {m_core = {eip = (key raw_node);
 					parent = raw_node;};
 			      next = Some child;};
-		    stmts = sl;
+		    stmts = (List.rev sl);
 		    decls = dl;}) in
       progn.p_core.next <- Some closed_variant
     end
   | _ -> failwith "Should only be able to call complete node on a raw_node");
   child
+
+
+let add_exit progn next =
+  assert (None = progn.p_core.next);
+  progn.p_core.next <- Some next;
+  next
 
 
 let rec truncate_node = function
@@ -233,11 +239,11 @@ let consider_statements (node : veritesting_node) =
     | stmt::rest ->
       begin
 	match stmt with
-	| V.Special("int 0x80") -> Completed (SysCall progn.p_core.m_core.eip)
-	| V.Special _ ->           Completed (Special progn.p_core.m_core.eip)
-	| V.Return _ ->            Completed (Return progn.p_core.m_core.eip)
-	| V.Call _ ->              Completed (FunCall progn.p_core.m_core.eip)
-	| V.Halt _  ->             Completed (Halt progn.p_core.m_core.eip)
+	| V.Special("int 0x80") -> add_exit progn (Completed (SysCall progn.p_core.m_core.eip))
+	| V.Special _ ->           add_exit progn (Completed (Special progn.p_core.m_core.eip))
+	| V.Return _ ->            add_exit progn (Completed (Return progn.p_core.m_core.eip))
+	| V.Call _ ->              add_exit progn (Completed (FunCall progn.p_core.m_core.eip))
+	| V.Halt _  ->             add_exit progn (Completed (Halt progn.p_core.m_core.eip))
 	| V.Label(l) ->
 	  begin
 	    match (decode_eip l) with
@@ -245,7 +251,7 @@ let consider_statements (node : veritesting_node) =
 	       then, generate the raw child, which is an undecoded of the target eip *)  
 	    | X86eip eip ->
 	      if progn.p_core.m_core.eip = eip
-	      then wsl accum rest (* drop the label identifying this segment as itself *)
+	      then wsl (stmt::accum) rest (* this is this eip, no jumping. *)
 	      else
 	      (* this eip = nodes eip, skip it? *)
 		complete_node node (Undecoded 
@@ -262,7 +268,7 @@ let consider_statements (node : veritesting_node) =
 							   next = None;}) accum progn.decls
 	    | Internal _ ->
 	      match walk_to_label l rest with
-	      | None -> Completed (InternalLoop progn.p_core.m_core.eip)
+	      | None -> add_exit progn (Completed (InternalLoop progn.p_core.m_core.eip))
 	      | Some rest' -> wsl accum rest'
 	  end 
         | V.CJmp(test, V.Name(true_lab), V.Name(false_lab)) ->
@@ -282,7 +288,7 @@ let consider_statements (node : veritesting_node) =
 	    | X86eip teip, Internal flabel ->
 	      begin
 		match walk_to_label false_lab rest with
-		| None -> Completed (InternalLoop progn.p_core.m_core.eip)
+		| None -> add_exit progn (Completed (InternalLoop progn.p_core.m_core.eip))
 		| Some rest' ->
 		  begin
 		    let rec branch = 
@@ -303,7 +309,7 @@ let consider_statements (node : veritesting_node) =
 	    | Internal tlabel, X86eip feip ->
 	      begin
 		match walk_to_label true_lab rest with
-		| None -> Completed (InternalLoop progn.p_core.m_core.eip)
+		| None -> add_exit progn (Completed (InternalLoop progn.p_core.m_core.eip))
 		| Some rest' ->
 		  begin
 		    let rec branch = Completed (Branch { test = test;
@@ -338,7 +344,7 @@ let consider_statements (node : veritesting_node) =
 									 decls = [];
 									 stmts = fraw}}) in
 		  complete_node node branch accum progn.decls
-		| _ -> Completed (InternalLoop progn.p_core.m_core.eip)
+		| _ -> add_exit progn (Completed (InternalLoop progn.p_core.m_core.eip))
 	      end
 	  end
 	| _ -> wsl (stmt::accum) rest
@@ -364,16 +370,16 @@ let generate_children fm gamma = function
   | Completed ft ->
     begin
       match ft with
-      | ExternalLoop _
-      | InternalLoop _ 
-      | Return _
-      | Halt _
-      | FunCall _
-      | SysCall _
-      | Special _
-      | SearchLimit _
-      | Segment _ -> [] (* maybe this is progn.next *)
-      | Branch b -> [b.true_child; b.false_child]
+	| ExternalLoop _
+	| InternalLoop _ 
+	| Return _
+	| Halt _
+	| FunCall _
+	| SysCall _
+	| Special _
+	| SearchLimit _
+	| Segment _ -> [] (* maybe this is progn.next *)
+	| Branch b -> [b.true_child; b.false_child]
     end
 
 let expand fm gamma (node : veritesting_node) =

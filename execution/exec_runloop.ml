@@ -56,14 +56,18 @@ let loop_detect = Hashtbl.create 1000
     
 let decode_insns_cached fm gamma eip =
   let decode_call _ = decode_insns fm gamma eip !opt_bb_size in
-
-  (** Uncomment me if you want to play with the veritesting region
-      identification code.  Comment me out again if you want to be
-      able to run fuzzball. **)
-
-  match (find_veritesting_region fm gamma eip !opt_bb_size) with
-  | None -> with_trans_cache eip decode_call
-  | Some progn -> progn
+  let (decls, stmts) as return =
+    match (find_veritesting_region fm gamma eip !opt_bb_size) with
+    | None -> with_trans_cache eip decode_call
+    | Some progn -> progn in
+  if false
+  then (Printf.printf "Printing statement list:\n";
+	List.iter (fun s -> V.stmt_to_channel stdout s) stmts;
+	Printf.printf "End statement list\n";
+	Printf.printf "Printing decls:\n";
+	List.iter (fun s -> V.decl_to_channel stdout s; Printf.printf "\n") decls;
+	Printf.printf "End decls\n");
+  return
 
 
 let runloop (fm : fragment_machine) eip asmir_gamma until =

@@ -19,17 +19,23 @@ module Search = Exec_veritesting_general_search_components
 
 let no_data = [],[]
 
+let make_exit eip =
+  [V.Jmp 
+      (V.Name
+	    (Printf.sprintf "pc_0x%Lx" eip))],
+  []
+
 let data_of_ft (ft : Search.veritesting_node Search.finished_type) =
   match ft with
-  | Search.ExternalLoop _
-  | Search.InternalLoop _
-  | Search.Return _
-  | Search.Halt _
-  | Search.FunCall _
-  | Search.SysCall _
-  | Search.Special _
-  | Search.SearchLimit _ 
-  | Search.Branch _ -> no_data
+  | Search.ExternalLoop eip
+  | Search.InternalLoop eip
+  | Search.Return eip
+  | Search.Halt eip
+  | Search.FunCall eip
+  | Search.SysCall eip
+  | Search.Special eip
+  | Search.SearchLimit eip -> make_exit eip
+  | Search.Branch _ -> failwith "stub" 
   | Search.Segment s -> s.Search.stmts, s.Search.decls
 
 
@@ -51,7 +57,7 @@ let build_simplest_equations root =
     | None -> ()
     | Some s -> internal s in
   internal root;
-  List.concat !stmt_accum, List.concat !decl_accum
+  List.concat (List.rev !stmt_accum), List.concat (List.rev !decl_accum)
   
 
 let encode_region root =
