@@ -1381,35 +1381,6 @@ struct
       (v1, v2)
 
     method private eval_binop op v1 ty1 v2 ty2 =
-      (try
-      (match ty2 with 
-      | V.REG_32 -> if (Int64.compare (D.to_concrete_32 v2) (Int64.of_int 65535)) == 0 then (
-        (match op with
-        | V.PLUS -> Printf.printf "PLUS OPERATOR\n"
-        | V.MINUS -> Printf.printf "MINUS OPERATOR\n"
-        | V.TIMES -> Printf.printf "TIMES OPERATOR\n"
-        | V.DIVIDE -> Printf.printf "DIVIDE OPERATOR\n"
-        | V.SDIVIDE -> Printf.printf "SDIVIDE OPERATOR\n"
-        | V.MOD -> Printf.printf "MOD OPERATOR\n"
-        | V.SMOD -> Printf.printf "SMOD OPERATOR\n"
-        | V.BITAND -> Printf.printf "BITAND OPERATOR\n"
-        | V.BITOR -> Printf.printf "BITOR OPERATOR\n"
-        | V.XOR -> Printf.printf "XOR OPERATOR\n"
-        | V.LSHIFT -> Printf.printf "LSHIFT OPERATOR\n"
-        | V.RSHIFT -> Printf.printf "RSHIFT OPERATOR\n"
-        | V.ARSHIFT -> Printf.printf "ARSHIFT OPERATOR\n"
-        | V.EQ -> Printf.printf "EQ OPERATOR\n"
-        | V.NEQ -> Printf.printf "NEQ OPERATOR\n"
-        | V.LT -> Printf.printf "LT OPERATOR\n"
-        | V.LE -> Printf.printf "LE OPERATOR\n"
-        | V.SLT -> Printf.printf "SLT OPERATOR\n"
-        | V.SLE -> Printf.printf "SLE OPERATOR\n");
-        Printf.printf "%s\t%s" (Int64.to_string (D.to_concrete_32 v1)) (Int64.to_string (D.to_concrete_32 v2));
-      );
-      | _ -> ());
-      with NotConcrete(_) -> ());
-
-
       let ty = 
 	(match op with
 	   | V.PLUS | V.MINUS | V.TIMES
