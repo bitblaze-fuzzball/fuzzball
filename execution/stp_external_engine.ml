@@ -207,7 +207,7 @@ class stp_external_engine fname = object(self)
       | Some s -> "-g " ^ (string_of_int s) ^ " "
       | None -> ""
     in
-    let cmd = !opt_stp_path ^ " " ^ timeout_opt ^ curr_fname 
+    let cmd = !opt_solver_path ^ " " ^ timeout_opt ^ curr_fname
       ^ ".stp >" ^ curr_fname ^ ".stp.out" in
       if !opt_trace_solver then
 	Printf.printf "Solver command: %s\n" cmd;
@@ -218,14 +218,14 @@ class stp_external_engine fname = object(self)
 	  (Printf.printf "STP died with result code %d\n" rcode;
 	   (match rcode with 
 	      | 127 ->
-		  if !opt_stp_path = "stp" then
+		  if !opt_solver_path = "stp" then
 		    Printf.printf
-		      "Perhaps you should set the -stp-path option?\n"
-		  else if String.contains !opt_stp_path '/' &&
-		    not (Sys.file_exists !opt_stp_path)
+		      "Perhaps you should set the -solver-path option?\n"
+		  else if String.contains !opt_solver_path '/' &&
+		    not (Sys.file_exists !opt_solver_path)
 		  then
 		    Printf.printf "The file %s does not appear to exist\n"
-		      !opt_stp_path
+		      !opt_solver_path
 	      | 131 -> raise (Signal "QUIT")
 	      | _ -> ());
 	   ignore(Sys.command ("cat " ^ curr_fname ^ ".stp.out"));
