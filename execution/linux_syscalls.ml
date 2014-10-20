@@ -1169,6 +1169,12 @@ object(self)
        store_word zonep 4 0L); (* no DST *)
     put_return 0L
 
+  method sys_symlink target linkpath =
+    try
+      Unix.symlink target (chroot linkpath);
+    with
+      | Unix.Unix_error(err, _, _) -> self#put_errno err
+
   method sys_getxattr path name value_ptr size =
     ignore(path); ignore(name); ignore(value_ptr); ignore(size);
     put_return (Int64.of_int (-61)) (* ENODATA *)
@@ -2966,7 +2972,12 @@ object(self)
 	 | (_, 82) -> (* select *)
 	     uh "Unhandled Linux system call select (82)"
 	 | (_, 83) -> (* symlink *)
-	     uh "Unhandled Linux system call symlink (83)"
+         let (arg1, arg2) = read_2_regs () in
+         let target = (fm#read_cstr arg1) and
+             linkpath = (fm#read_cstr arg2) in
+         if !opt_trace_syscalls then
+           Printf.printf "symlink(%s, %s)" target linkpath;
+         self#sys_symlink target linkpath
 	 | (ARM, 84) -> uh "No oldlstat (84) syscall in Linux/ARM (E)ABI"
 	 | (X86, 84) -> (* oldlstat *)
 	     uh "Unhandled Linux system call oldlstat (84)"

@@ -122,6 +122,7 @@ object
   method sys_readv : int -> int64 -> int -> unit
   method sys_pread64 : int -> int64 -> int -> int64 -> unit
   method sys_readlink : string -> int64 -> int -> unit
+  method sys_symlink : string -> string -> unit
   method sys_recv : int -> int64 -> int -> int -> unit
   method sys_recvfrom : int -> int64 -> int -> int -> int64 -> int64 -> unit
   method sys_shutdown: int -> int -> unit
