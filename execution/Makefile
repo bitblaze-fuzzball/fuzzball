@@ -73,7 +73,7 @@ OCAMLDOCFLAGS = -m avlsoper
 
 # Fast enough that it's better to just always remake it than
 # worry about whether it's up to date.
-UNUSED := $(shell perl update-git-version.pl >/dev/tty)
+UNUSED := $(shell perl update-git-version.pl >&2)
 
 all: dncl
 
