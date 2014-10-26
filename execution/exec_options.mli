@@ -137,6 +137,7 @@ val opt_random_memory : bool ref
 
 val opt_fuzz_start_addr_count : int ref 
 val opt_fuzz_end_addrs : int64 list ref
+val opt_trace_end_jump : int64 option ref
 
 val opt_check_read_operands : bool ref
 val opt_check_write_operands : bool ref

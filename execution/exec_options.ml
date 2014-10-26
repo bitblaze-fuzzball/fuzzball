@@ -159,6 +159,7 @@ let opt_random_memory = ref false
 
 let opt_fuzz_start_addr_count = ref 1
 let opt_fuzz_end_addrs = ref []
+let opt_trace_end_jump = ref None
 
 let opt_check_read_operands = ref false
 let opt_check_write_operands = ref false

@@ -247,6 +247,9 @@ let explore_cmdline_opts =
        (fun s -> opt_fuzz_end_addrs :=
 	  (Int64.of_string s) :: !opt_fuzz_end_addrs),
      "addr Code address to finish fuzzing, may be repeated");
+    ("-trace-end-jump", Arg.String
+       (fun s -> opt_trace_end_jump := Some (Int64.of_string s)),
+     " Print the target of the jump at the address specified by -fuzz-end-addr");
     ("-iteration-limit", Arg.String
        (fun s -> opt_iteration_limit := Int64.of_string s),
      "N Stop path if a loop iterates more than N times");

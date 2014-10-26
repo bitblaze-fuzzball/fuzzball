@@ -103,7 +103,7 @@ let decode_insns_cached fm gamma eip =
   with_trans_cache eip (fun () -> decode_insns fm gamma eip bb_size true)
 
 let rec runloop (fm : fragment_machine) eip asmir_gamma until =
-  let rec loop last_eip eip =
+  let rec loop last_eip eip is_final_loop =
     (let old_count =
        (try
 	  Hashtbl.find loop_detect eip
@@ -135,10 +135,14 @@ let rec runloop (fm : fragment_machine) eip asmir_gamma until =
 	fm#set_frag prog';
 	(* flush stdout; *)
 	let new_eip = label_to_eip (fm#run ()) in
-	  match (new_eip, until) with
-	    | (e1, e2) when e2 e1 -> ()
-	    | (0L, _) -> raise JumpToNull
-	    | _ -> loop eip new_eip
+	  if is_final_loop then
+	    Printf.printf "End jump to: %Lx\n" new_eip
+	  else
+	    match (new_eip, until, !opt_trace_end_jump) with
+	      | (e1, e2, Some e3) when e1 = e3 -> loop eip new_eip true
+	      | (e1, e2, _) when e2 e1 -> ()
+	      | (0L, _, _) -> raise JumpToNull
+	      | _ -> loop eip new_eip false
   in
     Hashtbl.clear loop_detect;
-    loop (0L) eip
+    loop (0L) eip false
