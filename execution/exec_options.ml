@@ -145,6 +145,7 @@ let opt_target_guidance = ref 0.0
 let opt_trace_guidance = ref false
 let opt_trace_tables = ref false
 let opt_table_limit = ref 0
+let opt_no_table_store = ref false
 let opt_implied_value_conc = ref false
 let opt_trace_ivc = ref false
 let opt_periodic_stats = ref None
@@ -182,43 +183,6 @@ let split_string char s =
   in
     (s1, s2)
 
-let unescape str =
-  let len = String.length str in
-  let s' = String.create len in
-  let rec loop i j =
-    if i >= len then
-      j
-    else
-      match str.[i] with
-	| '\\' when i + 1 < len ->
-	    let char inc c =
-	      s'.[j] <- c;
-	      loop (i + inc + 1) (j + 1)
-	    in
-	      (match str.[i+1] with
-		 | 'n' -> char 1 '\n'
-		 | 'r' -> char 1 '\r'
-		 | 't' -> char 1 '\t'
-		 | 'b' -> char 1 '\b'
-		 | '\\' -> char 1 '\\'
-		 | '\'' -> char 1 '\''
-		 | '"' -> char 1 '"'
-		 | ' ' -> char 1 ' '
-		 | 'x' when i + 3 < len ->
-		     char 3 (Char.chr (int_of_string
-					 ("0x" ^ (String.sub str (i+2) 2))))
-		 | '0' .. '9' when i + 3 < len ->
-		     char 3 (Char.chr (int_of_string
-					 (String.sub str (i+1) 3)))
-		 | _ -> failwith "Unexpected escape in string unescape"
-	      )
-	| _ ->
-	    s'.[j] <- str.[i];
-	    loop (i+1) (j+1)
-  in
-  let len' = loop 0 0 in
-    String.sub s' 0 len'
-
 let add_delimited_pair opt char s =
   let (s1, s2) = split_string char s in
     opt := ((Int64.of_string s1), (Int64.of_string s2)) :: !opt
@@ -229,7 +193,7 @@ let add_delimited_num_str_pair opt char s =
 
 let add_delimited_num_escstr_pair opt char s =
   let (s1, s2) = split_string char s in
-    opt := ((Int64.of_string s1), (unescape s2)) :: !opt
+    opt := ((Int64.of_string s1), (Exec_utils.unescaped s2)) :: !opt
 
 let add_delimited_str_num_pair opt char s =
   let (s1, s2) = split_string char s in

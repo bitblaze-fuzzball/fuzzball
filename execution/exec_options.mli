@@ -123,6 +123,7 @@ val opt_target_guidance : float ref
 val opt_trace_guidance : bool ref
 val opt_trace_tables : bool ref
 val opt_table_limit : int ref
+val opt_no_table_store : bool ref
 val opt_implied_value_conc : bool ref
 val opt_trace_ivc : bool ref
 val opt_periodic_stats : int64 option ref
@@ -151,8 +152,6 @@ val opt_skip_untainted : bool ref
 val opt_arch : execution_arch ref
 
 val asmir_arch : unit -> Asmir.arch
-
-val unescape : string -> string
 
 val split_string : char -> string -> (string * string)
 val add_delimited_pair :

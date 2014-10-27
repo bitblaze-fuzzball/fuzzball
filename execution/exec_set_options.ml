@@ -298,7 +298,7 @@ let explore_cmdline_opts =
     ("-target-string", Arg.String
        (fun s -> let (s1, s2) = split_string '=' s in
 	  opt_target_region_start := Some (Int64.of_string s1);
-	  opt_target_region_string := unescape s2),
+	  opt_target_region_string := Exec_utils.unescaped s2),
      "base=string Try to make a buffer have the given contents");
     ("-target-string-file", Arg.String
        (fun s -> let (s1, s2) = split_string '=' s in
@@ -322,6 +322,8 @@ let explore_cmdline_opts =
      " Print table lookups");
     ("-table-limit", Arg.Set_int(opt_table_limit),
      "BITS Match tables with at most 2**bits entries");
+    ("-no-table-store", Arg.Set(opt_no_table_store),
+     " Disable symbolic treatment of table stores");
     ("-implied-value-conc", Arg.Set(opt_implied_value_conc),
      " Concretize based on path condition");
     ("-trace-ivc", Arg.Set(opt_trace_ivc),
