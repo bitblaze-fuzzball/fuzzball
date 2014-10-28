@@ -96,12 +96,15 @@ export OCAMLFLAGS
 # merge everything but descriptions.
 OCAMLDOCFLAGS = -m avlsoper
 
+all: update_git_version update_svn_version dncl
+
 # Fast enough that it's better to just always remake it than
 # worry about whether it's up to date.
-UNUSED := $(shell perl update-git-version.pl >/dev/tty)
-UNUSED := $(shell perl update-svn-version.pl >/dev/tty)
+update_git_version:
+	perl update-git-version.pl
 
-all: dncl
+update_svn_version:
+	perl update-svn-version.pl
 
 bytecode: dcl top
 
