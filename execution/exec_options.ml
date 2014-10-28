@@ -288,6 +288,12 @@ let add_delimited_str_num_pair opt char s =
     opt := (s1, (Int64.of_string s2)) :: !opt
 
 let opt_program_name = ref None
+
+let get_program_name () =
+  match !opt_program_name with
+  | None -> ""
+  | Some s -> s
+
 let opt_start_addr = ref None
 let opt_argv = ref []
 let state_start_addr = ref None

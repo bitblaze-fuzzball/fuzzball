@@ -75,7 +75,8 @@ object(self)
   (* Right now we always redirect the program's FDs 1 and 2 (stdout
      and stderr) to FuzzBALL's stdout. We might want to consider doing
      this more selectively, or controlled by a command-line flag. *)
-  method private do_write fd bytes count tx_bytes =
+  method private do_write (fd : int) (bytes : char array) (count : int) (tx_bytes : int64) =
+    (* file descriptor, array, to send, transmitted byets? *)
     let success num_bytes =
       if tx_bytes <> 0L then
 	store_word tx_bytes 0 num_bytes;
@@ -272,7 +273,7 @@ object(self)
     store_word count_out_p 0 (Int64.of_int count);
     put_return 0L
 
-  method private read_throw fd buf count num_bytes_p =
+  method private read_throw (fd : int) (buf : int64) (count :int) num_bytes_p =
     let str = self#string_create count in
     let oc_fd = self#get_fd fd in
     let num_read =
@@ -289,13 +290,16 @@ object(self)
 	  num_read
       else
 	let num_read = Unix.read oc_fd str 0 count in
-	  fm#store_str buf 0L (String.sub str 0 num_read);
-	  num_read
+	let read_str = String.sub str 0 num_read in
+	(* at this point, we know the actual data that was read into the buffer. *)
+	Pov_xml.add_read read_str buf count;
+	fm#store_str buf 0L read_str; (* base pointer, offset string *)
+	num_read
     in
       store_word num_bytes_p 0 (Int64.of_int num_read);
       put_return 0L
 
-  method private cgcos_receive fd buf count num_bytes_p =
+  method private cgcos_receive (fd : int) (buf : int64) (count : int) num_bytes_p =
     (match !opt_max_receives with
        | Some m ->
 	   (if num_receives >= m then
@@ -310,7 +314,11 @@ object(self)
   method private cgcos_terminate status =
     raise (SimulatedExit(status))
 
-  method private cgcos_transmit fd bytes count tx_bytes =
+  method private cgcos_transmit (fd : int) (bytes : char array) (count : int) (tx_bytes : int64) =
+(*    if ( (fd <> 1) && (fd <> 2) ) (* transmitting on not stdout / stderr *)
+    then *)
+      (* I feel like this guard really belongs, but it doesn't capture what the program is really doing... *)
+      Pov_xml.add_transmit bytes count;
     self#do_write fd bytes count tx_bytes
 
   method private put_errno err =
@@ -385,6 +393,7 @@ object(self)
                   buf      = arg2 and
                   count    = Int64.to_int arg3 and
 		  tx_bytes = arg4 in
+	      (* povxml -- corresponds to the transmit in povs *)
 		if !opt_trace_syscalls then
                   Printf.printf "transmit(%d, 0x%08Lx, %d, 0x%08Lx)"
 		    fd buf count tx_bytes;
@@ -397,6 +406,7 @@ object(self)
                   buf      = arg2 and
                   count    = Int64.to_int arg3 and
 		  num_bytes_p = arg4 in
+	      (* povxml -- insert a read here *)
 		if !opt_trace_syscalls then
                   Printf.printf "receive(%d, 0x%08Lx, %d, 0x%08Lx)"
 		    fd buf count num_bytes_p;
@@ -409,6 +419,7 @@ object(self)
 		  writefds    = arg3 and
 		  timeout     = arg4 and
 		  ready_cnt_p = arg5 in
+	      (* povxml -- insert a delay object *)
 		self#cgcos_fdwait nfds readfds writefds timeout ready_cnt_p;
 		Some ready_cnt_p
 	  | 5 -> (* allocate, subset of Linux sys_mmap *)

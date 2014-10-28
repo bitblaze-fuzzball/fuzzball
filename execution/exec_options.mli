@@ -193,6 +193,7 @@ val add_delimited_str_num_pair :
   (string * int64) list ref -> char -> string -> unit
 
 val opt_program_name : string option ref
+val get_program_name : unit -> string
 val opt_start_addr : int64 option ref
 val opt_argv : string list ref
 val state_start_addr : int64 option ref

@@ -69,7 +69,7 @@ RESULT = execution
 # DOC_FILES=$(SOURCES)
 
 # ocamlfind packages required
-export PACKS = str extlib unix yojson
+export PACKS = str extlib unix yojson tyxml
 export YFLAGS = -v
 
 export CLIBS = asmir vex opcodes bfd iberty stdc++ 
