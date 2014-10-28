@@ -9,7 +9,7 @@ export STP_OCAMLDIR=../stp/ocaml
 export LOG_DIR=../logging
 
 # ocamlfind packages required
-export PACKS = str extlib unix yojson
+export PACKS = str extlib unix yojson tyxml
 export LIBS = stpvc vine logging trace execution
 export INCDIRS = $(VINE_OCAMLDIR) $(VINE_TRACEDIR) \
                  $(VINE_EXECDIR) $(STP_OCAMLDIR) $(LOG_DIR)

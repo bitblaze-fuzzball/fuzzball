@@ -39,6 +39,11 @@ if test $? != 0; then
     exit -1
 fi
 
+ocamlfind query tyxml
+if test $? != 0; then
+    echo "SIFT FuzzBALL needs tyxml (e.g., libtyxml-ocaml-dev)"
+    exit -1
+fi
 
 # Where is VEX ?
 # stolen from valgrind's configure.in

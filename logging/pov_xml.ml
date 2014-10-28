@@ -3,9 +3,6 @@
   Implements the POV reporting XML described for CGC
  *)
 
-#use "topfind"
-#require "tyxml"
-
 type pcre = string
 type var = string
 
@@ -16,7 +13,10 @@ type data_typ =
 type echo =
 | Yes
 | No
-| Ascii
+
+type trace_type =
+| NominalBehavior
+| Error of int64
 
 type delim = {
   deliminator : int;
@@ -31,7 +31,7 @@ type timeout = {
   to_ms : int;
 }
 
-type cbid = {
+type cbid = { (* !opt_program_name (string option) from exec_set_options *)
   cb_name : string;
 }
 
@@ -47,7 +47,7 @@ type slice = {
 
 type data = {
   data_typ : data_typ;
-  contents : int; (* maybe I want int64 here *)
+  contents : char array; (* maybe I want int64 here *)
 }
 
 type assign_value =
@@ -110,20 +110,50 @@ let valid (a : timeout) = a.to_ms >= 0
 
 (* XML Construction, output *)
 
+let get_logfile_channel filename =
+  (* Stolen / adapted from logger_config.ml -- I'm going to prune out all of the json logging at some point,
+     as no one is using it anymore -- [JTT / 10-28] *)
+  match filename with
+  | "stdout" -> Pervasives.stdout
+  | "stderr" -> Pervasives.stderr
+  | _ -> let regex = Str.regexp ".*:[0-9]+" in
+	 let chan = 
+	   if Str.string_match regex filename 0
+	   then begin
+	     let tokens = Str.split (Str.regexp ":") filename in
+	     assert ((List.length tokens) == 2);
+	     let addr = Unix.inet_addr_of_string (List.hd tokens)
+	     and port = int_of_string (List.hd (List.tl tokens)) in
+	     let _, outchan = Unix.open_connection (Unix.ADDR_INET(addr, port)) in
+	     outchan
+	     end
+	  else open_out filename in
+	 chan
+
+let out_channel = ref (get_logfile_channel "/dev/null")
+
+let set_out_channel fname =
+  out_channel := get_logfile_channel fname
+
 let debug_print v =
-  Xml.print_list (Printf.printf "%s") [v]
+  Xml.print_list (Printf.fprintf !out_channel "%s") [v]
 
 let echo_to_xml = function
   | Yes -> Xml.string_attrib "echo" "yes"
   | No ->  Xml.string_attrib "echo" "no"
-  | Ascii -> Xml.string_attrib "echo" "ascii"
+(*  | Ascii -> Xml.string_attrib "echo" "ascii"*)
 
 let data_type_to_xml = function
   | Hex -> Xml.string_attrib "format" "hex"
   | ascii  -> Xml.string_attrib "format" "ascii"
 
 let data_to_xml (a : data) =
-  Xml.node ~a:[data_type_to_xml a.data_typ] "data" [Xml.pcdata (Printf.sprintf "%i" a.contents)]
+  let as_string = String.concat ""
+    (Array.fold_right
+       (fun el accum ->  (Printf.sprintf "%c" el) :: accum)
+       a.contents []) in
+  Xml.node ~a:[data_type_to_xml a.data_typ] "data"
+    [Xml.pcdata as_string]
 
 let delim_to_xml (a : delim) =
   Xml.node ~a:[data_type_to_xml a.delim_typ] 
@@ -213,3 +243,48 @@ let pov_to_xml (a : pov) =
   Xml.node "pov"
     [cbid_to_xml a.cbid;
      replay_to_xml a.replay]
+
+(* incremental pov construction *)
+let events = ref ([] : action list)
+
+let add_read (read_in : string) (start : int64) (length : int) =
+  (* Add a read command to the list of actions to be put into the pov *)
+  let me = { echo = Yes;
+	     input_marker = Length length;
+	     assign = None;
+	     mtch = None;
+	     timeout = None; } in
+  events := Read me :: !events
+
+let add_transmit contents length =
+  (* add a write command to the list of actions to be put into the pov *)
+  (* cgcos_transmit *)
+  let dt = {data_typ = Ascii;
+	    contents = contents; } in
+  let wt = WData dt in
+  let write = {datas = [wt]} in
+  events := Write write :: !events
+
+let add_decl () =
+  (* cgc allocate? *)
+  failwith "stub"
+
+let add_delay duration =
+  failwith "stub"
+
+let add_timeout duration =
+(* cgcos_fdwait *)
+  failwith "stub"
+
+let reset () =
+  events := []
+
+let write_pov name =
+  (* build the xml you need to output *)
+  let cbid = { cb_name = name; } in
+  let replay = {actions = List.rev !events} in
+  let pov = {cbid = cbid; replay = replay} in
+  (* put it out *)
+  debug_print (pov_to_xml pov);
+  (* clear your cache *)
+  reset ();
