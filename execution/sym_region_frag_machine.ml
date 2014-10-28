@@ -724,8 +724,15 @@ struct
 	    in
 	      match r with
 		| Some 0 -> addr
-		| Some r_num -> raise SymbolicJump
-		| None -> raise SymbolicJump
+		| Some r_num ->
+		    if !opt_trace_stopping then
+		      Printf.printf
+			"Unsupported jump into symbolic region %d\n" r_num;
+		    raise SymbolicJump
+		| None ->
+		    if !opt_trace_stopping then
+		      Printf.printf "Unsupported jump into sink region\n";
+		    raise SymbolicJump
 
     method get_word_var_concretize reg do_influence name : int64 =
       let v = self#get_int_var (Hashtbl.find reg_to_var reg) in
@@ -1041,7 +1048,7 @@ struct
 	  NotConcrete _ ->
 	    let e = D.to_symbolic_1 cond_v in
 	      (dt#start_new_query_binary;
-	       let b = self#extend_pc_known e true true in
+	       let b = self#extend_pc_pref e true true in
 	       let choices = dt#check_last_choices in
 		 dt#count_query;
 		 (b, choices))
@@ -1072,7 +1079,7 @@ struct
 	let (c_v, c_str) = self#target_region_byte off in
 	  if !opt_trace_target then
 	    Printf.printf
-	      "Store to target string offset %d: %s (vs '%s'): "
+	      "Store to target string offset %d: %s (vs '%s'):\n"
 	      off (D.to_string_8 v) c_str;
 	  D.eq8 v c_v
       in
@@ -1180,6 +1187,30 @@ struct
 	 then
 	   self#finish_fuzz "store to final target offset")
 
+    method private table_check_full_match all_match cloc maxval =
+      if !opt_trace_target then
+	Printf.printf "Checking for full match: ";
+      match
+	self#push_cond_prefer_true (D.from_symbolic all_match)
+      with
+	| (_, Some true) ->
+	    if !opt_trace_target then
+	      Printf.printf "Must match.\n";
+	    (match (!opt_finish_on_target_match, !opt_target_region_start) with
+		 (true, Some addr)
+		   when addr = cloc &&
+		     self#target_region_length = (Int64.to_int maxval) + 1 ->
+		       self#finish_fuzz "target full match"
+	       | _ -> ())
+	| (_, Some false) ->
+	    if !opt_trace_target then
+	      Printf.printf "Cannot match.\n"
+	| (_, None) ->
+	    if !opt_trace_target then
+	      Printf.printf "Can match.\n";
+	    if !opt_finish_on_target_match then
+	      self#finish_fuzz "target full match"
+
     method private maybe_table_store addr_e ty value =
       let load_ent addr = match ty with
 	| V.REG_8  -> form_man#simplify8
@@ -1245,26 +1276,7 @@ struct
 		       if !opt_trace_target then
 			 Printf.printf "Checking for any match to target: ";
 		       ignore(self#target_solve (D.from_symbolic any_match));
-		       if !opt_trace_target then
-			 Printf.printf "Checking for full match: ";
-		       (match
-			  self#push_cond_prefer_true
-			    (D.from_symbolic all_match)
-			with
-			  | (_, Some true) -> 		       
-			      if !opt_trace_target then
-				Printf.printf "Must match.\n";
-			      if !opt_finish_on_target_match then
-				self#finish_fuzz "target full match"
-			  | (_, Some false) ->
-			      if !opt_trace_target then
-				Printf.printf "Cannot match.\n"
-			  | (_, None) ->
-			      if !opt_trace_target then
-				Printf.printf "Can match.\n";
-			      if !opt_finish_on_target_match then
-				self#finish_fuzz "target full match"
-		       ));
+		       self#table_check_full_match all_match cloc maxval);
 		  true
 
     val mutable call_stack = []
@@ -1398,7 +1410,8 @@ struct
     method private handle_store addr_e ty rhs_e =
       self#check_for_ret_addr_store addr_e ty;
       let value = self#eval_int_exp_simplify rhs_e in
-      if not (self#maybe_table_store addr_e ty value) then
+      if (!opt_no_table_store) ||
+	not (self#maybe_table_store addr_e ty value) then
       let (r, addr) = self#eval_addr_exp_region addr_e in
 	if r = Some 0 && (Int64.abs (fix_s32 addr)) < 4096L then
 	  raise NullDereference;

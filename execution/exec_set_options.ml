@@ -252,6 +252,9 @@ let explore_cmdline_opts =
        (fun s -> opt_fuzz_end_addrs :=
 	  (Int64.of_string s) :: !opt_fuzz_end_addrs),
      "addr Code address to finish fuzzing, may be repeated");
+    ("-trace-end-jump", Arg.String
+       (fun s -> opt_trace_end_jump := Some (Int64.of_string s)),
+     " Print the target of the jump at the address specified by -fuzz-end-addr");
     ("-iteration-limit", Arg.String
        (fun s -> opt_iteration_limit := Int64.of_string s),
      "N Stop path if a loop iterates more than N times");
@@ -306,7 +309,7 @@ let explore_cmdline_opts =
        (fun s -> let (s1, s2) = split_string '=' s in
 	  opt_target_strings := (s1, s2) :: !opt_target_strings;
 	  opt_target_region_start := Some (Int64.of_string s1);
-	  opt_target_region_string := unescape s2),
+	  opt_target_region_string := Exec_utils.unescaped s2),
      "base=string Try to make a buffer have the given contents");
     ("-target-string-file", Arg.String
        (fun s -> let (s1, s2) = split_string '=' s in
@@ -333,6 +336,8 @@ let explore_cmdline_opts =
      " Print table lookups");
     ("-table-limit", Arg.Set_int(opt_table_limit),
      "BITS Match tables with at most 2**bits entries");
+    ("-no-table-store", Arg.Set(opt_no_table_store),
+     " Disable symbolic treatment of table stores");
     ("-implied-value-conc", Arg.Set(opt_implied_value_conc),
      " Concretize based on path condition");
     ("-trace-ivc", Arg.Set(opt_trace_ivc),

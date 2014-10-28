@@ -78,6 +78,7 @@ sig
       -> (bool * Vine.exp)
     method extend_pc_random : Vine.exp -> bool -> bool
     method extend_pc_known : Vine.exp -> bool -> bool -> bool 
+    method extend_pc_pref : Vine.exp -> bool -> bool -> bool
     method random_case_split : bool -> bool
     method set_cjmp_heuristic :
       (int64 -> int64 -> int64 -> float -> bool option -> bool option) -> unit

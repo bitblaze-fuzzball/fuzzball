@@ -5,6 +5,7 @@
 
 module V = Vine;;
 
+open Exec_utils;;
 open Exec_domain;;
 open Exec_exceptions;;
 open Exec_options;;
@@ -320,7 +321,7 @@ struct
 		Printf.printf "Satisfiable.\n";
 	      if !opt_trace_assigns_string then
 		Printf.printf "Input: \"%s\"\n"
-		  (String.escaped (self#ce_to_input_str ce));
+		  (Exec_utils.escaped (self#ce_to_input_str ce));
 	      if !opt_trace_assigns then
 		(Printf.printf "Input vars: ";
 		 self#print_ce ce))
@@ -460,6 +461,18 @@ struct
 			       (fun () -> b)) in
 	self#add_to_path_cond cond';
 	result
+
+    (* Like _known, but check the concolic path before the supplied
+       preference *)
+    method extend_pc_pref cond verbose pref =
+      if !opt_concrete_path_simulate ||
+	(match !opt_concolic_prob with
+	   | Some p -> (dt#random_float < p)
+	   | None -> false)
+      then
+	self#extend_pc_known cond verbose ((form_man#eval_expr cond) <> 0L)
+      else
+	self#extend_pc_known cond verbose pref
 
     method random_case_split verbose =
       let trans_func b = V.Unknown("unused") in
@@ -708,8 +721,8 @@ struct
 		   (try
 		      let line1 = String.sub bytes 0 (String.index bytes '\n')
 		      in
-			"\"" ^ (String.escaped line1) ^ "\\n\"" with
-			  | Not_found -> "\"" ^ (String.escaped bytes) ^ "\"")
+			"\"" ^ (escaped line1) ^ "\\n\"" with
+			  | Not_found -> "\"" ^ (escaped bytes) ^ "\"")
 	       with
 		   NotConcrete _ -> "<not concrete>" in
 	       Printf.printf "At %08Lx, %s (%08Lx) is %s\n"

@@ -90,7 +90,7 @@ let encode_exp_flags e printable =
   let push_string s =
     assert(String.length s < 250);
     if printable then
-	push_printable_str (Printf.sprintf "(%s)" (String.escaped s))
+	push_printable_str (Printf.sprintf "(%s)" (Exec_utils.escaped s))
     else
       (push (Char.chr (String.length s));
        for i = 0 to (String.length s) - 1 do
