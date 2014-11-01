@@ -472,6 +472,10 @@ let cmdline_opts =
        (fun s -> opt_extra_condition_strings :=
 	  s :: !opt_extra_condition_strings),
      "cond Add an extra constraint for solving");
+    ("-extra-conditions-file", Arg.String
+       (fun s -> opt_extra_condition_strings :=
+	  !opt_extra_condition_strings @ (read_lines_file s)),
+     "filename Read '-extra-condition's one per line from file");
     ("-omit-pf-af", Arg.Set(opt_omit_pf_af),
      " Omit computation of the (rarely used) PF and AF flags");
     ("-nop-system-insns", Arg.Set(opt_nop_system_insns),
