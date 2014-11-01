@@ -31,6 +31,7 @@ export SOURCES = \
 	stpvc_engine.mli stpvc_engine.ml \
 	stp_external_engine.mli stp_external_engine.ml \
 	smtlib_external_engine.mli smtlib_external_engine.ml \
+	smtlib_batch_engine.mli smtlib_batch_engine.ml \
 	concrete_memory.mli concrete_memory.ml \
 	granular_memory.mli granular_memory.ml \
 	fragment_machine.mli fragment_machine.ml \

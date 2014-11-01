@@ -13,7 +13,7 @@ let opt_smtlib_solver_type = ref None
 let solver_cmdline_opts =
   [
     ("-solver", Arg.Set_string(opt_solver),
-     "solver smtlib or stpvc (internal) or stp-external (cf. -stp-path)");
+     "solver smtlib, smtlib-batch, stpvc (internal) or stp-external");
     ("-solver-check-against", Arg.Set_string(opt_solver_check_against),
      "solver Compare solver results with the given one");
     ("-solver-path", Arg.Set_string(opt_solver_path),
@@ -64,6 +64,9 @@ let solvers_table =
      Hashtbl.replace h "stp-external"
        (fun s ->
 	  Some (new Stp_external_engine.stp_external_engine ("fuzz" ^ s)));
+     Hashtbl.replace h "smtlib-batch"
+       (fun s ->
+	  Some (new Smtlib_batch_engine.smtlib_batch_engine ("fuzz" ^ s)));
      Hashtbl.replace h "smtlib"
        (fun s ->
 	  let stype = match !opt_smtlib_solver_type with
