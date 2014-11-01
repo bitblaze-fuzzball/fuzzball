@@ -152,8 +152,8 @@ let fuzz start_eip opt_fuzz_start_eip end_eips
 		      when (List.length l) >= !opt_finish_reasons_needed
 			->
 		      if !opt_trace_stopping then
-			Printf.printf "Finished, %s%s\n" s
-			  (if rest = [] then "" else ", ...");
+			Printf.printf "Finished, %s\n"
+			  (String.concat ", " l);
 		      raise LastIteration
 		  | _ -> ());
 	       if !opt_concrete_path_simulate then
