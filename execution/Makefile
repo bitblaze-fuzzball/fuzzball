@@ -29,6 +29,7 @@ export SOURCES = \
 	symbolic_domain.mli symbolic_domain.ml \
 	query_engine.mli query_engine.ml \
 	stpvc_engine.mli stpvc_engine.ml \
+        solvers_common.mli solvers_common.ml \
 	stp_external_engine.mli stp_external_engine.ml \
 	smtlib_external_engine.mli smtlib_external_engine.ml \
 	smtlib_batch_engine.mli smtlib_batch_engine.ml \

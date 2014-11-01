@@ -4,6 +4,7 @@
 *)
 
 open Exec_options;;
+open Solvers_common;;
 
 let opt_solver = ref "stp-external"
 let opt_solver_check_against = ref "none"
@@ -22,8 +23,8 @@ let solver_cmdline_opts =
      "path Former name of -solver-path");
     ("-smtlib-solver-type", Arg.String
        (function
-	  | "stp" -> opt_smtlib_solver_type := Some "stp"
-	  | "cvc4" -> opt_smtlib_solver_type := Some "cvc4"
+	  | "stp" -> opt_smtlib_solver_type := Some STP_SMTLIB2
+	  | "cvc4" -> opt_smtlib_solver_type := Some CVC4
 	  | _ -> failwith "Unrecognized -smtlib-solver-type"
        ),
      "type stp,cvc4 (default is guessed from path)");
@@ -73,9 +74,9 @@ let solvers_table =
 	    | Some s -> s
 	    | None ->
 		if ends_with !opt_solver_path "stp" then
-		  "stp"
+		  STP_SMTLIB2
 		else if ends_with !opt_solver_path "cvc4" then
-		  "cvc4"
+		  CVC4
 		else
 		  failwith "Please specify -smtlib-solver-type"
 	  in

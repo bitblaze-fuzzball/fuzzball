@@ -9,7 +9,7 @@ module V = Vine;;
 open Exec_exceptions;;
 open Exec_options;;
 open Query_engine;;
-open Stpvc_engine;;
+open Solvers_common;;
 open Smt_lib2;;
 
 let output_string_log log_file channel str =
@@ -17,116 +17,11 @@ let output_string_log log_file channel str =
     output_string log_file str;
   output_string channel str
 
-let rename_var name =
-  let new_name = ref "" in
-    for i = 0 to (String.length name) - 1 do
-      match name.[i] with
-        | '_' -> new_name := !new_name ^ "-"
-        | '-' -> new_name := !new_name ^ "_"
-	| '|' -> ()
-        | _ -> new_name := !new_name ^ (Char.escaped name.[i])
-    done;
-    !new_name
-
-let map_lines f chan solver =
-  let results = ref [] in
-    (try while true do
-       match (f (input_line chan) solver) with
-	 | Some x -> results := x :: !results
-	 | None -> ()
-     done
-     with End_of_file -> ());
-    List.rev !results
-
-let parse_stp_ce line =
-  if line = "sat" then
-    raise End_of_file
-  else
-    (assert((String.sub line 0 8) = "ASSERT( ");
-     assert((String.sub line ((String.length line) - 3) 3) = " );");
-     let trimmed = String.sub line 8 ((String.length line) - 11) in
-     let eq_loc = String.index trimmed '=' in
-     let lhs = String.sub trimmed 0 eq_loc and
-	 rhs = (String.sub trimmed (eq_loc + 1)
-		  ((String.length trimmed) - eq_loc - 1)) in
-       assert((String.sub lhs ((String.length lhs) - 1) 1) = " "
-	   || (String.sub lhs ((String.length lhs) - 1) 1) = "<");
-       let lhs_rtrim =
-	 if (String.sub lhs ((String.length lhs) - 2) 1) = " " then
-	   2 else 1
-       in
-       let rhs_rtrim =
-	 if (String.sub rhs ((String.length rhs) - 1) 1) = " " then
-	   1 else 0
-       in
-       let varname = rename_var
-	 (String.sub lhs 0 ((String.length lhs) - lhs_rtrim))
-       in
-       let value =
-	 let rhs' = String.sub rhs 0 ((String.length rhs) - rhs_rtrim) in
-	 let len = String.length rhs' in
-	   (Int64.of_string
-	      (if len >= 6 && (String.sub rhs' 0 5) = " 0hex" then
-		 ("0x" ^ (String.sub rhs' 5 (len - 5)))
-	       else if len >= 4 && (String.sub rhs' 0 3) = " 0x" then
-		 ("0x" ^ (String.sub rhs' 3 (len - 3)))
-	       else if len >= 4 && (String.sub rhs' 0 3) = " 0b" then
-		 ("0b" ^ (String.sub rhs' 3 (len - 3)))
-	       else if rhs' = ">FALSE" then
-		 "0"
-	       else if rhs' = ">TRUE" then
-		 "1"
-	       else
-		 failwith "Failed to parse value in counterexample"))
-       in
-	 Some (varname, value))
-
-let parse_cvc4_ce line =
-  if line = ")" then
-    raise End_of_file
-  else if line = "(model" then
-    None
-  else
-    (assert((String.sub line 0 12) = "(define-fun ");
-     assert((String.sub line ((String.length line) - 1) 1) = ")");
-     let trimmed1 = String.sub line 12 ((String.length line) - 13) in
-     let var_end = String.index trimmed1 ' ' in
-     let varname = String.sub trimmed1 0 var_end in
-     let trimmed2 = String.sub trimmed1 (var_end + 4)
-       ((String.length trimmed1) - (var_end + 4))
-     in
-       assert(((String.sub trimmed2 0 4) = "Bool") ||
-		 ((String.sub trimmed2 0 10) = "(_ BitVec "));
-       let trimmed3 =
-	 if (String.sub trimmed2 0 4) = "Bool" then
-	   String.sub trimmed2 5 ((String.length trimmed2) - 5)
-	 else
-	   let type_end = String.index trimmed2 ')' in
-	     String.sub trimmed2 (type_end + 2)
-	       ((String.length trimmed2) - (type_end + 2))
-       in
-         assert(((String.sub trimmed3 0 4) = "true") ||
-		   ((String.sub trimmed3 0 5) = "false") ||
-		   ((String.sub trimmed3 0 5) = "(_ bv"));
-	 let value = Int64.of_string
-	   (if (String.sub trimmed3 0 4) = "true" then
-	      "1"
-	    else if (String.sub trimmed3 0 5) = "false" then
-	      "0"
-	    else
-              let trimmed4 = String.sub trimmed3 5
-		((String.length trimmed3) - 5)
-	      in
-	      let val_end = String.index trimmed4 ' ' in
-	        String.sub trimmed4 0 val_end)
-	 in
-	   Some ((rename_var varname), value))
-
-let parse_counterex line solver =
-  if solver = "cvc4" then
-    parse_cvc4_ce line
-  else
-    parse_stp_ce line
+let parse_counterex e_s_t line =
+  match parse_ce e_s_t line with
+    | No_CE_here -> None
+    | End_of_CE -> raise End_of_file
+    | Assignment(s, i) -> Some (s, i)
 
 class smtlib_external_engine solver = object(self)
   inherit query_engine
@@ -134,7 +29,7 @@ class smtlib_external_engine solver = object(self)
   val mutable visitor = None
   val mutable first_query = true
   val mutable solver_chans =
-    if solver = "cvc4" then
+    if solver = CVC4 then
       let timeout_opt = match !opt_solver_timeout with
 	| Some s -> "--tlimit-per " ^ (string_of_int s) ^ "000 "
 	| None -> ""
@@ -231,18 +126,18 @@ class smtlib_external_engine solver = object(self)
 	| _ -> failwith ("Unexpected first output line " ^ result_s)
       in
       let first_assign = if first_assert then
-	  [(match parse_counterex result_s solver with
+	  [(match parse_counterex solver result_s with
 	  | Some ce -> ce | None -> failwith "Unexpected parse failure")]
 	else
 	  [] in
       let ce =
 	if (result = Some false) && first_assert then
-	  map_lines parse_counterex solver_in solver
-	else if (result = Some false) && solver = "cvc4" then
+	  map_lines (parse_counterex solver) solver_in
+	else if (result = Some false) && solver = CVC4 then
 	  (output_string_log log_file solver_out "(get-model)\n";
 	  flush solver_out;
 	  if !opt_save_solver_files then flush log_file;
-	  map_lines parse_counterex solver_in solver)
+	  map_lines (parse_counterex solver) solver_in)
 	else
           []
       in
@@ -254,7 +149,7 @@ class smtlib_external_engine solver = object(self)
 
   method private reset_solver_chans =
     solver_chans <-
-      if solver = "cvc4" then
+      if solver = CVC4 then
 	let timeout_opt = match !opt_solver_timeout with
 	  | Some s -> "--tlimit-per " ^ (string_of_int s) ^ " "
 	  | None -> ""
