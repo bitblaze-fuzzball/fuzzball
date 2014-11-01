@@ -126,11 +126,19 @@ let parse_cvc4_ce line =
 	 in
 	   Assignment ((smtlib_rename_var varname), value))
 
+let parse_btor_ce line =
+  let sp = String.index line ' ' in
+  let varname_raw = String.sub line 0 sp and
+      bits = String.sub line (sp + 1) ((String.length line) - sp - 1)
+  in
+    Assignment ((smtlib_rename_var varname_raw),
+		(Int64.of_string ("0b" ^ bits)))
+
 let parse_ce e_s_t =
   match e_s_t with
     | (STP_CVC|STP_SMTLIB2) -> parse_stp_ce e_s_t
     | CVC4 -> parse_cvc4_ce
-    | _ -> failwith "Unsupported e_s_t in parse_ce"
+    | BOOLECTOR -> parse_btor_ce
 
 let create_temp_dir prefix =
   let rec loop num =

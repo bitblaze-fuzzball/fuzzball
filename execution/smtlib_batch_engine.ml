@@ -12,13 +12,13 @@ open Query_engine;;
 open Solvers_common;;
 open Smt_lib2;;
 
-let parse_counterex line =
-  match parse_ce STP_SMTLIB2 line with
+let parse_counterex e_s_t line =
+  match parse_ce e_s_t line with
     | No_CE_here -> None
     | End_of_CE -> None
     | Assignment(s, i) -> Some (s, i)
 
-class smtlib_batch_engine fname = object(self)
+class smtlib_batch_engine e_s_t fname = object(self)
   inherit query_engine
 
   val mutable chan = None
@@ -130,18 +130,30 @@ class smtlib_batch_engine fname = object(self)
     output_string self#chan "(exit)\n";
     close_out self#chan;
     chan <- None;
-    let timeout_opt = match !opt_solver_timeout with
-      | Some s -> "-g " ^ (string_of_int s) ^ " "
-      | None -> ""
+    let timeout_opt = match (e_s_t, !opt_solver_timeout) with
+      | ((STP_SMTLIB2|STP_CVC), Some s) ->
+	  "-g " ^ (string_of_int s) ^ " "
+      | (CVC4, Some s) ->
+	  "--tlimit-per " ^ (string_of_int s) ^ "000 "
+      | (BOOLECTOR, Some s) ->
+	  "-t " ^ (string_of_int s) ^ " "
+      | (_, None) -> ""
     in
-    let cmd = !opt_solver_path ^ " --SMTLIB2 -p " ^ timeout_opt ^ curr_fname
+    let base_opt = match e_s_t with
+      | STP_SMTLIB2 -> " --SMTLIB2 -p "
+      | STP_CVC -> " -p " (* shouldn't really be here *)
+      | CVC4 -> " --lang smt -m --dump-models "
+      | BOOLECTOR -> " -m "
+    in
+    let cmd = !opt_solver_path ^ base_opt ^ timeout_opt ^ curr_fname
       ^ ".smt2 >" ^ curr_fname ^ ".smt2.out" in
       if !opt_trace_solver then
 	Printf.printf "Solver command: %s\n" cmd;
       flush stdout;
       let rcode = Sys.command cmd in
       let results = open_in (curr_fname ^ ".smt2.out") in
-	if rcode <> 0 then
+	if rcode <> 0 && rcode <> 10 && rcode <> 20 then
+	  (* 10 and 20 are used by Boolector for sat/unsat *)
 	  (Printf.printf "Solver died with result code %d\n" rcode;
 	   (match rcode with
 	      | 127 ->
@@ -168,11 +180,11 @@ class smtlib_batch_engine fname = object(self)
 	    | _ -> failwith "Unexpected first output line"
 	  in
 	  let first_assign = if first_assert then
-	    [(match parse_counterex result_s with
+	    [(match parse_counterex e_s_t result_s with
 		| Some ce -> ce | None -> failwith "Unexpected parse failure")]
 	  else
 	    [] in
-	  let ce = map_lines parse_counterex results in
+	  let ce = map_lines (parse_counterex e_s_t) results in
 	    close_in results;
 	    (result, first_assign @ ce)
 

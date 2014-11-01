@@ -25,6 +25,7 @@ let solver_cmdline_opts =
        (function
 	  | "stp" -> opt_smtlib_solver_type := Some STP_SMTLIB2
 	  | "cvc4" -> opt_smtlib_solver_type := Some CVC4
+	  | "btor"|"boolector" -> opt_smtlib_solver_type := Some BOOLECTOR
 	  | _ -> failwith "Unrecognized -smtlib-solver-type"
        ),
      "type stp,cvc4 (default is guessed from path)");
@@ -67,9 +68,6 @@ let solvers_table =
 	  Some (new Stp_external_engine.stp_external_engine ("fuzz" ^ s)));
      Hashtbl.replace h "smtlib-batch"
        (fun s ->
-	  Some (new Smtlib_batch_engine.smtlib_batch_engine ("fuzz" ^ s)));
-     Hashtbl.replace h "smtlib"
-       (fun s ->
 	  let stype = match !opt_smtlib_solver_type with
 	    | Some s -> s
 	    | None ->
@@ -77,6 +75,26 @@ let solvers_table =
 		  STP_SMTLIB2
 		else if ends_with !opt_solver_path "cvc4" then
 		  CVC4
+		else if ends_with !opt_solver_path "boolector" then
+		  BOOLECTOR
+		else
+		  failwith "Please specify -smtlib-solver-type"
+	  in
+	    Some (new Smtlib_batch_engine.smtlib_batch_engine
+		    stype ("fuzz" ^ s)));
+     Hashtbl.replace h "smtlib"
+       (fun s ->
+	  let stype = match !opt_smtlib_solver_type with
+	    | Some BOOLECTOR ->
+		failwith "Boolector does not support incremental solving"
+	    | Some s -> s
+	    | None ->
+		if ends_with !opt_solver_path "stp" then
+		  STP_SMTLIB2
+		else if ends_with !opt_solver_path "cvc4" then
+		  CVC4
+		else if ends_with !opt_solver_path "boolector" then
+		  failwith "Boolector does not support incremental solving"
 		else
 		  failwith "Please specify -smtlib-solver-type"
 	  in
