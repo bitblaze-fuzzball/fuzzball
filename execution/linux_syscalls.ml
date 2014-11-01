@@ -105,7 +105,13 @@ class linux_special_handler (fm : fragment_machine) =
     fm#load_byte_concretize addr !opt_measure_influence_syscall_args
       "syscall arg"
   in
-
+  let load_byte_or_q addr =
+    try
+      fm#load_byte_conc addr
+    with
+      | NotConcrete(_) ->
+	  Char.code '?'
+  in
   let read_buf addr len =
     if !opt_stop_on_symbolic_syscall_args then
       try
@@ -113,8 +119,11 @@ class linux_special_handler (fm : fragment_machine) =
       with
 	  NotConcrete(_) -> raise SymbolicSyscall
     else
+      let lb =
+	if !opt_skip_output_concretize then load_byte_or_q else load_byte
+      in
       Array.init len
-	(fun i -> Char.chr (load_byte (Int64.add addr (Int64.of_int i))))
+	(fun i -> Char.chr (lb (Int64.add addr (Int64.of_int i))))
   in
   let lea base i step off =
     Int64.add base (Int64.add (Int64.mul (Int64.of_int i) (Int64.of_int step))

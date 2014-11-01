@@ -68,6 +68,8 @@ let linux_cmdline_opts =
     ("-stop-on-symbolic-syscall-args",
      Arg.Set(opt_stop_on_symbolic_syscall_args),
      " Cut of path on symbolic value in system call argument");
+    ("-skip-output-concretize", Arg.Set(opt_skip_output_concretize),
+     " Output symbolic bytes as ? instead of solving");
     ("-chroot", Arg.String
        (fun s -> opt_chroot_path := Some s),
      "path Prepend PATH to absolute filenames");
