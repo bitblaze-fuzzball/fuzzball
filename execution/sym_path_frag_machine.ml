@@ -407,9 +407,12 @@ struct
 	  match pref with
 	    | Some b -> b
 	    | None ->
-		(if !opt_trace_guidance then
-		   Printf.printf "No guidance, choosing randomly\n";
-		 dt#random_bit)
+		(match !opt_always_prefer with
+		   | Some b -> b
+		   | _ ->
+		       if !opt_trace_guidance then
+			 Printf.printf "No guidance, choosing randomly\n";
+		       dt#random_bit)
 
     method query_with_pc_choice cond verbose choice =
       let trans_func b =

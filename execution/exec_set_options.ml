@@ -287,6 +287,9 @@ let explore_cmdline_opts =
 	  Hashtbl.add opt_branch_preference (Int64.of_string s1)
 	    (Int64.of_string s2)),
      "eip:(0|1) Prefer given direction for a symbolic branch");
+    ("-always-prefer", Arg.Bool
+       (fun b -> opt_always_prefer := Some b),
+     "bool Prefer given branch direction instead of random");
     ("-random-seed", Arg.Set_int opt_random_seed,
      "N Use given seed for path choice");
     ("-save-decision-tree-interval",
