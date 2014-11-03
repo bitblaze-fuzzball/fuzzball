@@ -46,6 +46,11 @@ let disjoin l =
     | [] -> V.exp_false
     | e :: el -> List.fold_left (fun a b -> V.BinOp(V.BITOR, a, b)) e el
 
+let xorjoin l =
+  match l with
+    | [] -> V.exp_false
+    | e :: el -> List.fold_left (fun a b -> V.BinOp(V.XOR, a, b)) e el
+
 module FormulaManagerFunctor =
   functor (D : Exec_domain.DOMAIN) ->
 struct
@@ -710,7 +715,7 @@ struct
 	  let v =
 	    Hashtbl.find table_trees_cache (table_num, idx_exp) in
 	    if !opt_trace_tables then
-	      (Printf.printf " (hit cache)\n";
+	      (Printf.printf "Hit table cache\n";
 	       Printf.printf "Select from table %d at %s is %s\n"
 		 table_num (V.exp_to_string idx_exp) (D.to_string_64 v);
 	       flush stdout);
@@ -721,8 +726,7 @@ struct
 	      let v' = self#tempify v ty
 	      in
 		if !opt_trace_tables then
-		  (Printf.printf "\n";
-		   Printf.printf "Select from table %d at %s is %s\n"
+		  (Printf.printf "Select from table %d at %s is %s\n"
 		     table_num (V.exp_to_string idx_exp) (D.to_string_64 v');
 		   flush stdout);
 		Hashtbl.replace table_trees_cache (table_num, idx_exp) v';
@@ -759,16 +763,127 @@ struct
 	  Printf.printf "...";
 	Printf.printf "\n"
 
+    (* Bitvectors can be seen as vectors or polynomials over the field
+       GF(2), which consists of 0 and 1 with XOR as addition and AND as
+       multiplication. In this setting, a function is linear if f(a XOR
+       b) = f(a) XOR f(b). Functions that are linear in this sense are
+       used in a number of places in error-correcting codes and
+       symmetric-key cryptography. Some bitvector SMT solvers can reason
+       effectively over the properties of such functions because their
+       SAT solvers can do bit-level gaussian elimination. However these
+       operations are often implemented in software using lookup tables,
+       which can keep the solvers from recognizing the linear
+       structure. So here we do the conversion for them, converting
+       lookup tables that happen to implement a linear function into a
+       more directly linear expression. Table lookup is equivalent to
+       taking the XOR for one value for each 1 bit in the index. *)
+    method private table_check_gf2 table idx_wd ty =
+      let build_from_spine spine n =
+	let rec loop x l n =
+	  match l with
+	    | [] -> x
+	    | m :: rest ->
+		let next =
+		  if (n land 1) = 1 then
+		    (Int64.logxor x m)
+		  else
+		    x
+		in
+		  loop next rest (n lsr 1)
+	in
+	  loop 0L spine n
+      in
+      let rec check_loop spine table =
+	let rec loop l i =
+	  match l with
+	    | [] -> true
+	    | x :: rest ->
+		let x' = build_from_spine spine i in
+		  if x <> x' then
+		    false
+		  else
+		    loop rest (i + 1)
+	in
+	  loop table 0
+      in
+      let conc v =
+	match ty with
+	  | V.REG_1  -> Int64.of_int (D.to_concrete_1  v)
+	  | V.REG_8  -> Int64.of_int (D.to_concrete_8  v)
+	  | V.REG_16 -> Int64.of_int (D.to_concrete_16 v)
+	  | V.REG_32 -> D.to_concrete_32 v
+	  | V.REG_64 -> D.to_concrete_64 v
+	  | _ -> failwith "Unexpected type in table_check_gf2"
+      in
+	try
+	  assert(List.length table = (1 lsl idx_wd));
+	  let table_conc = List.map conc table in
+	  let spine = Vine_util.mapn
+	    (fun i -> List.nth table_conc (1 lsl i)) (idx_wd - 1)
+	  in
+	    assert(List.length spine = idx_wd);
+	    if check_loop spine table_conc then
+	      (if !opt_trace_tables then
+		 (Printf.printf "Detected GF(2) linear operator with spine:\n";
+		  List.iter (fun n -> Printf.printf " 0x%Lx" n) spine;
+		  Printf.printf "\n");
+	       Some spine)
+	    else
+	      None
+	with
+	  | NotConcrete(_) -> None
+
+    method private make_gf2_operator spine ty idx_exp0 =
+      let rec term_loop l e n =
+	match l with
+	  | [] -> []
+	  | m :: rest ->
+	      let shift_amt = Int64.of_int n in
+	      let bit_e = V.Cast(V.CAST_LOW, V.REG_1,
+				 V.BinOp(V.RSHIFT, e,
+					 V.Constant(V.Int(V.REG_8,
+							  shift_amt))))
+	      in
+	      let wide_e = V.Cast(V.CAST_SIGNED, ty, bit_e) in
+	      let term = V.BinOp(V.BITAND, wide_e,
+				 V.Constant(V.Int(ty, m)))
+	      in
+		term :: (term_loop rest e (n+1))
+      in
+      let idx_ty = Vine_typecheck.infer_type_fast idx_exp0 in
+      let idx_v = self#tempify (D.from_symbolic idx_exp0) idx_ty in
+      let idx_exp = match idx_ty with
+	| V.REG_1  -> D.to_symbolic_1  idx_v
+	| V.REG_8  -> D.to_symbolic_8  idx_v
+	| V.REG_16 -> D.to_symbolic_16 idx_v
+	| V.REG_32 -> D.to_symbolic_32 idx_v
+	| V.REG_64 -> D.to_symbolic_64 idx_v
+	| _ -> failwith "Unexpected type in make_gf2_operator"
+      in
+      let terms = term_loop spine idx_exp 0 in
+      let e = xorjoin terms in
+      let v = D.from_symbolic e in
+      let v' = self#tempify v ty in
+	if !opt_trace_tables then
+	  (Printf.printf "Select from GF(2) table at %s is %s\n"
+	     (V.exp_to_string idx_exp) (D.to_string_64 v');
+	   flush stdout);
+	v'
+
     method make_table_lookup table idx_exp idx_wd ty =
       let (table_num, is_new) = self#save_table table ty in
 	if !opt_trace_tables then
-	  Printf.printf " is table %d" table_num;
-	let v =
-	  self#table_lookup_cached table table_num idx_exp idx_wd ty
-	in
-	  if is_new && !opt_trace_tables then
-	    self#print_table table ty table_num;
-	  v
+	  Printf.printf " is table %d\n" table_num;
+	match self#table_check_gf2 table idx_wd ty with
+	  | Some spine ->
+	      self#make_gf2_operator spine ty idx_exp
+	  | None ->
+	      let v =
+		self#table_lookup_cached table table_num idx_exp idx_wd ty
+	      in
+		if is_new && !opt_trace_tables then
+		  self#print_table table ty table_num;
+		v
 
     method if_expr_temp_unit (n,_,_) (fn_t: V.exp option  -> unit) =
       (* The slightly weird structure here is because we *don't*
