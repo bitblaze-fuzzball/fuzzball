@@ -65,6 +65,7 @@ object
   method sys_close : int -> unit
   method sys_connect : int -> int64 -> int -> unit
   method sys_dup : int -> unit
+  method sys_dup2 : int -> int -> unit
   method sys_eventfd2 : int64 -> int -> unit
   method sys_exit : int64 -> unit
   method sys_exit_group : int64 -> unit
@@ -96,6 +97,7 @@ object
   method sys_gettid : unit
   method sys_getrusage : int -> int64 -> unit
   method sys_getpeername : int -> int64 -> int64 -> unit
+  method sys_socketpair : int -> int -> int -> int64 -> unit
   method sys_getsockname : int -> int64 -> int64 -> unit
   method sys_gettimeofday : int64 -> int64 -> unit
   method sys_getxattr : string -> string -> int64 -> int -> unit
@@ -120,6 +122,7 @@ object
   method sys_readv : int -> int64 -> int -> unit
   method sys_pread64 : int -> int64 -> int -> int64 -> unit
   method sys_readlink : string -> int64 -> int -> unit
+  method sys_symlink : string -> string -> unit
   method sys_recv : int -> int64 -> int -> int -> unit
   method sys_recvfrom : int -> int64 -> int -> int -> int64 -> int64 -> unit
   method sys_shutdown: int -> int -> unit
@@ -138,6 +141,7 @@ object
   method sys_setuid32 : int -> unit
   method sys_setreuid : int -> int -> unit
   method sys_setresuid32 : int -> int -> int -> unit
+  method sys_setresgid32 : int -> int -> int -> unit
   method sys_setsockopt : int -> int -> int -> int64 -> int -> unit
   method sys_getsockopt : int -> int -> int -> int64 -> int64 -> unit
   method sys_set_robust_list : int64 -> int64 -> unit
@@ -159,6 +163,7 @@ object
   method sys_statfs64 : string -> int -> int64 -> unit
   method sys_fsync : int -> unit
   method sys_time : int64 -> unit
+  method sys_alarm : int -> unit
   method sys_times : int64 -> unit
   method sys_tgkill : int -> int -> int -> unit
   method sys_umask : int -> unit
