@@ -822,6 +822,14 @@ object(self)
       fd_info.(new_vt_fd).dirp_offset <- fd_info.(old_vt_fd).dirp_offset;
       put_return (Int64.of_int new_vt_fd)
 
+  method sys_dup2 old_vt_fd new_vt_fd =
+    let old_oc_fd = self#get_fd old_vt_fd and
+        new_oc_fd = self#get_fd new_vt_fd in
+    Unix.dup2 old_oc_fd new_oc_fd;
+    fd_info.(new_vt_fd).fname <- fd_info.(old_vt_fd).fname;
+    fd_info.(new_vt_fd).dirp_offset <- fd_info.(old_vt_fd).dirp_offset;
+    put_return (Int64.of_int new_vt_fd)
+
   method sys_eventfd2 initval flags =
     ignore(initval);
     let oc_flags = Unix.O_RDWR ::
@@ -1107,6 +1115,32 @@ object(self)
     with
       | Unix.Unix_error(err, _, _) -> self#put_errno err
 
+  method sys_socketpair dom_i typ_i prot_i addr =
+    try
+      let domain = match dom_i with
+      | 1 -> Unix.PF_UNIX
+      | _ ->
+        raise (Unix.Unix_error(
+                 Unix.EOPNOTSUPP, "Unsupported domain in socketpair(2)",""))
+      and
+      typ = match typ_i land 0o777 with
+      | 1 -> Unix.SOCK_STREAM
+      | 2 -> Unix.SOCK_DGRAM
+      | 3 -> Unix.SOCK_RAW
+      | 5 -> Unix.SOCK_SEQPACKET
+      | _ -> raise (Unix.Unix_error(Unix.EINVAL, "Bad socket type", ""))
+      in
+      let (oc_fd1, oc_fd2) = Unix.socketpair domain typ prot_i in
+      let vt_fd1 = self#fresh_fd () in
+      Array.set unix_fds vt_fd1 (Some oc_fd1);
+      let vt_fd2 = self#fresh_fd () in
+      Array.set unix_fds vt_fd2 (Some oc_fd2);
+      store_word addr 0 (Int64.of_int vt_fd1);
+      store_word addr 4 (Int64.of_int vt_fd2);
+      put_return 0L
+    with
+      | Unix.Unix_error(err, _, _) -> self#put_errno err
+
   method sys_getsockname sockfd addr addrlen_ptr =
     try
       if sockfd <> !netlink_sim_sockfd then (
@@ -1129,6 +1163,12 @@ object(self)
       (store_word zonep 0 0L; (* UTC *)
        store_word zonep 4 0L); (* no DST *)
     put_return 0L
+
+  method sys_symlink target linkpath =
+    try
+      Unix.symlink target (chroot linkpath);
+    with
+      | Unix.Unix_error(err, _, _) -> self#put_errno err
 
   method sys_getxattr path name value_ptr size =
     ignore(path); ignore(name); ignore(value_ptr); ignore(size);
@@ -1890,10 +1930,22 @@ object(self)
       (* Similar to sys_setreuid *)
       match (Unix.getuid (), Unix.geteuid(), new_ruid, new_euid, new_suid) with
       | (u1, u2, 65535, 0, 65535) when u1 <> 0 && u1 = u2 ->
-        raise (Unix.Unix_error(Unix.EPERM, "setreuid", ""))
+        raise (Unix.Unix_error(Unix.EPERM, "setresuid", ""))
       | (u1, u2, -1, u4, -1) when u1 <> 0 && u2 = u4 ->
         put_return 0L (* faked for OpenSSH ssh client *)
       | _ -> failwith "Unhandled case in setresuid32"
+    with
+      | Unix.Unix_error(err, _, _) -> self#put_errno err
+
+  method sys_setresgid32 new_ruid new_euid new_suid =
+    try
+      (* Similar to sys_setreuid *)
+      match (Unix.getuid (), Unix.geteuid(), new_ruid, new_euid, new_suid) with
+      | (u1, u2, 65535, 0, 65535) when u1 <> 0 && u1 = u2 ->
+        raise (Unix.Unix_error(Unix.EPERM, "setresgid32", ""))
+      | (u1, u2, -1, u4, -1) when u1 <> 0 && u2 = u4 ->
+        put_return 0L (* faked for OpenSSH sshd *)
+      | _ -> failwith "Unhandled case in setresgid32"
     with
       | Unix.Unix_error(err, _, _) -> self#put_errno err
 
@@ -2435,6 +2487,13 @@ object(self)
 	);
       put_return 0L (* success *)
 
+  method sys_alarm sec =
+    try
+      let ret = Unix.alarm sec in
+      put_return (Int64.of_int ret)
+    with
+      | Unix.Unix_error(err, _, _) -> self#put_errno err
+
   method sys_unlink path =
     try
       Unix.unlink path;
@@ -2673,7 +2732,11 @@ object(self)
 	 | (_, 26) -> (* ptrace *)
 	     uh "Unhandled Linux system call ptrace (26)"
 	 | (_, 27) -> (* alarm *)
-	     uh "Unhandled Linux system call alarm (27)"
+         let arg = read_1_reg () in
+         let sec = Int64.to_int arg in
+         if !opt_trace_syscalls then
+           Printf.printf "alarm(%d)" sec;
+         self#sys_alarm sec
 	 | (ARM, 28) -> uh "No oldfstat (28) syscall in Linux/ARM (E)ABI"
 	 | (X86, 28) -> (* oldfstat *)
 	     uh "Unhandled Linux system call oldfstat (28)"
@@ -2824,7 +2887,12 @@ object(self)
 	 | (_, 62) -> (* ustat *)
 	     uh "Unhandled Linux system call ustat (62)"
 	 | (_, 63) -> (* dup2 *)
-	     uh "Unhandled Linux system call dup2 (63)"
+         let (arg1,arg2) = read_2_regs () in
+         let fd1 = Int64.to_int arg1 and
+             fd2 = Int64.to_int arg2 in
+         if !opt_trace_syscalls then
+           Printf.printf "dup2(%d,%d)" fd1 fd2;
+         self#sys_dup2 fd1 fd2
 	 | (ARM, 64) -> uh "Check whether ARM getppid syscall matches x86"
 	 | (X86, 64) -> (* getppid *)
 	     if !opt_trace_syscalls then
@@ -2894,7 +2962,12 @@ object(self)
 	 | (_, 82) -> (* select *)
 	     uh "Unhandled Linux system call select (82)"
 	 | (_, 83) -> (* symlink *)
-	     uh "Unhandled Linux system call symlink (83)"
+         let (arg1, arg2) = read_2_regs () in
+         let target = (fm#read_cstr arg1) and
+             linkpath = (fm#read_cstr arg2) in
+         if !opt_trace_syscalls then
+           Printf.printf "symlink(%s, %s)" target linkpath;
+         self#sys_symlink target linkpath
 	 | (ARM, 84) -> uh "No oldlstat (84) syscall in Linux/ARM (E)ABI"
 	 | (X86, 84) -> (* oldlstat *)
 	     uh "Unhandled Linux system call oldlstat (84)"
@@ -3042,7 +3115,15 @@ object(self)
 			  Printf.printf "getpeername(%d, 0x%08Lx, 0x%08Lx)"
 			    sockfd addr addrlen_ptr;
 			self#sys_getpeername sockfd addr addrlen_ptr
-		  | 8 -> uh"Unhandled Linux system call socketpair (102:8)"
+		  | 8 -> 
+              let dom_i = Int64.to_int (load_word args) and
+                  typ_i = Int64.to_int (load_word (lea args 0 0 4)) and
+                  prot_i = Int64.to_int (load_word (lea args 0 0 8)) and
+                  addr = load_word (lea args 0 0 12) in
+              if !opt_trace_syscalls then
+                Printf.printf "socketpair(%d, %d, %d, 0x%08Lx)"
+                  dom_i typ_i prot_i addr;
+              self#sys_socketpair dom_i typ_i prot_i addr
 		  | 9 ->
 		      let sockfd = Int64.to_int (load_word args) and
 			  buf = load_word (lea args 0 0 4) and
@@ -3615,7 +3696,14 @@ object(self)
 		 ruid_ptr euid_ptr suid_ptr;
 	     self#sys_getresuid32 ruid_ptr euid_ptr suid_ptr;
 	 | (_, 210) -> (* setresgid32 *)
-	     uh "Unhandled Linux system call setresgid32 (210)"
+         let (ebx, ecx, edx) = read_3_regs () in
+         let ruid_ptr = ebx and
+             euid_ptr = ecx and
+             suid_ptr = edx in
+         if !opt_trace_syscalls then
+           Printf.printf "setresgid32(0x%08Lx, 0x%08Lx, 0x%08Lx)"
+             ruid_ptr euid_ptr suid_ptr;
+         self#sys_getresgid32 ruid_ptr euid_ptr suid_ptr;
 	 | (ARM, 211) -> uh "Check whether ARM getresgid32 syscall matches x86"
 	 | (X86, 211) -> (* getresgid32 *)
 	     let (ebx, ecx, edx) = read_3_regs () in
