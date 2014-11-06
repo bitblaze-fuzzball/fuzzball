@@ -76,6 +76,7 @@ let chroot s =
 
 type fd_extra_info = {
   mutable dirp_offset : int;
+  mutable readdir_eof: int;
   mutable fname : string;
   mutable snap_pos : int option;
 }
@@ -180,7 +181,7 @@ object(self)
 	    (Unix.Unix_error(Unix.EBADF, "Bad (virtual) file handle", ""))
 
   val fd_info = Array.init 1024
-    (fun _ -> { dirp_offset = 0; fname = ""; snap_pos = None })
+    (fun _ -> { dirp_offset = 0; readdir_eof = 0; fname = ""; snap_pos = None })
 
   val netlink_sim_sockfd = ref 1025
   val netlink_sim_seq = ref 0L
@@ -820,6 +821,7 @@ object(self)
       Array.set unix_fds new_vt_fd (Some new_oc_fd);
       fd_info.(new_vt_fd).fname <- fd_info.(old_vt_fd).fname;
       fd_info.(new_vt_fd).dirp_offset <- fd_info.(old_vt_fd).dirp_offset;
+      fd_info.(new_vt_fd).readdir_eof <- fd_info.(old_vt_fd).readdir_eof;
       put_return (Int64.of_int new_vt_fd)
 
   method sys_dup2 old_vt_fd new_vt_fd =
@@ -828,6 +830,7 @@ object(self)
     Unix.dup2 old_oc_fd new_oc_fd;
     fd_info.(new_vt_fd).fname <- fd_info.(old_vt_fd).fname;
     fd_info.(new_vt_fd).dirp_offset <- fd_info.(old_vt_fd).dirp_offset;
+    fd_info.(new_vt_fd).readdir_eof <- fd_info.(old_vt_fd).readdir_eof;
     put_return (Int64.of_int new_vt_fd)
 
   method sys_eventfd2 initval flags =
@@ -950,38 +953,43 @@ object(self)
       let dirname = chroot fd_info.(fd).fname in
       let dirh = Unix.opendir dirname in
       let written = ref 0 in
-	for i = 0 to fd_info.(fd).dirp_offset - 1 do
-	  ignore(Unix.readdir dirh)
-	done;
-	try
-	  while true do
-	    let fname = Unix.readdir dirh in
-	    let reclen = 19 + (String.length fname) + 1 in
-	    let next_pos = !written + reclen in
-	      if next_pos >= buf_sz then
-		 raise End_of_file
-	      else
-		let oc_st = Unix.stat (dirname ^ "/" ^ fname) in
-		let d_ino = oc_st.Unix.st_ino in
-		  store_word dirp !written (Int64.of_int d_ino);
-		  written := !written + 4;
-		  store_word dirp !written 0L; (* high bits of d_ino *)
-		  written := !written + 4;
-		  store_word dirp !written (Int64.of_int next_pos);
-		  written := !written + 4;
-		  store_word dirp !written 0L; (* high bits of d_off *)
-		  written := !written + 4;
-		  fm#store_short_conc (lea dirp 0 0 !written) reclen;
-		  written := !written + 2;
-		  fm#store_byte_conc (lea dirp 0 0 !written) 0; (* d_type *)
-		  written := !written + 1;
-		  fm#store_cstr dirp (Int64.of_int !written) fname;
-		  written := !written + (String.length fname) + 1;
-		  fd_info.(fd).dirp_offset <- fd_info.(fd).dirp_offset + 1;
-	  done;
-	with End_of_file -> ();
-	  Unix.closedir dirh;
-	  put_return (Int64.of_int !written)
+      if fd_info.(fd).readdir_eof = 0 then (
+        for i = 0 to fd_info.(fd).dirp_offset - 1 do
+          ignore(Unix.readdir dirh)
+        done;);
+    try
+      while true do
+        if fd_info.(fd).readdir_eof = 1 then (
+          raise End_of_file);
+        fd_info.(fd).readdir_eof <- 1;
+        let fname = Unix.readdir dirh in
+        fd_info.(fd).readdir_eof <- 0;
+        let reclen = 19 + (String.length fname) + 1 in
+        let next_pos = !written + reclen in
+        if next_pos >= buf_sz then
+          raise End_of_file
+        else
+          let oc_st = Unix.stat (dirname ^ "/" ^ fname) in
+          let d_ino = oc_st.Unix.st_ino in
+          store_word dirp !written (Int64.of_int d_ino);
+          written := !written + 4;
+          store_word dirp !written 0L; (* high bits of d_ino *)
+          written := !written + 4;
+          store_word dirp !written (Int64.of_int next_pos);
+          written := !written + 4;
+          store_word dirp !written 0L; (* high bits of d_off *)
+          written := !written + 4;
+          fm#store_short_conc (lea dirp 0 0 !written) reclen;
+          written := !written + 2;
+          fm#store_byte_conc (lea dirp 0 0 !written) 0; (* d_type *)
+          written := !written + 1;
+          fm#store_cstr dirp (Int64.of_int !written) fname;
+          written := !written + (String.length fname) + 1;
+          fd_info.(fd).dirp_offset <- fd_info.(fd).dirp_offset + 1;
+      done;
+    with End_of_file -> ();
+      Unix.closedir dirh;
+      put_return (Int64.of_int !written)
     with
       | Unix.Unix_error(err, _, _) -> self#put_errno err
 
@@ -1452,6 +1460,7 @@ object(self)
 	Array.set unix_fds vt_fd (Some oc_fd);
 	fd_info.(vt_fd).fname <- path;
 	fd_info.(vt_fd).dirp_offset <- 0;
+    fd_info.(vt_fd).readdir_eof <- 0;
 	(* XXX: canonicalize filename here? *)
 	if Hashtbl.mem symbolic_fnames path then
 	  Hashtbl.replace symbolic_fds vt_fd
