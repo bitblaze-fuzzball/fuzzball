@@ -567,8 +567,14 @@ struct
       let eip = self#get_eip in
       let v = form_man#simplify1 (self#eval_int_exp exp) in
       let (is_conc, result) =
-	try (true, (D.to_concrete_1 v) = 1)
-	with NotConcrete _ -> (false, false)
+	if Hashtbl.mem opt_branch_preference_unchecked eip then
+	  match Hashtbl.find opt_branch_preference_unchecked eip with
+	    | 0L -> (true, false)
+	    | 1L -> (true, true)
+	    | _ -> failwith "Unsupported branch preference"
+	else
+	  try (true, (D.to_concrete_1 v) = 1)
+	  with NotConcrete _ -> (false, false)
       in
 	if is_conc then
 	  (ignore(self#call_cjmp_heuristic eip targ1 targ2 (Some result));

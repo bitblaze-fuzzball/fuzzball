@@ -32,6 +32,7 @@ val opt_save_solver_files : bool ref
 val opt_solver_path : string ref
 val opt_follow_path : string ref
 val opt_branch_preference : (int64, int64) Hashtbl.t
+val opt_branch_preference_unchecked : (int64, int64) Hashtbl.t
 val opt_always_prefer : bool option ref
 val opt_iteration_limit : int64 ref
 val opt_watch_expr_str : string option ref

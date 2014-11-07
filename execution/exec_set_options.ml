@@ -287,6 +287,11 @@ let explore_cmdline_opts =
 	  Hashtbl.add opt_branch_preference (Int64.of_string s1)
 	    (Int64.of_string s2)),
      "eip:(0|1) Prefer given direction for a symbolic branch");
+    ("-branch-preference-unchecked", Arg.String
+       (fun s -> let (s1, s2) = split_string ':' s in
+	  Hashtbl.add opt_branch_preference_unchecked (Int64.of_string s1)
+	    (Int64.of_string s2)),
+     "eip:(0|1) Prefer given direction without solving");
     ("-always-prefer", Arg.Bool
        (fun b -> opt_always_prefer := Some b),
      "bool Prefer given branch direction instead of random");
@@ -520,7 +525,9 @@ let trace_replay_cmdline_opts =
 let set_program_name s =
   match !opt_program_name with 
     | None -> opt_program_name := Some s
-    | _ -> failwith "Multiple non-option args not allowed"
+    | Some prev ->
+	Printf.printf "Multiple args: %s, %s\n" prev s;
+	failwith "Multiple non-option args not allowed"
 
 let default_on_missing = ref (fun fm -> fm#on_missing_zero)
 

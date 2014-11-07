@@ -54,6 +54,7 @@ let opt_save_solver_files = ref false
 let opt_solver_path = ref "stp"
 let opt_follow_path = ref ""
 let opt_branch_preference = Hashtbl.create 10
+let opt_branch_preference_unchecked = Hashtbl.create 10
 let opt_always_prefer = ref None
 let opt_iteration_limit = ref 1000000000000L
 let opt_watch_expr_str = ref None
