@@ -83,6 +83,9 @@ let linux_cmdline_opts =
     ("-max-receives", Arg.Int
        (fun i -> opt_max_receives := Some i),
      "NUM Stop path after too many receive(2cgc) calls");
+    ("-max-transmit-bytes", Arg.Int
+       (fun i -> opt_max_transmit_bytes := Some i),
+     "NUM Stop path after too much data transmit(2cgc)ed");
     ("-symbolic-random", Arg.Set(opt_symbolic_random),
      " Make all data read by random(2cgc) symbolic");
     ("-one-random", Arg.Set(opt_one_random),

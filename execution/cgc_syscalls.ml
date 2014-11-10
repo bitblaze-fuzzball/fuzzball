@@ -72,6 +72,8 @@ object(self)
       | Unix.EUNKNOWNERR(_) -> 3
       | _ -> 3
 
+  val mutable transmit_pos = 0
+
   (* Right now we always redirect the program's FDs 1 and 2 (stdout
      and stderr) to FuzzBALL's stdout. We might want to consider doing
      this more selectively, or controlled by a command-line flag. *)
@@ -80,6 +82,12 @@ object(self)
     let success num_bytes =
       if tx_bytes <> 0L then
 	store_word tx_bytes 0 num_bytes;
+      transmit_pos <- transmit_pos + (Int64.to_int num_bytes);
+      (match !opt_max_transmit_bytes with
+	 | Some max ->
+	     if transmit_pos > max then
+	       raise DeepPath
+	 | _ -> ());
       put_return 0L
     in
       (try
@@ -132,6 +140,8 @@ object(self)
   val mutable num_receives = 0
   val mutable saved_num_receives = 0
 
+  val mutable saved_transmit_pos = 0
+
   val mutable receive_pos = 0
   val mutable saved_receive_pos = 0
 
@@ -143,11 +153,13 @@ object(self)
 
   method private save_depth_state =
     saved_num_receives <- num_receives;
+    saved_transmit_pos <- transmit_pos;
     saved_receive_pos <- receive_pos;
     saved_randomness <- randomness
 
   method private reset_depth_state =
     num_receives <- saved_num_receives;
+    transmit_pos <- saved_transmit_pos;
     receive_pos <- saved_receive_pos;
     randomness <- saved_randomness
 

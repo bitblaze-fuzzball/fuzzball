@@ -79,6 +79,7 @@ let  getParameterTable () =
     add_parameter "-decree" (Bool EO.opt_decree);
     add_parameter "-symbolic-receive" (Bool EO.opt_symbolic_receive);
     add_parameter "-max-receives" (IntOpt EO.opt_max_receives);
+    add_parameter "-max-transmit-bytes" (IntOpt EO.opt_max_transmit_bytes);
     add_parameter "-symbolic-random" (Bool EO.opt_symbolic_random);
     add_parameter "-skip-timeouts" (Bool EO.opt_skip_timeouts);
 

@@ -197,6 +197,7 @@ let opt_arch_string = ref None
 let opt_decree = ref false
 let opt_symbolic_receive = ref false
 let opt_max_receives = ref None
+let opt_max_transmit_bytes = ref None
 let opt_symbolic_random = ref false
 let opt_one_random = ref false
 let opt_skip_timeouts = ref false
