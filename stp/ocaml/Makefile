@@ -8,8 +8,15 @@ LIBDIRS = ..
 CLIBS = stp stdc++
 
 OCAMLFLAGS := -warn-error Aelz
+
+ifdef DEBUG
+CFLAGS += -g
+endif
+
 ifdef PROFILE
+CFLAGS += -p -pg
 OCAMLFLAGS += -p
+OCAMLLDFLAGS += -p
 endif
 export OCAMLFLAGS
 

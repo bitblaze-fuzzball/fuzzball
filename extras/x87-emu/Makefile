@@ -2,6 +2,7 @@
 #               Makefile for wm-FPU-emu
 #
 
+
 #DEBUG	= -DDEBUGGING
 DEBUG	=
 PARANOID = -DPARANOID
@@ -9,6 +10,15 @@ EXTRA_CFLAGS	:= $(PARANOID) $(DEBUG) -fno-builtin $(MATH_EMULATION)
 EXTRA_AFLAGS	:= $(PARANOID)
 CC := gcc -m32
 CFLAGS := $(PARANOID) $(DEBUG) -O3 -fno-strict-aliasing -g -Wall
+
+ifdef DEBUG
+CFLAGS += -g
+endif
+
+ifdef PROFILE
+CFLAGS += -p -pg
+OCAMLFLAGS += -p
+endif
 
 # From 'C' language sources:
 C_OBJS =fpu_entry.o errors.o \

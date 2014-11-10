@@ -22,8 +22,17 @@ export OCAMLDEP = ocamldep -I $(VINE_OCAMLDIR) -I $(VINE_TRACEDIR) \
 
 OCAMLFLAGS := -warn-error Aelz
 
+CFLAGS := 
+
+ifdef DEBUG
+CFLAGS += -g
+endif
+
 ifdef PROFILE
+CFLAGS += -p -pg
 OCAMLFLAGS += -p
+OCAMLLDFLAGS += -p
+LDFLAGS += -p -pg
 endif
 
 export OCAMLFLAGS

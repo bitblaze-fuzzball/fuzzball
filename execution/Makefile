@@ -78,8 +78,10 @@ CFLAGS :=
 ifdef DEBUG
 CFLAGS += -g
 endif
+
 ifdef PROFILE
-CFLAGS += -p
+CFLAGS += -p -pg
+LDFLAGS = -p -pg
 endif
 
 export CFLAGS

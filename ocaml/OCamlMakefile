@@ -743,6 +743,10 @@ ifdef make_deps
   PRE_TARGETS :=
 endif
 
+ifdef PROFILE
+	LDFLAGS += -p
+endif
+
 ###########################################################################
 # USER RULES
 

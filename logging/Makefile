@@ -23,7 +23,10 @@ export OCAMLDEP = ocamldep -I ../execution
 
 OCAMLFLAGS := -warn-error Aelz
 ifdef PROFILE
+CFLAGS += -p -pg
 OCAMLFLAGS += -p
+OCAMLLDFLAGS += -p
+LDFLAGS += -p -pg
 endif
 export OCAMLFLAGS
 
