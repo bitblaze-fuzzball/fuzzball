@@ -6,6 +6,7 @@
 #include <stddef.h>
 
 #include <string>
+#include <sstream>
 #include <vector>
 #include <iostream>
 #include <assert.h>
@@ -1165,11 +1166,22 @@ Stmt *i386_translate_put( IRStmt *stmt, IRSB *irbb, vector<Stmt *> *irout )
 	Exp *ndata = new Cast(data, REG_32, CAST_LOW);
 	result = translate_put_reg_32(offset, ndata, irbb);
     }
-
+    // maybe its SSE stuff
+    else if (offset <= OFFB_XMM7 || \
+	     offset >= OFFB_SSEROUND)
+    {
+      Exp::destroy(data);
+	std::stringstream foo;
+	foo << std::hex << "Unhandled SSE register type at : 0x" <<  offset;
+        result = new Special(foo.str());
+    }
+     
     else
     {
 	Exp::destroy(data);
-        result = new Special("Unrecognized register type");
+	std::stringstream foo;
+	foo << "Unrecognized register type at : 0x" << std::hex <<  offset;
+        result = new Special(foo.str());
     }
 
     return result;

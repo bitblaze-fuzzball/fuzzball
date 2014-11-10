@@ -85,3 +85,19 @@ object(self)
   method make_snap : unit = ()
   method reset : unit = ()
 end
+
+
+class sse_floating_point_punter (fm : fragment_machine) =
+  (** CLang encodes floating point math in a differnt way than GCC by default.
+      This code just punts on SSE floating point instructions *)
+object(self)
+  method handle_special (str : string) : V.stmt list option =
+    try
+      let relevant = String.sub str 10 3 in (* magic relies on the way error messages come from libvex *)
+      if (String.compare "SSE" relevant ) = 0
+      then Some [] (* some no-op *)
+      else None
+    with _ -> None
+  method make_snap : unit = ()
+  method reset : unit = ()
+end

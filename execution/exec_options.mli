@@ -129,6 +129,7 @@ val opt_finish_reasons_needed : int ref
 val opt_total_timeout : float option ref
 val opt_x87_emulator : string option ref
 val opt_x87_entry_point : int64 option ref
+val opt_sse_emulator : string option ref
 val opt_trace_fpu : bool ref
 val opt_target_strings : (string * string) list ref
 val opt_target_string_files : (string * string) list ref

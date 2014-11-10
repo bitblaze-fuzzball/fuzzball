@@ -507,6 +507,8 @@ let cmdline_opts =
      " Treat some unhandled system instructions as no-ops");
     ("-x87-emulator", Arg.String (fun s -> opt_x87_emulator := Some s),
      "emulator.so Enable x87 emulation with given code");
+    ("-sse-emulator", Arg.String (fun s -> opt_sse_emulator := Some s),
+     "emulator.so Enable SSE emulation with given code, or \"punt\" to no-op sse instructions");
     ("-final-pc", Arg.Set(opt_final_pc),
      " Print final path condition at end of trace");
     ("-solve-final-pc", Arg.Set(opt_solve_final_pc),

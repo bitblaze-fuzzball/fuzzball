@@ -149,6 +149,7 @@ let opt_finish_immediately = ref false
 let opt_finish_reasons_needed = ref 1
 let opt_total_timeout = ref None
 let opt_x87_emulator = ref None
+let opt_sse_emulator = ref None
 let opt_x87_entry_point = ref None
 let opt_trace_fpu = ref false
 let opt_target_strings = ref []

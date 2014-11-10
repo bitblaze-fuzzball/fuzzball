@@ -1727,7 +1727,7 @@ struct
 			| Some sl -> 
 			    loop (sl @ rest)
 			| None ->
-			    Printf.printf "Unhandled special %s\n" str;
+			    Printf.printf "Unhandled special |%s|\n" str;
 			    failwith "Unhandled special")
 		 | V.Label(l) ->
 		     if ((String.length l > 5) && 

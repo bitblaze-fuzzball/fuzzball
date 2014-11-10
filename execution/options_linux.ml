@@ -162,6 +162,13 @@ let apply_linux_cmdline_opts (fm : Fragment_machine.fragment_machine) =
 	 let fpu_sh = new Special_handlers.x87_emulator_special_handler fm in
 	   fm#add_special_handler (fpu_sh :> Fragment_machine.special_handler)
      | None -> ());
+  (match !opt_sse_emulator with
+  | Some s ->
+    (match s with 
+    | "punt" -> let sse_punter = new Special_handlers.sse_floating_point_punter fm in
+		fm#add_special_handler (sse_punter :> Fragment_machine.special_handler)
+    | _ -> failwith (Printf.sprintf "Unrecognized sse handler %s" s ))
+  | None -> ());
   (match !opt_tls_base with
      | Some base -> Linux_loader.setup_tls_segment fm 0x60000000L base
      | None -> ())
