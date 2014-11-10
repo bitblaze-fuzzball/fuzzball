@@ -85,7 +85,9 @@ val stack_table = Hashtbl.create 100
 
 		) alloc_table;
 		
-		Hashtbl.add alloc_table addr (Array.make (Int64.to_int len) false);
+		if (0 > (Int64.to_int len))
+		then failwith "Trying to add an alloc_table entry that's too big."
+		else Hashtbl.add alloc_table addr (Array.make (Int64.to_int len) false);
 
 		let updated_deallocs =
 			Hashtbl.fold (fun key value accum ->
