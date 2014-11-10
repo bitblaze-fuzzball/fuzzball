@@ -474,7 +474,7 @@ object (self)
 		"(ite ", " " ^ (make_ones bits) ^
 		   " " ^ (make_zeros bits) ^ ")"
 	    | (CAST_SIGNED, _, _)  ->
-		("((_ sign-extend " ^ string_of_int(bits-bits1) ^ ") ", ")")
+		("((_ sign_extend " ^ string_of_int(bits-bits1) ^ ") ", ")")
 	    | (CAST_LOW, _, REG_1) ->
 		("(= #b1 ((_ extract "^string_of_int(bits - 1)^" 0) ", "))")
 	    | (CAST_LOW, _, _) ->
