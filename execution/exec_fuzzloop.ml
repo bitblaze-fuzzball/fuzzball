@@ -198,8 +198,10 @@ let fuzz_runloop fm fuzz_start_eip asmir_gamma end_eips =
 let fuzz start_eip opt_fuzz_start_eip end_eips
     (fm : fragment_machine) asmir_gamma symbolic_init reset_cb =
   if !opt_trace_setup then
-    (Printf.printf "Initial registers:\n";
+    (Printf.printf "start:0x%08Lx fuzz-start:0x%08Lx\n" start_eip opt_fuzz_start_eip;
+     Printf.printf "Initial registers:\n";
      fm#print_regs);
+  add_remove_hook fm;
   (match !opt_periodic_stats with
      | Some p -> add_periodic_hook fm p
      | None -> ());

@@ -95,6 +95,27 @@ let match_faked_insn eip insn_bytes =
 					  sl)]
 	)
 
+let mem_bytemap = Hashtbl.create 100001	(*each memory byte -> correspoding trans_cache entry*)
+let invalid_list = Hashtbl.create 100	(*if remove KEY from trans_cache, also remove VALUE*)
+
+(*Fill two hashtbls, mem_bytemap and invalid_list, while decoding each asm instruction*)
+let with_mem_bytemap (s_addr:int64) (size:int) (trans_addr:int64) =
+	let handle_each_byte addr =  
+	if Hashtbl.mem mem_bytemap addr then(
+		let prev = Hashtbl.find mem_bytemap addr in
+		Hashtbl.replace mem_bytemap addr trans_addr;
+		if not (Hashtbl.mem invalid_list trans_addr) then(
+			Hashtbl.add invalid_list trans_addr prev;
+			(*Printf.printf "[invalid_list] Add 0x%08Lx 0x%08Lx\n" trans_addr prev*))
+		)
+	else
+		Hashtbl.add mem_bytemap addr trans_addr
+	in	 
+	for offset = 0 to size do
+		let byte_addr = Int64.add s_addr (Int64.of_int offset) in
+		handle_each_byte byte_addr 
+	done	
+	
 let decode_insn asmir_gamma eip insn_bytes =
   (* It's important to flush buffers here because VEX will also
      print error messages to stdout, but its buffers are different from
@@ -105,6 +126,7 @@ let decode_insn asmir_gamma eip insn_bytes =
     | Some sl -> sl
     | _ -> Asmir.asm_bytes_to_vine asmir_gamma arch eip insn_bytes
   in
+    with_mem_bytemap eip (Array.length insn_bytes) eip;
     match sl with 
       | [V.Block(dl', sl')] ->
 	  if !opt_trace_orig_ir then
@@ -289,4 +311,28 @@ let decode_insns fm gamma starting_eip k =
 	 | _ -> tuple_push cur_tup bottom in (* end of basic block, e.g. indirect jump *)
   let decl_list_list, statement_list_list = decode_insns_int starting_eip k in  
   List.concat decl_list_list,
-  List.concat statement_list_list		
+  List.concat statement_list_list
+
+(*Erase trans cache entry indexed by addr and all related entries indicated by invalid_list*)
+let rec erase_trans_cache addr = 
+	(*Printf.printf "Size of invalid_list : %d\n" (Hashtbl.length invalid_list);*)
+	Hashtbl.remove trans_cache addr;
+	(*Printf.printf "Erase Trans_cache 0x%08Lx\n" addr;*)
+	if Hashtbl.mem invalid_list addr then(
+		let prev_addr = Hashtbl.find invalid_list addr in 
+		(*Printf.printf "		0x%08Lx should be erased next\n" prev_addr;*)
+		Hashtbl.remove invalid_list addr;
+		erase_trans_cache prev_addr)
+	
+
+let add_remove_hook fm =
+	let hook s_addr size =
+		for offset = 0 to size do
+			(*Hashtbl.remove mem_bytemap (Int64.of_int byte);*)
+			let byte = Int64.add s_addr (Int64.of_int offset) in
+			if Hashtbl.mem mem_bytemap byte then (
+				let addr = Hashtbl.find mem_bytemap byte in
+				erase_trans_cache addr;)
+		done
+	in
+	fm#add_extra_store_hook hook

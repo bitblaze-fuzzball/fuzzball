@@ -242,6 +242,9 @@ sig
     method load_short_concretize : int64 -> bool -> string -> int
     method load_word_concretize  : int64 -> bool -> string -> int64
     method make_sink_region : string -> int64 -> unit
+
+    method add_extra_store_hook : (int64 -> int -> unit) -> unit
+    method run_store_hooks  : int64 -> int -> unit
     method before_first_branch : bool
     method get_start_eip : int64
     method set_start_eip : int64 -> unit

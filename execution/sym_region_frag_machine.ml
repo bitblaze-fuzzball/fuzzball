@@ -813,14 +813,28 @@ struct
 	      -> (v1, (conc ty2 v2))
 	  | _ -> (v1, v2)
 
+    val mutable extra_store_hooks = []
+
+    method add_extra_store_hook f = 
+	extra_store_hooks <- f :: extra_store_hooks
+	
+    method run_store_hooks s_addr size =
+	let apply_store_hook fn =
+	(fn s_addr size) in
+	List.iter apply_store_hook extra_store_hooks	
+	
     method private store_byte_region  r addr b =
-      (self#region r)#store_byte  addr b
+      (self#region r)#store_byte  addr b;
+      self#run_store_hooks addr 8
     method private store_short_region r addr s =
-      (self#region r)#store_short addr s
+      (self#region r)#store_short addr s;
+      self#run_store_hooks addr 16
     method private store_word_region  r addr w =
-      (self#region r)#store_word  addr w
+      (self#region r)#store_word  addr w;
+      self#run_store_hooks addr 32
     method private store_long_region  r addr l =
-      (self#region r)#store_long  addr l
+      (self#region r)#store_long  addr l;
+      self#run_store_hooks addr 64
 
     method private load_byte_region  r addr = (self#region r)#load_byte  addr
     method private load_short_region r addr = (self#region r)#load_short addr

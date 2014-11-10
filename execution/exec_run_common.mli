@@ -26,3 +26,8 @@ val last : 'a list -> 'a
 val has_special : Vine.stmt list -> bool
 
 val tuple_push : 'a * 'b -> 'a list * 'b list -> 'a list * 'b list
+
+val add_remove_hook : Fragment_machine.fragment_machine -> unit
+
+val with_mem_bytemap : int64 -> int -> int64 -> unit
+val erase_trans_cache : int64 -> unit

@@ -355,6 +355,8 @@ class virtual fragment_machine = object
 
   method virtual make_sink_region : string -> int64 -> unit
 
+  method virtual add_extra_store_hook : (int64 -> int -> unit) -> unit
+  method virtual run_store_hooks  : int64 -> int -> unit
   method virtual before_first_branch : bool
   method virtual get_start_eip : int64
   method virtual set_start_eip : int64 -> unit
@@ -483,7 +485,17 @@ struct
       self#concretize_misc;
       insns <- sl
 
-    method concretize_misc = () 
+    method concretize_misc = ()
+
+    val mutable extra_store_hooks = []
+
+    method add_extra_store_hook f = 
+	extra_store_hooks <- f :: extra_store_hooks
+	
+    method run_store_hooks s_addr size =
+	let apply_store_hook fn =
+		(fn s_addr size) in
+	List.iter apply_store_hook extra_store_hooks	 
     	
     val mutable extra_eip_hooks = []
 
@@ -1141,17 +1153,41 @@ struct
 	| X64 -> self#simplify_x64_regs
 	| ARM -> self#simplify_arm_regs
 
-    method store_byte  addr b = mem#store_byte  addr b
-    method store_short addr s = mem#store_short addr s
-    method store_word  addr w = mem#store_word  addr w
-    method store_long  addr l = mem#store_long  addr l
+    method store_byte  addr b = 
+	mem#store_byte  addr b;
+	self#run_store_hooks addr 8
+	
+    method store_short addr s = 
+	mem#store_short addr s;
+        	self#run_store_hooks addr 16
+	
+    method store_word  addr w =
+	mem#store_word  addr w;
+	self#run_store_hooks addr 32
+	
+    method store_long  addr l = 
+	mem#store_long  addr l;
+	self#run_store_hooks addr 64
 
-    method store_byte_conc  addr b = mem#store_byte addr (D.from_concrete_8 b)
-    method store_short_conc addr s = mem#store_short addr(D.from_concrete_16 s)
-    method store_word_conc  addr w = mem#store_word addr (D.from_concrete_32 w)
-    method store_long_conc  addr l = mem#store_long addr (D.from_concrete_64 l)
+    method store_byte_conc  addr b =
+	mem#store_byte addr (D.from_concrete_8 b);
+	self#run_store_hooks addr 8
+	
+    method store_short_conc addr s =
+	mem#store_short addr(D.from_concrete_16 s);
+	self#run_store_hooks addr 16
+	
+    method store_word_conc  addr w =
+	mem#store_word addr (D.from_concrete_32 w);
+	self#run_store_hooks addr 32
+	
+    method store_long_conc  addr l =
+	mem#store_long addr (D.from_concrete_64 l);
+	self#run_store_hooks addr 64
 
-    method store_page_conc  addr p = mem#store_page addr p
+    method store_page_conc  addr p =
+	mem#store_page addr p;
+	self#run_store_hooks addr 4096
 
     method private load_byte  addr = mem#load_byte  addr
     method private load_short addr = mem#load_short addr
