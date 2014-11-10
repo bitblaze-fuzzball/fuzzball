@@ -279,6 +279,50 @@ struct
       | Gran32s(g1, g2) -> (gran32_size g1) + (gran32_size g2)
       | Absent64 -> 1
 
+  let merge8 src dst =
+	match (src, dst) with
+	| (Byte(_), Byte(_)) | (Byte(_), Absent8) -> src
+	| _ -> dst
+
+  let merge16 src dst =
+	match (src, dst) with
+	| (Gran8s(sl, sr), Gran8s(dl, dr)) -> 
+		Gran8s((merge8 sl dl), (merge8 sr dr))
+	| (Gran8s(sl, sr), t)  ->
+		let (wl, wr) = gran16_split t in
+		Gran8s((merge8 sl wl), (merge8 sr wr))
+	| (t, Gran8s(dl, dr))  ->
+		let (wl, wr) = gran16_split t in
+		Gran8s((merge8 wl dl), (merge8 wr dr))
+	| (Short(_), Short(_)) | (Short(_), Absent16) -> src
+	| _ -> dst
+
+  let merge32 src dst =
+	match (src, dst) with
+	| (Gran16s(sl, sr), Gran16s(dl, dr)) -> 
+		Gran16s((merge16 sl dl), (merge16 sr dr))
+	| (Gran16s(sl, sr), t) ->
+		let (wl, wr) = gran32_split t in
+		Gran16s((merge16 sl wl), (merge16 sr wr))
+	| (t, Gran16s(dl, dr)) ->
+		let (wl, wr) = gran32_split t in
+		Gran16s((merge16 wl dl), (merge16 wr dr))
+	| (Word(_), Word(_)) | (Word(_), Absent32) -> src
+	| _ -> dst
+
+  let merge64 src dst =
+	match (src, dst) with
+	| (Gran32s(sl, sr), Gran32s(dl, dr)) -> 
+		Gran32s((merge32 sl dl), (merge32 sr dr))
+	| (Gran32s(sl, sr), t) ->
+		let (wl, wr) = gran64_split t in
+		Gran32s((merge32 sl wl), (merge32 sr wr))
+	| (t, Gran32s(dl, dr)) ->
+		let (wl, wr) = gran64_split t in
+		Gran32s((merge32 wl dl), (merge32 wr dr))
+	| (Long(_), Long(_)) | (Long(_), Absent64) -> src
+	| _ -> dst
+		
 
   class virtual granular_memory = object(self)
     val mutable missing : (int -> int64 -> D.t) =
@@ -454,6 +498,10 @@ struct
 
     method virtual measure_size : int * int * int
 
+    method virtual update_mem : int64 -> gran64 -> unit
+
+    method virtual copy_to :  granular_memory -> unit
+
   (* method make_snap () = failwith "make_snap unsupported"; ()
      method reset () = failwith "reset unsupported"; () *)
   end
@@ -501,7 +549,7 @@ struct
       let page = self#get_page addr and
 	  idx = Int64.to_int (Int64.logand addr 0xfffL) in
       let chunk = idx asr 3 in
-	"[" ^ (gran64_to_string page.(chunk)) ^ "]"
+	"[" ^ (gran64_to_string page.(chunk)) ^ "]" 
 
     method clear () =
       Array.fill mem 0 0x100001 None
@@ -518,6 +566,33 @@ struct
       in
       let num_entries = sum_some (fun page -> 512) mem in
 	(num_entries, num_nodes, 0)
+	
+    method update_mem addr src = 
+	let idx = Int64.to_int (Int64.logand addr 0xfffL)
+	and page_n = Int64.to_int (Int64.shift_right addr 12) in
+	let chunk = idx asr 3 in
+	match mem.(page_n) with
+	| Some page -> 
+		let dst = page.(chunk) in
+		let res = merge64 src dst in
+		Array.set page chunk res 
+	| None -> 
+		let new_page = Array.init 512 (fun _ -> Absent64) in
+		mem.(page_n) <- Some new_page;
+		Array.set new_page chunk src 
+
+    method copy_to gm = 
+	let loop page_n page = 
+		for i = 0 to (Array.length page) do
+			let addr = Int64.of_int ((page_n lsl 12) + (i lsl 3)) in
+			gm#update_mem addr page.(i)
+		done
+	in
+	for j = 0 to (Array.length mem) do
+		match mem.(j) with
+		| Some array -> loop j array 
+		| _ -> ()
+	done	
   end
 
   class granular_sink_memory = object(self)
@@ -527,12 +602,14 @@ struct
     method private with_chunk addr fn = None
     method clear () = ()
     method measure_size = (1, 0, 0)
+    method update_mem addr src = ()
+    method copy_to gm = ()
   end
 
   class granular_hash_memory = object(self)
     inherit granular_memory
 
-    val mem = Hashtbl.create 101
+    val mutable mem = Hashtbl.create 101
 
     method private with_chunk addr fn =
       let which = Int64.to_int (Int64.logand addr 0x7L) in
@@ -562,9 +639,23 @@ struct
       let caddr = Int64.logand addr (Int64.lognot 0x7L) in
       let chunk = Hashtbl.find mem caddr in
 	"[" ^ (gran64_to_string chunk) ^ "]"
+    
+    method update_mem addr src = 
+	if Hashtbl.mem mem addr then (
+		let dst = Hashtbl.find mem addr	in
+		let res = merge64 src dst in
+		Hashtbl.replace mem addr res)
+	else Hashtbl.add mem addr src 
 
+    method copy_to gm = 
+	let fn addr g64 = 
+		gm#update_mem addr g64 
+	in
+	Hashtbl.iter fn mem
+	
     method clear () =
-      Hashtbl.clear mem
+      Hashtbl.clear mem;
+      mem <- Hashtbl.create 101;
 
     method measure_size =
       let num_nodes = Hashtbl.fold (fun k v sum -> sum + gran64_size v) mem 0
@@ -697,10 +788,29 @@ struct
       main#clear ()
 	
     method make_snap () =
+      (*Printf.printf "Make snap\n";
+      let (d1, d2, d3) = diff#measure_size 
+	and (m1, m2, m3) = main#measure_size in
+	Printf.printf "diff (%d, %d, %d)\n" d1 d2 d3;
+	Printf.printf "main (%d, %d, %d)\n" m1 m2 m3;*)
+      let (snap_size, _, _) = diff#measure_size in
+      if snap_size > 0 then (
+	diff#copy_to main;
+	diff#clear ();
+	);
       have_snap <- true
 	
     method reset () = 
       diff#clear (); ()
+
+    method update_mem (addr: int64) (src: gran64) = 
+	if have_snap then
+		diff#update_mem addr src
+	else
+		main#update_mem addr src
+
+    method copy_to (gm: granular_memory) = ()
+
   end
 
   class granular_second_snapshot_memory
@@ -709,6 +819,7 @@ struct
     inherit granular_snapshot_memory (mem1_2 :> granular_memory) mem3
     
     method inner_make_snap () = mem1_2#make_snap ()
+
   end
     
   class concrete_adaptor_memory (mem:Concrete_memory.concrete_memory) =
@@ -738,6 +849,9 @@ struct
     method measure_size = (0, 0, mem#measure_size)
 
     method clear () = mem#clear ()
+
+    method update_mem (addr: int64) (src: gran64) = ()
+    method copy_to (gm: granular_memory) = ()
   end
 
   class concrete_maybe_adaptor_memory
@@ -839,5 +953,9 @@ struct
       method measure_size = (0, 0, mem#measure_size)
 
       method clear () = mem#clear ()
+      
+      method update_mem (addr: int64) (src: gran64) = ()
+
+      method copy_to (gm: granular_memory) = ()
     end
 end

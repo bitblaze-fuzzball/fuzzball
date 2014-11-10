@@ -1492,10 +1492,10 @@ object(self)
       put_pollfd fds_buf i flags
     done;
     put_return (Int64.of_int !count)
-
+		
   method private read_throw fd buf count =
     let str = self#string_create count in
-    let oc_fd = self#get_fd fd in
+    let oc_fd = self#get_fd fd in	
     let num_read = Unix.read oc_fd str 0 count in
       if num_read > 0 && Hashtbl.mem symbolic_fds fd then
 	let is_concolic = Hashtbl.find symbolic_fds fd in
@@ -1510,7 +1510,7 @@ object(self)
       else
 	fm#store_str buf 0L (String.sub str 0 num_read);
       put_return (Int64.of_int num_read)
-
+    
   method sys_read fd buf count =
     try
       self#read_throw fd buf count

@@ -51,6 +51,10 @@ sig
 
     method make_sink_region : string -> int64 -> unit
 
+    method before_first_branch : bool
+    method get_start_eip : int64
+    method set_start_eip : int64 -> unit
+
     method make_x86_segtables_symbolic : unit
 
     method store_word_special_region :

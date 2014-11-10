@@ -289,5 +289,4 @@ let decode_insns fm gamma starting_eip k =
 	 | _ -> tuple_push cur_tup bottom in (* end of basic block, e.g. indirect jump *)
   let decl_list_list, statement_list_list = decode_insns_int starting_eip k in  
   List.concat decl_list_list,
-  List.concat statement_list_list
-
+  List.concat statement_list_list		

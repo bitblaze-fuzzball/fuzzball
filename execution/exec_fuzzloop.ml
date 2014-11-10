@@ -225,7 +225,7 @@ let fuzz start_eip opt_fuzz_start_eip end_eips
 	  (fun iter ->
 	    let old_tcs = Hashtbl.length trans_cache in
 	    fm#set_iter_seed (Int64.to_int iter);
-	    fuzz_runloop fm !fuzz_start_eip asmir_gamma end_eips;
+	    fuzz_runloop fm (if fm#get_start_eip = 0L then !fuzz_start_eip else fm#get_start_eip) asmir_gamma end_eips;
 	       if !opt_coverage_stats && 
 		 (Hashtbl.length trans_cache - old_tcs > 0) then
 		   Printf.printf "Coverage increased to %d on %Ld\n"

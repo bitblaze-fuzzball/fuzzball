@@ -354,6 +354,11 @@ class virtual fragment_machine = object
   method virtual load_word_concretize  : int64 -> bool -> string -> int64
 
   method virtual make_sink_region : string -> int64 -> unit
+
+  method virtual before_first_branch : bool
+  method virtual get_start_eip : int64
+  method virtual set_start_eip : int64 -> unit
+
 end
 
 module FragmentMachineFunctor =
@@ -418,7 +423,7 @@ struct
 	   (D.reassemble32 (D.reassemble16 b0 b1) (D.reassemble16 b2 b3))
 	   (D.reassemble32 (D.reassemble16 b4 b5) (D.reassemble16 b6 b7)))
 
-  class frag_machine = object(self)
+  class frag_machine = object(self)	
     val mem = (new GM.granular_second_snapshot_memory
 		 (new GM.granular_snapshot_memory
 		    (new GM.concrete_maybe_adaptor_memory
@@ -432,11 +437,15 @@ struct
     val reg_store = V.VarHash.create 100
     val reg_to_var = Hashtbl.create 100
     val temps = V.VarHash.create 100
+				
     val mutable mem_var = V.newvar "mem" (V.TMem(V.REG_32, V.Little))
     val mutable frag = ([], [])
     val mutable insns = []
 
     val mutable snap = (V.VarHash.create 1, V.VarHash.create 1)
+    val mutable first_branch = true
+
+    method before_first_branch = first_branch
 
     method private concretize8 base_addr offset =
       D.to_concrete_8 (mem#load_byte
@@ -474,8 +483,8 @@ struct
       self#concretize_misc;
       insns <- sl
 
-    method concretize_misc = ()
-
+    method concretize_misc = () 
+    	
     val mutable extra_eip_hooks = []
 
     method add_extra_eip_hook f =
@@ -1178,6 +1187,11 @@ struct
       started_symbolic <- true
 
     val mutable special_handler_list = ([] : #special_handler list)
+
+    val mutable start_eip = 0L
+    method get_start_eip = start_eip
+    method set_start_eip new_eip = 
+	start_eip <- new_eip
 
     method make_snap () =
       let snap_handler h = h#make_snap in

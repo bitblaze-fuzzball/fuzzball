@@ -91,6 +91,10 @@ sig
     method virtual clear : unit -> unit
 
     method virtual measure_size : int * int * int
+
+    method virtual update_mem : int64 -> gran64 -> unit
+
+    method virtual copy_to :  granular_memory -> unit
   end
     
   class granular_page_memory : object
@@ -118,6 +122,8 @@ sig
     method store_page : int64 -> string -> unit
     method clear : unit -> unit
     method measure_size : int * int * int
+    method update_mem : int64 -> gran64 -> unit
+    method copy_to :  granular_memory -> unit
   end
 
   class granular_sink_memory : object
@@ -145,6 +151,8 @@ sig
     method store_page : int64 -> string -> unit
     method clear : unit -> unit
     method measure_size : int * int * int
+    method update_mem : int64 -> gran64 -> unit
+    method copy_to :  granular_memory -> unit
   end
 
   class granular_hash_memory : object
@@ -172,6 +180,8 @@ sig
     method store_page : int64 -> string -> unit
     method clear : unit -> unit
     method measure_size : int * int * int
+    method update_mem : int64 -> gran64 -> unit
+    method copy_to :  granular_memory -> unit
   end
 
   class granular_snapshot_memory : granular_memory -> granular_memory ->
@@ -196,6 +206,12 @@ sig
 
     method make_snap : unit -> unit
     method reset : unit -> unit
+
+    method update_mem : int64 -> gran64 -> unit
+    method copy_to :  granular_memory -> unit
+
+
+
   end
 
   class granular_second_snapshot_memory :
@@ -223,6 +239,9 @@ sig
     method reset : unit -> unit
 
     method inner_make_snap : unit -> unit
+
+    method update_mem : int64 -> gran64 -> unit
+    method copy_to :  granular_memory -> unit
   end
     
   class concrete_adaptor_memory : Concrete_memory.concrete_memory -> object
@@ -241,6 +260,9 @@ sig
     method store_long  : int64 -> D.t -> unit
     method clear : unit -> unit
     method measure_size : int * int * int
+    method update_mem : int64 -> gran64 -> unit
+    method copy_to :  granular_memory -> unit
+
   end
 
   class concrete_maybe_adaptor_memory :
@@ -263,5 +285,7 @@ sig
     method store_page : int64 -> string -> unit
     method clear : unit -> unit
     method measure_size : int * int * int
+    method update_mem : int64 -> gran64 -> unit
+    method copy_to :  granular_memory -> unit
   end
 end

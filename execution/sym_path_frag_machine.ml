@@ -586,6 +586,7 @@ struct
 *)
       preference
 
+
     method eval_cjmp exp targ1 targ2 =
       let eip = self#get_eip in
       let v = form_man#simplify1 (self#eval_int_exp exp) in
@@ -606,8 +607,10 @@ struct
 		b
 	    else
 	      (dt#start_new_query_binary;
-	       let choice = if dt#have_choice then
-		 self#cjmp_choose targ1 targ2
+	       let choice = if dt#have_choice then(
+		if first_branch = true then 
+			first_branch <- false;
+		self#cjmp_choose targ1 targ2)		 
 	       else
 		 None
 	       in
