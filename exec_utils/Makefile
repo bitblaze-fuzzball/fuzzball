@@ -21,7 +21,7 @@ export INCDIRS = $(VINE_OCAMLDIR) $(VINE_TRACEDIR) \
 export OCAMLDEP = ocamldep -I $(VINE_OCAMLDIR) -I $(VINE_TRACEDIR) \
 		 -I $(VINE_EXECDIR) -I $(STP_OCAMLDIR) -I $(LOG_DIR) -I $(STRUCTS_DIR)
 
-OCAMLFLAGS := -warn-error Aelz
+OCAMLFLAGS := -warn-error Aelz -p
 
 CFLAGS := 
 

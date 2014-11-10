@@ -74,7 +74,7 @@ export YFLAGS = -v
 
 export CLIBS = asmir vex opcodes bfd iberty stdc++ 
 
-CFLAGS := 
+CFLAGS := -p
 ifdef DEBUG
 CFLAGS += -g
 endif
@@ -89,7 +89,7 @@ export LDFLAGS = -p $(LIBASMIR_LDFLAGS)
 export CLIBFLAGS= -p $(LDFLAGS)
 export LIBDIRS = $(LIBASMIR)/src # ../appreplay ../stp ../stp/ocaml
 
-OCAMLFLAGS := -warn-error Aelz
+OCAMLFLAGS := -warn-error Aelz -p
 ifdef PROFILE
 OCAMLFLAGS += -p
 endif
