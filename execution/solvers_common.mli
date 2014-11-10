@@ -10,6 +10,7 @@ type external_solver_type =
   | STP_SMTLIB2
   | CVC4
   | BOOLECTOR
+  | Z3
 
 val map_lines : (string -> 'a option) -> in_channel -> ('a list)
 
@@ -19,6 +20,9 @@ type maybe_ce_result =
   | No_CE_here
   | End_of_CE
   | Assignment of string * int64
+
+val parse_z3_ce_line : string -> string option
+  -> (maybe_ce_result * string option)
 
 val parse_ce : external_solver_type -> string -> maybe_ce_result
 

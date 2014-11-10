@@ -26,9 +26,10 @@ let solver_cmdline_opts =
 	  | "stp" -> opt_smtlib_solver_type := Some STP_SMTLIB2
 	  | "cvc4" -> opt_smtlib_solver_type := Some CVC4
 	  | "btor"|"boolector" -> opt_smtlib_solver_type := Some BOOLECTOR
+	  | "z3" -> opt_smtlib_solver_type := Some Z3
 	  | _ -> failwith "Unrecognized -smtlib-solver-type"
        ),
-     "type stp,cvc4 (default is guessed from path)");
+     "type stp,cvc4,btor,z3 (default is guessed from path)");
     ("-save-solver-files", Arg.Set(opt_save_solver_files),
      " Retain solver input and output files");
     ("-solver-slow-time", Arg.Set_float(opt_solver_slow_time),
@@ -77,6 +78,8 @@ let solvers_table =
 		  CVC4
 		else if ends_with !opt_solver_path "boolector" then
 		  BOOLECTOR
+		else if ends_with !opt_solver_path "z3" then
+		  Z3
 		else
 		  failwith "Please specify -smtlib-solver-type"
 	  in
@@ -95,6 +98,8 @@ let solvers_table =
 		  CVC4
 		else if ends_with !opt_solver_path "boolector" then
 		  failwith "Boolector does not support incremental solving"
+		else if ends_with !opt_solver_path "z3" then
+		  Z3
 		else
 		  failwith "Please specify -smtlib-solver-type"
 	  in

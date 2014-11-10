@@ -23,28 +23,55 @@ let parse_counterex e_s_t line =
     | End_of_CE -> raise End_of_file
     | Assignment(s, i) -> Some (s, i)
 
+let parse_z3_ce chan =
+  let results = ref [] and
+      var_state = ref None
+  in
+    (try while true do
+       match parse_z3_ce_line (input_line chan) !var_state with
+	 | (End_of_CE, _) -> raise End_of_file
+	 | (No_CE_here, v') ->
+	     var_state := v'
+	 | (Assignment(s, i), v') ->
+	     results := (s, i) :: !results;
+	     var_state := v'
+     done
+     with End_of_file -> ());
+    List.rev !results
+
+let start_solver solver =
+  let path = !opt_solver_path in
+  let timeout_opt =
+    match !opt_solver_timeout with
+      | None -> ""
+      | Some s ->
+	  (match solver with
+	     | CVC4 -> "--tlimit-per " ^ (string_of_int s) ^ "000 "
+	     | (STP_SMTLIB2|STP_CVC) -> "-g " ^ (string_of_int s) ^ " "
+	     | BOOLECTOR -> "-t " ^ (string_of_int s) ^ " "
+	     | Z3 -> "-t:" ^ (string_of_int s) ^ "000 ")
+  in
+  let cmd =
+    match solver with
+      | CVC4 -> path ^ " --lang smt -im " ^ timeout_opt
+      | STP_SMTLIB2 -> path ^ " --SMTLIB2 -p " ^ timeout_opt
+      | Z3 -> path ^ " -smt2 -in " ^ timeout_opt
+      | _ -> failwith "Unsupported solver in smtlib_external_engine"
+  in
+    Unix.open_process cmd
+
+
 class smtlib_external_engine solver = object(self)
   inherit query_engine
 
   val mutable visitor = None
   val mutable first_query = true
-  val mutable solver_chans =
-    if solver = CVC4 then
-      let timeout_opt = match !opt_solver_timeout with
-	| Some s -> "--tlimit-per " ^ (string_of_int s) ^ "000 "
-	| None -> ""
-      in
-        Unix.open_process (!opt_solver_path ^ " --lang smt -im " ^ timeout_opt)
-    else
-      let timeout_opt = match !opt_solver_timeout with
-	| Some s -> "-g " ^ (string_of_int s) ^ " "
-	| None -> ""
-      in
-        Unix.open_process (!opt_solver_path ^ " --SMTLIB2 -p " ^ timeout_opt)
+
+  val mutable solver_chans = start_solver solver
 
   val mutable log_file =
     if !opt_save_solver_files then
-      open_out "solver_input.smt"
+      open_out "solver_input.smt2"
     else
       stdout
 
@@ -133,11 +160,14 @@ class smtlib_external_engine solver = object(self)
       let ce =
 	if (result = Some false) && first_assert then
 	  map_lines (parse_counterex solver) solver_in
-	else if (result = Some false) && solver = CVC4 then
+	else if (result = Some false) && (solver = CVC4 || solver = Z3) then
 	  (output_string_log log_file solver_out "(get-model)\n";
-	  flush solver_out;
-	  if !opt_save_solver_files then flush log_file;
-	  map_lines (parse_counterex solver) solver_in)
+	   flush solver_out;
+	   if !opt_save_solver_files then flush log_file;
+	   if solver = Z3 then
+	     parse_z3_ce solver_in
+	   else
+	     map_lines (parse_counterex solver) solver_in)
 	else
           []
       in
@@ -148,19 +178,7 @@ class smtlib_external_engine solver = object(self)
       Printf.printf "Solver queries are in solver_input.smt\n"
 
   method private reset_solver_chans =
-    solver_chans <-
-      if solver = CVC4 then
-	let timeout_opt = match !opt_solver_timeout with
-	  | Some s -> "--tlimit-per " ^ (string_of_int s) ^ " "
-	  | None -> ""
-	in
-          Unix.open_process (!opt_solver_path ^ " --lang smt -im " ^ timeout_opt)
-      else
-	let timeout_opt = match !opt_solver_timeout with
-	  | Some s -> "-g " ^ (string_of_int s) ^ " "
-	  | None -> ""
-	in
-          Unix.open_process (!opt_solver_path ^ " --SMTLIB2 -p " ^ timeout_opt)
+    solver_chans <- start_solver solver
 
   method reset =
     let (solver_in, solver_out) = solver_chans in

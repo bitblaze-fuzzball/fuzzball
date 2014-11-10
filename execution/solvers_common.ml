@@ -9,6 +9,7 @@ type external_solver_type =
   | STP_SMTLIB2
   | CVC4
   | BOOLECTOR
+  | Z3
 
 let map_lines f chan =
   let results = ref [] in
@@ -134,10 +135,58 @@ let parse_btor_ce line =
     Assignment ((smtlib_rename_var varname_raw),
 		(Int64.of_string ("0b" ^ bits)))
 
+(* Z3's models are similar to CVC4's as S-expressions, but they're
+   split over lines differently, so we can't use a simple one-ce-per-line
+   parsing strategy. In particular we need to remember a variable name
+   from a previous line before we see the value in a later one. The
+   parameter "v" is used for that. *)
+let parse_z3_ce_line s v =
+  match (s, v) with
+    | ("(model ", None) -> (No_CE_here, None)
+    | (")", None) -> (End_of_CE, None)
+    | (s, None) when String.length s > 14
+	&& String.sub s 0 14 = "  (define-fun " ->
+	let trim1 = String.sub s 14 ((String.length s) - 14) in
+	let var_end = String.index trim1 ' ' in
+	let varname = String.sub trim1 0 var_end in
+	  (No_CE_here, Some (smtlib_rename_var varname))
+    | (s, None) when String.length s > 7
+	&& String.sub s 0 7 = "(error "
+	->
+	let l = String.length s in
+	  if String.sub s (l - 24) 24 = "model is not available\")" then
+	    (No_CE_here, None)
+	  else
+	    (Printf.printf "Z3 error: %s\n" s;
+	     failwith "Unexpected error in parse_z3_ce_lines")
+    | (s, Some varname) ->
+	let l = String.length s in
+	  assert(l > 4 && String.sub s 0 4 = "    ");
+	  assert(String.sub s (l - 1) 1 = ")");
+	  let trim = String.sub s 4 (l - 5) in
+	  let v =
+	    match trim with
+	      | "false" -> 0L
+	      | "true" -> 1L
+	      | "#b0" -> 0L
+	      | "#b1" -> 1L
+	      | t when String.length t > 2 && String.sub t 0 2 = "#x" ->
+		  let l2 = (String.length t) in
+		    Int64.of_string ("0x" ^ (String.sub t 2 (l2 - 2)))
+	      | _ ->
+		  Printf.printf "Value parse failure on <%s>\n" trim;
+		  failwith "Unhandled value case in parse_z3_ce_lines"
+	  in
+	    (Assignment (varname, v), None)
+    | (s, _) ->
+	  Printf.printf "Parse failure on <%s>\n" s;
+	  failwith "Unhandled loop case in parse_z3_ce_line"
+
 let parse_ce e_s_t =
   match e_s_t with
     | (STP_CVC|STP_SMTLIB2) -> parse_stp_ce e_s_t
     | CVC4 -> parse_cvc4_ce
+    | Z3 -> failwith "Z3 unsupported in parse_ce"
     | BOOLECTOR -> parse_btor_ce
 
 let create_temp_dir prefix =

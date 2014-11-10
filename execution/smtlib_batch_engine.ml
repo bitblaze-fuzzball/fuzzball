@@ -18,6 +18,21 @@ let parse_counterex e_s_t line =
     | End_of_CE -> None
     | Assignment(s, i) -> Some (s, i)
 
+let parse_z3_ce_lines lines =
+  let rec loop l v =
+    match (l, v) with
+      | ([], None) -> []
+      | ([], _) -> failwith "Dangling variable in parse_z3_ce_lines"
+      | (s :: r, v) ->
+	  let (mce, v') = parse_z3_ce_line s v
+          in
+            match mce with
+              | No_CE_here -> loop r v'
+              | End_of_CE -> []
+              | Assignment (v, i) -> (v, i) :: loop r v'
+  in
+    loop lines None
+
 class smtlib_batch_engine e_s_t fname = object(self)
   inherit query_engine
 
@@ -127,6 +142,8 @@ class smtlib_batch_engine e_s_t fname = object(self)
        in
 	 loop conj);
     output_string self#chan "\n(check-sat)\n";
+    if e_s_t = Z3 then
+      output_string self#chan "(get-model)\n";
     output_string self#chan "(exit)\n";
     close_out self#chan;
     chan <- None;
@@ -137,6 +154,8 @@ class smtlib_batch_engine e_s_t fname = object(self)
 	  "--tlimit-per " ^ (string_of_int s) ^ "000 "
       | (BOOLECTOR, Some s) ->
 	  "-t " ^ (string_of_int s) ^ " "
+      | (Z3, Some s) ->
+	  "-t:" ^ (string_of_int s) ^ "000 "
       | (_, None) -> ""
     in
     let base_opt = match e_s_t with
@@ -144,6 +163,7 @@ class smtlib_batch_engine e_s_t fname = object(self)
       | STP_CVC -> " -p " (* shouldn't really be here *)
       | CVC4 -> " --lang smt -m --dump-models "
       | BOOLECTOR -> " -m "
+      | Z3 -> " -smt2 "
     in
     let cmd = !opt_solver_path ^ base_opt ^ timeout_opt ^ curr_fname
       ^ ".smt2 >" ^ curr_fname ^ ".smt2.out" in
@@ -152,41 +172,50 @@ class smtlib_batch_engine e_s_t fname = object(self)
       flush stdout;
       let rcode = Sys.command cmd in
       let results = open_in (curr_fname ^ ".smt2.out") in
-	if rcode <> 0 && rcode <> 10 && rcode <> 20 then
-	  (* 10 and 20 are used by Boolector for sat/unsat *)
-	  (Printf.printf "Solver died with result code %d\n" rcode;
-	   (match rcode with
-	      | 127 ->
-		  if !opt_solver_path = "stp" then
-		    Printf.printf
-		      "Perhaps you should set the -solver-path option?\n"
-		  else if String.contains !opt_solver_path '/' &&
-		    not (Sys.file_exists !opt_solver_path)
-		  then
-		    Printf.printf "The file %s does not appear to exist\n"
-		      !opt_solver_path
-	      | 131 -> raise (Signal "QUIT")
-	      | _ -> ());
-	   ignore(Sys.command ("cat " ^ curr_fname ^ ".smt2.out"));
-	   (None, []))
-	else
-	  let result_s = input_line results in
-	  let first_assert = (String.sub result_s 0 3) = "ASS" in
-	  let result = match result_s with
-	    | "unsat" -> Some true
-	    | "Timed Out." -> Printf.printf "Solver timeout\n"; None
-	    | "sat" -> Some false
-	    | _ when first_assert -> Some false
-	    | _ -> failwith "Unexpected first output line"
-	  in
-	  let first_assign = if first_assert then
-	    [(match parse_counterex e_s_t result_s with
-		| Some ce -> ce | None -> failwith "Unexpected parse failure")]
-	  else
-	    [] in
-	  let ce = map_lines (parse_counterex e_s_t) results in
-	    close_in results;
-	    (result, first_assign @ ce)
+	match (rcode, e_s_t) with
+	  | (0, _) (* success, widely *)
+	  | (10, BOOLECTOR) (* sat *)
+	  | (20, BOOLECTOR) (* unsat *)
+	  | (1, Z3) (* can't see how to avoid no-model error on unsat *)
+	    ->
+	      let result_s = input_line results in
+	      let first_assert = (String.sub result_s 0 3) = "ASS" in
+	      let result = match result_s with
+		| "unsat" -> Some true
+		| "Timed Out." -> Printf.printf "Solver timeout\n"; None
+		| "sat" -> Some false
+		| _ when first_assert -> Some false
+		| _ -> failwith "Unexpected first output line"
+	      in
+	      let first_assign = if first_assert then
+		[(match parse_counterex e_s_t result_s with
+		    | Some ce -> ce | None -> failwith "Unexpected parse failure")]
+	      else
+		[] in
+	      let ce =
+		if e_s_t = Z3 then
+		  parse_z3_ce_lines (map_lines (fun s -> Some s) results)
+		else
+		  map_lines (parse_counterex e_s_t) results
+	      in
+		close_in results;
+		(result, first_assign @ ce)
+	  | _ ->
+	      Printf.printf "Solver died with result code %d\n" rcode;
+	      (match rcode with
+		 | 127 ->
+		     if !opt_solver_path = "stp" then
+		       Printf.printf
+			 "Perhaps you should set the -solver-path option?\n"
+		     else if String.contains !opt_solver_path '/' &&
+		       not (Sys.file_exists !opt_solver_path)
+		     then
+		       Printf.printf "The file %s does not appear to exist\n"
+			 !opt_solver_path
+		 | 131 -> raise (Signal "QUIT")
+		 | _ -> ());
+	      ignore(Sys.command ("cat " ^ curr_fname ^ ".smt2.out"));
+	      (None, [])
 
   method after_query save_results =
     if save_results then
