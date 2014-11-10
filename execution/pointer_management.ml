@@ -73,21 +73,21 @@ val stack_table = Hashtbl.create 100
 	method add_alloc addr len = 
 		let start_addr = addr
 		and end_addr = Int64.add addr len in
-		Hashtbl.iter (fun key set ->
-			let start_addr2 = key
-			and end_addr2 = Int64.add key (Int64.of_int (Array.length set)) in
-	
-			if self#is_overlapping start_addr end_addr start_addr2 end_addr2 then (
-				 Printf.printf "\nNew block (%s - %s) overlaps with existing block (%s - %s)\n"
-				 	(Int64.to_string start_addr) (Int64.to_string end_addr) (Int64.to_string start_addr2) (Int64.to_string end_addr2);
-				raise Overlapping_Alloc
-			)
-
-		) alloc_table;
+		Hashtbl.iter
+		  (fun key set ->
+		    let start_addr2 = key
+		      (* Don't need the whole array here -- just the length of the allocation *)
+		    and end_addr2 = Int64.add key (Int64Array.length set) in  
+		    if self#is_overlapping start_addr end_addr start_addr2 end_addr2
+		    then (Printf.printf "\nNew block (%s - %s) overlaps with existing block (%s - %s)\n"
+			    (Int64.to_string start_addr)
+			    (Int64.to_string end_addr)
+			    (Int64.to_string start_addr2)
+			    (Int64.to_string end_addr2);
+			  raise Overlapping_Alloc))
+		  alloc_table;
 		
-		if (0 > (Int64.to_int len))
-		then failwith "Trying to add an alloc_table entry that's too big."
-		else Hashtbl.add alloc_table addr (Array.make (Int64.to_int len) false);
+		Hashtbl.add alloc_table addr (Int64Array.make len false);
 
 		let updated_deallocs =
 			Hashtbl.fold (fun key value accum ->
@@ -165,8 +165,8 @@ method add_dealloc addr len =
 		raise Double_Free;
 
 	(* Does this pointer point to memory that has been allocated? *)
-	if not (Hashtbl.mem alloc_table addr) then
-		raise Dealloc_Not_Alloc;
+	if not (Hashtbl.mem alloc_table addr) (* don't need the array for the alloc table here *)
+	then raise Dealloc_Not_Alloc;
 
 	(* This might not be "exception-worthy"
 		 We need to check the spec to see how this function is allowed to
@@ -175,9 +175,9 @@ method add_dealloc addr len =
 		 free multiple blocks at once (I don't know how you could guarantee
 		 contiguous memory from userspace, but maybe you can?)?
 	*)
-	let old_len = Int64.of_int (Array.length (Hashtbl.find alloc_table addr)) in
-	if (self#not_equal len old_len) then
-		raise Alloc_Dealloc_Length_Mismatch;
+	let old_len = Int64Array.length (Hashtbl.find alloc_table addr) in (* don't need the array here *)
+	if (self#not_equal len old_len)
+	then raise Alloc_Dealloc_Length_Mismatch;
 
 	Hashtbl.remove alloc_table addr;
 	Hashtbl.add dealloc_table addr len
@@ -193,20 +193,17 @@ method is_safe_read addr len =
 		try
 			Hashtbl.iter (fun key set ->
 				let start_addr2 = key
-				and end_addr2 = Int64.add key (Int64.of_int (Array.length set)) in
+				and end_addr2 = Int64.add key (Int64Array.length set) in
 				(* fully contained within an allocated block *)
 				if self#is_contained start_addr end_addr start_addr2 end_addr2 then (
-					let start_index = Int64.to_int (Int64.sub start_addr start_addr2) in
+					let start_index = Int64.sub start_addr start_addr2 in
 					for offset = 0 to ((Int64.to_int len) - 1) do
-						if not (Array.get set (start_index + offset)) then
-							raise Uninitialized_Memory;
+						if not (Int64Array.get set (Int64.add start_index (Int64.of_int offset)))
+						then raise Uninitialized_Memory;
 					done;
-					raise Safe
-				)
-			) alloc_table;
+					raise Safe)) alloc_table;
 		with
-			| Safe -> is_safe := true;
-	)
+		| Safe -> is_safe := true;)
 	else (
 		(* overlapping unsafe memory between heap and stack *)
 		if (self#is_overlapping start_addr end_addr heap_end stack_end)  ||
@@ -241,12 +238,12 @@ method is_safe_write addr len =
 		try
 			Hashtbl.iter (fun key set ->
 				let start_addr2 = key
-				and end_addr2 = Int64.add key (Int64.of_int (Array.length set)) in
+				and end_addr2 = Int64.add key (Int64Array.length set) in
 				(* fully contained within an allocated block *)
 				if self#is_contained start_addr end_addr start_addr2 end_addr2 then (
-					let start_index = Int64.to_int (Int64.sub start_addr start_addr2) in
+					let start_index = Int64.sub start_addr start_addr2 in
 					for offset = 0 to ((Int64.to_int len) - 1) do
-						Array.set set (start_index + offset) true
+						Int64Array.set set (Int64.add start_index (Int64.of_int offset)) true
 					done;
 					raise Safe
 				)

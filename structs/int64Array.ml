@@ -9,7 +9,7 @@ type 'a int64Array = {
   length : int64;
 }
 
-let max_int_as_int64 = Int64.of_int Pervasives.max_int
+let max_int_as_int64 = Int64.of_int Sys.max_array_length
 
 let indexes (index : int64) =
   (* Hide this away *)
@@ -32,7 +32,7 @@ let make (size : int64) initial =
   let num_buckets = (Int64.to_int (Int64.div size max_int_as_int64)) in
   let bucket_maker i =
     if i <> num_buckets
-    then Array.make max_int initial
+    then Array.make Sys.max_array_length initial
     else (let size = Int64.to_int (Int64.rem size max_int_as_int64) in
 	  Array.make size initial) in
   let arrays = Array.init (num_buckets + 1) bucket_maker in
@@ -83,3 +83,13 @@ let mapi (array : ('a int64Array)) mfun =
   let array_init_fun index =
     mfun (get array index) in
   init array.length array_init_fun
+
+
+let length (array : ('a int64Array)) =
+  array.length
+
+
+let of_array (source : ('a array)) =
+  let dest = create (Int64.of_int (Array.length source)) source.(0) in
+  Array.iteri (fun int el -> set dest (Int64.of_int int) el) source;
+  dest

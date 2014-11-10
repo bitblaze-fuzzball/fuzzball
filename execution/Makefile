@@ -7,12 +7,12 @@ export VINE_TRACEDIR=../trace
 export STP_OCAMLDIR=../stp/ocaml
 export LIBASMIR=../libasmir
 include $(LIBASMIR)/makefile.inc
-export INCDIRS += ../stp ../stp/ocaml $(VINE_OCAMLDIR) $(VINE_TRACEDIR) ../logging
+export INCDIRS += ../stp ../stp/ocaml $(VINE_OCAMLDIR) $(VINE_TRACEDIR) ../logging ../structs
 export EXTLIBDIRS += ../stp ../stp/ocaml
 export LIBS += stpvc ../ocaml/vine ../trace/trace
 
 export OCAMLDEP = ocamldep -I $(VINE_OCAMLDIR) -I $(STP_OCAMLDIR) \
-				-I $(VINE_TRACEDIR) -I ../logging
+				-I $(VINE_TRACEDIR) -I ../logging -I ../structs
 
 # Source files. In a dependency-respecting order (OCaml doesn't allow
 # circular dependencies).

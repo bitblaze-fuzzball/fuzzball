@@ -8,3 +8,5 @@ val iteri : 'a int64Array -> ('a -> int64 -> 'b) -> unit
 val init : int64 -> (int64 -> int64) -> unit
 val copy : int64 int64Array -> int64 int64Array
 val mapi : 'a int64Array -> ('a -> int64) -> unit
+val length : 'a int64Array -> int64
+val of_array : ('a array) -> ('a int64Array)
