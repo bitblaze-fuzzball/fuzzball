@@ -4,7 +4,8 @@
   Security Inc.  All rights reserved.
 *)
 
-class smtlib_external_engine : Solvers_common.external_solver_type -> object
+class smtlib_batch_engine
+  : Solvers_common.external_solver_type -> string -> object
   inherit Query_engine.query_engine
 
   method start_query : unit

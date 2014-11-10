@@ -1237,6 +1237,7 @@ struct
 
     val mutable fuzz_finish_reasons = []
     val mutable reason_warned = false
+    val mutable disqualified = false
 
     method finish_fuzz s =
       if !opt_finish_immediately then
@@ -1256,11 +1257,15 @@ struct
 
     method unfinish_fuzz s =
       fuzz_finish_reasons <- [];
+      disqualified <- true;
       if !opt_trace_stopping then
 	Printf.printf "Non-finish condition %s\n" s
 
     method finish_reasons =
-      fuzz_finish_reasons
+      if disqualified then
+	[]
+      else
+	fuzz_finish_reasons
 
     method reset () =
       let reset h = h#reset in
@@ -1269,6 +1274,7 @@ struct
 	 move_hash r reg_store;
 	 move_hash t temps);
       fuzz_finish_reasons <- [];
+      disqualified <- false;
       List.iter reset special_handler_list
 
     method add_special_handler (h:special_handler) =

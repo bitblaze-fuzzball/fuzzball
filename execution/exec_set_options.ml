@@ -294,6 +294,14 @@ let explore_cmdline_opts =
 	  Hashtbl.add opt_branch_preference (Int64.of_string s1)
 	    (Int64.of_string s2)),
      "eip:(0|1) Prefer given direction for a symbolic branch");
+    ("-branch-preference-unchecked", Arg.String
+       (fun s -> let (s1, s2) = split_string ':' s in
+	  Hashtbl.add opt_branch_preference_unchecked (Int64.of_string s1)
+	    (Int64.of_string s2)),
+     "eip:(0|1) Prefer given direction without solving");
+    ("-always-prefer", Arg.Bool
+       (fun b -> opt_always_prefer := Some b),
+     "bool Prefer given branch direction instead of random");
     ("-random-seed", Arg.Set_int opt_random_seed,
      "N Use given seed for path choice");
     ("-save-decision-tree-interval",
@@ -501,6 +509,10 @@ let cmdline_opts =
     ("-finish-on-ret-addr-overwrite",
      Arg.Set(opt_finish_on_ret_addr_overwrite),
      " Finish exploration if -check-for-ret-addr-overwrite triggers");
+    ("-extra-conditions-file", Arg.String
+       (fun s -> opt_extra_condition_strings :=
+	  !opt_extra_condition_strings @ (read_lines_file s)),
+     "filename Read '-extra-condition's one per line from file");
     ("-omit-pf-af", Arg.Set(opt_omit_pf_af),
      " Omit computation of the (rarely used) PF and AF flags");
     ("-nop-system-insns", Arg.Set(opt_nop_system_insns),
@@ -553,7 +565,9 @@ let trace_replay_cmdline_opts =
 let set_program_name s =
   match !opt_program_name with 
     | None -> opt_program_name := Some s
-    | _ -> failwith "Multiple non-option args not allowed"
+    | Some prev ->
+	Printf.printf "Multiple args: %s, %s\n" prev s;
+	failwith "Multiple non-option args not allowed"
 
 let default_on_missing = ref (fun fm -> fm#on_missing_zero)
 

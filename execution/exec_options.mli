@@ -42,6 +42,8 @@ val opt_save_solver_files : bool ref
 val opt_solver_path : string ref
 val opt_follow_path : string ref
 val opt_branch_preference : (int64, int64) Hashtbl.t
+val opt_branch_preference_unchecked : (int64, int64) Hashtbl.t
+val opt_always_prefer : bool option ref
 val opt_iteration_limit : int64 ref
 val opt_watch_expr_str : string option ref
 val opt_watch_expr : Vine.exp option ref
@@ -122,6 +124,7 @@ val opt_omit_pf_af : bool ref
 val opt_nop_system_insns : bool ref
 val opt_symbolic_syscall_error : int64 option ref
 val opt_stop_on_symbolic_syscall_args : bool ref
+val opt_skip_output_concretize : bool ref
 val opt_chroot_path : string option ref
 val opt_finish_on_nonfalse_cond : bool ref
 val opt_finish_immediately : bool ref

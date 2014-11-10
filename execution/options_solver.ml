@@ -4,16 +4,18 @@
 *)
 
 open Exec_options;;
+open Solvers_common;;
 
 let opt_solver = ref "stp-external"
 let opt_solver_check_against = ref "none"
 
 let opt_smtlib_solver_type = ref None
+let opt_smtlib_solver_type_string = ref None (* for SIFT *)
 
 let solver_cmdline_opts =
   [
     ("-solver", Arg.Set_string(opt_solver),
-     "solver smtlib or stpvc (internal) or stp-external (cf. -stp-path)");
+     "solver smtlib, smtlib-batch, stpvc (internal) or stp-external");
     ("-solver-check-against", Arg.Set_string(opt_solver_check_against),
      "solver Compare solver results with the given one");
     ("-solver-path", Arg.Set_string(opt_solver_path),
@@ -21,12 +23,15 @@ let solver_cmdline_opts =
     ("-stp-path", Arg.Set_string(opt_solver_path),
      "path Former name of -solver-path");
     ("-smtlib-solver-type", Arg.String
-       (function
-	  | "stp" -> opt_smtlib_solver_type := Some "stp"
-	  | "cvc4" -> opt_smtlib_solver_type := Some "cvc4"
+       (fun s -> opt_smtlib_solver_type_string := Some s;
+	match s with
+	  | "stp" -> opt_smtlib_solver_type := Some STP_SMTLIB2
+	  | "cvc4" -> opt_smtlib_solver_type := Some CVC4
+	  | "btor"|"boolector" -> opt_smtlib_solver_type := Some BOOLECTOR
+	  | "z3" -> opt_smtlib_solver_type := Some Z3
 	  | _ -> failwith "Unrecognized -smtlib-solver-type"
        ),
-     "type stp,cvc4 (default is guessed from path)");
+     "type stp,cvc4,btor,z3 (default is guessed from path)");
     ("-save-solver-files", Arg.Set(opt_save_solver_files),
      " Retain solver input and output files");
     ("-solver-slow-time", Arg.Set_float(opt_solver_slow_time),
@@ -64,15 +69,39 @@ let solvers_table =
      Hashtbl.replace h "stp-external"
        (fun s ->
 	  Some (new Stp_external_engine.stp_external_engine ("fuzz" ^ s)));
-     Hashtbl.replace h "smtlib"
+     Hashtbl.replace h "smtlib-batch"
        (fun s ->
 	  let stype = match !opt_smtlib_solver_type with
 	    | Some s -> s
 	    | None ->
 		if ends_with !opt_solver_path "stp" then
-		  "stp"
+		  STP_SMTLIB2
 		else if ends_with !opt_solver_path "cvc4" then
-		  "cvc4"
+		  CVC4
+		else if ends_with !opt_solver_path "boolector" then
+		  BOOLECTOR
+		else if ends_with !opt_solver_path "z3" then
+		  Z3
+		else
+		  failwith "Please specify -smtlib-solver-type"
+	  in
+	    Some (new Smtlib_batch_engine.smtlib_batch_engine
+		    stype ("fuzz" ^ s)));
+     Hashtbl.replace h "smtlib"
+       (fun s ->
+	  let stype = match !opt_smtlib_solver_type with
+	    | Some BOOLECTOR ->
+		failwith "Boolector does not support incremental solving"
+	    | Some s -> s
+	    | None ->
+		if ends_with !opt_solver_path "stp" then
+		  STP_SMTLIB2
+		else if ends_with !opt_solver_path "cvc4" then
+		  CVC4
+		else if ends_with !opt_solver_path "boolector" then
+		  failwith "Boolector does not support incremental solving"
+		else if ends_with !opt_solver_path "z3" then
+		  Z3
 		else
 		  failwith "Please specify -smtlib-solver-type"
 	  in

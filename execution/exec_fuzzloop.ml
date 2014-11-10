@@ -242,11 +242,8 @@ let fuzz start_eip opt_fuzz_start_eip end_eips
 			->
 		      if !opt_trace_stopping then
 			Printf.printf "Finished, %s\n"
-			  (List.fold_left (fun a s ->
-					     if a = "" then s
-					     else a ^ ", " ^ s)
-			     "" l);
-			  raise LastIteration
+			  (String.concat ", " l);
+		      raise LastIteration
 		  | _ -> ());
 	       if !opt_concrete_path_simulate then
 		 opt_concrete_path_simulate := false; (* First iter. only *)

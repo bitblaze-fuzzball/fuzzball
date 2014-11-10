@@ -8,58 +8,13 @@ module V = Vine;;
 open Exec_exceptions;;
 open Exec_options;;
 open Query_engine;;
-open Stpvc_engine;;
-
-let map_lines f chan =
-  let results = ref [] in
-    (try while true do
-       match (f (input_line chan)) with
-	 | Some x -> results := x :: !results
-	 | None -> ()
-     done
-     with End_of_file -> ());
-    List.rev !results
+open Solvers_common;;
 
 let parse_counterex line =
-  if line = "Invalid." then
-    None
-  else
-    (assert((String.sub line 0 8) = "ASSERT( ");
-     assert((String.sub line ((String.length line) - 3) 3) = " );");
-     let trimmed = String.sub line 8 ((String.length line) - 11) in
-     let eq_loc = String.index trimmed '=' in
-     let lhs = String.sub trimmed 0 eq_loc and
-	 rhs = (String.sub trimmed (eq_loc + 1)
-		  ((String.length trimmed) - eq_loc - 1)) in
-       assert((String.sub lhs ((String.length lhs) - 1) 1) = " "
-	   || (String.sub lhs ((String.length lhs) - 1) 1) = "<");
-       let lhs_rtrim =
-	 if (String.sub lhs ((String.length lhs) - 2) 1) = " " then
-	   2 else 1
-       in
-       let rhs_rtrim =
-	 if (String.sub rhs ((String.length rhs) - 1) 1) = " " then
-	   1 else 0
-       in
-       let varname = String.sub lhs 0 ((String.length lhs) - lhs_rtrim) in
-       let value =
-	 let rhs' = String.sub rhs 0 ((String.length rhs) - rhs_rtrim) in
-	 let len = String.length rhs' in
-	   (Int64.of_string
-	      (if len >= 6 && (String.sub rhs' 0 5) = " 0hex" then
-		 ("0x" ^ (String.sub rhs' 5 (len - 5)))
-	       else if len >= 4 && (String.sub rhs' 0 3) = " 0x" then
-		 ("0x" ^ (String.sub rhs' 3 (len - 3)))
-	       else if len >= 4 && (String.sub rhs' 0 3) = " 0b" then
-		 ("0b" ^ (String.sub rhs' 3 (len - 3)))
-	       else if rhs' = ">FALSE" then
-		 "0"
-	       else if rhs' = ">TRUE" then
-		 "1"
-	       else
-		 failwith "Failed to parse value in counterexample"))
-       in
-	 Some (varname, value))
+  match parse_ce STP_CVC line with
+    | No_CE_here -> None
+    | End_of_CE -> None
+    | Assignment(s, i) -> Some (s, i)
 
 class stp_external_engine fname = object(self)
   inherit query_engine
@@ -74,51 +29,17 @@ class stp_external_engine fname = object(self)
     match temp_dir with
       | Some t -> t
       | None ->
-	  let rec loop num =
-	    let name = Printf.sprintf "fuzzball-tmp-%d" num in
-	      if Sys.file_exists name then
-		loop (num + 1)
-	      else
-		(Unix.mkdir name 0o777;
-		 temp_dir <- Some name;
-		 name)
-	  in
-	    loop 1
+	  let t = create_temp_dir "fuzzball-tmp" in
+	    temp_dir <- Some t;
+	    t
 		  
   method private get_fresh_fname = 
-    let split_limbs n m =
-      let rec loop n =
-	if n < m then
-	  [n]
-	else
-	  (n mod m) :: loop (n / m)
-      in
-	loop n
-    in
-    let make_dirs parent limbs =
-      let rec loop p l =
-	match l with
-	  | [] -> p
-	  | n :: rest ->
-	      let dir = p ^ "/" ^ Printf.sprintf "%03d" n in
-		if not (Sys.file_exists dir) then
-		  Unix.mkdir dir 0o777;
-		loop dir rest
-      in
-	loop parent limbs
-    in
     let dir = self#get_temp_dir in
       filenum <- filenum + 1;
-      let (low, rest) = match split_limbs filenum 1000 with
-	| (low :: rest) -> (low, rest)
-	| _ -> failwith "Non-empty list invariant failure in get_fresh_fname"
-      in
-      let dir' = make_dirs dir (List.rev rest) in
-        ignore(low);
-	curr_fname <- (Printf.sprintf "%s/%s-%d" dir' fname filenum);
-	if !opt_trace_solver then
-	  Printf.printf "Creating STP file: %s.stp\n" curr_fname;
-	curr_fname
+      curr_fname <- pick_fresh_fname dir fname filenum;
+      if !opt_trace_solver then
+	Printf.printf "Creating STP file: %s.stp\n" curr_fname;
+      curr_fname
 
   method private chan =
     match chan with

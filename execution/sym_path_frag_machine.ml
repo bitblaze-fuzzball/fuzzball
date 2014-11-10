@@ -410,9 +410,12 @@ struct
 	  match pref with
 	    | Some b -> b
 	    | None ->
-		(if !opt_trace_guidance then
-		   Printf.printf "No guidance, choosing randomly\n";
-		 dt#random_bit)
+		(match !opt_always_prefer with
+		   | Some b -> b
+		   | _ ->
+		       if !opt_trace_guidance then
+			 Printf.printf "No guidance, choosing randomly\n";
+		       dt#random_bit)
 
     method query_with_pc_choice cond verbose choice =
       let trans_func b =
@@ -591,8 +594,14 @@ struct
       let eip = self#get_eip in
       let v = form_man#simplify1 (self#eval_int_exp exp) in
       let (is_conc, result) =
-	try (true, (D.to_concrete_1 v) = 1)
-	with NotConcrete _ -> (false, false)
+	if Hashtbl.mem opt_branch_preference_unchecked eip then
+	  match Hashtbl.find opt_branch_preference_unchecked eip with
+	    | 0L -> (true, false)
+	    | 1L -> (true, true)
+	    | _ -> failwith "Unsupported branch preference"
+	else
+	  try (true, (D.to_concrete_1 v) = 1)
+	  with NotConcrete _ -> (false, false)
       in
 	if is_conc then
 	  (ignore(self#call_cjmp_heuristic eip targ1 targ2 (Some result));

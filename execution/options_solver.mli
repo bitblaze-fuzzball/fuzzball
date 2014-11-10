@@ -5,7 +5,7 @@
 
 val opt_solver : string ref
 val opt_solver_check_against : string  ref
-val opt_smtlib_solver_type : string option ref
+val opt_smtlib_solver_type_string : string option ref
 
 val solver_cmdline_opts : (string * Arg.spec * string) list
 

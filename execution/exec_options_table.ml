@@ -47,7 +47,7 @@ let  getParameterTable () =
     add_parameter "-solver" (String OS.opt_solver);
     add_parameter "-solver-check-against" (String OS.opt_solver_check_against);
     add_parameter "-solver-path" (String EO.opt_solver_path);
-    add_parameter "-smtlib-solver-type" (StringOpt OS.opt_smtlib_solver_type);
+    add_parameter "-smtlib-solver-type" (StringOpt OS.opt_smtlib_solver_type_string);
     add_parameter "-save-solver-files" (Bool EO.opt_save_solver_files);
     add_parameter "-solver-slow-time" (Float EO.opt_solver_slow_time);
     add_parameter "-solver-timeout" (IntOpt EO.opt_solver_timeout);
