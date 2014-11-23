@@ -552,6 +552,10 @@ class binary_decision_tree = object(self)
 	     failwith "Both branches unsat in try_extend")
     in
       assert(not cur.all_seen);
+      if cur.eip <> 0L && cur.eip <> eip then
+	Printf.printf
+	  "Decision tree inconsistency: node %d was 0x%08Lx and then %08Lx\n"
+	  cur.ident cur.eip eip;
       assert(cur.eip = 0L || cur.eip = eip);
       put_eip cur eip;
       let limited = match cur_query.query_children with 
