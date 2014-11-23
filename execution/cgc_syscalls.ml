@@ -1,3 +1,4 @@
+
 module V = Vine
 
 open Exec_utils
@@ -32,7 +33,7 @@ class cgcos_special_handler (fm : fragment_machine) =
       try
         fm#read_buf addr len (* Works for concrete values only *)
       with
-          NotConcrete(_) -> raise SymbolicSyscall
+        NotConcrete(_) -> raise SymbolicSyscall
     else
       (assert ((len >= 0) && (len < Sys.max_array_length));
        Array.init len
@@ -90,31 +91,31 @@ object(self)
 	store_word tx_bytes 0 num_bytes;
       transmit_pos <- transmit_pos + (Int64.to_int num_bytes);
       (match !opt_max_transmit_bytes with
-	 | Some max ->
-	     if transmit_pos > max then
-	       raise DeepPath
-	 | _ -> ());
+      | Some max ->
+	if transmit_pos > max then
+	  raise DeepPath
+      | _ -> ());
       put_return 0L
     in
       (try
 	 (match !opt_prefix_out, fd with
-            | (Some prefix, (1|2)) ->
-		Printf.printf "[%s fd %d]: " prefix fd
-            | _ -> ());
+         | (Some prefix, (1|2)) ->
+	   Printf.printf "[%s fd %d]: " prefix fd
+         | _ -> ());
 	 (match fd with
-            | (1|2) -> Array.iter print_char bytes;
-		success (Int64.of_int count)
-            | _ ->
-		let str = string_of_char_array bytes and
-                    ufd = self#get_fd fd
-		in
-                  match Unix.write ufd str 0 count
-                  with
-                    | i when i = count -> success (Int64.of_int count)
-                    | _ -> raise (Unix.Unix_error(Unix.EINTR, "", "")))
+         | (1|2) -> Array.iter print_char bytes;
+	   success (Int64.of_int count)
+         | _ ->
+	   let str = string_of_char_array bytes and
+               ufd = self#get_fd fd
+	   in
+           match Unix.write ufd str 0 count
+           with
+           | i when i = count -> success (Int64.of_int count)
+           | _ -> raise (Unix.Unix_error(Unix.EINTR, "", "")))
        with
-	 | Unix.Unix_error(err, _, _) -> self#put_errno err);
-      ()
+       | Unix.Unix_error(err, _, _) -> self#put_errno err);
+    ()
 
   val mutable next_fresh_addr = 0x50000000L
 
@@ -278,7 +279,7 @@ object(self)
     if !opt_symbolic_random then
       fm#maybe_start_symbolic
 	(fun () -> 
-	   (fm#populate_symbolic_region "random" random_pos buf count;
+	   (ignore (fm#populate_symbolic_region "random" random_pos buf count);
 	    random_pos <- random_pos + count))
     else
       for i = 0 to count - 1 do
@@ -307,10 +308,32 @@ object(self)
 	let num_read = count in
 	  fm#maybe_start_symbolic
 	    (fun () ->
-	       (fm#populate_symbolic_region "input0" receive_pos buf num_read;
-		max_input_string_length :=
-		  max (!max_input_string_length) receive_pos));
-	  num_read
+	      (* you aren't catching symbolic reads. That's the issue. JTT 11/17/14 *)
+	       (let _ = fm#populate_symbolic_region "input0" receive_pos buf num_read; in
+		max_input_string_length := max (!max_input_string_length) receive_pos;
+		let zero_reg = Vine.Constant (Vine.Int (Vine.REG_8, Int64.zero)) in
+		(* I am not at all confident that this is correct.  Chouldn't I just be able to get the current
+		   path constraints without putting a no-op piece of information as a query? JTT *)
+		let sat,ce = fm#query_with_path_cond (Vine.BinOp (Vine.EQ, zero_reg, zero_reg)) false in
+		let str = String.make count ' '
+		and i = ref 0
+		and char_of_int_unbounded i =
+		  let i = Int64.to_int i in
+		  if i >= 0 && i <= 255 then
+		    char_of_int i
+		  else
+		    '?'
+		in
+		List.iter (fun (var_s, value) ->
+		  match fm#match_input_var var_s with
+		  | Some n ->
+		    (if (n >= receive_pos) && (n < (receive_pos + count))
+		     then (str.[!i] <- char_of_int_unbounded value;
+			   i := !i + 1;))
+		  | None -> ()) ce;
+		(* Printf.eprintf "Converted input string into |%s|\n" str; *)
+		Pov_xml.add_transmit_str str count));
+	num_read
       else
 	let num_read = Unix.read oc_fd str 0 count in
 	let read_str = String.sub str 0 num_read in
@@ -324,6 +347,7 @@ object(self)
     in
       store_word num_bytes_p 0 (Int64.of_int num_read);
       receive_pos <- receive_pos + num_read;
+      max_input_string_length := max (!max_input_string_length) receive_pos;
       (match !opt_max_receive_bytes with
 	 | Some max ->
 	     if receive_pos > max then
@@ -346,17 +370,15 @@ object(self)
   method private cgcos_terminate status =
     raise (SimulatedExit(status))
 
-  method private cgcos_transmit (fd : int) (bytes : char array) (count : int) (tx_bytes : int64) =
+  (* (fd : int) (bytes : char array) (count : int) (tx_bytes : int64) *)
+  method private cgcos_transmit fd bytes count tx_bytes =
     (match !opt_max_transmits with
-       | Some m ->
-	   (if num_transmits >= m then
-	      raise DeepPath;
-	    num_transmits <- num_transmits + 1)
-       | None -> ());
-(*    if ( (fd <> 1) && (fd <> 2) ) (* transmitting on not stdout / stderr *)
-    then *)
-      (* I feel like this guard really belongs, but it doesn't capture what the program is really doing... *)
-    Pov_xml.add_read_car bytes tx_bytes; (* JTT 11/14 -- count is certainly wrong.  How am I supposed to know where these are stored*)
+    | Some m ->
+      (if num_transmits >= m then
+	  raise DeepPath;
+       num_transmits <- num_transmits + 1)
+    | None -> ());
+    Pov_xml.add_read_car bytes tx_bytes;
     self#do_write fd bytes count tx_bytes
 
   method private put_errno err =

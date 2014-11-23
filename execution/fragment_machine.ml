@@ -264,7 +264,7 @@ class virtual fragment_machine = object
   method virtual store_str : int64 -> int64 -> string -> unit
 
   method virtual populate_symbolic_region :
-    string -> int -> int64 -> int -> unit
+    string -> int -> int64 -> int -> Vine.exp array
   method virtual make_symbolic_region : int64 -> int -> unit
 
   method virtual store_symbolic_cstr : int64 -> int -> bool -> bool -> unit
@@ -1874,15 +1874,18 @@ struct
     val mutable symbolic_string_id = 0
 
     method populate_symbolic_region varname offset base len =
+      let ar = Array.create len (Vine.Name "stub") in
       for i = 0 to len - 1 do
-	self#store_byte (Int64.add base (Int64.of_int i))
-	  (form_man#fresh_symbolic_mem_8 varname (Int64.of_int (i + offset)))
-      done
+	let to_add = form_man#fresh_symbolic_mem_8 varname (Int64.of_int (i + offset)) in
+	self#store_byte (Int64.add base (Int64.of_int i)) to_add;
+	ar.(i) <- (D.to_symbolic_8 to_add);
+      done;
+      ar
 
     method make_symbolic_region base len =
       let varname = "input" ^ (string_of_int symbolic_string_id) in
 	symbolic_string_id <- symbolic_string_id + 1;
-	self#populate_symbolic_region varname 0 base len
+	ignore(self#populate_symbolic_region varname 0 base len)
 
     method store_symbolic_cstr base len fulllen terminate =
       let varname = "input" ^ (string_of_int symbolic_string_id) ^ "_" in

@@ -37,3 +37,19 @@ module StandardTestLogger = struct
   and use_hr_time = false
   and out_channel = get_chan "TestLogger" "stdout"
 end
+
+module RestartLogger = struct
+  let level = `Always
+  and major_name = "CGC_POV"
+  and minor_name = "info"
+  and use_hr_time = true
+  and out_channel = get_chan "CGC_POV" "info"
+end
+
+module SexpLogger = struct
+  let level = `Always
+  and major_name = "CGC_POV"
+  and minor_name = "sexp"
+  and use_hr_time = true
+  and out_channel = get_chan "CGC_POV" "sexp"
+end

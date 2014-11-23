@@ -9,6 +9,7 @@ type levels = [`Always | `Standard | `Debug | `Trace | `Never]
 (* store logger level arguments in this bad boy *)
 type log_channel =
 | Fixed of out_channel
+    (* COUNT, MAJOR NAME, MINOR NAME *)
 | Incrementing of ((int * string * string) * out_channel)
 
 let logger_level = Hashtbl.create 10
@@ -61,8 +62,8 @@ let next_incrementing_channel = function
   | Fixed _ -> failwith "Expected an incrementing channel in next_incrementing_channel"
   | Incrementing ((index, loggername, filename), _) ->
     let index' = index + 1 in
-    let next_chan = Printf.sprintf "%s/%s-%i.json" loggername filename index' in
-    ensure_dir loggername; (* we want the binary name here for cgc *)
+    let next_chan = Printf.sprintf "%s/%s-%i.json" filename loggername index' in
+    ensure_dir filename; (* we want the binary name here for cgc *)
     let next = Incrementing ((index', loggername, filename), (open_out next_chan)) in
     Hashtbl.replace logger_channels filename next;
     next
@@ -80,14 +81,26 @@ let get_logfile_channel (frequency, logger_name) =
 	(let regex = Str.regexp ".*:[0-9]+" in
 	 let chan = 
 	   if Str.string_match regex filename 0
-	   then (let tokens = Str.split (Str.regexp ":") filename in
-		 assert ((List.length tokens) == 2);
-		 let addr = Unix.inet_addr_of_string (List.hd tokens)
-		 and port = int_of_string (List.hd (List.tl tokens)) in
-		 let _, outchan = Unix.open_connection (Unix.ADDR_INET(addr, port)) in
-		 (Fixed outchan))
+	   then
+	     (try
+		let tokens = Str.split (Str.regexp ":") filename in
+		let host_token = List.hd tokens
+		and port_token = (List.hd (List.tl tokens)) in
+		let addr =
+		  (try Unix.inet_addr_of_string host_token
+		   with _ -> (let host_ent = Unix.gethostbyname host_token in
+			      host_ent.Unix.h_addr_list.(0)))
+		and port = int_of_string port_token in
+		let _, outchan = Unix.open_connection (Unix.ADDR_INET(addr, port)) in
+		Printf.eprintf "Success!\n";
+		(Fixed outchan)
+	      with (Unix.Unix_error (enum, s1, s2)) ->
+		(Printf.eprintf "Failed to open socket: %s %s %s\n" (Unix.error_message enum) s1 s2;
+		 failwith "no socket!")
+	     )
 	   else (let base = Incrementing ((~-1, logger_name, filename), Pervasives.stdout) in
 		 next_incrementing_channel base) in
+	 flush stderr;
 	 Hashtbl.replace logger_channels filename chan;
 	 chan)
   with _ -> (Fixed Pervasives.stdout)

@@ -52,18 +52,31 @@ let loop_w_stats count fn =
     if !opt_gc_stats then
       Gc.full_major () (* for the benefit of leak checking *)
 
+let restarts = ref 0
+
 let log_fuzz_restart log str eip = 
+  let module SEXP = (val !Loggers.cgc_sexp_logger : Text_logger.TextLog) in
+  Pov_xml.write_pov (get_program_name ());
   log (
-    Yojson_logger.LazyJson (lazy 
-			      (`Assoc 
-				  ["function", `String "fuzz";
-				   "type", `String "restart";
-				   "restart_reason", `String str;
-				   "restarted_at", `String (Printf.sprintf "0x%08LX" eip);
-				  ]
-			      )
-    )
-  )
+    Yojson_logger.LazyJson
+      (lazy 
+	 (`Assoc 
+	     ["function", `String "fuzz";
+	      "type", `String "restart";
+	      "restart_reason", `String str;
+	      "restarted_at", `String (Printf.sprintf "0x%08LX" eip);
+	     ]
+	 )
+      )
+  );
+  (* and here is where we tell fuzzbomb where these things are. I'm just going to assume names. *)
+  let pov_filename = Printf.sprintf "%s/pov-%i.xml" !Pov_xml.out_channel_name !restarts
+  and info_filename = Printf.sprintf "%s/info-%i.json" !Pov_xml.out_channel_name !restarts in
+  let sexp = Text_logger.LazyString (lazy
+				       (Printf.sprintf "((:type :new-test-case) (:xml \"%s\") (:info \"%s\"))"
+					  pov_filename info_filename)) in
+  SEXP.always ~sign:false sexp;
+  restarts := !restarts + 1
 
 
 let prefuzz_region start_eip opt_fuzz_start_eip fuzz_start_eip fm asmir_gamma extra_setup =
@@ -98,9 +111,8 @@ let fuzz_sighandle_setup fm =
     (Sys.Signal_handle(fun _ -> periodic_stats fm false true))
 
 let fuzz_runloop fm fuzz_start_eip asmir_gamma end_eips =
-  let module Log = (val !Loggers.fuzzball_bdt_json : Yojson_logger.JSONLog) in
+  let module Log = (val !Loggers.cgc_restart_json : Yojson_logger.JSONLog) in
   let stop str =
-    Pov_xml.write_pov (get_program_name ());
     if !opt_trace_stopping
     then Printf.printf "Stopping %s at 0x%08Lx\n" str fm#get_eip in
   try

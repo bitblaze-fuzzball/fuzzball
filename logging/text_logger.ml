@@ -1,8 +1,9 @@
-type lazy_type = LazyString of string Lazy.t
-		 | LazyInt of int Lazy.t
-		 | LazyInt64 of int64 Lazy.t
-		 | LazyFloat of float Lazy.t
-		 | LazyBool of bool Lazy.t
+type lazy_type =
+| LazyString of string Lazy.t
+| LazyInt of int Lazy.t
+| LazyInt64 of int64 Lazy.t
+| LazyFloat of float Lazy.t
+| LazyBool of bool Lazy.t
 
 let evaluateLazyTypeToString lazyType =
   match lazyType with
@@ -13,11 +14,11 @@ let evaluateLazyTypeToString lazyType =
   | LazyBool b -> Pervasives.string_of_bool (Lazy.force b)
 
 module type TextLog = sig
-  val always   : lazy_type -> unit
-  val standard : lazy_type -> unit
-  val debug    : lazy_type -> unit
-  val trace    : lazy_type -> unit
-  val never    : lazy_type -> unit
+  val always   : ?sign:bool -> lazy_type -> unit
+  val standard : ?sign:bool ->lazy_type -> unit
+  val debug    : ?sign:bool ->lazy_type -> unit
+  val trace    : ?sign:bool ->lazy_type -> unit
+  val never    : ?sign:bool ->lazy_type -> unit
 end
 
 (* an in place variant if you don't need the complexity of first-class modules (we do) *)
@@ -35,7 +36,9 @@ let timestamp use_highres =
            (time.Unix.tm_min)
            (time.Unix.tm_sec)
 
-let log lazy_message =
+let log ?(sign = true) lazy_message =
+  if sign
+  then
       Printf.fprintf
         (Verb.out_channel ())
         "%s %s %s: %s\n"
@@ -43,33 +46,38 @@ let log lazy_message =
         Verb.major_name
         Verb.minor_name
         (evaluateLazyTypeToString lazy_message)
+  else
+      Printf.fprintf
+        (Verb.out_channel ())
+        "%s\n"
+        (evaluateLazyTypeToString lazy_message)
 
-let dummy_log _ = ()
+let dummy_log ?(sign = true) _ = ()
 
-let always =
+let always ?(sign = true) args =
   if Logger_config.sufficient (Verb.major_name,Verb.minor_name) `Always
-  then log
-  else dummy_log
+  then log ~sign args
+  else dummy_log ~sign args
 
-let standard =
+let standard ?(sign = true) args =
   if Logger_config.sufficient (Verb.major_name,Verb.minor_name) `Standard
-  then log
-  else dummy_log
+  then log ~sign args
+  else dummy_log ~sign args
 
-let debug =
+let debug ?(sign = true) args =
   if Logger_config.sufficient (Verb.major_name,Verb.minor_name) `Debug
-  then log
-  else dummy_log
+  then log ~sign args
+  else dummy_log ~sign args
 
-let trace =
+let trace ?(sign = true) args =
   if Logger_config.sufficient (Verb.major_name,Verb.minor_name) `Trace
-  then log
-  else dummy_log
+  then log ~sign args
+  else dummy_log ~sign args
 
-let never =
+let never ?(sign = true) args =
   if Logger_config.sufficient (Verb.major_name,Verb.minor_name) `Never
-  then log
-  else dummy_log
+  then log ~sign args
+  else dummy_log ~sign args
 
 end
 
@@ -88,44 +96,52 @@ let make_logger verb =
              (time.Unix.tm_hour)
              (time.Unix.tm_min)
              (time.Unix.tm_sec)
-	     
-let log lazy_message =
-  Printf.fprintf
-    Pervasives.stdout
-    "%s %s %s: %s\n"
-    (timestamp Verb.use_hr_time)
-    Verb.major_name
-    Verb.minor_name
-    (evaluateLazyTypeToString lazy_message)
 
-let dummy_log _ = ()
+let log ?(sign = true) lazy_message =
+  if sign
+  then
+      Printf.fprintf
+        (Verb.out_channel ())
+        "%s %s %s: %s\n"
+        (timestamp Verb.use_hr_time)
+        Verb.major_name
+        Verb.minor_name
+        (evaluateLazyTypeToString lazy_message)
+  else
+      Printf.fprintf
+        (Verb.out_channel ())
+        "%s\n"
+        (evaluateLazyTypeToString lazy_message)
+	    
 
-let always =
+let dummy_log ?(sign = true) args = ()
+
+let always ?(sign = true) args =
   if Logger_config.sufficient (Verb.major_name,Verb.minor_name) `Always
-  then log
-  else dummy_log
+  then log ~sign args
+  else dummy_log ~sign args
 
 
-let standard =
+let standard ?(sign = true) args =
   if Logger_config.sufficient (Verb.major_name,Verb.minor_name) `Standard
-  then log
-  else dummy_log
+  then log ~sign args
+  else dummy_log ~sign args
 
-let debug =
+let debug ?(sign = true) args =
   if Logger_config.sufficient (Verb.major_name,Verb.minor_name) `Debug
-  then log
-  else dummy_log
+  then log ~sign args
+  else dummy_log ~sign args
 
-let trace =
+let trace ?(sign = true) args =
   if Logger_config.sufficient (Verb.major_name,Verb.minor_name) `Trace
-  then log
-  else dummy_log
+  then log ~sign args
+  else dummy_log ~sign args
 
 
-let never =
+let never ?(sign = true) args =
   if Logger_config.sufficient (Verb.major_name,Verb.minor_name) `Never
-  then log
-  else dummy_log
+  then log ~sign args
+  else dummy_log ~sign args
 
 end : TextLog);;
 

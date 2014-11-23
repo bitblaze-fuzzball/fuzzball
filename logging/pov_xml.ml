@@ -208,7 +208,8 @@ let set_out_channel fname =
 
 
 let debug_print v =
-  Xml.print_list (Printf.fprintf !out_channel "%s") [v]
+  Xml.print_list (Printf.fprintf !out_channel "%s") [v];
+  Printf.fprintf !out_channel "\n"
 
 
 let echo_to_xml = function
@@ -345,6 +346,16 @@ let add_transmit contents length =
 
 let add_transmit_str string length =
   add_transmit (array_of_string string) length
+
+let symb_reads = ref 0
+and symb_writes = ref 0
+
+let add_symbolic_read start_addr end_addr constraints =
+  symb_reads := !symb_reads + 1
+
+let add_symbolic_transmit start_addr end_addr constraints =
+  symb_writes := !symb_writes + 1
+
 
 let add_decl () =
   (* cgc allocate? *)
