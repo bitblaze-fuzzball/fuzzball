@@ -185,7 +185,7 @@ let fuzz_runloop fm fuzz_start_eip asmir_gamma end_eips =
     log_fuzz_restart Log.always "on deallocating a size different than that allocated"fm#get_eip;
     stop "on deallocating a size different than that allocated"
   | Unsafe_Memory_Access ->
-    log_fuzz_restart Log.always "on unsafe memory access"fm#get_eip;
+    log_fuzz_restart Log.always "on unsafe memory access" fm#get_eip;
     stop "on unsafe memory access"
   | Uninitialized_Memory ->
     log_fuzz_restart Log.trace "use of uninitialized memory"fm#get_eip;
