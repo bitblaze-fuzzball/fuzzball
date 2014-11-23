@@ -17,7 +17,8 @@ type decision_tree_node = {
   mutable query_counted : bool;
   mutable heur_min : int;
   mutable heur_max : int;
-  mutable ident : int }
+  mutable ident : int;
+  mutable eip : int64 }
 and
   dt_node_ref = int
 
@@ -49,23 +50,24 @@ let dt_node_to_string n =
   let flags_int = (if n.all_seen then 1 else 0) +
     (if n.query_counted then 2 else 0)
   in
-  let s = Printf.sprintf "%08x%c%08x%08x%08x%08x%04x"
+  let s = Printf.sprintf "%08x%c%08x%08x%08x%08x%04x%08Lx"
     (parent_int land mask_32bits_int) (Char.chr (0x40 + flags_int))
     (f_child_int land mask_32bits_int) (t_child_int land mask_32bits_int)
     (n.heur_min land mask_32bits_int) (n.heur_max land mask_32bits_int)
-    (query_children_int land 0xffff) in
-    assert(String.length s = 45);
+    (query_children_int land 0xffff) (Int64.logand n.eip 0xffffffffL) in
+    assert(String.length s = 53);
     s
 
 let string_to_dt_node ident_arg s =
-  assert(String.length s = 45);
+  assert(String.length s = 53);
   let parent_str = String.sub s 0 8 and
       flags_char = s.[8] and
       f_child_str = String.sub s 9 8 and
       t_child_str = String.sub s 17 8 and
       heur_min_str = String.sub s 25 8 and
       heur_max_str = String.sub s 33 8 and
-      query_children_str = String.sub s 41 4
+      query_children_str = String.sub s 41 4 and
+      eip_str = String.sub s 45 8
   in
   let int_of_hex_string s = int_of_string ("0x" ^ s) in
   let parent_int = int_of_hex_string parent_str and
@@ -74,7 +76,8 @@ let string_to_dt_node ident_arg s =
       t_child_int = int_of_hex_string t_child_str and
       heur_min_int = int_of_hex_string heur_min_str and
       heur_max_int = int_of_hex_string heur_max_str and
-      query_children_int = int_of_hex_string query_children_str
+      query_children_int = int_of_hex_string query_children_str and
+      eip_i64 = Int64.of_string ("0x" ^ eip_str)
   in
   let parent_o = match parent_int with
     | 0 -> None
@@ -104,7 +107,7 @@ let string_to_dt_node ident_arg s =
      query_children = query_children_o; query_counted = query_counted_bool;
      heur_min = maybe_negative_one heur_min_int;
      heur_max = maybe_negative_one heur_max_int;
-     all_seen = all_seen_bool; ident = ident_arg}
+     all_seen = all_seen_bool; ident = ident_arg; eip = eip_i64}
 
 let next_dt_ident = ref 0
 
@@ -125,13 +128,13 @@ let nodes_fd () =
 
 let ident_to_node i =
   if !opt_decision_tree_use_file then
-    ((let off = Unix.lseek (nodes_fd ()) (46 * (i-1)) Unix.SEEK_SET in
-	assert(off = 46 * (i-1)));
-     let buf = String.create 46 in
-     let len = Unix.read (nodes_fd ()) buf 0 46 in
-       assert(len = 46);
+    ((let off = Unix.lseek (nodes_fd ()) (54 * (i-1)) Unix.SEEK_SET in
+	assert(off = 54 * (i-1)));
+     let buf = String.create 54 in
+     let len = Unix.read (nodes_fd ()) buf 0 54 in
+       assert(len = 54);
        assert(String.sub buf 45 1 = "\n");
-       string_to_dt_node i (String.sub buf 0 45))
+       string_to_dt_node i (String.sub buf 0 53))
   else
     let i3 = i land 1023 and
 	i2 = (i asr 10) land 1023 and
@@ -184,6 +187,7 @@ let print_node chan n =
       Printf.fprintf chan "(%d %d) " n.heur_min n.heur_max
     else
       Printf.fprintf chan "(X) ";
+    Printf.fprintf chan "at 0x%08Lx " n.eip;
     Printf.fprintf chan "%s\n"
       (match n.query_children with
 	 | None -> "[]"
@@ -196,10 +200,10 @@ let update_dt_node n =
      print_node stdout n);
   if !opt_decision_tree_use_file then
     let i = n.ident in 
-      (let off = Unix.lseek (nodes_fd ()) (30 * (i-1)) Unix.SEEK_SET in
-	 assert(off = 30 * (i-1)));
-      let len = Unix.write (nodes_fd ()) (dt_node_to_string n ^ "\n") 0 30 in
-	assert(len = 30);
+      (let off = Unix.lseek (nodes_fd ()) (54 * (i-1)) Unix.SEEK_SET in
+	 assert(off = 54 * (i-1)));
+      let len = Unix.write (nodes_fd ()) (dt_node_to_string n ^ "\n") 0 54 in
+	assert(len = 54);
   else
     let i3 = n.ident land 1023 and
 	i2 = (n.ident asr 10) land 1023 and
@@ -242,7 +246,7 @@ let new_dt_node the_parent =
        f_child = None; t_child = None;
        query_children = None; query_counted = false;
        heur_min = 0x3fffffff; heur_max = -1;
-       all_seen = false; ident = i}
+       all_seen = false; ident = i; eip = 0L}
     in
       update_dt_node node;
       node
@@ -268,6 +272,10 @@ let put_t_child n k =
        | None -> None
        | Some None -> Some None
        | Some (Some k') -> Some (Some (ref_dt_node k')));
+  update_dt_node n
+
+let put_eip n addr =
+  n.eip <- addr;
   update_dt_node n
 
 (* This hash algorithm is FNV-1a,
@@ -501,7 +509,8 @@ class binary_decision_tree = object(self)
 	  failwith "Trying to make sat branch unsat in record_unsat"
 
   method try_extend (trans_func : bool -> V.exp)
-    try_func (non_try_func : bool -> unit) (random_bit_gen : unit -> bool) =
+    try_func (non_try_func : bool -> unit) (random_bit_gen : unit -> bool)
+    eip =
     let known b = 
       non_try_func b;
       self#extend b;
@@ -543,6 +552,8 @@ class binary_decision_tree = object(self)
 	     failwith "Both branches unsat in try_extend")
     in
       assert(not cur.all_seen);
+      assert(cur.eip = 0L || cur.eip = eip);
+      put_eip cur eip;
       let limited = match cur_query.query_children with 
 	| Some k when k >= !opt_query_branch_limit -> true
 	| _ -> false

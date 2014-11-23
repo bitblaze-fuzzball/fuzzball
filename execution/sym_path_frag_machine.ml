@@ -434,7 +434,9 @@ struct
       in
 	if !opt_trace_binary_paths then
 	  Printf.printf "Current Path String: %s\n" dt#get_hist_str;
-	let r = dt#try_extend trans_func try_func non_try_func choice in
+	let r = dt#try_extend trans_func try_func non_try_func choice
+	  self#get_eip
+	in
 	  if !opt_trace_binary_paths then
 	    Printf.printf "Current Path String: %s\n" dt#get_hist_str;
 	  if !opt_trace_binary_paths_delimited then
@@ -484,7 +486,7 @@ struct
 	if verbose then Printf.printf "Known %B\n" b
       in
       let (result, _) = (dt#try_extend trans_func try_func non_try_func
-			   (fun () -> self#follow_or_random)) in
+			   (fun () -> self#follow_or_random) self#get_eip) in
 	result
 
     method private eval_bool_exp_conc_path e =

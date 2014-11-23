@@ -23,7 +23,7 @@ class binary_decision_tree : object
   method record_unsat : bool -> unit
 
   method try_extend : (bool -> Vine.exp) ->
-    (bool -> Vine.exp -> bool) -> (bool -> unit) -> (unit -> bool) 
+    (bool -> Vine.exp -> bool) -> (bool -> unit) -> (unit -> bool) -> int64
     -> (bool * Vine.exp)
 
   method try_extend_memoryless : (bool -> Vine.exp) ->
