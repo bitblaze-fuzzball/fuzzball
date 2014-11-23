@@ -206,6 +206,8 @@ class virtual fragment_machine : object
 
   method virtual eval_expr_to_symbolic_expr : Vine.exp -> Vine.exp
 
+  method virtual eval_expr_from_ce : (string * int64) list -> Vine.exp -> int64
+
   method virtual watchpoint : unit
 
   method virtual mem_val_as_string : int64 -> Vine.typ -> string
@@ -455,6 +457,8 @@ sig
     method eval_expr_to_int64 : Vine.exp -> int64
 
     method eval_expr_to_symbolic_expr : Vine.exp -> Vine.exp
+
+    method eval_expr_from_ce : (string * int64) list -> Vine.exp -> int64
 
     method watchpoint : unit
 

@@ -309,30 +309,11 @@ object(self)
 	  fm#maybe_start_symbolic
 	    (fun () ->
 	      (* you aren't catching symbolic reads. That's the issue. JTT 11/17/14 *)
-	       (let _ = fm#populate_symbolic_region "input0" receive_pos buf num_read; in
-		max_input_string_length := max (!max_input_string_length) receive_pos;
-		let zero_reg = Vine.Constant (Vine.Int (Vine.REG_8, Int64.zero)) in
-		(* I am not at all confident that this is correct.  Chouldn't I just be able to get the current
-		   path constraints without putting a no-op piece of information as a query? JTT *)
-		let sat,ce = fm#query_with_path_cond (Vine.BinOp (Vine.EQ, zero_reg, zero_reg)) false in
-		let str = String.make count ' '
-		and i = ref 0
-		and char_of_int_unbounded i =
-		  let i = Int64.to_int i in
-		  if i >= 0 && i <= 255 then
-		    char_of_int i
-		  else
-		    '?'
-		in
-		List.iter (fun (var_s, value) ->
-		  match fm#match_input_var var_s with
-		  | Some n ->
-		    (if (n >= receive_pos) && (n < (receive_pos + count))
-		     then (str.[!i] <- char_of_int_unbounded value;
-			   i := !i + 1;))
-		  | None -> ()) ce;
-		(* Printf.eprintf "Converted input string into |%s|\n" str; *)
-		Pov_xml.add_transmit_str str count));
+	       (let constraints = fm#populate_symbolic_region "input0" receive_pos buf num_read; in
+		Pov_xml.add_symbolic_transmit
+		  (Int64.of_int receive_pos)
+		  (Int64.of_int (receive_pos + num_read))
+		  constraints));
 	num_read
       else
 	let num_read = Unix.read oc_fd str 0 count in

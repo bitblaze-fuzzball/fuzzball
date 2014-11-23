@@ -54,9 +54,10 @@ let loop_w_stats count fn =
 
 let restarts = ref 0
 
-let log_fuzz_restart log str eip = 
+let log_fuzz_restart log str fm = 
+  let eip = fm#get_eip in
   let module SEXP = (val !Loggers.cgc_sexp_logger : Text_logger.TextLog) in
-  Pov_xml.write_pov (get_program_name ());
+  Pov_xml.write_pov (get_program_name ()) fm;
   log (
     Yojson_logger.LazyJson
       (lazy 
@@ -119,88 +120,88 @@ let fuzz_runloop fm fuzz_start_eip asmir_gamma end_eips =
     runloop fm fuzz_start_eip asmir_gamma (fun a -> List.mem a end_eips)
   with
   | SimulatedExit(_) -> 
-    log_fuzz_restart Log.always "when program called exit()"fm#get_eip;
+    log_fuzz_restart Log.always "when program called exit()" fm;
     stop "when program called exit()"
   | SimulatedAbort -> 
-    log_fuzz_restart Log.trace "when program called abort()"fm#get_eip;
+    log_fuzz_restart Log.trace "when program called abort()"fm;
     stop "when program called abort()"
   | KnownPath ->
-    log_fuzz_restart Log.trace "on previously-explored path"fm#get_eip;
+    log_fuzz_restart Log.trace "on previously-explored path"fm;
     stop "on previously-explored path"
 		(* KnownPath currently shouldn't happen *)
   | DeepPath ->
-    log_fuzz_restart Log.trace "on too-deep path"fm#get_eip;
+    log_fuzz_restart Log.trace "on too-deep path" fm;
     stop "on too-deep path"
   | SymbolicJump ->
-    log_fuzz_restart Log.trace "at symbolic jump"fm#get_eip;
+    log_fuzz_restart Log.trace "at symbolic jump" fm;
     stop "at symbolic jump"
   | NullDereference ->
     if !opt_finish_on_null_deref then (
-      log_fuzz_restart Log.always "concrete null dereference"fm#get_eip;
+      log_fuzz_restart Log.always "concrete null dereference" fm;
       fm#finish_fuzz "concrete null dereference"
     );
-    log_fuzz_restart Log.always "at null deref"fm#get_eip;
+    log_fuzz_restart Log.always "at null deref"fm;
     stop "at null deref"
   | JumpToNull -> 
-    log_fuzz_restart Log.always "at jump to null"fm#get_eip;
+    log_fuzz_restart Log.always "at jump to null"fm;
     stop "at jump to null"
   | DivideByZero -> 
-    log_fuzz_restart Log.always "at division by zero"fm#get_eip;
+    log_fuzz_restart Log.always "at division by zero" fm;
     stop "at division by zero"
   | TooManyIterations ->
-    log_fuzz_restart Log.trace "after too many iterations"fm#get_eip;
+    log_fuzz_restart Log.trace "after too many iterations" fm;
     stop "after too many loop iterations"
   | UnhandledTrap -> 
-    log_fuzz_restart Log.trace "at trap"fm#get_eip;
+    log_fuzz_restart Log.trace "at trap" fm;
     stop "at trap"
   | IllegalInstruction -> 
-    log_fuzz_restart Log.always "at bad instruction"fm#get_eip;
+    log_fuzz_restart Log.always "at bad instruction" fm;
     stop "at bad instruction"
   | UnhandledSysCall(s) ->
     Printf.printf "[trans_eval WARNING]: %s\n%!" s;
-    log_fuzz_restart Log.trace "at unhandled system call"fm#get_eip;
+    log_fuzz_restart Log.trace "at unhandled system call" fm;
     stop "at unhandled system call"
   | SymbolicSyscall ->
-    log_fuzz_restart Log.trace "at symbolic system call"fm#get_eip;
+    log_fuzz_restart Log.trace "at symbolic system call" fm;
     stop "at symbolic system call"
   | ReachedMeasurePoint ->
-    log_fuzz_restart Log.trace "at measurement point"fm#get_eip;
+    log_fuzz_restart Log.trace "at measurement point" fm;
     stop "at measurement point"
   | ReachedInfluenceBound -> 
-    log_fuzz_restart Log.trace "at influence bound"fm#get_eip;
+    log_fuzz_restart Log.trace "at influence bound" fm;
     stop "at influence bound"
   | DisqualifiedPath ->
-    log_fuzz_restart Log.trace "on disqualified path"fm#get_eip;
+    log_fuzz_restart Log.trace "on disqualified path" fm;
     stop "on disqualified path"
   | BranchLimit ->
-    log_fuzz_restart Log.trace "on branch limit"fm#get_eip;
+    log_fuzz_restart Log.trace "on branch limit" fm;
     stop "on branch limit"
   | SolverFailure when !opt_nonfatal_solver -> 
-    log_fuzz_restart Log.trace "on solver failure"fm#get_eip;
+    log_fuzz_restart Log.trace "on solver failure" fm;
     stop "on solver failure"
   | UnproductivePath ->
-    log_fuzz_restart Log.trace "on unproductive path"fm#get_eip;
+    log_fuzz_restart Log.trace "on unproductive path" fm;
     stop "on unproductive path"
   | FinishNow ->
-    log_fuzz_restart Log.always "on -finish-immediately"fm#get_eip;
+    log_fuzz_restart Log.always "on -finish-immediately" fm;
     stop "on -finish_immediately";
   | Signal("USR1") -> 
-		    log_fuzz_restart Log.trace "on SIGUSR1"fm#get_eip;
+		    log_fuzz_restart Log.trace "on SIGUSR1" fm;
     stop "on SIGUSR1"
   | Double_Free ->
-    log_fuzz_restart Log.always "on double free"fm#get_eip;
+    log_fuzz_restart Log.always "on double free" fm;
     stop "on double free"
   | Dealloc_Not_Alloc ->
-    log_fuzz_restart Log.trace "on deallocating something not allocated"fm#get_eip;
+    log_fuzz_restart Log.trace "on deallocating something not allocated" fm;
     stop "on deallocating something not allocated"
   | Alloc_Dealloc_Length_Mismatch ->
-    log_fuzz_restart Log.always "on deallocating a size different than that allocated"fm#get_eip;
+    log_fuzz_restart Log.always "on deallocating a size different than that allocated" fm;
     stop "on deallocating a size different than that allocated"
   | Unsafe_Memory_Access ->
-    log_fuzz_restart Log.always "on unsafe memory access" fm#get_eip;
+    log_fuzz_restart Log.always "on unsafe memory access"  fm;
     stop "on unsafe memory access"
   | Uninitialized_Memory ->
-    log_fuzz_restart Log.trace "use of uninitialized memory"fm#get_eip;
+    log_fuzz_restart Log.trace "use of uninitialized memory" fm;
     stop "use of uninitialized memory"    
   | NotConcrete(_) -> failwith "fuzz raised NotConcrete, but it should have been caught before now!"
   | Simplify_failure(_) -> failwith "fuzz raised Simplify_failure, but it should have been caught before now!"

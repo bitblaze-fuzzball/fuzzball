@@ -17,9 +17,9 @@ RESULT = logging
 
 export PACKS = unix yojson tyxml
 export YFLAGS = -v
-export LIBS = execution
-export INCDIRS = ../execution
-export OCAMLDEP = ocamldep -I ../execution
+export LIBS = execution ocaml
+export INCDIRS = ../execution ../ocaml
+export OCAMLDEP = ocamldep -I ../execution ../ocaml
 
 OCAMLFLAGS := -warn-error Aelz
 ifdef PROFILE

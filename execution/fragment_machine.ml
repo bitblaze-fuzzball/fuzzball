@@ -321,6 +321,8 @@ class virtual fragment_machine = object
       
   method virtual eval_expr_to_symbolic_expr : Vine.exp -> Vine.exp
 
+  method virtual eval_expr_from_ce : (string * int64) list -> Vine.exp -> int64
+
   method virtual watchpoint : unit
 
   method virtual mem_val_as_string : int64 -> Vine.typ -> string
@@ -2132,6 +2134,8 @@ struct
 	| (v, V.REG_32) -> D.to_symbolic_32 v
 	| (v, V.REG_64) -> D.to_symbolic_64 v
 	| _ -> failwith "Unexpected type in eval_expr_to_symbolic_expr"
+
+    method eval_expr_from_ce ce e = form_man#eval_expr_from_ce ce e
 
     method watchpoint =
       match !opt_watch_expr with

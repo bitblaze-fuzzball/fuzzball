@@ -88,23 +88,18 @@ type concrete_write = {
   datas : write_target list;
 }
 
-type 'a symbolic_io = {
+type symbolic_io = {
   start_addr : int64;
   end_addr : int64;
-  constraints : 'a
+  constraints : Vine.exp array;
 }
 
-type 'a read =
-| Concrete of concrete_read
-| Symbolic of 'a symbolic_io
-
-type 'a write =
-| Concrete of concrete_write
-| Symbolic of 'a symbolic_io
 
 type action =
-| Write of concrete_write
-| Read of concrete_read
+| ConcreteRead of concrete_read
+| SymbolicRead of symbolic_io
+| ConcreteWrite of concrete_write
+| SymbolicWrite of symbolic_io
 | Decl of decl
 | Delay of delay
 
@@ -280,7 +275,7 @@ let read_input_to_xml = function
   | Length l -> Xml.node "length" [Xml.pcdata (Printf.sprintf "%i" l)]
   | Delim d -> delim_to_xml d
 
-let read_to_xml (a : concrete_read) =
+let concrete_read_to_xml a =
   let children = ref [] in
   children := (read_input_to_xml a.input_marker) :: !children;
   (match a.mtch with
@@ -293,33 +288,60 @@ let read_to_xml (a : concrete_read) =
   | Some s -> children := (assign_to_xml s) :: !children 
   | None -> ());
   Xml.node ~a:[(echo_to_xml a.echo)] "read" !children
+
+let symbolic_read_to_xml fm r =
+  failwith "stub"
     
+
 let write_target_to_xml = function
   | WData d -> data_to_xml d
   | WVar v -> Xml.node "var" [Xml.pcdata v]
 
-
-let write_to_xml (a : concrete_write) =
-  Xml.node "write" (List.map write_target_to_xml a.datas)
+let symbolic_write_to_xml fm w =
+  (* solve the current path constrains, give the correct output *)
+  let (_, ce) = fm#query_with_path_cond Vine.exp_true false in
+  let as_int64 = Array.init (Array.length w.constraints) (fun i -> fm#eval_expr_from_ce ce w.constraints.(i)) in
+  let num_chars = ref 0 in
+  let as_string = Array.init (Array.length as_int64)
+    (fun i -> let to_add = Printf.sprintf "%LX" as_int64.(i) in
+	      num_chars := !num_chars + (String.length to_add);
+	      to_add) in
+  let char_array = Array.create !num_chars ' ' in
+  let i = ref 0 in
+  Array.iter (fun e ->
+    for j = 0 to ((String.length e) - 1)
+    do
+      char_array.(!i) <- e.[j];
+      i := !i + 1
+    done) as_string;
+  let dt = {data_typ = Hex;
+	    contents = char_array; } in
+  let wt = WData dt in
+  Xml.node "write" [(write_target_to_xml wt)]
   
 
-let action_to_xml = function
-  | Write w -> write_to_xml w
-  | Read r -> read_to_xml r
+let action_to_xml fm = function
+  | ConcreteWrite w -> Xml.node "write" (List.map write_target_to_xml w.datas)
+  | SymbolicWrite w -> symbolic_write_to_xml fm w
+  | ConcreteRead r -> concrete_read_to_xml r
+  | SymbolicRead r -> symbolic_read_to_xml fm r
   | Decl d -> decl_to_xml d
   | Delay d -> delay_to_xml d
 
-let replay_to_xml (a : replay) =
+let replay_to_xml a fm =
   Xml.node "replay"
-    (List.map action_to_xml a.actions)
+    (List.map (action_to_xml fm) a.actions)
 
-let pov_to_xml (a : pov) =
+let pov_to_xml a fm =
   Xml.node "pov"
     [cbid_to_xml a.cbid;
-     replay_to_xml a.replay]
+     replay_to_xml a.replay fm]
 
 (* incremental pov construction *)
-let events = ref ([] : action list)
+type event_list = action list
+let events = ref ([] : event_list)
+
+
 
 let add_read (read_in : string) (start : int64) (length : int) =
   (* Add a read command to the list of actions to be put into the pov *)
@@ -328,7 +350,7 @@ let add_read (read_in : string) (start : int64) (length : int) =
 	     assign = None;
 	     mtch = None;
 	     timeout = None; } in
-  events := Read me :: !events
+  events := (ConcreteRead me) :: !events
 
 let add_read_car (read_in : char array) (start : int64) =
   add_read (str_of_array read_in) start (Array.length read_in)
@@ -340,7 +362,7 @@ let add_transmit contents length =
 	    contents = contents; } in
   let wt = WData dt in
   let write = {datas = [wt]} in
-  events := Write write :: !events
+  events := (ConcreteWrite write) :: !events
 
   
 
@@ -351,10 +373,19 @@ let symb_reads = ref 0
 and symb_writes = ref 0
 
 let add_symbolic_read start_addr end_addr constraints =
-  symb_reads := !symb_reads + 1
+  symb_reads := !symb_reads + 1;
+  let to_add = {start_addr = start_addr;
+		end_addr = end_addr;
+		constraints = constraints; } in
+  events := (SymbolicRead to_add) :: !events
 
 let add_symbolic_transmit start_addr end_addr constraints =
-  symb_writes := !symb_writes + 1
+  symb_writes := !symb_writes + 1;
+  let to_add = {start_addr = start_addr;
+		end_addr = end_addr;
+		constraints = constraints; } in
+  events := (SymbolicWrite to_add) :: !events
+  
 
 
 let add_decl () =
@@ -371,7 +402,7 @@ let add_timeout duration =
 let reset () =
   events := []
 
-let write_pov name =
+let write_pov name fragmach =
   (* build the xml you need to output *)
   (* [JTT 11/17/14 ] -- set the channel here, because
      you haven't opened it yet.  Don't set it at the end, because that results in empty
@@ -382,7 +413,7 @@ let write_pov name =
   let replay = {actions = List.rev !events} in
   let pov = {cbid = cbid; replay = replay} in
   (* put it out *)
-  debug_print (pov_to_xml pov);
+  debug_print (pov_to_xml pov fragmach);
   (* clear your cache *)
   reset ()
 

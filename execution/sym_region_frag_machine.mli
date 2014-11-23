@@ -237,6 +237,7 @@ sig
     method private eval_expr_to_string : Vine.exp -> string
     method eval_expr_to_int64 : Vine.exp -> int64
     method eval_expr_to_symbolic_expr : Vine.exp -> Vine.exp
+    method eval_expr_from_ce : (string * int64) list -> Vine.exp -> int64
     method watchpoint : unit
     method mem_val_as_string : int64 -> Vine.typ -> string
     method get_loop_cnt : int64
