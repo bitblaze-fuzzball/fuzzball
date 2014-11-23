@@ -2,7 +2,7 @@ export OCAMLMAKEFILE=../ocaml/OCamlMakefile
 
 export SOURCES = \
 	int64Array.ml \
-	doset.ml \
+        interval_tree.ml \
 
 RESULT = structs
 
