@@ -112,7 +112,7 @@ let valid (a : timeout) = a.to_ms >= 0
 
 (* if this is -1, the we're using a channel or sockets.  If it's >= 0,
    then we're using numbered files. *)
-let pov_output_count = ref 0
+let pov_output_count = ref ~-1
 let out_channel_name = ref "/dev/null"
 let out_channel = ref (open_out "/dev/null")
 
@@ -147,10 +147,16 @@ let next_string_channel basename =
      synchronize anything. [JTT 11-13]*)
   (* make sure the directory for the base-name exists*)
   (* make pov-#.xml, ensure that they line up the right way by
-     padding out with 0s *) 
-  ensure_dir basename;
-  (* ensure that basename exists *)
-  open_out (Printf.sprintf "%s/pov-%i.xml" basename !pov_output_count)
+     padding out with 0s *)
+  if basename = "/dev/null"
+  then open_out basename
+  else
+      (ensure_dir basename;
+       (* ensure that basename exists *)
+       open_out (Printf.sprintf
+		   "%s/pov-%i.xml"
+		   basename
+		   !pov_output_count))
 
 
 let set_logfile_channel filename =
@@ -184,8 +190,7 @@ let set_out_channel fname =
      setup here by the arguments.  We need to replace the channel
      setup here with setting a base string from which the channel is
      going to be constructed. *)
-  out_channel_name := fname;
-  set_logfile_channel fname
+  out_channel_name := fname
 
 
 let debug_print v =
@@ -343,16 +348,21 @@ let reset () =
 
 let write_pov name =
   (* build the xml you need to output *)
+  (* [JTT 11/17/14 ] -- set the channel here, because
+     you haven't opened it yet.  Don't set it at the end, because that results in empty
+     files that are ugly and confusing. *)
+  pov_output_count := !pov_output_count + 1;
+  set_logfile_channel !out_channel_name;
   let cbid = { cb_name = name; } in
   let replay = {actions = List.rev !events} in
   let pov = {cbid = cbid; replay = replay} in
   (* put it out *)
   debug_print (pov_to_xml pov);
   (* clear your cache *)
-  reset ();
-(* and here is where we would set the output channel to be the new output channel
-   all we need to do is increment a counter, construct a new file name.
-   [JTT 11/13] *)
-  pov_output_count := !pov_output_count + 1;
-  set_logfile_channel !out_channel_name
-  
+  reset ()
+
+
+let pov_xml_cmdline_opts =
+  [("-pov-xml-output", Arg.String set_out_channel,
+    "{directoryname,_host:ip,_stdout,_stderr} Sets output location for pov xml files. Either a directory name, stdout, or IP:PORT."); ]
+

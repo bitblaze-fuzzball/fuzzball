@@ -5,11 +5,11 @@ export OCAMLMAKEFILE=../ocaml/OCamlMakefile
 # argument list withhout a lot of fuss, and this definitely
 # accomplishes that.  Refactor later. [JTT 10/28]
 export SOURCES = \
-	pov_xml.ml \
 	logger_config.ml \
 	text_logger.ml \
 	yojson_logger.ml \
 	log_configs.ml \
+	pov_xml.ml \
 	loggers.ml \
 
 

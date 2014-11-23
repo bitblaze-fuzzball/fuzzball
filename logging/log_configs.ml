@@ -1,9 +1,10 @@
 (* Logging functionality goes here *)
 let default_out = Pervasives.stdout
 
-let get_chan major minor =
-  fun () ->
-    Logger_config.get_logfile_channel (major,minor)
+let get_chan major minor () =
+  match Logger_config.get_logfile_channel (major,minor) with
+  | Logger_config.Fixed oc -> oc
+  | Logger_config.Incrementing (channel_desc, channel) -> channel
 
 module FuzzballGeneralCfg = struct
   let level = `Always
@@ -13,6 +14,7 @@ module FuzzballGeneralCfg = struct
   and out_channel = get_chan "Fuzzball" "General"
 end
 
+(* This is the logger that captures fuzzball's restart reasons. *)
 module FuzzballBDTCfg = struct
   let level = `Always
   and major_name = "BDT"

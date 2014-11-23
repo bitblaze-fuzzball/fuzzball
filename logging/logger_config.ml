@@ -7,9 +7,21 @@ type levels = [`Always | `Standard | `Debug | `Trace | `Never]
    Never -- Unless something really weird is happening, don't display *)
 
 (* store logger level arguments in this bad boy *)
+type log_channel =
+| Fixed of out_channel
+| Incrementing of ((int * string * string) * out_channel)
+
 let logger_level = Hashtbl.create 10
+
 let logger_channels = Hashtbl.create 10
+(*
+  (let table = Hashtbl.create 10 in
+   Hashtbl.add table "yo mama" (Fixed Pervasives.stdout);
+   table)
+*)
 let json_logging = ref false
+
+
 
 
 let level_to_int = function
@@ -32,32 +44,53 @@ let get_level name =
     level
   with _ -> `Standard
 
-let get_logfile_channel name =
+let file_perms name =
+    (Unix.stat name).Unix.st_perm
+
+let rec ensure_dir dirname =
+    (** ensures that the given directory exists, creating any
+	intermediate directories as needed *)
+  if not (Sys.file_exists dirname)
+  then let sub = Filename.dirname dirname in
+       ensure_dir sub;
+    (* check again to avoid failure of Filename.dirname on "/foo/bar/" *)
+       if not (Sys.file_exists dirname)
+       then Unix.mkdir dirname (file_perms sub)
+
+let next_incrementing_channel = function
+  | Fixed _ -> failwith "Expected an incrementing channel in next_incrementing_channel"
+  | Incrementing ((index, loggername, filename), _) ->
+    let index' = index + 1 in
+    let next_chan = Printf.sprintf "%s/%s-%i.json" loggername filename index' in
+    ensure_dir loggername; (* we want the binary name here for cgc *)
+    let next = Incrementing ((index', loggername, filename), (open_out next_chan)) in
+    Hashtbl.replace logger_channels filename next;
+    next
+
+let get_logfile_channel (frequency, logger_name) =
   try
+    let name = frequency, logger_name in 
     let _, filename = Hashtbl.find logger_level name in
     match filename with
-    | "stdout" -> Pervasives.stdout
-    | "stderr" -> Pervasives.stderr
-    | _ -> try Hashtbl.find logger_channels filename
-      with _ -> (
-	let regex = Str.regexp ".*:[0-9]+" in
-	let chan = 
-	  if Str.string_match regex filename 0
-	  then (
-	    let tokens = Str.split (Str.regexp ":") filename in
-	    assert ((List.length tokens) == 2);
-	    let addr = Unix.inet_addr_of_string (List.hd tokens)
-	    and port = int_of_string (List.hd (List.tl tokens)) in
-	    
-	    let _, outchan = Unix.open_connection (Unix.ADDR_INET(addr, port)) in
-	    outchan
-	  )
-	  else
-	    open_out filename in
-	Hashtbl.add logger_channels filename chan;
-	chan
-      )
-  with _ -> Pervasives.stdout
+    | "stdout" -> (Fixed Pervasives.stdout)
+    | "stderr" -> (Fixed Pervasives.stderr)
+    | _ ->
+      try Hashtbl.find logger_channels filename
+      with Not_found ->
+	(let regex = Str.regexp ".*:[0-9]+" in
+	 let chan = 
+	   if Str.string_match regex filename 0
+	   then (let tokens = Str.split (Str.regexp ":") filename in
+		 assert ((List.length tokens) == 2);
+		 let addr = Unix.inet_addr_of_string (List.hd tokens)
+		 and port = int_of_string (List.hd (List.tl tokens)) in
+		 let _, outchan = Unix.open_connection (Unix.ADDR_INET(addr, port)) in
+		 (Fixed outchan))
+	   else (let base = Incrementing ((~-1, logger_name, filename), Pervasives.stdout) in
+		 next_incrementing_channel base) in
+	 Hashtbl.replace logger_channels filename chan;
+	 chan)
+  with _ -> (Fixed Pervasives.stdout)
 
 let sufficient name my_level =
   let min_level = level_to_int (get_level name)
@@ -93,7 +126,9 @@ let verb_cmdline_opts =
      Arg.Tuple [Arg.Set_string major;
 		Arg.Set_string minor;
                 Arg.String (fun logfile ->
-                  Hashtbl.add logger_level (!major, !minor) (`Always, logfile));],
+                  Hashtbl.add logger_level
+		    (!major, !minor)
+		    (`Always, logfile));],
      "general_specific_{filename,_host:ip,_stdout,_stderr} Prune logging messages beneath always threshold");
     ("--standard",
      Arg.Tuple [Arg.Set_string major;
@@ -119,9 +154,6 @@ let verb_cmdline_opts =
                 Arg.String (fun logfile ->
                   Hashtbl.add logger_level (!major, !minor) (`Never, logfile))],
      "general_specific_{filename,_host:ip,_stdout,_stderr} Print everything.");
-    (* This is terrible.  I shouldn't be having these loggers work differently from the others. JTT 10/28 *)
-    ("-pov-xml-output", Arg.String Pov_xml.set_out_channel,
-     "{directoryname,_host:ip,_stdout,_stderr} Sets output location for pov xml files. Either a directory name, stdout, or IP:PORT.");
   ]
 
 let usage_msg =

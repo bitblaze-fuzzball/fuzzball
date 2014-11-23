@@ -35,6 +35,7 @@ let main argv =
 		@ Options_solver.solver_cmdline_opts
 		@ Exec_set_options.influence_cmdline_opts
                 @ Logger_config.verb_cmdline_opts
+                @ Pov_xml.pov_xml_cmdline_opts
      ))
     (fun arg -> Exec_set_options.set_program_name arg)
     "fuzzball [options]* program\n";
