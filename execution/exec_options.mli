@@ -179,6 +179,7 @@ val opt_arch_string : string option ref
 
 val opt_decree : bool ref
 val opt_symbolic_receive : bool ref
+val opt_concolic_receive : bool ref
 val opt_max_receives : int option ref
 val opt_max_transmits : int option ref
 val opt_max_receive_bytes : int option ref

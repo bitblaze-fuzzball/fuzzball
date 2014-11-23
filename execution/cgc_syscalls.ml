@@ -17,6 +17,12 @@ class cgcos_special_handler (fm : fragment_machine) =
     fm#load_word_concretize addr !opt_measure_influence_syscall_args
       "syscall arg"
   in
+  let load_word_or_zero addr =
+    try
+      fm#load_word_conc addr
+    with
+      | NotConcrete(_) -> 0L
+  in
   let load_byte addr =
     fm#load_byte_concretize addr !opt_measure_influence_syscall_args
       "syscall arg"
@@ -310,7 +316,10 @@ object(self)
 	let read_str = String.sub str 0 num_read in
 	(* at this point, we know the actual data that was read into the buffer. *)
 	Pov_xml.add_transmit_str read_str count;
-	fm#store_str buf 0L read_str; (* base pointer, offset string *)
+        if !opt_concolic_receive then
+	  fm#populate_concolic_string "input0" receive_pos buf read_str
+	else
+	  fm#store_str buf 0L read_str; (* base pointer, offset string *)
 	num_read
     in
       store_word num_bytes_p 0 (Int64.of_int num_read);
@@ -491,7 +500,7 @@ object(self)
 	    (match result_p with
 	       | None -> ()
 	       | Some ptr ->
-		   let v = load_word ptr in
+		   let v = load_word_or_zero ptr in
 		     Printf.printf ", %Ld (0x%08Lx)" (fix_s32 v) v);
 	    Printf.printf "\n";
 	    flush stdout

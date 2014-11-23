@@ -82,6 +82,8 @@ let linux_cmdline_opts =
      " Use CGC binary format and syscalls (similar to Linux/x86/ELF)");
     ("-symbolic-receive", Arg.Set(opt_symbolic_receive),
      " Make all data read by receive(2cgc) symbolic");
+    ("-concolic-receive", Arg.Set(opt_concolic_receive),
+     " Make all data read by receive(2cgc) concolic");
     ("-max-receives", Arg.Int
        (fun i -> opt_max_receives := Some i),
      "NUM Stop path after too many receive(2cgc) calls");

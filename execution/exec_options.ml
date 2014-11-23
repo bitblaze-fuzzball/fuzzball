@@ -200,6 +200,7 @@ let opt_arch_string = ref None
 
 let opt_decree = ref false
 let opt_symbolic_receive = ref false
+let opt_concolic_receive = ref false
 let opt_max_receives = ref None
 let opt_max_transmits = ref None
 let opt_max_receive_bytes = ref None
