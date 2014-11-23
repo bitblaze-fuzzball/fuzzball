@@ -72,7 +72,7 @@ type read_input =
 | Length of int
 | Delim of delim
 
-type read = {
+type concrete_read = {
   echo : echo;
   input_marker : read_input;
   assign : assign option;
@@ -84,13 +84,27 @@ type write_target =
 | WData of data
 | WVar of var
 
-type write = {
+type concrete_write = {
   datas : write_target list;
 }
 
+type 'a symbolic_io = {
+  start_addr : int64;
+  end_addr : int64;
+  constraints : 'a
+}
+
+type 'a read =
+| Concrete of concrete_read
+| Symbolic of 'a symbolic_io
+
+type 'a write =
+| Concrete of concrete_write
+| Symbolic of 'a symbolic_io
+
 type action =
-| Write of write
-| Read of read
+| Write of concrete_write
+| Read of concrete_read
 | Decl of decl
 | Delay of delay
 
@@ -265,7 +279,7 @@ let read_input_to_xml = function
   | Length l -> Xml.node "length" [Xml.pcdata (Printf.sprintf "%i" l)]
   | Delim d -> delim_to_xml d
 
-let read_to_xml (a : read) =
+let read_to_xml (a : concrete_read) =
   let children = ref [] in
   children := (read_input_to_xml a.input_marker) :: !children;
   (match a.mtch with
@@ -284,7 +298,7 @@ let write_target_to_xml = function
   | WVar v -> Xml.node "var" [Xml.pcdata v]
 
 
-let write_to_xml (a : write) =
+let write_to_xml (a : concrete_write) =
   Xml.node "write" (List.map write_target_to_xml a.datas)
   
 
