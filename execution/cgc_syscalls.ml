@@ -140,6 +140,10 @@ object(self)
   val mutable num_receives = 0
   val mutable saved_num_receives = 0
 
+  val mutable num_transmits = 0
+  val mutable saved_num_transmits = 0
+
+ (* val mutable transmit_pos is defined above for use in do_write *)
   val mutable saved_transmit_pos = 0
 
   val mutable receive_pos = 0
@@ -153,12 +157,14 @@ object(self)
 
   method private save_depth_state =
     saved_num_receives <- num_receives;
+    saved_num_transmits <- num_transmits;
     saved_transmit_pos <- transmit_pos;
     saved_receive_pos <- receive_pos;
     saved_randomness <- randomness
 
   method private reset_depth_state =
     num_receives <- saved_num_receives;
+    num_transmits <- saved_num_transmits;
     transmit_pos <- saved_transmit_pos;
     receive_pos <- saved_receive_pos;
     randomness <- saved_randomness
@@ -267,7 +273,7 @@ object(self)
       fm#maybe_start_symbolic
 	(fun () -> 
 	   (fm#populate_symbolic_region "random" random_pos buf count;
-	    random_pos <- receive_pos + count))
+	    random_pos <- random_pos + count))
     else
       for i = 0 to count - 1 do
 	let byte = 
@@ -296,7 +302,6 @@ object(self)
 	  fm#maybe_start_symbolic
 	    (fun () ->
 	       (fm#populate_symbolic_region "input0" receive_pos buf num_read;
-		receive_pos <- receive_pos + num_read;
 		max_input_string_length :=
 		  max (!max_input_string_length) receive_pos));
 	  num_read
@@ -309,6 +314,12 @@ object(self)
 	num_read
     in
       store_word num_bytes_p 0 (Int64.of_int num_read);
+      receive_pos <- receive_pos + num_read;
+      (match !opt_max_receive_bytes with
+	 | Some max ->
+	     if receive_pos > max then
+	       raise DeepPath
+	 | _ -> ());
       put_return 0L
 
   method private cgcos_receive (fd : int) (buf : int64) (count : int) num_bytes_p =
@@ -327,6 +338,12 @@ object(self)
     raise (SimulatedExit(status))
 
   method private cgcos_transmit (fd : int) (bytes : char array) (count : int) (tx_bytes : int64) =
+    (match !opt_max_transmits with
+       | Some m ->
+	   (if num_transmits >= m then
+	      raise DeepPath;
+	    num_transmits <- num_transmits + 1)
+       | None -> ());
 (*    if ( (fd <> 1) && (fd <> 2) ) (* transmitting on not stdout / stderr *)
     then *)
       (* I feel like this guard really belongs, but it doesn't capture what the program is really doing... *)

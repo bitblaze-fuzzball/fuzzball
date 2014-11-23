@@ -85,6 +85,12 @@ let linux_cmdline_opts =
     ("-max-receives", Arg.Int
        (fun i -> opt_max_receives := Some i),
      "NUM Stop path after too many receive(2cgc) calls");
+    ("-max-transmits", Arg.Int
+       (fun i -> opt_max_transmits := Some i),
+     "NUM Stop path after too many transmit(2cgc) calls");
+    ("-max-receive-bytes", Arg.Int
+       (fun i -> opt_max_receive_bytes := Some i),
+     "NUM Stop path after too much data receive(2cgc)ed");
     ("-max-transmit-bytes", Arg.Int
        (fun i -> opt_max_transmit_bytes := Some i),
      "NUM Stop path after too much data transmit(2cgc)ed");
