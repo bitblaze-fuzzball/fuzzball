@@ -304,7 +304,7 @@ object(self)
 	let num_read = Unix.read oc_fd str 0 count in
 	let read_str = String.sub str 0 num_read in
 	(* at this point, we know the actual data that was read into the buffer. *)
-	Pov_xml.add_read read_str buf count;
+	Pov_xml.add_transmit_str read_str count;
 	fm#store_str buf 0L read_str; (* base pointer, offset string *)
 	num_read
     in
@@ -330,7 +330,7 @@ object(self)
 (*    if ( (fd <> 1) && (fd <> 2) ) (* transmitting on not stdout / stderr *)
     then *)
       (* I feel like this guard really belongs, but it doesn't capture what the program is really doing... *)
-      Pov_xml.add_transmit bytes count;
+    Pov_xml.add_read_car bytes tx_bytes; (* JTT 11/14 -- count is certainly wrong.  How am I supposed to know where these are stored*)
     self#do_write fd bytes count tx_bytes
 
   method private put_errno err =

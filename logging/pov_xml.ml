@@ -110,33 +110,87 @@ let valid (a : timeout) = a.to_ms >= 0
 
 (* XML Construction, output *)
 
-let get_logfile_channel filename =
+(* if this is -1, the we're using a channel or sockets.  If it's >= 0,
+   then we're using numbered files. *)
+let pov_output_count = ref 0
+let out_channel_name = ref "/dev/null"
+let out_channel = ref (open_out "/dev/null")
+
+let array_of_string str =
+  Array.init (String.length str) (fun i -> str.[i])
+
+let str_of_array char_array =
+  (* String.init wasn't introduced until 4.0.2, have to do this in two passes.
+  String.init (Array.length char_array) (fun i -> char_array.(i)) *)
+  let str = String.make (Array.length char_array) ' ' in
+  Array.iteri (fun i c -> str.[i] <- c) char_array;
+  str
+
+
+let file_perms name =
+    (Unix.stat name).Unix.st_perm
+
+let rec ensure_dir dirname =
+    (** ensures that the given directory exists, creating any
+	intermediate directories as needed *)
+  if not (Sys.file_exists dirname)
+  then let sub = Filename.dirname dirname in
+       ensure_dir sub;
+    (* check again to avoid failure of Filename.dirname on "/foo/bar/" *)
+       if not (Sys.file_exists dirname)
+       then Unix.mkdir dirname (file_perms sub)
+
+let next_string_channel basename =
+  (* we can change the filename to be incremented here.
+     just, everytime we output xml, increment the counter.
+     If we do that for the json as well, we won't need to
+     synchronize anything. [JTT 11-13]*)
+  (* make sure the directory for the base-name exists*)
+  (* make pov-#.xml, ensure that they line up the right way by
+     padding out with 0s *) 
+  ensure_dir basename;
+  (* ensure that basename exists *)
+  open_out (Printf.sprintf "%s/pov-%i.xml" basename !pov_output_count)
+
+
+let set_logfile_channel filename =
   (* Stolen / adapted from logger_config.ml -- I'm going to prune out all of the json logging at some point,
      as no one is using it anymore -- [JTT / 10-28] *)
   match filename with
-  | "stdout" -> Pervasives.stdout
-  | "stderr" -> Pervasives.stderr
-  | _ -> let regex = Str.regexp ".*:[0-9]+" in
-	 let chan = 
-	   if Str.string_match regex filename 0
-	   then begin
-	     let tokens = Str.split (Str.regexp ":") filename in
+  | "stdout" -> out_channel := Pervasives.stdout
+  | "stderr" -> out_channel := Pervasives.stderr
+  | _ ->
+    let regex = Str.regexp ".*:[0-9]+" in
+    let chan = 
+      if Str.string_match regex filename 0
+      then
+	begin
+	  if (!pov_output_count = 0)
+	  then
+	    (let tokens = Str.split (Str.regexp ":") filename in
 	     assert ((List.length tokens) == 2);
 	     let addr = Unix.inet_addr_of_string (List.hd tokens)
 	     and port = int_of_string (List.hd (List.tl tokens)) in
 	     let _, outchan = Unix.open_connection (Unix.ADDR_INET(addr, port)) in
-	     outchan
-	     end
-	  else open_out filename in
-	 chan
+	     out_channel := outchan)
+	end
+      else out_channel := next_string_channel filename in
+    chan
 
-let out_channel = ref (get_logfile_channel "/dev/null")
 
 let set_out_channel fname =
-  out_channel := get_logfile_channel fname
+  (* here's the actual tricky part.  This is the entry point for
+     setting up the channels for the pov xml.  The channel is actually
+     setup here by the arguments.  We need to replace the channel
+     setup here with setting a base string from which the channel is
+     going to be constructed. *)
+  out_channel_name := fname;
+  set_logfile_channel fname
+
 
 let debug_print v =
   Xml.print_list (Printf.fprintf !out_channel "%s") [v]
+
 
 let echo_to_xml = function
   | Yes -> Xml.string_attrib "echo" "yes"
@@ -145,7 +199,7 @@ let echo_to_xml = function
 
 let data_type_to_xml = function
   | Hex -> Xml.string_attrib "format" "hex"
-  | ascii  -> Xml.string_attrib "format" "ascii"
+  | ascii  -> Xml.string_attrib "format" "asciic"
 
 let data_to_xml (a : data) =
   let as_string = String.concat ""
@@ -256,6 +310,9 @@ let add_read (read_in : string) (start : int64) (length : int) =
 	     timeout = None; } in
   events := Read me :: !events
 
+let add_read_car (read_in : char array) (start : int64) =
+  add_read (str_of_array read_in) start (Array.length read_in)
+
 let add_transmit contents length =
   (* add a write command to the list of actions to be put into the pov *)
   (* cgcos_transmit *)
@@ -264,6 +321,11 @@ let add_transmit contents length =
   let wt = WData dt in
   let write = {datas = [wt]} in
   events := Write write :: !events
+
+  
+
+let add_transmit_str string length =
+  add_transmit (array_of_string string) length
 
 let add_decl () =
   (* cgc allocate? *)
@@ -288,3 +350,9 @@ let write_pov name =
   debug_print (pov_to_xml pov);
   (* clear your cache *)
   reset ();
+(* and here is where we would set the output channel to be the new output channel
+   all we need to do is increment a counter, construct a new file name.
+   [JTT 11/13] *)
+  pov_output_count := !pov_output_count + 1;
+  set_logfile_channel !out_channel_name
+  

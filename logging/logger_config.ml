@@ -121,7 +121,7 @@ let verb_cmdline_opts =
      "general_specific_{filename,_host:ip,_stdout,_stderr} Print everything.");
     (* This is terrible.  I shouldn't be having these loggers work differently from the others. JTT 10/28 *)
     ("-pov-xml-output", Arg.String Pov_xml.set_out_channel,
-     "Sets output location of pov xml file. Either a file name, stdout, or IP:PORT.");
+     "{directoryname,_host:ip,_stdout,_stderr} Sets output location for pov xml files. Either a directory name, stdout, or IP:PORT.");
   ]
 
 let usage_msg =
