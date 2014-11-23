@@ -28,6 +28,10 @@ let abbuts i1 i2 =
   i1.low = i2.high ||
   i1.high = i2.low
 
+let is_in i1 i2 =
+    i2.low >= i1.low &&
+    i2.high <= i1.high
+
 let safe_merge i1 i2 =
   assert (intersects i1 i2);
   { low = Pervasives.min i1.low i2.low;
@@ -110,7 +114,8 @@ let init_interval_node interval parent sentinel =
 
 (********** utilities (used internally) **********)
 let equals node1 node2 =
-  (compare node1.data node2.data) = 0
+  node1.data.low = node2.data.low &&
+  node1.data.high = node2.data.high
 
 let less_than node1 node2 =
   (compare node1.data node2.data) = -1
@@ -249,12 +254,13 @@ let find t x =
   let rec find_below node =
     if is_nil node
     then raise Not_found
+    else if intersects x node.data
+    then node.data
     else if (compare x node.data) = ~-1
     then find_below node.left
     else if (compare node.data x) = 1
     then find_below node.right
-    else
-      node.data
+    else raise Not_found
   in
     find_below t.root
 
@@ -351,7 +357,7 @@ let random t =
       !n
 
 let print_interval ch i =
-  Printf.fprintf ch "%LX to %LX" i.low i.high
+  Printf.fprintf ch "%Lx to %Lx" i.low i.high
 
 let print_using ch t =
   let rec print n d =
@@ -398,9 +404,11 @@ let find_interval_node tree interval =
     if is_nil node
     then None
     else
-      (if intersects interval node.data
+      (if ((not (is_nil node))
+	   && (intersects interval node.data))
        then Some node
-       else if (not (is_nil node.left)) && node.left.max >= interval.low
+       else if ((not (is_nil node.left))
+		&& node.left.max >= interval.low)
        then walk_tree node.left
        else walk_tree node.right) in
   walk_tree tree.root
@@ -474,7 +482,14 @@ let insert_node t e =
 	 fix_after_insert t n;
 	 n)
    else 
-      (assert (not (intersects parent.data e));
+      (if (intersects parent.data e)
+       then (Printf.eprintf "Interval being inserted overlaps with existing interval?\nExtant ";
+	     print_interval stderr parent.data;
+	     Printf.eprintf "\nNew ";
+	     print_interval stderr e;
+	     Printf.eprintf "\n";
+	     print_using stderr t;
+	     failwith "Overlapping interval being inserted. Violates invariant.");
        t.count <- t.count + 1;
        (if (compare e parent.data) = ~-1
 	then parent.left <- n
@@ -572,15 +587,32 @@ let delete_wheeler t n =
 
 
 let delete t n =
-  delete_wheeler t n
+  delete_wheeler t n;
+  match find_interval_node t n.data with
+  | None -> ()
+  | Some i -> (Printf.eprintf "Removed interval still overlaps with existing interval in tree!\n";
+	       print_interval stderr n.data;
+	       Printf.eprintf "\n";
+	       print_interval stderr i.data;
+	       Printf.eprintf "\n";
+	       assert false)
 
 
 let rec insert t e =
   match find_interval_node t e with
-  | None -> ignore (insert_node t e)
+  | None -> (Printf.eprintf "No overlapping interval, inserting raw ";
+	     print_interval stderr e;
+	     Printf.eprintf "\n";
+	     ignore (insert_node t e))
   | Some n ->
-    (if (compare n.data e) != 0
-     then (delete t n;
+    (if is_in n.data e
+     then Printf.eprintf "Found interval consumes new interval, no-oping\n"
+     else (Printf.eprintf "Found overlapping range. Deleting ";
+	   print_interval stderr n.data;
+	   Printf.eprintf ", merging with ";
+	   print_interval stderr e;
+	   Printf.eprintf "\n";
+	   delete t n;
 	   insert t (merge n.data e)))
 
 let remove_range t e =
@@ -845,3 +877,8 @@ let check_remove samples_per_case =
       | _ -> failwith "remove returned more than 3 elements."
       )
   done
+
+
+let make_interval low high =
+  { low = Int64.of_int low;
+    high = Int64.of_int high;}

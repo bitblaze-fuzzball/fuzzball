@@ -54,3 +54,9 @@ val insert : tree -> interval -> unit
 
 (** remove the interval from the tree, possibly splitting other intervals. *)
 val remove_range : tree -> interval -> unit
+
+(** is the second interval contained in the first? *)
+val is_in : interval -> interval -> bool
+
+(** clears the interval tree *)
+val clear : tree -> unit
