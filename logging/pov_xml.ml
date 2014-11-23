@@ -203,7 +203,9 @@ let set_out_channel fname =
 
 
 let debug_print v =
-  Xml.print_list (Printf.fprintf !out_channel "%s") [v];
+  Xml.print_list
+    (fun s -> Printf.fprintf !out_channel "%s" s;
+      flush !out_channel) [v];
   Printf.fprintf !out_channel "\n"
 
 
@@ -303,7 +305,7 @@ let symbolic_write_to_xml fm w =
   let as_int64 = Array.init (Array.length w.constraints) (fun i -> fm#eval_expr_from_ce ce w.constraints.(i)) in
   let num_chars = ref 0 in
   let as_string = Array.init (Array.length as_int64)
-    (fun i -> let to_add = Printf.sprintf "%LX" as_int64.(i) in
+    (fun i -> let to_add = Printf.sprintf "%02LX" as_int64.(i) in
 	      num_chars := !num_chars + (String.length to_add);
 	      to_add) in
   let char_array = Array.create !num_chars ' ' in

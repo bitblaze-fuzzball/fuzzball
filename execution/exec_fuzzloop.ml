@@ -120,91 +120,97 @@ let fuzz_runloop fm fuzz_start_eip asmir_gamma end_eips =
     runloop fm fuzz_start_eip asmir_gamma (fun a -> List.mem a end_eips)
   with
   | SimulatedExit(_) -> 
-    log_fuzz_restart Log.always "when program called exit()" fm;
+    log_fuzz_restart Log.always ":exit()" fm;
     stop "when program called exit()"
   | SimulatedAbort -> 
-    log_fuzz_restart Log.trace "when program called abort()"fm;
+    log_fuzz_restart Log.always ":abort()"fm;
     stop "when program called abort()"
   | KnownPath ->
-    log_fuzz_restart Log.trace "on previously-explored path"fm;
+    log_fuzz_restart Log.always ":previously_explored_path" fm;
     stop "on previously-explored path"
 		(* KnownPath currently shouldn't happen *)
   | DeepPath ->
-    log_fuzz_restart Log.trace "on too-deep path" fm;
+    log_fuzz_restart Log.always ":too_deep_path" fm;
     stop "on too-deep path"
   | SymbolicJump ->
-    log_fuzz_restart Log.trace "at symbolic jump" fm;
+    log_fuzz_restart Log.always ":symbolic_jump" fm;
     stop "at symbolic jump"
   | NullDereference ->
     if !opt_finish_on_null_deref then (
-      log_fuzz_restart Log.always "concrete null dereference" fm;
+      log_fuzz_restart Log.always ":concrete_null_dereference" fm;
       fm#finish_fuzz "concrete null dereference"
     );
-    log_fuzz_restart Log.always "at null deref"fm;
+    log_fuzz_restart Log.always ":null_deref" fm;
     stop "at null deref"
   | JumpToNull -> 
-    log_fuzz_restart Log.always "at jump to null"fm;
+    log_fuzz_restart Log.always ":jump_to_null"fm;
     stop "at jump to null"
   | DivideByZero -> 
-    log_fuzz_restart Log.always "at division by zero" fm;
+    log_fuzz_restart Log.always ":division_by_zero" fm;
     stop "at division by zero"
   | TooManyIterations ->
-    log_fuzz_restart Log.trace "after too many iterations" fm;
+    log_fuzz_restart Log.always ":too_many_iterations" fm;
     stop "after too many loop iterations"
   | UnhandledTrap -> 
-    log_fuzz_restart Log.trace "at trap" fm;
+    log_fuzz_restart Log.always ":trap" fm;
     stop "at trap"
   | IllegalInstruction -> 
-    log_fuzz_restart Log.always "at bad instruction" fm;
+    log_fuzz_restart Log.always ":bad_instruction" fm;
     stop "at bad instruction"
   | UnhandledSysCall(s) ->
     Printf.printf "[trans_eval WARNING]: %s\n%!" s;
-    log_fuzz_restart Log.trace "at unhandled system call" fm;
+    log_fuzz_restart Log.always ":unhandled_system_call" fm;
     stop "at unhandled system call"
   | SymbolicSyscall ->
-    log_fuzz_restart Log.trace "at symbolic system call" fm;
+    log_fuzz_restart Log.always ":symbolic_system_call" fm;
     stop "at symbolic system call"
   | ReachedMeasurePoint ->
-    log_fuzz_restart Log.trace "at measurement point" fm;
+    log_fuzz_restart Log.always ":measurement_point" fm;
     stop "at measurement point"
   | ReachedInfluenceBound -> 
-    log_fuzz_restart Log.trace "at influence bound" fm;
+    log_fuzz_restart Log.always ":influence_bound" fm;
     stop "at influence bound"
   | DisqualifiedPath ->
-    log_fuzz_restart Log.trace "on disqualified path" fm;
+    log_fuzz_restart Log.always ":disqualified_path" fm;
     stop "on disqualified path"
   | BranchLimit ->
-    log_fuzz_restart Log.trace "on branch limit" fm;
+    log_fuzz_restart Log.always ":branch_limit" fm;
     stop "on branch limit"
   | SolverFailure when !opt_nonfatal_solver -> 
-    log_fuzz_restart Log.trace "on solver failure" fm;
+    log_fuzz_restart Log.always ":solver_failure" fm;
     stop "on solver failure"
   | UnproductivePath ->
-    log_fuzz_restart Log.trace "on unproductive path" fm;
+    log_fuzz_restart Log.always ":unproductive_path" fm;
     stop "on unproductive path"
   | FinishNow ->
-    log_fuzz_restart Log.always "on -finish-immediately" fm;
+    log_fuzz_restart Log.always ":-finish-immediately" fm;
     stop "on -finish_immediately";
   | Signal("USR1") -> 
-		    log_fuzz_restart Log.trace "on SIGUSR1" fm;
+    log_fuzz_restart Log.always ":SIGUSR1" fm;
     stop "on SIGUSR1"
   | Double_Free ->
-    log_fuzz_restart Log.always "on double free" fm;
+    log_fuzz_restart Log.always ":double_free" fm;
     stop "on double free"
   | Dealloc_Not_Alloc ->
-    log_fuzz_restart Log.trace "on deallocating something not allocated" fm;
+    log_fuzz_restart Log.always ":deallocating_unallocated" fm;
     stop "on deallocating something not allocated"
   | Alloc_Dealloc_Length_Mismatch ->
-    log_fuzz_restart Log.always "on deallocating a size different than that allocated" fm;
+    log_fuzz_restart Log.always ":partial_dealloc" fm;
     stop "on deallocating a size different than that allocated"
   | Unsafe_Memory_Access ->
-    log_fuzz_restart Log.always "on unsafe memory access"  fm;
+    log_fuzz_restart Log.always ":unsafe_memory_access"  fm;
     stop "on unsafe memory access"
   | Uninitialized_Memory ->
-    log_fuzz_restart Log.trace "use of uninitialized memory" fm;
+    log_fuzz_restart Log.always ":uninitialized_memory_access" fm;
     stop "use of uninitialized memory"    
-  | NotConcrete(_) -> failwith "fuzz raised NotConcrete, but it should have been caught before now!"
-  | Simplify_failure(_) -> failwith "fuzz raised Simplify_failure, but it should have been caught before now!"
+  | NotConcrete(_) ->
+    log_fuzz_restart Log.always ":not_concrete" fm;
+    stop "Something's symbolic that oughtn't be.";
+    failwith "fuzz raised NotConcrete, but it should have been caught before now!"
+  | Simplify_failure(_) ->
+    log_fuzz_restart Log.always ":simplify_failure" fm;
+    stop "Something can't be simplified, but we should have caught it earlier.";
+    failwith "fuzz raised Simplify_failure, but it should have been caught before now!"
     
 
 (* opt_fuzz_start_eip comes... sometimes... fuzz_start_addr *)
