@@ -25,7 +25,7 @@ class virtual decision_tree = object
   method virtual record_unsat : bool -> unit
 
   method virtual try_extend : (bool -> V.exp) ->
-    (bool -> V.exp -> bool) -> (bool -> unit) -> (unit -> bool) 
+    (bool -> V.exp -> bool) -> (bool -> unit) -> (unit -> bool) -> int64
     -> (bool * V.exp)
 
   method virtual try_extend_memoryless : (bool -> V.exp) ->

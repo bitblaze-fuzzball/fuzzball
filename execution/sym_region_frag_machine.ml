@@ -343,6 +343,7 @@ struct
 (*       | V.BinOp(V.BITAND, _, _) *)
 (*       | V.BinOp(V.BITOR, _, _) (* XXX happens in Windows 7, don't know why *) *)
 (* 	  -> ExprOffset(e) *)
+      | V.Cast(V.CAST_SIGNED, _, _) -> ExprOffset(e)
       | V.Lval(_) -> Symbol(e)
       | _ -> if (!opt_fail_offset_heuristic) then (
 	  failwith ("Strange term "^(V.exp_to_string e)^" in address")

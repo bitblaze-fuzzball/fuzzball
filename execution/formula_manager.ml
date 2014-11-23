@@ -715,37 +715,55 @@ struct
 	| V.REG_64 -> D.to_symbolic_64 idx_v
 	| _ -> failwith "Unexpected type in make_table_lookup"
       in
+      let remake =
+	let v = self#lookup_tree idx_exp idx_wd ty table in
+	let v' = self#tempify v ty
+	in
+	  if !opt_trace_tables then
+	    (Printf.printf "Select from table %d at %s is %s\n"
+	       table_num (V.exp_to_string idx_exp) (D.to_string_64 v');
+	     flush stdout);
+	  if table_num <> -1 then
+	    Hashtbl.replace table_trees_cache (table_num, idx_exp) v';
+	  v'
+      in
 	try
 	  let v =
-	    Hashtbl.find table_trees_cache (table_num, idx_exp) in
+	    if table_num = -1 then
+	      remake
+	    else
+	      (let v = Hashtbl.find table_trees_cache (table_num, idx_exp) in
+		 Printf.printf "Hit table cache\n";
+		 v)
+	  in
 	    if !opt_trace_tables then
-	      (Printf.printf "Hit table cache\n";
-	       Printf.printf "Select from table %d at %s is %s\n"
+	      (Printf.printf "Select from table %d at %s is %s\n"
 		 table_num (V.exp_to_string idx_exp) (D.to_string_64 v);
 	       flush stdout);
 	    v
 	with
 	  | Not_found ->
-	      let v = self#lookup_tree idx_exp idx_wd ty table in
-	      let v' = self#tempify v ty
-	      in
-		if !opt_trace_tables then
-		  (Printf.printf "Select from table %d at %s is %s\n"
-		     table_num (V.exp_to_string idx_exp) (D.to_string_64 v');
-		   flush stdout);
-		Hashtbl.replace table_trees_cache (table_num, idx_exp) v';
-		v'
+	      remake
 
     val tables = Hashtbl.create 101
+    val tables_cache_limit = 1000000L
 
     method private save_table table ty =
-      try
-	(Hashtbl.find tables table, false)
-      with
-	| Not_found ->
-	    let i = Hashtbl.length tables in
-	      Hashtbl.replace tables table i;
-	      (i, true)
+      let num_cached = Int64.of_int (Hashtbl.length tables) and
+	  size = Int64.of_int (List.length table)
+      in
+      let prod = Int64.mul num_cached size
+      in
+	if prod > tables_cache_limit then
+	  (-1, true)
+	else
+	  try
+	    (Hashtbl.find tables table, false)
+	  with
+	    | Not_found ->
+		let i = Hashtbl.length tables in
+		  Hashtbl.replace tables table i;
+		  (i, true)
 
     method private print_table table ty i =
       Printf.printf "Table %d is: " i;
@@ -877,7 +895,10 @@ struct
     method make_table_lookup table idx_exp idx_wd ty =
       let (table_num, is_new) = self#save_table table ty in
 	if !opt_trace_tables then
-	  Printf.printf " is table %d\n" table_num;
+	  (if table_num = -1 then
+	     Printf.printf " is uncached\n"
+	   else
+	     Printf.printf " is table %d\n" table_num);
 	match self#table_check_gf2 table idx_wd ty with
 	  | Some spine ->
 	      self#make_gf2_operator spine ty idx_exp
@@ -1008,6 +1029,16 @@ struct
       let te_ents = Hashtbl.length temp_var_num_evaled in
       let tw_ents = VarWeak.count temp_vars_weak in
       let tu_ents = Hashtbl.length temp_vars_unweak in
+      let ttree_ents = Hashtbl.length table_trees_cache in
+      let ttree_nodes = Hashtbl.fold
+	(fun _ v s -> s + D.measure_size v)
+	table_trees_cache 0
+      in
+      let tables_ents = Hashtbl.length tables in
+      let tables_nodes = Hashtbl.fold
+	(fun k _ s ->
+	   s + List.length k) tables 0
+      in
 	Printf.printf "input_vars has %d entries\n" input_ents;
 	Printf.printf "region_base_vars has %d entries\n" rb_ents;
 	Printf.printf "region_vars has %d entries\n" rg_ents;
@@ -1021,9 +1052,13 @@ struct
 	  t2se_ents t2se_bytes;
 	Printf.printf "temp_vars_weak has %d entries\n" tw_ents;
 	Printf.printf "temp_vars_unweak has %d entries\n" tu_ents;
+	Printf.printf "table_trees_cache has %d entries and %d nodes\n"
+	  ttree_ents ttree_nodes;
+	Printf.printf "tables has %d entries and %d nodes\n"
+	  tables_ents tables_nodes;
 	(input_ents + rb_ents + rg_ents + sc_ents + bv_ents + se2t_ents +
-	   mbv_ents + ma_ents + t2se_ents + te_ents,
+	   mbv_ents + ma_ents + t2se_ents + te_ents + ttree_ents + tables_ents,
 	 input_nodes + rb_nodes + rg_nodes + bv_nodes + se2t_nodes +
-	   ma_nodes)
+	   ma_nodes + ttree_nodes + tables_nodes)
   end
 end
