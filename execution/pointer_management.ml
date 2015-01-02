@@ -3,6 +3,8 @@ open Exec_exceptions
 exception Safe
 exception Overlapping_Alloc
 
+let json_addr i64 = `String (Printf.sprintf "0x%08Lx" i64) 
+
 class pointer_management = object(self)
 
 (* This is where addresses start being handed out from in cgc_syscalls (1342177280)*)
@@ -147,6 +149,15 @@ val stack_table = Hashtbl.create 100
 				)
 			) updated_deallocs
 
+	val mutable info_reporter = None
+
+	method set_reporter (r : ((string * Yojson.Safe.json) list -> unit)) =
+	  info_reporter <- Some r
+
+	method private report l =
+	  match info_reporter with
+	    | None -> ()
+	    | Some r -> r l
 
 	(* In this function we check several things, some of which might not
 	   be considered a weakness/vulnerability, we should check the decree spec:
@@ -162,7 +173,9 @@ val stack_table = Hashtbl.create 100
 method add_dealloc addr len =
 	(* Has this pointer already been deallocated? *)
 	if Hashtbl.mem dealloc_table addr then
-		raise Double_Free;
+	  (self#report [("tag", (`String ":double-free"));
+			("double-freed-addr", (json_addr addr))];
+	   raise Double_Free);
 
 	(* Does this pointer point to memory that has been allocated? *)
 	if not (Hashtbl.mem alloc_table addr) (* don't need the array for the alloc table here *)
@@ -216,7 +229,14 @@ method is_safe_read addr len =
 				while (Int64.compare !start_addr_ref end_addr) <> 0 do
 					if not (Hashtbl.mem stack_table !start_addr_ref) then (
 						(* Printf.printf "read: %s\n" (Int64.to_string !start_addr_ref); *)
-						raise Uninitialized_Memory
+					  self#report [("tag", (`String ":uninit-read"));
+						       ("subtag", (`String ":stack-missing"));
+						       ("stack-start", (json_addr stack_start));
+						       ("stack-end", (json_addr stack_end));
+						       ("read-start", (json_addr start_addr));
+						       ("read-len", (`Int (Int64.to_int len)));
+						      ];
+					  raise Uninitialized_Memory
 					);
 					start_addr_ref := Int64.add !start_addr_ref (Int64.one)
 				done

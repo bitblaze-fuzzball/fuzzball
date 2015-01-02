@@ -611,6 +611,14 @@ struct
 		       "ret_addr", json_addr ret_addr]
 		 ) call_stack)
 
+    method set_pointer_management pm =
+      spfm#set_pointer_management pm;
+      pm#set_reporter
+	(fun l ->
+	   List.iter (fun (a, b) -> self#add_event_detail a b) l;
+	   self#add_event_detail "call-stack" self#callstack_json
+	)
+
     method private check_cond cond_e = 
       dt#start_new_query_binary;
       let choices = ref None in 

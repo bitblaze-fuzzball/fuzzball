@@ -1,4 +1,5 @@
 class pointer_management : object
+  method set_reporter : ((string * Yojson.Safe.json) list -> unit) -> unit
   method add_alloc : int64 -> int64 -> unit
   method add_dealloc : int64 -> int64 -> unit
   method is_safe_read : int64 -> int64 -> bool
