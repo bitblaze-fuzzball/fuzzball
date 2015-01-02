@@ -57,6 +57,11 @@ let restarts = ref 0
 let log_fuzz_restart log str fm = 
   let eip = fm#get_eip in
   let module SEXP = (val !Loggers.cgc_sexp_logger : Text_logger.TextLog) in
+  let extra_details = `Assoc
+    (Hashtbl.fold
+       (fun k v l -> (k, v) :: l)
+       fm#get_event_details [])
+  in
   Pov_xml.write_pov (get_program_name ()) fm;
   log (
     Yojson_logger.LazyJson
@@ -66,6 +71,7 @@ let log_fuzz_restart log str fm =
 	      "type", `String "restart";
 	      "restart_reason", `String str;
 	      "restarted_at", `String (Printf.sprintf "0x%08LX" eip);
+	      "extra_details", extra_details;
 	     ]
 	 )
       )

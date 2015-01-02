@@ -99,6 +99,9 @@ class virtual fragment_machine : object
   method virtual unfinish_fuzz : string -> unit
   method virtual finish_reasons : string list
 
+  method virtual add_event_detail : string -> Yojson.Safe.json -> unit
+  method virtual get_event_details : (string, Yojson.Safe.json) Hashtbl.t
+
   method virtual make_snap : unit -> unit
   method virtual reset : unit -> unit
 
@@ -320,6 +323,9 @@ sig
     method finish_fuzz : string -> unit
     method unfinish_fuzz : string -> unit
     method finish_reasons : string list
+
+    method add_event_detail : string -> Yojson.Safe.json -> unit
+    method get_event_details : (string, Yojson.Safe.json) Hashtbl.t
 
     method make_snap : unit -> unit
     method reset : unit -> unit

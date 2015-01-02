@@ -214,6 +214,9 @@ class virtual fragment_machine = object
   method virtual unfinish_fuzz : string -> unit
   method virtual finish_reasons : string list
 
+  method virtual add_event_detail : string -> Yojson.Safe.json -> unit
+  method virtual get_event_details : (string, Yojson.Safe.json) Hashtbl.t
+
   method virtual make_snap : unit -> unit
   method virtual reset : unit -> unit
 
@@ -1271,6 +1274,14 @@ struct
       else
 	fuzz_finish_reasons
 
+    val event_details = Hashtbl.create 11
+
+    method add_event_detail k v =
+      Hashtbl.replace event_details k v
+
+    method get_event_details =
+      event_details
+
     method reset () =
       let reset h = h#reset in
       mem#reset ();
@@ -1279,6 +1290,7 @@ struct
 	 move_hash t temps);
       fuzz_finish_reasons <- [];
       disqualified <- false;
+      Hashtbl.clear event_details;
       List.iter reset special_handler_list
 
     method add_special_handler (h:special_handler) =

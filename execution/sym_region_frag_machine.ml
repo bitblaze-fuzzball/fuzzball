@@ -1355,6 +1355,18 @@ struct
 		pop_callstack esp;
 	  | _ -> ()
 
+    method private callstack_json =
+      let json_addr i64 = `String (Printf.sprintf "0x%08Lx" i64)
+      in
+	`List (List.map
+		 (fun (esp, last_eip, eip, ret_addr) ->
+		    `Assoc
+		      ["esp", json_addr esp;
+		       "last_eip", json_addr last_eip;
+		       "eip", json_addr eip;
+		       "ret_addr", json_addr ret_addr]
+		 ) call_stack)
+
     method jump_hook last_insn last_eip eip =
       spfm#jump_hook last_insn last_eip eip;
       if !opt_check_for_ret_addr_overwrite then
@@ -1377,6 +1389,15 @@ struct
 		    (Printf.printf
 		       "Store to 0x%08Lx overwrites return address 0x%08Lx\n"
 		       addr' addr;
+		     self#add_event_detail "tag"
+		       (`String ":return-addr-overwrite");
+		     self#add_event_detail "subtag"
+		       (`String ":concrete-addr");
+		     self#add_event_detail "store-addr"
+		       (`String (Printf.sprintf "0x%08Lx" addr'));
+		     self#add_event_detail "ret-addr-addr"
+		       (`String (Printf.sprintf "0x%08Lx" addr));
+		     self#add_event_detail "call-stack" self#callstack_json;
 		     if !opt_finish_on_ret_addr_overwrite then
 		       self#finish_fuzz "return address overwrite")
 	      done
@@ -1413,6 +1434,16 @@ struct
 			   Printf.printf
 			     "Store to %s might overwrite return addr 0x%Lx.\n"
 			     (V.exp_to_string e) loc;
+			   self#add_event_detail "tag"
+			     (`String ":return-addr-overwrite");
+			   self#add_event_detail "subtag"
+			     (`String ":symbolic-addr");
+			   self#add_event_detail "store-addr-exp"
+			     (`String (V.exp_to_string e));
+			   self#add_event_detail "ret-addr-addr"
+			     (`String (Printf.sprintf "0x%08Lx" loc));
+			   self#add_event_detail "call-stack"
+			     self#callstack_json;
 			   if !opt_finish_on_ret_addr_overwrite then
 			     self#finish_fuzz "return address overwrite"
 		       | Some false ->
