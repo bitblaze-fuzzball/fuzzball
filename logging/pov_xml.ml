@@ -362,10 +362,10 @@ let add_read_car (read_in : char array) (start : int64) =
 let add_transmit contents length =
   (* add a write command to the list of actions to be put into the pov *)
   (* cgcos_transmit *)
-  let dt = {data_typ = Hex;
-	    contents = contents; } in
-(*  let dt = {data_typ = Ascii;
+(*  let dt = {data_typ = Hex;
 	    contents = contents; } in *)
+  let dt = {data_typ = Ascii;
+	    contents = contents; } in
   let wt = WData dt in
   let write = {datas = [wt]} in
   events := (ConcreteWrite write) :: !events
