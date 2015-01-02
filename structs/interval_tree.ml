@@ -85,7 +85,6 @@ let remove i1 i2 = (** order matters -- remove i2 from i1 *)
 
 type interval_node = {
   data : interval;
-  mutable max : int64;
   mutable left : interval_node;
   mutable right : interval_node;
   mutable parent : interval_node;
@@ -104,7 +103,6 @@ type tree = {
 
 let init_interval_node interval parent sentinel = 
   { data = interval;
-    max = interval.high;
     left = sentinel;
     right = sentinel;
     parent = parent;
@@ -128,7 +126,6 @@ let is_nil node =
 let replace_data t oldn new_data = (* for replacing a node with it's merge *)
   assert (not oldn.is_nil);
   let n = { data = new_data;
-	    max = max oldn.max new_data.high;
 	    left = oldn.left;
 	    right = oldn.right;
 	    parent = oldn.parent;
@@ -217,7 +214,6 @@ let adjust_parent_new t a b =
 let make_tree () =
   let neg1 = Int64.sub Int64.zero Int64.one in
   let rec nil = { data = {low = neg1; high = neg1;};
-		  max = neg1;
 		  left = nil;
 		  right = nil;
 		  parent = nil;
@@ -408,7 +404,7 @@ let find_interval_node tree interval =
 	   && (intersects interval node.data))
        then Some node
        else if ((not (is_nil node.left))
-		&& node.left.max >= interval.low)
+		&& node.left.data.low >= interval.low)
        then walk_tree node.left
        else walk_tree node.right) in
   walk_tree tree.root
@@ -470,7 +466,6 @@ let insert_node t e =
   let parent = find_parent t.nil t.root in
     (* make and insert node under leaf parent *)
   let n = {data = e;
-	   max = e.high;
 	   left = t.nil;
 	   right = t.nil;
 	   parent = parent;
@@ -878,7 +873,39 @@ let check_remove samples_per_case =
       )
   done
 
+(** tree testing code **)
 
 let make_interval low high =
   { low = Int64.of_int low;
     high = Int64.of_int high;}
+
+
+let rec remove_elt list ind accum =
+  if ind = 0
+  then
+    (let this = List.hd list
+    and rest = List.tl list in
+     this, accum @ rest)
+  else
+    remove_elt (List.tl list) (ind - 1) ((List.hd list)::accum)
+
+let random_element list =
+  let ind = Random.int (List.length list) in
+  List.nth list ind
+
+let check_via_removal intervals tree =
+  failwith "stub"
+
+let random_tree ?(min_val = 0) ?(max_val = 1000) size =
+  let ranges = ref []
+  and range = max_val - min_val
+  and tree = make_tree () in
+  for i = 1 to size
+  do
+    let dist = Random.int range in
+    let end_point = Random.int max_val in
+    let interval = make_interval (end_point - dist) end_point in
+    ranges := interval :: !ranges;
+    insert tree interval;
+    (* and here is where we validate things *)
+  done

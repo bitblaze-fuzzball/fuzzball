@@ -2,7 +2,6 @@ type interval = { low : int64; high : int64; }
 
 type interval_node = {
   data : interval;
-  mutable max : int64;
   mutable left : interval_node;
   mutable right : interval_node;
   mutable parent : interval_node;
