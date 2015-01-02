@@ -9,8 +9,10 @@ type interval_node = {
   is_nil : bool;
 }
 
-exception IntersectingRange
-exception ConsumedRange
+exception IntersectingRange of (interval * interval)
+exception ConsumedRange of (interval * interval)
+exception FailedRemove of interval
+exception CouldntFind of interval
 
 type tree = {
   mutable root : interval_node;

@@ -274,7 +274,7 @@ let find t x =
     then find_below node.left
     else if x.low > node.data.low
     then find_below node.right
-    else raise (CouldntFind x)Not_found
+    else raise (CouldntFind x)
   in
     find_below t.root
 
@@ -634,8 +634,8 @@ let remove_range t e =
       | Some n ->
 	(let new_ranges = remove n.data range in
 	 ignore(delete t n);
-	 List.iter (fun el -> insert t el) new_ranges;
-	 helper range) in
+	 List.iter (fun el -> insert t el) new_ranges
+	 ) in
   helper e
 
 
