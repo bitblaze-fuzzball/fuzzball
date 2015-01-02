@@ -82,8 +82,10 @@ let log lazy_message =
           "message", (evaluateLazyTypeToJson lazy_message)
 	]);
   if chan = stderr || chan = stdout
-  then flush chan
-  else close_out chan
+  then (Printf.eprintf "Channel wasn't a file, flushing and not closing\n";
+	flush chan)
+  else (Printf.eprintf "Channel WAS a file, closing.\n"; close_out chan);
+  flush stderr
 
 let dummy_log _ = ()
 

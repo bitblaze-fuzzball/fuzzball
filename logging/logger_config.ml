@@ -79,7 +79,10 @@ let get_logfile_channel (frequency, logger_name) =
     | "stdout" -> (Fixed Pervasives.stdout)
     | "stderr" -> (Fixed Pervasives.stderr)
     | _ ->
-      try Hashtbl.find logger_channels filename
+      try
+	match Hashtbl.find logger_channels filename with 
+	| Fixed oc as foc -> foc
+	| Incrementing ((index, loggername, filename), chan) as ic -> next_incrementing_channel ic
       with Not_found ->
 	(let regex = Str.regexp ".*:[0-9]+" in
 	 let chan = 
@@ -99,14 +102,12 @@ let get_logfile_channel (frequency, logger_name) =
 		(Fixed outchan)
 	      with (Unix.Unix_error (enum, s1, s2)) ->
 		(Printf.eprintf "Failed to open socket: %s %s %s\n" (Unix.error_message enum) s1 s2;
-		 failwith "no socket!")
-	     )
-	   else (let base = Incrementing ((~-1, logger_name, filename), Pervasives.stdout) in
-		 next_incrementing_channel base) in
+		 failwith "no socket!"))
+	   else next_incrementing_channel (Incrementing ((~-1, logger_name, filename), Pervasives.stdout)) in
 	 flush stderr;
 	 Hashtbl.replace logger_channels filename chan;
 	 chan)
-  with _ -> (Fixed Pervasives.stdout)
+	with _ -> (Fixed Pervasives.stdout)
 
 let sufficient name my_level =
   let min_level = level_to_int (get_level name)
