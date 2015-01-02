@@ -79,9 +79,10 @@ let log_fuzz_restart log str fm =
   (* and here is where we tell fuzzbomb where these things are. I'm just going to assume names. *)
   let pov_filename = Printf.sprintf "%s/pov-%i.xml" !Pov_xml.out_channel_name !restarts
   and info_filename = Printf.sprintf "%s/info-%i.json" !Pov_xml.out_channel_name !restarts in
-  let sexp = Text_logger.LazyString (lazy
-				       (Printf.sprintf "((:type :new-test-case) (:xml \"%s\") (:info \"%s\"))"
-					  pov_filename info_filename)) in
+  let sexp = Text_logger.LazyString
+    (lazy
+       (Printf.sprintf "((:type :new-test-case) (:xml \"%s\") (:info \"%s\"))"
+	  pov_filename info_filename)) in
   SEXP.always ~sign:false sexp;
   restarts := !restarts + 1
 
