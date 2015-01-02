@@ -12,8 +12,11 @@ open Exec_options
 
 
 let match_faked_insn eip insn_bytes =
-  match (!opt_arch,
-	 !opt_nop_system_insns || (!opt_x87_entry_point <> None)) with
+  let fake_system = !opt_nop_system_insns and
+      fake_x87 = !opt_x87_entry_point <> None
+  in
+  let fake_any = fake_system || fake_x87 in
+  match (!opt_arch, fake_any) with
     | (_,  false) -> None 
     | (ARM, true) -> None (* nothing implemented *)
     | (X64, true) -> None (* nothing implemented *)
@@ -54,9 +57,7 @@ let match_faked_insn eip insn_bytes =
 	      else 0)
 	 in
 	 let (comment, maybe_len) =
-	   match (b0, b1,
-		  !opt_nop_system_insns, (!opt_x87_entry_point <> None))
-	   with
+	   match (b0, b1, fake_system, fake_x87) with
 	     | (0x0f, 0x00, true, _) when (modrm_reg b2) = 0 ->
 		 ("sldt", 2 + (modrm_len b2 b3))
 	     | (0x0f, 0x00, true, _) when (modrm_reg b2) = 1 ->
@@ -251,6 +252,54 @@ let run_one_insn fm gamma eip bytes =
 	fm#print_regs;
       label_to_eip next_lab
 
+(* Here's an example of the pattern we're matching: 
+ 804a75d:       0f b7 45 f6             movzwl -0xa(%ebp),%eax ; w0 (past)
+ 804a761:       f2 0f 2a c0             cvtsi2sd %eax,%xmm0    ; w1
+ 804a765:       f2 0f 10 0d 30 b9 04    movsd  0x804b930,%xmm1 ; w2, w3
+ 804a76c:       08 
+ 804a76d:       f2 0f 5e c1             divsd  %xmm1,%xmm0     ; w4
+ 804a771:       f2 0f 2c c0             cvttsd2si %xmm0,%eax   ; w5 *)
+let fancy_faked_insn eip fm gamma =
+  (* It happens that all the chunks of bytes we need to load for this
+     matching process are 4 bytes long, so this FM method works well.
+     It's a little weird, though, that the "words" are generally not
+     naturally aligned, and the byte order reads backwards. *) 
+  let read4 addr = fm#load_word_conc addr in
+  let fake_sse = !opt_sse_emulator = Some "punt" in
+  if not fake_sse then None else
+    let w1 = read4 eip in
+      if w1 <> 0xc02a0ff2L then None else
+	let w0 = read4 (Int64.sub eip  4L) and
+	    w2 = read4 (Int64.add eip  4L) and
+	    w3 = read4 (Int64.add eip  8L) and
+	    w4 = read4 (Int64.add eip 12L) and
+	    w5 = read4 (Int64.add eip 16L) in
+	  if (Int64.logand w0 0xffffL) = 0xb70fL &&
+	    w2 = 0x0d100ff2L && w4 = 0xc15e0ff2L && w5 = 0xc02c0ff2L then
+	      let (known, num, denom) = match fm#load_long_conc w3 with
+		| 0x3fe8000000000000L -> (true, 4L, 3L) (* 0.75 *)
+		| _ ->
+		    (false, 0L, 0L)
+	      in
+		if not known then None else
+		  let eax_v = Asmir.gamma_lookup gamma "R_EAX" and
+		      num_c = V.Constant(V.Int(V.REG_32, num)) and
+		      denom_c = V.Constant(V.Int(V.REG_32, denom)) in
+		  let new_eip = Int64.add eip 20L in
+		  let sl =
+		    [V.Label(V.addr_to_label eip);
+		     V.Comment("fake special SSE int/float divide");
+		     V.Move(V.Temp(eax_v),
+			    V.BinOp(V.SDIVIDE, 
+				    V.BinOp(V.TIMES,
+					    V.Lval(V.Temp(eax_v)), num_c),
+				    denom_c));
+		     V.Jmp(V.Name(V.addr_to_label new_eip))]
+		  in
+		    Some (([], sl), 20)
+	  else
+	    None
+
 let decode_insn_at fm gamma eipT =
   try
     let insn_addr = match !opt_arch with
@@ -263,12 +312,18 @@ let decode_insn_at fm gamma eipT =
 	    eipT
       | _ -> eipT
     in
-    let bytes = Array.init 16
-      (fun i -> Char.chr (fm#load_byte_conc
-			    (Int64.add insn_addr (Int64.of_int i))))
-    in
-    let prog = decode_insn gamma eipT bytes in
-      prog
+    let faked_info = fancy_faked_insn eipT fm gamma in
+      match faked_info with
+	| Some (faked_prog, faked_len) ->
+	    with_mem_bytemap eipT faked_len eipT;
+	    faked_prog
+	| None ->
+	    let bytes = Array.init 16
+	      (fun i -> Char.chr (fm#load_byte_conc
+				    (Int64.add insn_addr (Int64.of_int i))))
+	    in
+	    let prog = decode_insn gamma eipT bytes in
+	      prog
   with
       NotConcrete(_) ->
 	Printf.printf "Jump to symbolic memory 0x%08Lx\n" eipT;
