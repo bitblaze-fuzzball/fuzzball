@@ -72,6 +72,7 @@ let log_fuzz_restart log str fm =
 	      "restart_reason", `String str;
 	      "restarted_at", `String (Printf.sprintf "0x%08LX" eip);
 	      "extra_details", extra_details;
+	      "special_handlers_state", fm#special_handlers_state_json;
 	     ]
 	 )
       )

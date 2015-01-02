@@ -4429,4 +4429,6 @@ object(self)
 	      handle_catch ();
 	      Some [V.Jmp(V.Name(label))]
 	| _ -> None
+
+  method state_json : Yojson.Safe.json option = None
 end

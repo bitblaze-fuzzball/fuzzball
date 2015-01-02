@@ -25,6 +25,7 @@ object(self)
 
   method make_snap : unit = ()
   method reset : unit = ()
+  method state_json : Yojson.Safe.json option = None
 end
 
 class trap_special_nonhandler (fm : fragment_machine) =
@@ -35,6 +36,7 @@ object(self)
       | _ -> None
   method make_snap : unit = ()
   method reset : unit = ()
+  method state_json : Yojson.Safe.json option = None
 end
 
 class cpuid_special_handler (fm : fragment_machine)
@@ -62,6 +64,7 @@ object(self)
       | _ -> None
   method make_snap : unit = ()
   method reset : unit = ()
+  method state_json : Yojson.Safe.json option = None
 end
   
 class x87_emulator_special_handler (fm : fragment_machine) =
@@ -84,6 +87,7 @@ object(self)
       | _ -> None
   method make_snap : unit = ()
   method reset : unit = ()
+  method state_json : Yojson.Safe.json option = None
 end
 
 
@@ -100,4 +104,5 @@ object(self)
     with _ -> None
   method make_snap : unit = ()
   method reset : unit = ()
+  method state_json : Yojson.Safe.json option = None
 end

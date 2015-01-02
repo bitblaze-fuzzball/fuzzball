@@ -167,6 +167,7 @@ object(self)
     saved_num_transmits <- num_transmits;
     saved_transmit_pos <- transmit_pos;
     saved_receive_pos <- receive_pos;
+    saved_random_pos <- random_pos;
     saved_randomness <- randomness
 
   method private reset_depth_state =
@@ -174,6 +175,7 @@ object(self)
     num_transmits <- saved_num_transmits;
     transmit_pos <- saved_transmit_pos;
     receive_pos <- saved_receive_pos;
+    random_pos <- saved_random_pos;
     randomness <- saved_randomness
 
   method make_snap = 
@@ -183,6 +185,14 @@ object(self)
   method reset = 
     self#reset_memory_state;
     self#reset_depth_state
+
+  method state_json : Yojson.Safe.json option =
+    Some (`Assoc
+	    ["num_receives", `Int num_receives;
+	     "num_transmits", `Int num_transmits;
+	     "receive_pos", `Int receive_pos;
+	     "transmit_pos", `Int transmit_pos;
+	     "random_pos", `Int random_pos])
 
   method private string_create len =
     try String.create len
@@ -339,10 +349,10 @@ object(self)
   method private cgcos_receive (fd : int) (buf : int64) (count : int) num_bytes_p =
     (match !opt_max_receives with
        | Some m ->
-	   (if num_receives >= m then
-	      raise DeepPath;
-	    num_receives <- num_receives + 1)
+	   if num_receives >= m then
+	     raise DeepPath
        | None -> ());
+    num_receives <- num_receives + 1;
     try
       self#read_throw fd buf count num_bytes_p
     with
@@ -354,11 +364,11 @@ object(self)
   (* (fd : int) (bytes : char array) (count : int) (tx_bytes : int64) *)
   method private cgcos_transmit fd bytes count tx_bytes =
     (match !opt_max_transmits with
-    | Some m ->
-      (if num_transmits >= m then
-	  raise DeepPath;
-       num_transmits <- num_transmits + 1)
-    | None -> ());
+       | Some m ->
+	   if num_transmits >= m then
+	     raise DeepPath
+       | None -> ());
+    num_transmits <- num_transmits + 1;
     Pov_xml.add_read_car bytes tx_bytes;
     self#do_write fd bytes count tx_bytes
 

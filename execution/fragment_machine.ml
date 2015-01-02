@@ -47,6 +47,7 @@ class virtual special_handler = object(self)
   method virtual handle_special : string -> V.stmt list option
   method virtual make_snap : unit
   method virtual reset : unit
+  method virtual state_json : Yojson.Safe.json option
 end
 
 type register_name = 
@@ -221,6 +222,7 @@ class virtual fragment_machine = object
   method virtual reset : unit -> unit
 
   method virtual add_special_handler : special_handler -> unit
+  method virtual special_handlers_state_json : Yojson.Safe.json
 
   method virtual get_bit_var   : register_name -> int
   method virtual get_byte_var  : register_name -> int
@@ -1230,6 +1232,14 @@ struct
       started_symbolic <- true
 
     val mutable special_handler_list = ([] : #special_handler list)
+
+    method special_handlers_state_json : Yojson.Safe.json =
+      `List
+	(List.fold_left
+	   (fun l sh ->
+	      match sh#state_json with
+		| Some j -> j :: l
+		| None -> l) [] special_handler_list )
 
     val mutable start_eip = 0L
     method get_start_eip = start_eip

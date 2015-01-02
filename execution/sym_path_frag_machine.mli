@@ -130,6 +130,7 @@ sig
     method get_event_details : (string, Yojson.Safe.json) Hashtbl.t
     method make_snap : unit -> unit
     method add_special_handler : Fragment_machine.special_handler -> unit
+    method special_handlers_state_json : Yojson.Safe.json
     method handle_special : string -> Vine.stmt list option
     method private get_int_var : Vine.var -> D.t
     method get_bit_var_d   : Fragment_machine.register_name -> D.t

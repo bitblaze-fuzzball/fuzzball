@@ -7,6 +7,7 @@ class virtual special_handler : object
   method virtual handle_special : string -> Vine.stmt list option
   method virtual make_snap : unit
   method virtual reset : unit
+  method virtual state_json : Yojson.Safe.json option
 end
 
 type register_name = 
@@ -106,6 +107,7 @@ class virtual fragment_machine : object
   method virtual reset : unit -> unit
 
   method virtual add_special_handler : special_handler -> unit
+  method virtual special_handlers_state_json : Yojson.Safe.json
 
   method virtual get_bit_var   : register_name -> int
   method virtual get_byte_var  : register_name -> int
@@ -331,6 +333,7 @@ sig
     method reset : unit -> unit
 
     method add_special_handler : special_handler -> unit
+    method special_handlers_state_json : Yojson.Safe.json
 
     method handle_special : string -> Vine.stmt list option
 
