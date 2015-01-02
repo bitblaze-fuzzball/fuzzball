@@ -1920,8 +1920,8 @@ struct
       let len = String.length str in
 	for i = 0 to len - 1 do
 	  self#store_byte (Int64.add base (Int64.of_int i))
-	    (form_man#make_concolic_8
-	       (varname ^ "_" ^ (string_of_int (i + offset)))
+	    (form_man#make_concolic_mem_8 varname
+	       (Int64.of_int (i + offset))
 	       (Char.code str.[i]))
 	done
 

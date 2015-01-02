@@ -538,6 +538,79 @@ struct
 
     val mutable sink_read_count = 0L
 
+    val mutable call_stack = []
+    val ret_addrs = Hashtbl.create 101
+
+    (* TODO: avoid code duplication with FM.trace_callstack *)
+    method private update_ret_addrs last_insn last_eip eip =
+      let pop_callstack esp =
+	while match call_stack with
+	  | (old_esp, _, _, _) :: _ when old_esp < esp -> true
+	  | _ -> false
+	do
+	      match call_stack with
+		| (ret_addr_addr, _, _, _) :: _ ->
+		    Hashtbl.remove ret_addrs ret_addr_addr;
+		    call_stack <- List.tl call_stack
+		| _ -> failwith "Can't happen, loop invariant"
+	done
+      in
+      let get_retaddr esp =
+	match !opt_arch with
+	  | X86 -> self#load_word_conc esp
+	  | X64 -> self#load_long_conc esp
+	  | ARM -> self#get_word_var R14
+      in
+      let kind =
+	match !opt_arch with
+	  | X86 | X64 ->
+	      let s = last_insn ^ "        " in
+		if (String.sub s 0 4) = "call" &&
+		  (Int64.sub eip last_eip) <> 5L then
+		  "call"
+		else if (String.sub s 0 3) = "ret" then
+		  "return"
+		else if (String.sub s 0 8) = "repz ret" then
+		  "return"
+		else if (String.sub s 0 3) = "jmp" then
+		  "unconditional jump"
+		else if (String.sub s 0 1) = "j" then
+		  "conditional jump"
+		else
+		  "not a jump"
+	  | ARM ->
+	      (* TODO: add similar parsing for ARM mnemonics *)
+	      "not a jump"
+      in
+	match kind with
+	  | "call" ->
+	      let esp = self#get_esp in
+	      let ret_addr_addr = match !opt_arch with
+		| X86 -> esp
+		| X64 -> esp
+		| ARM -> failwith "Return address tracking not implemented for ARM"
+	      in
+	      let ret_addr = get_retaddr esp
+	      in
+		call_stack <- (esp, last_eip, eip, ret_addr) :: call_stack;
+		Hashtbl.replace ret_addrs ret_addr_addr ret_addr;
+	  | "return" ->
+	      let esp = self#get_esp in
+		pop_callstack esp;
+	  | _ -> ()
+
+    method private callstack_json =
+      let json_addr i64 = `String (Printf.sprintf "0x%08Lx" i64)
+      in
+	`List (List.map
+		 (fun (esp, last_eip, eip, ret_addr) ->
+		    `Assoc
+		      ["esp", json_addr esp;
+		       "last_eip", json_addr last_eip;
+		       "eip", json_addr eip;
+		       "ret_addr", json_addr ret_addr]
+		 ) call_stack)
+
     method private check_cond cond_e = 
       dt#start_new_query_binary;
       let choices = ref None in 
@@ -554,16 +627,22 @@ struct
 	(match
 	   self#check_cond (V.BinOp(V.EQ, e, V.Constant(V.Int(V.REG_32, 0L))))
 	 with
-	   | Some true ->
-	       Printf.printf "Can be null.\n";
+	   | Some false -> Printf.printf "Cannot be null.\n"
+	   | (Some true|None) as maybe ->
+	       (match maybe with
+		  | Some true -> 
+		      Printf.printf "Can be null.\n";
+		  | (None|_) ->
+		      Printf.printf "Can be null or non-null\n";
+		      infl_man#maybe_measure_influence_deref e);
+	       self#add_event_detail "tag" (`String ":null-deref");
+	       self#add_event_detail "subtag" (`String ":symbolic-can-be-0");
+	       self#add_event_detail "can-be-null-expr"
+		 (`String (V.exp_to_string e));
+	       self#add_event_detail "call-stack" self#callstack_json;
 	       if !opt_finish_on_null_deref then
 		 self#finish_fuzz "symbolic dereference can be null"
-	   | Some false -> Printf.printf "Cannot be null.\n"
-	   | None ->
-	       Printf.printf "Can be null or non-null\n";
-	       infl_man#maybe_measure_influence_deref e;
-	       if !opt_finish_on_null_deref then
-		 self#finish_fuzz "symbolic dereference can be null");
+	);
       dt#start_new_query;
       let (cbases, coffs, eoffs, ambig, syms) = classify_terms e form_man in
 	if !opt_trace_sym_addr_details then
@@ -712,6 +791,15 @@ struct
 		 with
 		   | (None|Some true) ->
 		       Printf.printf "Symbolic jump can be 0x%Lx.\n" target;
+		       self#add_event_detail "tag"
+			 (`String ":controlled-jump");
+		       self#add_event_detail "subtag" 
+			 (`String ":symbolic-can-be-chosen");
+		       self#add_event_detail "can-be-chosen-expr"
+			 (`String (V.exp_to_string e));
+		       self#add_event_detail "chosen-value"
+			 (`String (Printf.sprintf "0x%Lx" target));
+		       self#add_event_detail "call-stack" self#callstack_json;
 		       if !opt_finish_on_controlled_jump then
 			 self#finish_fuzz "controlled jump"
 		   | Some false ->
@@ -1294,79 +1382,6 @@ struct
 		       self#table_check_full_match all_match cloc maxval);
 		  true
 
-    val mutable call_stack = []
-    val ret_addrs = Hashtbl.create 101
-
-    (* TODO: avoid code duplication with FM.trace_callstack *)
-    method private update_ret_addrs last_insn last_eip eip =
-      let pop_callstack esp =
-	while match call_stack with
-	  | (old_esp, _, _, _) :: _ when old_esp < esp -> true
-	  | _ -> false
-	do
-	      match call_stack with
-		| (ret_addr_addr, _, _, _) :: _ ->
-		    Hashtbl.remove ret_addrs ret_addr_addr;
-		    call_stack <- List.tl call_stack
-		| _ -> failwith "Can't happen, loop invariant"
-	done
-      in
-      let get_retaddr esp =
-	match !opt_arch with
-	  | X86 -> self#load_word_conc esp
-	  | X64 -> self#load_long_conc esp
-	  | ARM -> self#get_word_var R14
-      in
-      let kind =
-	match !opt_arch with
-	  | X86 | X64 ->
-	      let s = last_insn ^ "        " in
-		if (String.sub s 0 4) = "call" &&
-		  (Int64.sub eip last_eip) <> 5L then
-		  "call"
-		else if (String.sub s 0 3) = "ret" then
-		  "return"
-		else if (String.sub s 0 8) = "repz ret" then
-		  "return"
-		else if (String.sub s 0 3) = "jmp" then
-		  "unconditional jump"
-		else if (String.sub s 0 1) = "j" then
-		  "conditional jump"
-		else
-		  "not a jump"
-	  | ARM ->
-	      (* TODO: add similar parsing for ARM mnemonics *)
-	      "not a jump"
-      in
-	match kind with
-	  | "call" ->
-	      let esp = self#get_esp in
-	      let ret_addr_addr = match !opt_arch with
-		| X86 -> esp
-		| X64 -> esp
-		| ARM -> failwith "Return address tracking not implemented for ARM"
-	      in
-	      let ret_addr = get_retaddr esp
-	      in
-		call_stack <- (esp, last_eip, eip, ret_addr) :: call_stack;
-		Hashtbl.replace ret_addrs ret_addr_addr ret_addr;
-	  | "return" ->
-	      let esp = self#get_esp in
-		pop_callstack esp;
-	  | _ -> ()
-
-    method private callstack_json =
-      let json_addr i64 = `String (Printf.sprintf "0x%08Lx" i64)
-      in
-	`List (List.map
-		 (fun (esp, last_eip, eip, ret_addr) ->
-		    `Assoc
-		      ["esp", json_addr esp;
-		       "last_eip", json_addr last_eip;
-		       "eip", json_addr eip;
-		       "ret_addr", json_addr ret_addr]
-		 ) call_stack)
-
     method jump_hook last_insn last_eip eip =
       spfm#jump_hook last_insn last_eip eip;
       if !opt_check_for_ret_addr_overwrite then
@@ -1438,7 +1453,7 @@ struct
 			     (`String ":return-addr-overwrite");
 			   self#add_event_detail "subtag"
 			     (`String ":symbolic-addr");
-			   self#add_event_detail "store-addr-exp"
+			   self#add_event_detail "store-addr-expr"
 			     (`String (V.exp_to_string e));
 			   self#add_event_detail "ret-addr-addr"
 			     (`String (Printf.sprintf "0x%08Lx" loc));
