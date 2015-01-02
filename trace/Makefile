@@ -26,6 +26,7 @@ export YFLAGS = -v
 
 export CLIBS = asmir vex opcodes bfd iberty stdc++ 
 CFLAGS := 
+LDFLAGS :=
 
 ifdef DEBUG
 CFLAGS += -g
@@ -33,10 +34,13 @@ endif
 
 ifdef PROFILE
 CFLAGS += -p
+LDFLAGS += -p
 endif
 
+LDFLAGS += $(LIBASMIR_LDFLAGS)
+
 export CFLAGS
-export LDFLAGS = -p $(LIBASMIR_LDFLAGS) 
+export LDFLAGS
 export CLIBFLAGS= $(LDFLAGS)
 export LIBDIRS = $(LIBASMIR)/src # ../appreplay ../stp ../stp/ocaml
 
