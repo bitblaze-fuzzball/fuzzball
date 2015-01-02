@@ -358,6 +358,10 @@ let explore_cmdline_opts =
      " Set an integer limit on the global cache size");
     ("-ignore-div-0", Arg.Set(opt_ignore_div_0),
      " When set, ignore division by zero errors (best in conjunction with -sse-emulator punt)");
+    ("-stop-on-weird-sym-addr", Arg.Set(opt_stop_on_weird_sym_addr),
+     " Don't continue execution past a strange symbolic-controlled address");
+    ("-finish-on-weird-sym-addr", Arg.Set(opt_finish_on_weird_sym_addr),
+     " Finish exploration as with -stop-on-weird-sym-addr");
   ]
 
 

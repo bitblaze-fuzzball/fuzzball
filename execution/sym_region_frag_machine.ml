@@ -221,7 +221,7 @@ struct
 		   | AmbiguousExpr of V.exp
 		   | Symbol of V.exp
 
-  let rec classify_term form_man e =
+  let rec classify_term form_man if_weird e =
     match e with
       | V.Constant(V.Int(V.REG_32, off))
 	  when (Int64.abs (fix_s32 off)) < 0x4000L
@@ -295,7 +295,8 @@ struct
       | V.Ite(_, x, y)
 	->
 	  (* ITE expression "_ ? x : y" *)
-	  (match (classify_term form_man x), (classify_term form_man y) with
+	  (match ((classify_term form_man if_weird x),
+		  (classify_term form_man if_weird y)) with
 	     | (ExprOffset(_)|ConstantOffset(_)),
 	       (ExprOffset(_)|ConstantOffset(_)) ->
 		 ExprOffset(e)
@@ -309,7 +310,8 @@ struct
 	  when c1 = c2
 	->
 	  (* ITE expression "_ ? x : y" *)
-	  (match (classify_term form_man x), (classify_term form_man y) with
+	  (match ((classify_term form_man if_weird x),
+		  (classify_term form_man if_weird y)) with
 	     | (ExprOffset(_)|ConstantOffset(_)),
 	       (ExprOffset(_)|ConstantOffset(_)) ->
 		 ExprOffset(e)
@@ -320,7 +322,7 @@ struct
       | V.BinOp(V.BITAND, V.UnOp(V.NOT, V.Cast(V.CAST_SIGNED, _, _)), x)
       | V.BinOp(V.BITAND, x, V.Cast(V.CAST_SIGNED, _, _))
       | V.BinOp(V.BITAND, V.Cast(V.CAST_SIGNED, _, _), x) ->
-	  (match (classify_term form_man x) with
+	  (match (classify_term form_man if_weird x) with
 	     | (ExprOffset(_)|ConstantOffset(_)) -> ExprOffset(e)
 	     | _ -> AmbiguousExpr(e)
 	  )
@@ -329,12 +331,13 @@ struct
       | V.BinOp(V.BITAND, x, V.Constant(V.Int(V.REG_32, off)))
 	  when (fix_u32 off) >= 0xffffff00L
 	    ->
-	  (classify_term form_man x)
+	  (classify_term form_man if_weird x)
       (* Addition inside another operation (top-level addition should
 	 be handled by split_terms) *)
       | V.BinOp(V.PLUS, e1, e2)
 	->
-	  (match (classify_term form_man e1), (classify_term form_man e2) with
+	  (match ((classify_term form_man if_weird e1),
+		  (classify_term form_man if_weird e2)) with
 	     | (ExprOffset(_)|ConstantOffset(_)),
 	       (ExprOffset(_)|ConstantOffset(_)) -> ExprOffset(e)
 	     | _,_ -> AmbiguousExpr(e))
@@ -345,12 +348,12 @@ struct
 (* 	  -> ExprOffset(e) *)
       | V.Cast(V.CAST_SIGNED, _, _) -> ExprOffset(e)
       | V.Lval(_) -> Symbol(e)
-      | _ -> if (!opt_fail_offset_heuristic) then (
-	  failwith ("Strange term "^(V.exp_to_string e)^" in address")
-	) else ExprOffset(e)
+      | e -> if_weird e
 	  
-  let classify_terms e form_man =
-    let l = List.map (classify_term form_man) (split_terms e form_man) in
+  let classify_terms e form_man if_weird =
+    let l = List.map (classify_term form_man if_weird)
+      (split_terms e form_man)
+    in
     let (cbases, coffs, eoffs, ambig, syms) =
       (ref [], ref [], ref [], ref [], ref []) in
       List.iter
@@ -630,6 +633,22 @@ struct
 	       ignore(b));
 	!choices
 
+    method private handle_weird_addr_expr e =
+      if !opt_stop_on_weird_sym_addr || !opt_finish_on_weird_sym_addr then
+	(self#add_event_detail "tag" (`String ":weird-sym-addr");
+	 self#add_event_detail "addr-expr"
+	   (`String (V.exp_to_string e));
+	 self#add_event_detail "call-stack" self#callstack_json;
+	 if !opt_finish_on_weird_sym_addr then
+	   (self#finish_fuzz "weird symbolic-controlled address";
+	    ExprOffset(e))
+	 else
+	   raise WeirdSymbolicAddress)
+      else if !opt_fail_offset_heuristic then
+	failwith ("Strange term "^(V.exp_to_string e)^" in address")
+      else
+	ExprOffset(e)
+
     method private region_expr e =
       if !opt_check_for_null then
 	(match
@@ -652,7 +671,9 @@ struct
 		 self#finish_fuzz "symbolic dereference can be null"
 	);
       dt#start_new_query;
-      let (cbases, coffs, eoffs, ambig, syms) = classify_terms e form_man in
+      let (cbases, coffs, eoffs, ambig, syms) =
+	classify_terms e form_man self#handle_weird_addr_expr
+      in
 	if !opt_trace_sym_addr_details then
 	  (Printf.printf "Concrete base terms: %s\n"
 	     (String.concat " "
@@ -1077,7 +1098,9 @@ struct
 
     method private maybe_table_load addr_e ty =
       let e = D.to_symbolic_32 (self#eval_int_exp_simplify addr_e) in
-      let (cbases, coffs, eoffs, ambig, syms) = classify_terms e form_man in
+      let (cbases, coffs, eoffs, ambig, syms) =
+	classify_terms e form_man self#handle_weird_addr_expr
+      in
 	let cbase = List.fold_left Int64.add 0L cbases in
 	  if cbase = 0L then
 	    None
@@ -1342,7 +1365,9 @@ struct
 	| _ -> failwith "Unexpected store type in maybe_table_store"
       in
       let e = D.to_symbolic_32 (self#eval_int_exp_simplify addr_e) in
-      let (cbases, coffs, eoffs, ambig, syms) = classify_terms e form_man in
+      let (cbases, coffs, eoffs, ambig, syms) =
+	classify_terms e form_man self#handle_weird_addr_expr
+      in
 	let cbase = List.fold_left Int64.add 0L cbases in
 	  if cbase = 0L then
 	    false
