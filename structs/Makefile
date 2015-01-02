@@ -21,7 +21,9 @@ LDFLAGS += -p -pg
 endif
 export OCAMLFLAGS
 
-all: dncl
+all: ncl
+
+debug: dncl
 
 bytecode: dcl top
 

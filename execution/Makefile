@@ -105,7 +105,9 @@ export OCAMLFLAGS
 # merge everything but descriptions.
 OCAMLDOCFLAGS = -m avlsoper
 
-all: update_git_version update_svn_version dncl
+all: update_git_version update_svn_version ncl
+
+debug: dncl
 
 # Fast enough that it's better to just always remake it than
 # worry about whether it's up to date.

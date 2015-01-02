@@ -21,7 +21,7 @@ export INCDIRS = $(VINE_OCAMLDIR) $(VINE_TRACEDIR) \
 export OCAMLDEP = ocamldep -I $(VINE_OCAMLDIR) -I $(VINE_TRACEDIR) \
 		 -I $(VINE_EXECDIR) -I $(STP_OCAMLDIR) -I $(LOG_DIR) -I $(STRUCTS_DIR)
 
-OCAMLFLAGS := -warn-error Aelz -p
+OCAMLFLAGS := -warn-error Aelz
 
 CFLAGS := 
 
@@ -67,7 +67,9 @@ export PROJ_vinegrind
 # suffix for bytecode (which when we make all is debug code)
 export BCSUFFIX = .dbg
 
-all: dnc
+all: nc
+
+debug: dnc
 
 bytecode: dc
 

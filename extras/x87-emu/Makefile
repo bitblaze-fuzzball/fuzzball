@@ -9,7 +9,7 @@ PARANOID = -DPARANOID
 EXTRA_CFLAGS	:= $(PARANOID) $(DEBUG) -fno-builtin $(MATH_EMULATION)
 EXTRA_AFLAGS	:= $(PARANOID)
 CC := gcc -m32
-CFLAGS := $(PARANOID) $(DEBUG) -O3 -fno-strict-aliasing -g -Wall
+CFLAGS := $(PARANOID) $(DEBUG) -O3 -fno-strict-aliasing -Wall
 
 ifdef DEBUG
 CFLAGS += -g
