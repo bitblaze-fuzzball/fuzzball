@@ -61,10 +61,13 @@ let load_cb (fm : fragment_machine) fname load_base data_too do_setup extras =
       (fun phr ->
 	 if phr.LL.ph_type = 1L then (* PT_LOAD *)
 	   (if phr.LL.ph_flags = 5L && extra_vaddr = 0L then
-               (if (phr.LL.vaddr <> load_base) then
+	       (if (phr.LL.vaddr <> load_base) then
+		   (Printf.eprintf "Decree_loader::load_cb: phr.vaddr neq load_base\t 0x%Lx <> 0x%Lx"
+                                phr.LL.vaddr load_base));
+(*               (if (phr.LL.vaddr <> load_base) then
                    (failwith (Printf.sprintf
                                 "Decree_loader::load_cb: phr.vaddr neq load_base\t 0x%Lx <> 0x%Lx"
-                                phr.LL.vaddr load_base)));
+                                phr.LL.vaddr load_base))); *)
 	    if data_too || (phr.LL.ph_flags <> 6L && phr.LL.ph_flags <> 7L) then
 	      LL.load_segment fm ic phr extra_vaddr true)
 	 else if phr.LL.memsz != 0L then
