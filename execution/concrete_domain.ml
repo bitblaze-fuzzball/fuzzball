@@ -82,83 +82,143 @@ module ConcreteDomain : Exec_domain.DOMAIN = struct
 
   let divide1  v v2 = 
     let d = fix_u1 v2 in
-      if d = 0L then raise DivideByZero;
-      Vine_util.int64_udiv (fix_u1  v) d
+      if d = 0L then
+	(if !Exec_options.opt_ignore_div_0
+	 then Int64.zero
+	 else raise DivideByZero)
+      else Vine_util.int64_udiv (fix_u1  v) d
   let divide8  v v2 =
     let d = fix_u8 v2 in
-      if d = 0L then raise DivideByZero;
-      Vine_util.int64_udiv (fix_u8  v) d
+      if d = 0L then
+	(if !Exec_options.opt_ignore_div_0
+	 then Int64.zero
+	 else raise DivideByZero)
+      else Vine_util.int64_udiv (fix_u8  v) d
   let divide16 v v2 =
     let d = fix_u16 v2 in
-      if d = 0L then raise DivideByZero;
-      Vine_util.int64_udiv (fix_u16 v) d
+      if d = 0L then
+	(if !Exec_options.opt_ignore_div_0
+	 then Int64.zero
+	 else raise DivideByZero)
+      else Vine_util.int64_udiv (fix_u16 v) d
   let divide32 v v2 =
     let d = fix_u32 v2 in
-      if d = 0L then raise DivideByZero;
-      Vine_util.int64_udiv (fix_u32 v) d
+      if d = 0L then
+	(if !Exec_options.opt_ignore_div_0
+	 then Int64.zero
+	 else raise DivideByZero)
+      else Vine_util.int64_udiv (fix_u32 v) d
   let divide64 v v2 =
-    if v2 = 0L then raise DivideByZero;
-    Vine_util.int64_udiv v v2
+    if v2 = 0L then
+      (if !Exec_options.opt_ignore_div_0
+       then Int64.zero
+       else raise DivideByZero)
+    else Vine_util.int64_udiv v v2
 
   let sdivide1  v v2 =
     let d = fix_s1  v2 in
-      if d = 0L then raise DivideByZero;
-      Int64.div (fix_s1  v) d
+      if d = 0L then
+	(if !Exec_options.opt_ignore_div_0
+	 then Int64.zero
+	 else raise DivideByZero)
+      else Int64.div (fix_s1  v) d
   let sdivide8  v v2 =
     let d = fix_s8  v2 in
-      if d = 0L then raise DivideByZero;
-      Int64.div (fix_s8  v)d
+      if d = 0L then
+	(if !Exec_options.opt_ignore_div_0
+	 then Int64.zero
+	 else raise DivideByZero)
+      else Int64.div (fix_s8  v)d
   let sdivide16 v v2 =
     let d = fix_s16 v2 in
-      if d = 0L then raise DivideByZero;
-      Int64.div (fix_s16 v) d
+      if d = 0L then
+	(if !Exec_options.opt_ignore_div_0
+	 then Int64.zero
+	 else raise DivideByZero)
+      else Int64.div (fix_s16 v) d
   let sdivide32 v v2 =
     let d = fix_s32 v2 in
-      if d = 0L then raise DivideByZero;
-      Int64.div (fix_s32 v) d
+      if d = 0L then
+	(if !Exec_options.opt_ignore_div_0
+	 then Int64.zero
+	 else raise DivideByZero)
+      else Int64.div (fix_s32 v) d
   let sdivide64 v v2 =
-    if v2 = 0L then raise DivideByZero;
-    Int64.div v v2 
+    if v2 = 0L then
+	(if !Exec_options.opt_ignore_div_0
+	 then Int64.zero
+	 else raise DivideByZero)
+    else Int64.div v v2 
 
   let mod1  v v2 =
     let d = fix_u1 v2 in
-      if d = 0L then raise DivideByZero;
-      Vine_util.int64_urem (fix_u1  v) d
+      if d = 0L then
+	(if !Exec_options.opt_ignore_div_0
+	 then Int64.zero
+	 else raise DivideByZero)
+      else Vine_util.int64_urem (fix_u1  v) d
   let mod8  v v2 =
     let d = fix_u8 v2 in
-      if d = 0L then raise DivideByZero;
-      Vine_util.int64_urem (fix_u8  v) d
+      if d = 0L then
+	(if !Exec_options.opt_ignore_div_0
+	 then Int64.zero
+	 else raise DivideByZero)
+      else Vine_util.int64_urem (fix_u8  v) d
   let mod16 v v2 =
     let d = fix_u16 v2 in
-      if d = 0L then raise DivideByZero;
-      Vine_util.int64_urem (fix_u16 v) d
+      if d = 0L then
+	(if !Exec_options.opt_ignore_div_0
+	 then Int64.zero
+	 else raise DivideByZero)
+      else Vine_util.int64_urem (fix_u16 v) d
   let mod32 v v2 =
     let d = fix_u32 v2 in
-      if d = 0L then raise DivideByZero;
-      Vine_util.int64_urem (fix_u32 v) d
+      if d = 0L then
+	(if !Exec_options.opt_ignore_div_0
+	 then Int64.zero
+	 else raise DivideByZero)
+      else Vine_util.int64_urem (fix_u32 v) d
   let mod64 v v2 =
-    if v2 = 0L then raise DivideByZero;
-    Vine_util.int64_urem v v2 
+    if v2 = 0L then
+	(if !Exec_options.opt_ignore_div_0
+	 then Int64.zero
+	 else raise DivideByZero)
+    else Vine_util.int64_urem v v2 
 
   let smod1  v v2 =
     let d = fix_s1  v2 in
-      if d = 0L then raise DivideByZero;
-      Int64.rem (fix_s1  v) d
+      if d = 0L then
+	(if !Exec_options.opt_ignore_div_0
+	 then Int64.zero
+	 else raise DivideByZero)
+      else Int64.rem (fix_s1  v) d
   let smod8  v v2 =
     let d = fix_s8  v2 in
-      if d = 0L then raise DivideByZero;
-    Int64.rem (fix_s8  v) d
+      if d = 0L then
+	(if !Exec_options.opt_ignore_div_0
+	 then Int64.zero
+	 else raise DivideByZero)
+      else Int64.rem (fix_s8  v) d
   let smod16 v v2 =
     let d = fix_s16 v2 in
-      if d = 0L then raise DivideByZero;
-    Int64.rem (fix_s16 v) d
+      if d = 0L then
+	(if !Exec_options.opt_ignore_div_0
+	 then Int64.zero
+	 else raise DivideByZero)
+      else Int64.rem (fix_s16 v) d
   let smod32 v v2 =
     let d = fix_s32 v2 in
-      if d = 0L then raise DivideByZero;
-    Int64.rem (fix_s32 v) d
+      if d = 0L then
+	(if !Exec_options.opt_ignore_div_0
+	 then Int64.zero
+	 else raise DivideByZero)
+      else Int64.rem (fix_s32 v) d
   let smod64 v v2 =
-    if v2 = 0L then raise DivideByZero;
-    Int64.rem v v2 
+    if v2 = 0L then
+      (if !Exec_options.opt_ignore_div_0
+       then Int64.zero
+       else raise DivideByZero)
+    else Int64.rem v v2 
 
   let lshift1  v v2 = Int64.shift_left v (Int64.to_int (fix_u8 v2))
   let lshift8  v v2 = Int64.shift_left v (Int64.to_int (fix_u8 v2))

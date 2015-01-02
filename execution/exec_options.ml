@@ -214,6 +214,7 @@ let opt_memory_watching = ref false
 let opt_bb_size = ref 1
 let opt_veritesting = ref NoVeritesting
 
+let opt_ignore_div_0 = ref false
 
 let convert_string_to_veritesting str =
   let str' = String.uppercase str in

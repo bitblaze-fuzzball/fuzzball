@@ -356,6 +356,8 @@ let explore_cmdline_opts =
      " Print global and working caches after each query");
     ("-global-ce-cache-limit", Arg.Set_int(opt_global_ce_cache_limit),
      " Set an integer limit on the global cache size");
+    ("-ignore-div-0", Arg.Set(opt_ignore_div_0),
+     " When set, ignore division by zero errors (best in conjunction with -sse-emulator punt)");
   ]
 
 

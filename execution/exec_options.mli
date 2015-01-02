@@ -210,3 +210,4 @@ val opt_memory_watching : bool ref
 val opt_bb_size : int ref
 val set_opt_veritesting : string -> unit
 val opt_veritesting : supported_veritesting ref
+val opt_ignore_div_0 : bool ref

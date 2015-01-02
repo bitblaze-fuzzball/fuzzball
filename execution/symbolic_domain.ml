@@ -234,7 +234,9 @@ module SymbolicDomain : Exec_domain.DOMAIN = struct
 	    (ty = V.REG_16 && (fix_u16 zero) = 0L) ||
 	    (ty = V.REG_8  && (fix_u8  zero) = 0L) ||
 	    (ty = V.REG_1  && (fix_u1  zero) = 0L)
-	    -> raise DivideByZero
+	    -> if !Exec_options.opt_ignore_div_0
+	      then V.exp_true
+	      else raise DivideByZero
       | _ -> binop op e e2'
 
   let divide1  = binop_zero_check V.DIVIDE
