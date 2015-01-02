@@ -6,10 +6,10 @@ my @edges;
 
 print "graph: {\n";
 while (<>) {
-    /^(\d+): (\d+|none|unknown) (\d+|none|unknown) ([?*]) (\d+|none) \((X|-?\d+ -?\d+)\) \[(\d*)\]$/
+    /^(\d+): (\d+|none|unknown) (\d+|none|unknown) ([?*]) (\d+|none) \((X|-?\d+ -?\d+)\) at (0x[0-9a-f]+) \[(\d*)\]$/
       or die "Parse failure on $_";
-    my($n, $lkid, $rkid, $all_seen, $parent, $heur, $count)
-      = ($1, $2, $3, $4, $5, $6, $7);
+    my($n, $lkid, $rkid, $all_seen, $parent, $heur, $addr, $count)
+      = ($1, $2, $3, $4, $5, $6, $7, $8);
     push @edges, [$n, $lkid] if $lkid > 0;
     push @edges, [$n, $rkid] if $rkid > 0;
     my $color;
@@ -27,7 +27,8 @@ while (<>) {
 	$color = "yellow";
     }
     my $cnt = ($count eq "" ? "" : " [$count]");
-    print qq/node: { title: "n$n" label: "$n$cnt$heur" color: $color }\n/;
+    my $h = ($heur eq "1 1" ? "" : " $heur");
+    print qq/node: { title: "n$n" label: "$n$cnt$h $addr" color: $color }\n/;
 }
 for my $e (@edges) {
     my($from, $to) = @$e;
