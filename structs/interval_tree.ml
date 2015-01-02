@@ -7,6 +7,19 @@ type interval = {
   high : int64;
 }
 
+exception IntersectingRange
+exception ConsumedRange
+
+let make_interval low high =
+  assert (high >= low);
+  { low = Int64.of_int low;
+    high = Int64.of_int high;}
+
+let make_interval_wcheck low high =
+  assert (high >= low);
+  { low = low;
+    high = high;}
+
 let compare i1 i2 =
   let l1 = i1.low
   and l2 = i2.low in
@@ -17,8 +30,8 @@ let compare i1 i2 =
   else 1
 
 let intersects i1 i2 =
-  (i1.low >= i2.low && i1.low <= i2.high)
-  || (i1.high <= i2.high && i1.high >= i2.low)
+  (i1.low >= i2.low && i1.low <= i2.high) (* left endpoint i1 in i2 *)
+  || (i1.high <= i2.high && i1.high >= i2.low) (* right of i1 in i2 *)
   || (i2.low >= i1.low && i2.low <= i1.high)      (* left of l2 in l1 *)
   || (i2.high <= i1.high && i2.high >= i1.low) (* right of l2 in l1 *)
 
@@ -34,12 +47,14 @@ let is_in i1 i2 =
 
 let safe_merge i1 i2 =
   assert (intersects i1 i2);
-  { low = Pervasives.min i1.low i2.low;
-    high = Pervasives.max i1.high i2.high; }
+  make_interval_wcheck 
+    (Pervasives.min i1.low i2.low)
+    (Pervasives.max i1.high i2.high)
 
 let fast_merge i1 i2 =
-  { low = Pervasives.min i1.low i2.low;
-    high = Pervasives.max i1.high i2.high; }
+  make_interval_wcheck
+    (Pervasives.min i1.low i2.low)
+    (Pervasives.max i1.high i2.high)
 
 
 let merge = safe_merge
@@ -70,15 +85,15 @@ let remove i1 i2 = (** order matters -- remove i2 from i1 *)
   else if i2_in_i1
   then
     (if i2.high = i1.high
-     then [{low = i1.low; high = Int64.sub i2.low Int64.one;}]
+     then [(make_interval_wcheck i1.low (Int64.sub i2.low Int64.one))]
      else if i2.low = i1.low
-     then [{low = Int64.add i2.high Int64.one; high = i1.high;}]
-     else [{low = i1.low; high = Int64.sub i2.low Int64.one;};
-	   {low = Int64.add i2.high Int64.one; high = i1.high;}])
+     then [(make_interval_wcheck (Int64.add i2.high Int64.one) i1.high)]
+     else [(make_interval_wcheck i1.low (Int64.sub i2.low Int64.one));
+	   (make_interval_wcheck (Int64.add i2.high Int64.one) i1.high);])
   else if i1_left
-  then [{ low = i1.low; high = Int64.sub i2.low Int64.one;}]
+  then [(make_interval_wcheck i1.low (Int64.sub i2.low Int64.one))]
   else if i2_left
-  then [{ low = Int64.add i2.high Int64.one; high = i1.high; }]
+  then [(make_interval_wcheck (Int64.add i2.high Int64.one) i1.high)]
   else failwith "I don't think this code is reachable."
 
 (* And now for the nodes *)
@@ -252,9 +267,9 @@ let find t x =
     then raise Not_found
     else if intersects x node.data
     then node.data
-    else if (compare x node.data) = ~-1
+    else if x.low < node.data.low
     then find_below node.left
-    else if (compare node.data x) = 1
+    else if x.low > node.data.low
     then find_below node.right
     else raise Not_found
   in
@@ -400,11 +415,10 @@ let find_interval_node tree interval =
     if is_nil node
     then None
     else
-      (if ((not (is_nil node))
-	   && (intersects interval node.data))
+      (if (intersects interval node.data)
        then Some node
        else if ((not (is_nil node.left))
-		&& node.left.data.low >= interval.low)
+		&& node.data.low > interval.low)
        then walk_tree node.left
        else walk_tree node.right) in
   walk_tree tree.root
@@ -460,7 +474,7 @@ let insert_node t e =
   let rec find_parent parent node =
     if is_nil node
     then parent
-    else if (compare e node.data) = ~-1
+    else if e.low < node.data.low
     then find_parent node node.left
     else find_parent node node.right in
   let parent = find_parent t.nil t.root in
@@ -478,12 +492,12 @@ let insert_node t e =
 	 n)
    else 
       (if (intersects parent.data e)
-       then (Printf.eprintf "Interval being inserted overlaps with existing interval?\nExtant ";
+       then ((*Printf.eprintf "Interval being inserted overlaps with existing interval?\nExtant ";
 	     print_interval stderr parent.data;
 	     Printf.eprintf "\nNew ";
 	     print_interval stderr e;
 	     Printf.eprintf "\n";
-	     print_using stderr t;
+	     print_using stderr t;*)
 	     failwith "Overlapping interval being inserted. Violates invariant.");
        t.count <- t.count + 1;
        (if (compare e parent.data) = ~-1
@@ -585,30 +599,29 @@ let delete t n =
   delete_wheeler t n;
   match find_interval_node t n.data with
   | None -> ()
-  | Some i -> (Printf.eprintf "Removed interval still overlaps with existing interval in tree!\n";
+  | Some i -> ((*Printf.eprintf "Removed interval still overlaps with existing interval in tree!\n";
 	       print_interval stderr n.data;
 	       Printf.eprintf "\n";
 	       print_interval stderr i.data;
-	       Printf.eprintf "\n";
+	       Printf.eprintf "\n";*)
 	       assert false)
 
 
 let rec insert t e =
   match find_interval_node t e with
-  | None -> (Printf.eprintf "No overlapping interval, inserting raw ";
+  | None -> ((*Printf.eprintf "No overlapping interval, inserting raw ";
 	     print_interval stderr e;
-	     Printf.eprintf "\n";
+	     Printf.eprintf "\n";*)
 	     ignore (insert_node t e))
   | Some n ->
     (if is_in n.data e
-     then Printf.eprintf "Found interval consumes new interval, no-oping\n"
-     else (Printf.eprintf "Found overlapping range. Deleting ";
-	   print_interval stderr n.data;
-	   Printf.eprintf ", merging with ";
-	   print_interval stderr e;
-	   Printf.eprintf "\n";
-	   delete t n;
-	   insert t (merge n.data e)))
+     then raise ConsumedRange 
+     else
+	(if abbuts e n.data (* abbutting ranges are fine, 1-2, 2-3 produces 1-3 *)
+	 then (let new_range = merge n.data e in
+	       ignore (delete t n);
+	       insert t new_range)
+	 else raise IntersectingRange))
 
 let remove_range t e =
   let rec helper range =
@@ -616,7 +629,7 @@ let remove_range t e =
       | None -> ()
       | Some n ->
 	(let new_ranges = remove n.data range in
-	 delete t n;
+	 ignore(delete t n);
 	 List.iter (fun el -> insert t el) new_ranges;
 	 helper range) in
   assert (match find_interval_node t e with
@@ -631,6 +644,32 @@ let resort tree =
 
 let clear tree =
   tree.root <- tree.nil
+
+(********** copy *******)
+let copy_interval i =
+  {low = i.low;
+   high = i.high;}
+
+let copy tree =
+  let new_tree = make_tree () in
+  let rec copy_tree parent node =
+    if is_nil node
+    then new_tree.nil
+    else (let this = {data = copy_interval node.data;
+			  parent = parent;
+			  left  = tree.nil;
+			  right = tree.nil;
+			  red = node.red;
+			  is_nil = node.is_nil;} in
+	  this.left <- copy_tree this node.left;
+	  this.right <- copy_tree this node.right;
+	  this) in
+  let new_root = copy_tree new_tree.nil tree.root in
+  new_tree.root <- new_root;
+  new_tree.count <- tree.count;
+  new_tree
+
+
 
 (*************** consistency checks ************)
 
@@ -741,8 +780,8 @@ let rec random_interval max_point =
   let p1 = Int64.of_int (Random.int max_point)
   and p2 = Int64.of_int (Random.int max_point) in
   if p1 > p2
-  then { low = p2; high = p1; }
-  else { low = p1; high = p2; } (* if they're equal, this is also ok. *)
+  then make_interval_wcheck p2 p1
+  else make_interval_wcheck p1 p2 (* if they're equal, this is also ok. *)
 
 
 let check_intersects samples =
@@ -875,9 +914,7 @@ let check_remove samples_per_case =
 
 (** tree testing code **)
 
-let make_interval low high =
-  { low = Int64.of_int low;
-    high = Int64.of_int high;}
+
 
 
 let rec remove_elt list ind accum =
@@ -896,16 +933,21 @@ let random_element list =
 let check_via_removal intervals tree =
   failwith "stub"
 
-let random_tree ?(min_val = 0) ?(max_val = 1000) size =
-  let ranges = ref []
-  and range = max_val - min_val
-  and tree = make_tree () in
+let test = ref (make_tree ())
+
+let random_tree ?(max_val = 1000) size =
+  let ranges = ref [] in
+  test := make_tree ();
   for i = 1 to size
   do
-    let dist = Random.int range in
-    let end_point = Random.int max_val in
-    let interval = make_interval (end_point - dist) end_point in
+    let p1 = Random.int max_val
+    and p2 = Random.int max_val in
+    let interval = if p1 > p2
+      then make_interval p2 p1
+      else make_interval p1 p2 in
     ranges := interval :: !ranges;
-    insert tree interval;
+    insert !test interval;
     (* and here is where we validate things *)
-  done
+  done;
+  flush stderr;
+  Printf.printf "everything is ok!\n"

@@ -9,6 +9,9 @@ type interval_node = {
   is_nil : bool;
 }
 
+exception IntersectingRange
+exception ConsumedRange
+
 type tree = {
   mutable root : interval_node;
   nil : interval_node; (* end sentinel *)
