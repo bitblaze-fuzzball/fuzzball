@@ -1,66 +1,87 @@
 type interval = { low : int64; high : int64; }
 
-type interval_node = {
-  data : interval;
-  mutable left : interval_node;
-  mutable right : interval_node;
-  mutable parent : interval_node;
-  mutable red : bool;
-  is_nil : bool;
-}
+val make_interval : int -> int -> interval
 
-exception IntersectingRange of (interval * interval)
-exception ConsumedRange of (interval * interval)
-exception FailedRemove of interval
-exception CouldntFind of interval
+val make_interval_wcheck : int64 -> int64 -> interval
 
-type tree = {
-  mutable root : interval_node;
-  nil : interval_node; (* end sentinel *)
-  mutable count : int;
-}
+module IntervalMap :
+  sig
+    type key = interval
+    type +'a t
+    val empty : 'a t
+    val is_empty : 'a t -> bool
+    val mem : key -> 'a t -> bool
+    val add : key -> 'a -> 'a t -> 'a t
+    val singleton : key -> 'a -> 'a t
+    val remove : key -> 'a t -> 'a t
+    val merge :
+      (key -> 'a option -> 'b option -> 'c option) -> 'a t -> 'b t -> 'c t
+    val compare : ('a -> 'a -> int) -> 'a t -> 'a t -> int
+    val equal : ('a -> 'a -> bool) -> 'a t -> 'a t -> bool
+    val iter : (key -> 'a -> unit) -> 'a t -> unit
+    val fold : (key -> 'a -> 'b -> 'b) -> 'a t -> 'b -> 'b
+    val for_all : (key -> 'a -> bool) -> 'a t -> bool
+    val exists : (key -> 'a -> bool) -> 'a t -> bool
+    val filter : (key -> 'a -> bool) -> 'a t -> 'a t
+    val partition : (key -> 'a -> bool) -> 'a t -> 'a t * 'a t
+    val cardinal : 'a t -> int
+    val bindings : 'a t -> (key * 'a) list
+    val min_binding : 'a t -> key * 'a
+    val max_binding : 'a t -> key * 'a
+    val choose : 'a t -> key * 'a
+    val split : key -> 'a t -> 'a t * 'a option * 'a t
+    val find : key -> 'a t -> 'a
+    val map : ('a -> 'b) -> 'a t -> 'b t
+    val mapi : (key -> 'a -> 'b) -> 'a t -> 'b t
+  end
 
-(** give me the leftmost interval in the tree *)
-val min : tree -> interval_node
+type key = interval
+type 'a t = 'a IntervalMap.t
 
-(** make a new interval tree *)
-val make_tree : unit -> tree
+val empty : 'a t
+val is_empty : 'a t -> bool
+val mem : key -> 'a t -> bool
+val add : key -> 'a -> 'a t -> 'a t
+val singleton : key -> 'a -> 'a t
+val remove : key -> 'a t -> 'a t
+val merge :
+  (key -> 'a option -> 'b option -> 'c option) -> 'a t -> 'b t -> 'c t
+val compare : ('a -> 'a -> int) -> 'a t -> 'a t -> int
+val equal : ('a -> 'a -> bool) -> 'a t -> 'a t -> bool
+val iter : (key -> 'a -> unit) -> 'a t -> unit
+val fold : (key -> 'a -> 'b -> 'b) -> 'a t -> 'b -> 'b
+val cardinal : 'a t -> int
 
-(** is the tree empty *)
-val empty_p : tree -> bool
 
-(** how many elements does the tree have *)
-val count : tree -> int
+val find : key -> 'a t -> 'a
 
-(** find the interval that intersects this one. Raises not found if no interval matches*)
-val find : tree -> interval -> interval
+type claimStatus = Allocate | Deallocate
 
-(** like find, but returns None / Some interval *)
-val find_interval : tree -> interval -> interval option
+type element = { key : interval; at : claimStatus; }
 
-(** fold across tree elements *)
-val fold_left : ('a -> interval -> 'a) -> 'a -> tree -> 'a
+exception AllocatingAllocated of (interval * interval)
+exception ReadingUnwritten of interval
+exception ReadingUnallocated of interval
+exception DoubleFree of (interval * interval)
+exception DeallocatingUnallocated of interval
+exception DeallocationSizeMismatch of (interval * interval)
+exception WritingUnallocated of interval
 
-(** map over tree elements *)
-val map : (interval -> 'a) -> tree -> 'a list
+val optional_find : 'a IntervalMap.t -> IntervalMap.key -> 'a option
 
-(** iter over tree elements *)
-val iter : (interval -> unit) -> tree -> unit
+val remove_all : 'a IntervalMap.t -> IntervalMap.key -> unit
 
-(** display an interval on channel *)
-val print_interval : out_channel -> interval -> unit
+val attempt_allocate :
+  element IntervalMap.t -> IntervalMap.key -> element IntervalMap.t
 
-(** display the tree on channel *)
-val print_using : out_channel -> tree -> unit
+val attempt_deallocate :
+  element IntervalMap.t ->
+  'a IntervalMap.t -> IntervalMap.key -> element IntervalMap.t
 
-(** insert the interval into the tree *)
-val insert : tree -> interval -> unit
+val attempt_read :
+  'a IntervalMap.t -> interval IntervalMap.t -> IntervalMap.key -> unit
 
-(** remove the interval from the tree, possibly splitting other intervals. *)
-val remove_range : tree -> interval -> unit
-
-(** is the second interval contained in the first? *)
-val is_in : interval -> interval -> bool
-
-(** clears the interval tree *)
-val clear : tree -> unit
+val attempt_write :
+  'a IntervalMap.t ->
+  IntervalMap.key IntervalMap.t ->
+  IntervalMap.key -> IntervalMap.key IntervalMap.t
