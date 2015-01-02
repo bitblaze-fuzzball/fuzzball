@@ -7,11 +7,14 @@ type interval = {
   high : int64;
 }
 
-exception IntersectingRange
-exception ConsumedRange
+exception IntersectingRange of (interval * interval)
+exception ConsumedRange of (interval * interval)
+exception FailedRemove of interval
+exception CouldntFind of interval
 
 let make_interval low high =
   assert (high >= low);
+  assert (low >= 0);
   { low = Int64.of_int low;
     high = Int64.of_int high;}
 
@@ -264,14 +267,14 @@ let data n =
 let find t x =
   let rec find_below node =
     if is_nil node
-    then raise Not_found
+    then raise (CouldntFind x)
     else if intersects x node.data
     then node.data
     else if x.low < node.data.low
     then find_below node.left
     else if x.low > node.data.low
     then find_below node.right
-    else raise Not_found
+    else raise (CouldntFind x)Not_found
   in
     find_below t.root
 
@@ -615,26 +618,24 @@ let rec insert t e =
 	     ignore (insert_node t e))
   | Some n ->
     (if is_in n.data e
-     then raise ConsumedRange 
+     then raise (ConsumedRange (n.data, e))
      else
 	(if abbuts e n.data (* abbutting ranges are fine, 1-2, 2-3 produces 1-3 *)
 	 then (let new_range = merge n.data e in
 	       ignore (delete t n);
 	       insert t new_range)
-	 else raise IntersectingRange))
+	 else raise (IntersectingRange (n.data, e))))
+
 
 let remove_range t e =
   let rec helper range =
       match find_interval_node t range with
-      | None -> ()
+      | None -> raise (FailedRemove e)
       | Some n ->
 	(let new_ranges = remove n.data range in
 	 ignore(delete t n);
 	 List.iter (fun el -> insert t el) new_ranges;
 	 helper range) in
-  assert (match find_interval_node t e with
-  |  None -> false
-  | Some _ -> true);
   helper e
 
 
@@ -922,21 +923,27 @@ let rec remove_elt list ind accum =
   then
     (let this = List.hd list
     and rest = List.tl list in
-     this, accum @ rest)
+     this, (accum @ rest))
   else
     remove_elt (List.tl list) (ind - 1) ((List.hd list)::accum)
 
 let random_element list =
   let ind = Random.int (List.length list) in
-  List.nth list ind
+  remove_elt list ind []
 
-let check_via_removal intervals tree =
-  failwith "stub"
+let rec check_via_removal tree = function
+  | [] -> empty_p tree
+  | lst ->
+    (let to_remove, remainder = random_element lst in
+     remove_range tree to_remove;
+     check_via_removal tree remainder)
+  
 
 let test = ref (make_tree ())
+and ranges = ref []
 
-let random_tree ?(max_val = 1000) size =
-  let ranges = ref [] in
+let construct_random_tree ?(max_val = 1000) size =
+  ranges := [];
   test := make_tree ();
   for i = 1 to size
   do
@@ -945,9 +952,33 @@ let random_tree ?(max_val = 1000) size =
     let interval = if p1 > p2
       then make_interval p2 p1
       else make_interval p1 p2 in
-    ranges := interval :: !ranges;
-    insert !test interval;
+    try
+      insert !test interval;
+      ranges := interval :: !ranges;
+      ignore (find !test interval)
+    with
+    | ConsumedRange (original, attempted) -> () (* wholly consumed *)
+    | IntersectingRange (original, attempted) ->
+      Printf.eprintf "Desired range intersected extant range:\t";
+      print_interval stderr attempted;
+      Printf.eprintf " ";
+      print_interval stderr original;
+      Printf.eprintf "\n";
+      let to_insert = remove attempted original in
+      List.iter
+	(fun e ->
+	  Printf.eprintf "Inserting sub-range ";
+	  print_interval stderr e;
+	  Printf.eprintf "\n";
+	  flush stderr;
+	  insert !test e;
+	  ranges := e::!ranges) to_insert
     (* and here is where we validate things *)
-  done;
+  done
+
+let random_test ?(max_val = 1000) size =
+  construct_random_tree ~max_val size;
+  List.iter (fun el -> ignore (find !test el)) !ranges; (* make sure you can find every inserted element *)
+  Printf.printf "everything is ok!\n";
   flush stderr;
-  Printf.printf "everything is ok!\n"
+  check_via_removal !test !ranges
