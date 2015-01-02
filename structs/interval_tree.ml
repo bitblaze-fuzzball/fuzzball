@@ -35,20 +35,24 @@ let compare i1 i2 =
      else 1)
       
 let abbuts i1 i2 =
-  i2.low = i1.high ||
-  i2.high = i1.low ||
-  i1.low = i2.high ||
-  i1.high = i2.low
+  let i1i2_highlow = Int64.sub i2.low i1.high   (* i1 abbuts i2 to the left *)
+  and i1i2_lowhigh = Int64.sub i1.low i2.high in (* i1 abbuts i2 to the right *)
+    (Int64.one = i1i2_highlow) ||
+    (Int64.one = i1i2_lowhigh)
 
 let is_in i1 i2 =
-    i2.low >= i1.low &&
+    (* is i2 in i1 *)
+  i2.low >= i1.low &&
     i2.high <= i1.high
 
 let safe_merge i1 i2 =
-  assert (intersects i1 i2);
-  make_interval_wcheck 
+  let ret = make_interval_wcheck 
     (Pervasives.min i1.low i2.low)
-    (Pervasives.max i1.high i2.high)
+    (Pervasives.max i1.high i2.high) in
+  assert (intersects ret i1);
+  assert (intersects ret i2);
+  assert ((intersects i1 i2) || (abbuts i1 i2));
+  ret
 
 let fast_merge i1 i2 =
   make_interval_wcheck
@@ -127,13 +131,12 @@ let optional_find imap key =
     Some (IntervalMap.find key imap)
   with Not_found -> None
 
-
 let rec remove_all imap key =
-  (* not tail recursive. Very dangerous *)
-  try
-    ignore (IntervalMap.remove key imap);
-    remove_all imap key
-  with Not_found -> ()
+  (* removes all keys that collide with the specified key *)
+  let imap' = IntervalMap.remove key imap in
+  if (IntervalMap.cardinal imap') = (IntervalMap.cardinal imap)
+  then imap
+  else remove_all imap' key
 
 
 let rec attempt_allocate imap attempted_range =
@@ -142,8 +145,7 @@ let rec attempt_allocate imap attempted_range =
     (match collision.at with
     | Deallocate ->
       (* I don't care that the range was deallocated. *)
-      ignore (IntervalMap.remove collision.key imap);
-      attempt_allocate imap attempted_range
+      attempt_allocate (IntervalMap.remove collision.key imap) attempted_range
     | Allocate -> raise (AllocatingAllocated (collision.key, attempted_range)))
   | None ->
     IntervalMap.add
@@ -154,7 +156,8 @@ let rec attempt_allocate imap attempted_range =
 
 
 let attempt_deallocate alloc_map io_map attempted_range =
-  (* needs both maps so it can remove a range from the written tree as well *)
+  (* needs both maps so it can remove a range from the written tree as well
+     returns alloc_map', io_map' *)
   match optional_find alloc_map attempted_range with
   | Some collision ->
     (match collision.at with
@@ -162,9 +165,11 @@ let attempt_deallocate alloc_map io_map attempted_range =
     | Allocate ->
       (if ((collision.key.low = attempted_range.low)
 	   && (collision.key.high = attempted_range.high))
-       then (ignore (IntervalMap.remove attempted_range alloc_map);
-	     remove_all io_map attempted_range;
-	     IntervalMap.add attempted_range { key = attempted_range; at = Deallocate;} alloc_map)
+       then
+	  (let alloc_map' = remove_all alloc_map attempted_range
+	  and io_map' = remove_all io_map attempted_range in (* writes are constrained not to fall across allocs *)
+	   IntervalMap.add attempted_range { key = attempted_range; at = Deallocate;} alloc_map',
+	   io_map')
        else raise (DeallocationSizeMismatch (collision.key, attempted_range))))
   | None -> raise (DeallocatingUnallocated attempted_range)
       
@@ -176,15 +181,40 @@ let attempt_read alloc_map io_map attempted_range =
     (match optional_find io_map attempted_range with
     | None -> raise (ReadingUnwritten attempted_range)
     | Some written_range ->
-      if not (is_in attempted_range written_range)
+      if not (is_in written_range attempted_range)
       then raise (ReadingUnwritten attempted_range))
+
 
 let attempt_write alloc_map io_map attempted_range =
     match optional_find alloc_map attempted_range with
   | None -> raise (WritingUnallocated attempted_range)
-  | Some _ ->
-    ((match optional_find io_map attempted_range with
-    | None -> ()
-    | Some _ -> remove_all io_map attempted_range);
-     IntervalMap.add attempted_range attempted_range io_map)
-      
+  | Some interval ->
+    (match interval.at with
+    | Deallocate -> raise (WritingUnallocated attempted_range)
+    | Allocate ->
+      (* write range in allocated range *)
+      (if is_in interval.key attempted_range
+       then
+	  (let merge_range = {low = (Int64.sub attempted_range.low Int64.one);
+			      high = (Int64.add attempted_range.high Int64.one)} in
+	   (match optional_find io_map merge_range with
+	   | None -> IntervalMap.add attempted_range attempted_range io_map (* no collision *)
+	   | Some write ->
+	     (let io_map' = remove_all io_map write
+	     and to_add = (safe_merge write attempted_range) in
+	      IntervalMap.add to_add to_add io_map')))
+       else
+	  (* really, this is a new kind of error, where we're writing off the end / before the start of allocated memory. *)
+	  raise (WritingUnallocated attempted_range)
+      ))
+
+
+let copy imap =
+  (* re-write with a fold *)
+  let to_return = ref IntervalMap.empty in
+  IntervalMap.iter (fun key element -> to_return := IntervalMap.add key element !to_return) imap;
+  !to_return
+
+
+let print_interval i =
+  Printf.eprintf "%LX to %LX\n" i.low i.high

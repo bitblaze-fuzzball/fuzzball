@@ -69,19 +69,23 @@ exception WritingUnallocated of interval
 
 val optional_find : 'a IntervalMap.t -> IntervalMap.key -> 'a option
 
-val remove_all : 'a IntervalMap.t -> IntervalMap.key -> unit
+val remove_all : 'a IntervalMap.t -> IntervalMap.key -> 'a IntervalMap.t
 
 val attempt_allocate :
   element IntervalMap.t -> IntervalMap.key -> element IntervalMap.t
 
 val attempt_deallocate :
   element IntervalMap.t ->
-  'a IntervalMap.t -> IntervalMap.key -> element IntervalMap.t
+  'a IntervalMap.t -> IntervalMap.key -> element IntervalMap.t * 'a IntervalMap.t
 
 val attempt_read :
   'a IntervalMap.t -> interval IntervalMap.t -> IntervalMap.key -> unit
 
 val attempt_write :
-  'a IntervalMap.t ->
+  element IntervalMap.t ->
   IntervalMap.key IntervalMap.t ->
   IntervalMap.key -> IntervalMap.key IntervalMap.t
+
+val copy : 'a IntervalMap.t -> 'a IntervalMap.t
+
+val print_interval : interval -> unit
