@@ -2,6 +2,7 @@ open Exec_exceptions
 
 exception Safe
 exception Overlapping_Alloc
+exception ZeroLengthAlloc
 
 let json_addr i64 = `String (Printf.sprintf "0x%08Lx" i64) 
 
@@ -15,8 +16,9 @@ val heap_end = 0x50100001L
 val stack_start = 0xbaaab000L
 val mutable stack_end = 0xbaaab000L
 
-val alloc_table = Hashtbl.create 100
-val dealloc_table = Hashtbl.create 100
+val mutable assign_ranges = Interval_tree.IntervalMap.empty
+val mutable io_ranges = Interval_tree.IntervalMap.empty
+
 val stack_table = Hashtbl.create 100
 
 method update_stack_end esp =
@@ -65,80 +67,15 @@ method private is_overlapping v1 v2 r1 r2 =
     self#is_overlapping_not_contained v1 v2 r1 r2
 
 method add_alloc addr len = 
+  if (len = Int64.zero) then raise ZeroLengthAlloc;
   let start_addr = addr
-  and end_addr = Int64.add addr len in
-  Hashtbl.iter
-    (fun key set ->
-      let start_addr2 = key
-      (* Don't need the whole array here -- just the length of the allocation *)
-      and end_addr2 = Int64.add key (Int64Array.length set) in  
-      if self#is_overlapping start_addr end_addr start_addr2 end_addr2
-      then (Printf.printf "\nNew block (%s - %s) overlaps with existing block (%s - %s)\n"
-	      (Int64.to_string start_addr)
-	      (Int64.to_string end_addr)
-	      (Int64.to_string start_addr2)
-	      (Int64.to_string end_addr2);
-	    raise Overlapping_Alloc))
-    alloc_table;
-		
-  Hashtbl.add alloc_table addr (Int64Array.make len false);
-
-  let updated_deallocs =
-    Hashtbl.fold (fun key value accum ->
-      let start_addr2 = key
-      and end_addr2 = Int64.add key value in
-(* These cases are overly verbose with checking for clarity
-   feel free to optimize the unnecessary checks away *)
-
-      (* blocks are equal or new block contains all of old block
-	 remove the old block entirely *)
-      if self#is_contained start_addr2 end_addr2 start_addr end_addr then
-	(key, Int64.zero) :: accum
-      else (
-						(* new block is contained within old block
-						split the old block into two blocks *)
-	if self#is_contained start_addr end_addr start_addr2 end_addr2 then (
-	  let new_length1 = Int64.sub start_addr2 addr
-	  and new_length2 = Int64.sub end_addr end_addr2 in
-	  (key, new_length1) :: (end_addr2, new_length2) :: accum
-	)
-	else (
-							(* new block contains start of old block
-							   remove the head of old block and replace with new block *)
-	  if self#less_than_equal start_addr2 start_addr &&
-	    ((self#greater_than end_addr2 start_addr) && (self#less_than_equal end_addr2 end_addr)) then (
-	      let new_length = Int64.sub end_addr end_addr2 in
-	      (key, Int64.zero) :: (end_addr2, new_length) :: accum
-	      )
-	  else (
-					  			(* old block contains start of new block
-					  			   update the length of the old block *)
-	    if (self#less_than_equal start_addr start_addr2) &&
-	      ((self#greater_than end_addr start_addr2) && (self#less_than_equal end_addr end_addr2)) then (
-		let new_length = Int64.sub start_addr2 start_addr in
-		(key, new_length) :: accum
-		)
-	    else
-	      accum
-	  )
-	)
-      )
-    ) dealloc_table [] in
-
-  List.iter (fun (new_addr, new_len) ->
-    if Hashtbl.mem dealloc_table new_addr then (
-      if (self#equal new_len Int64.zero) then
-	Hashtbl.remove dealloc_table new_addr
-      else
-	Hashtbl.replace dealloc_table new_addr new_len
-    )
-    else (
-      if (self#equal new_len Int64.zero) then
-	()
-      else
-	Hashtbl.add dealloc_table new_addr new_len
-    )
-  ) updated_deallocs
+  and end_addr = Int64.add addr (Int64.sub len Int64.one) in
+  let this_interval = { Interval_tree.low = start_addr; Interval_tree.high = end_addr;} in
+  Printf.eprintf "Adding:  ";
+  Interval_tree.print_interval this_interval;
+  try
+    assign_ranges <- Interval_tree.attempt_allocate assign_ranges this_interval
+  with Interval_tree.AllocatingAllocated (collides_with, this_range) -> raise Overlapping_Alloc
 
 val mutable info_reporter = None
 	  
@@ -163,53 +100,47 @@ method private report l =
 
 method add_dealloc addr len =
 	(* Has this pointer already been deallocated? *)
-  if Hashtbl.mem dealloc_table addr then
+  assert(len > Int64.zero);
+  let start_addr = addr
+  and end_addr = Int64.add addr (Int64.sub len Int64.one) in
+  let this_interval = { Interval_tree.low = start_addr; Interval_tree.high = end_addr; } in
+  Printf.eprintf "Removin: ";
+    Interval_tree.print_interval this_interval;
+    flush stderr;
+  try
+    let assign_ranges', io_ranges' = Interval_tree.attempt_deallocate assign_ranges io_ranges this_interval in
+    assign_ranges <- assign_ranges';
+    io_ranges <- io_ranges'
+  with
+  | Interval_tree.DoubleFree (original_range, this_range) ->
     (self#report [("tag", (`String ":double-free"));
 		  ("double-freed-addr", (json_addr addr))];
-     raise Double_Free);
+     raise Double_Free)
+  | Interval_tree.DeallocationSizeMismatch (origanal_range, this_range) ->
+    raise Alloc_Dealloc_Length_Mismatch
+  | Interval_tree.DeallocatingUnallocated this_range -> 
+     raise Dealloc_Not_Alloc
 
-	(* Does this pointer point to memory that has been allocated? *)
-  if not (Hashtbl.mem alloc_table addr) (* don't need the array for the alloc table here *)
-  then raise Dealloc_Not_Alloc;
-
-	(* This might not be "exception-worthy"
-		 We need to check the spec to see how this function is allowed to
-		 behave. Can you "under-free" or "over-free"? Would the block be
-		 resized in the under-free case? Or in the over-free case, can you
-		 free multiple blocks at once (I don't know how you could guarantee
-		 contiguous memory from userspace, but maybe you can?)?
-	*)
-  let old_len = Int64Array.length (Hashtbl.find alloc_table addr) in (* don't need the array here *)
-  if (self#not_equal len old_len)
-  then raise Alloc_Dealloc_Length_Mismatch;
-
-  Hashtbl.remove alloc_table addr;
-  Hashtbl.add dealloc_table addr len
 
 method is_safe_read addr len =
+  assert(len > Int64.zero);
   let start_addr = addr
-  and end_addr = Int64.add addr len
+  and end_addr = Int64.add addr (Int64.sub len Int64.one) in
+  let this_interval = {Interval_tree.low = start_addr;
+		       Interval_tree.high = end_addr; }
   and is_safe = ref false in
-	
+  Printf.eprintf "Reading: ";
+  Interval_tree.print_interval this_interval;
+  flush stderr;
 	(* fully in the heap *)
   if self#is_contained start_addr end_addr heap_start heap_end then (
-		(* is it in an allocated block *)
-    try
-      Hashtbl.iter (fun key set ->
-	let start_addr2 = key
-	and end_addr2 = Int64.add key (Int64Array.length set) in
-				(* fully contained within an allocated block *)
-	if self#is_contained start_addr end_addr start_addr2 end_addr2 then (
-	  let start_index = Int64.sub start_addr start_addr2 in
-	  for offset = 0 to ((Int64.to_int len) - 1) do
-	    if not (Int64Array.get set (Int64.add start_index (Int64.of_int offset)))
-	    then raise Uninitialized_Memory;
-	  done;
-	  raise Safe)) alloc_table;
+    try (Interval_tree.attempt_read assign_ranges io_ranges this_interval;
+	 is_safe := true) 
     with
-    | Safe -> is_safe := true;)
-  else (
-		(* overlapping unsafe memory between heap and stack *)
+    | Interval_tree.ReadingUnallocated _ -> is_safe := false
+    | Interval_tree.ReadingUnwritten _ -> raise Uninitialized_Memory
+  ) else (
+    (* overlapping unsafe memory between heap and stack *)
     if (self#is_overlapping start_addr end_addr heap_end stack_end)  ||
       (* overlapping the heap but not contained *)
       (self#is_overlapping_not_contained start_addr end_addr heap_start heap_end) then
@@ -235,38 +166,38 @@ method is_safe_read addr len =
       is_safe := true
     );
   );
+  if not !is_safe
+  then Printf.eprintf "Unsafe read!\n";
+  flush stderr;
   !is_safe
 
 method is_safe_write addr len =
+  assert(len > Int64.zero);
   let start_addr = addr
-  and end_addr = Int64.add addr len
+  and end_addr = Int64.add addr (Int64.sub len Int64.one)
   and is_safe = ref false in
-  
+  let this_interval = {Interval_tree.low = start_addr; Interval_tree.high = end_addr;} in
+  Printf.eprintf "Writing: ";
+  Interval_tree.print_interval this_interval;  
+  flush stderr;
 	(* fully in the heap *)
   if self#is_contained start_addr end_addr heap_start heap_end then (
-		(* is it in an allocated block *)
+    (* is it in an allocated block *)
     try
-      Hashtbl.iter (fun key set ->
-	let start_addr2 = key
-	and end_addr2 = Int64.add key (Int64Array.length set) in
-				(* fully contained within an allocated block *)
-	if self#is_contained start_addr end_addr start_addr2 end_addr2 then (
-	  let start_index = Int64.sub start_addr start_addr2 in
-	  for offset = 0 to ((Int64.to_int len) - 1) do
-	    Int64Array.set set (Int64.add start_index (Int64.of_int offset)) true
-	  done;
-	  raise Safe
-	)
-      ) alloc_table;
-    with
-    | Safe -> is_safe := true;
-  )
-  else (
+      io_ranges <- Interval_tree.attempt_write assign_ranges io_ranges this_interval;
+      is_safe := true
+    with Interval_tree.WritingUnallocated _ ->
+      (Printf.eprintf "Writing to unallocated memory\n";
+       flush stderr;
+       is_safe := false)
+  ) else (
 		(* overlapping unsafe memory between heap and stack *)
     if (self#is_overlapping start_addr end_addr heap_end stack_end)  ||
 			 (* overlapping the heap but not contained *)
       (self#is_overlapping_not_contained start_addr end_addr heap_start heap_end) then
-      is_safe := false
+      (Printf.eprintf "writing between heap and stack\n";
+       flush stderr;
+       is_safe := false)
     else (
       if (self#is_contained start_addr end_addr stack_end stack_start) then (
 	let start_addr_ref = ref start_addr in
@@ -279,6 +210,9 @@ method is_safe_write addr len =
       is_safe := true
     )
   );
+  if not !is_safe
+  then Printf.eprintf "Unsafe write!\n";
+      flush stderr;
   !is_safe
     
 method clear =
@@ -287,23 +221,16 @@ method clear =
 	        tradeoff. But Hashtbl.reset is a fairly recent
 	        addition: sticking with clear retains compatibilty
 	        with 3.x versions of OCaml. *)
-  Hashtbl.clear alloc_table;
-  Hashtbl.clear dealloc_table;
-  
-method add_alloc_dirty addr set =
-  Hashtbl.add alloc_table addr set
-    
-method add_dealloc_dirty addr len =
-  Hashtbl.add dealloc_table addr len
+  assign_ranges <- Interval_tree.IntervalMap.empty;
+  io_ranges <- Interval_tree.IntervalMap.empty
+
+method copy_tables ar ir =
+  assign_ranges <- Interval_tree.copy ar;
+  io_ranges <- Interval_tree.copy ir
 
 method construct_deep_copy =
   let copy = new pointer_management in
-  Hashtbl.iter (fun key set ->
-    copy#add_alloc_dirty key set
-  ) alloc_table;
-  Hashtbl.iter (fun key len ->
-    copy#add_dealloc_dirty key len
-  ) dealloc_table;
+  copy#copy_tables assign_ranges io_ranges;
   copy
 
 end
