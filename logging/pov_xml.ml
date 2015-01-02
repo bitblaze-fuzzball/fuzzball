@@ -123,7 +123,9 @@ let valid (a : timeout) = a.to_ms >= 0
    then we're using numbered files. *)
 let pov_output_count = ref ~-1
 let out_channel_name = ref "/dev/null"
-let out_channel = ref (open_out "/dev/null")
+let out_channel = ref (let chan = (open_out "/dev/null") in
+		       close_out chan;
+		       chan)
 
 let array_of_string str =
   Array.init (String.length str) (fun i -> str.[i])
@@ -204,9 +206,9 @@ let set_out_channel fname =
 
 let debug_print v =
   Xml.print_list
-    (fun s -> Printf.fprintf !out_channel "%s" s;
-      flush !out_channel) [v];
-  Printf.fprintf !out_channel "\n"
+    (fun s -> Printf.fprintf !out_channel "%s" s) [v];
+  Printf.fprintf !out_channel "\n";
+  flush !out_channel
 
 
 let echo_to_xml = function
@@ -419,6 +421,7 @@ let write_pov name fragmach =
   (* put it out *)
   debug_print (pov_to_xml pov fragmach);
   (* clear your cache *)
+  close_out !out_channel;
   reset ()
 
 

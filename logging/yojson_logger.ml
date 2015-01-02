@@ -71,15 +71,19 @@ let fuzzball_config () =
   failwith "stub"
 
 let log lazy_message =
+  let chan = Verb.out_channel () in
   pretty_to_channel
-    (Verb.out_channel ())
+    chan
     (`Assoc
         [ "_type", `String "log";
           "time", timestamp Verb.use_hr_time;
           "component", `String Verb.major_name;
           "subcomponent", `String Verb.minor_name;
           "message", (evaluateLazyTypeToJson lazy_message)
-	])
+	]);
+  if chan = stderr || chan = stdout
+  then flush chan
+  else close_out chan
 
 let dummy_log _ = ()
 

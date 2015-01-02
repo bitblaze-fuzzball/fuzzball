@@ -60,9 +60,12 @@ let rec ensure_dir dirname =
 
 let next_incrementing_channel = function
   | Fixed _ -> failwith "Expected an incrementing channel in next_incrementing_channel"
-  | Incrementing ((index, loggername, filename), _) ->
+  | Incrementing ((index, loggername, filename), old_chan) ->
     let index' = index + 1 in
     let next_chan = Printf.sprintf "%s/%s-%i.json" filename loggername index' in
+    if index >= 0 (* default channel is stdout. Don't close stdout! *)
+    then (try close_out old_chan
+      with _ -> ());
     ensure_dir filename; (* we want the binary name here for cgc *)
     let next = Incrementing ((index', loggername, filename), (open_out next_chan)) in
     Hashtbl.replace logger_channels filename next;
