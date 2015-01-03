@@ -1552,6 +1552,10 @@ struct
 	| V.Name(_)
 	| V.Constant(V.Str(_))
 	  -> failwith "Unsupported (or non-int) expr type in eval_int_exp_ty"
+	| V.FBinOp(_, _, _, _)
+	| V.FUnOp(_, _, _)
+	| V.FCast(_, _, _, _)
+	  -> failwith "FP ops unsupported in eval_int_exp_ty"
 	    
     method private eval_int_exp exp =
       let (v, _) = self#eval_int_exp_ty exp in
@@ -1888,6 +1892,10 @@ struct
 		(v_t, ty_t) = rw_loop te and
 		(v_f, ty_f) = rw_loop fe in
 	      self#eval_ite v_c v_t v_f ty_t
+	  | V.FBinOp(_, _, _, _)
+	  | V.FUnOp(_, _, _)
+	  | V.FCast(_, _, _, _)
+	    -> failwith "FP op unsupported in concolic_exp"
 	  | V.Let(_, _, _)
 	  | V.Name(_)
 	  | V.Lval(_)
