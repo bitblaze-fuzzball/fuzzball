@@ -54,13 +54,21 @@
 
 #define OFFB_SSEROUND  offsetof(VexGuestX86State,guest_SSEROUND)
 #define OFFB_XMM0      offsetof(VexGuestX86State,guest_XMM0)
+#define OFFB_XMM0h     (offsetof(VexGuestX86State,guest_XMM0)+8)
 #define OFFB_XMM1      offsetof(VexGuestX86State,guest_XMM1)
+#define OFFB_XMM1h     (offsetof(VexGuestX86State,guest_XMM1)+8)
 #define OFFB_XMM2      offsetof(VexGuestX86State,guest_XMM2)
+#define OFFB_XMM2h     (offsetof(VexGuestX86State,guest_XMM2)+8)
 #define OFFB_XMM3      offsetof(VexGuestX86State,guest_XMM3)
+#define OFFB_XMM3h     (offsetof(VexGuestX86State,guest_XMM3)+8)
 #define OFFB_XMM4      offsetof(VexGuestX86State,guest_XMM4)
+#define OFFB_XMM4h     (offsetof(VexGuestX86State,guest_XMM4)+8)
 #define OFFB_XMM5      offsetof(VexGuestX86State,guest_XMM5)
+#define OFFB_XMM5h     (offsetof(VexGuestX86State,guest_XMM5)+8)
 #define OFFB_XMM6      offsetof(VexGuestX86State,guest_XMM6)
+#define OFFB_XMM6h     (offsetof(VexGuestX86State,guest_XMM6)+8)
 #define OFFB_XMM7      offsetof(VexGuestX86State,guest_XMM7)
+#define OFFB_XMM7h     (offsetof(VexGuestX86State,guest_XMM7)+8)
 
 #if VEX_VERSION < 2484
 #define OFFB_EMWARN    offsetof(VexGuestX86State,guest_EMWARN)

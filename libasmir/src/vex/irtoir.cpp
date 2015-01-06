@@ -231,10 +231,10 @@ reg_t IRType_to_reg_type( IRType type )
       t = REG_64; break;
     case Ity_I128:   print_debug("warning", 
 				 "Int128 register encountered");
-      t = REG_64; break;
+      t = REG_128; break;
     case Ity_V128:   print_debug("warning", 
 				 "SIMD128 register encountered");
-      t = REG_64; break;
+      t = REG_128; break;
     default:
       assert(0);
     }
@@ -670,6 +670,9 @@ Exp *translate_simple_unop( IRExpr *expr, IRSB *irbb, vector<Stmt *> *irout )
         case Iop_1Sto16:    return new Cast( arg, REG_16, CAST_SIGNED );
         case Iop_1Sto32:    return new Cast( arg, REG_32, CAST_SIGNED );
         case Iop_1Sto64:    return new Cast( arg, REG_64, CAST_SIGNED );
+        case Iop_32UtoV128: return new Cast( arg, REG_128, CAST_UNSIGNED );
+        case Iop_64UtoV128: return new Cast( arg, REG_128, CAST_UNSIGNED );
+        case Iop_V128to32:  return new Cast( arg, REG_32, CAST_LOW );
 //         case Iop_F32toF64:  return new Cast( arg, REG_64, CAST_FLOAT );
 //         case Iop_I32toF64:  return new Cast( arg, REG_64, CAST_FLOAT );
 
@@ -1429,7 +1432,7 @@ Stmt *translate_jumpkind( IRSB *irbb, vector<Stmt *> *irout )
       result = new Jmp(dest);
       break;
     case Ijk_Sys_int130:
-      irout->push_back( new Special("int 0x81") );
+      irout->push_back( new Special("int 0x82") );
       irout->push_back(mk_label());
       result = new Jmp(dest);
       break;
