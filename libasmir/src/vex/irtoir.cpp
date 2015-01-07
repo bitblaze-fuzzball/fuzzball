@@ -106,7 +106,7 @@ vector<VarDecl *> get_reg_decls(void) {
 }
 
 // Create a statement updating EIP, or your arch's equivalent PC
-// register, to a costant value. Needs to be arch-specific because the
+// register, to a constant value. Needs to be arch-specific because the
 // size and offset of the EIP guest state may be different.
 // Note that the calling code requires the statement to be a Put.
 IRStmt *make_pc_put_stmt(VexArch arch, Addr64 addr) {
@@ -353,6 +353,20 @@ Exp *translate_32HLto64( Exp *arg1, Exp *arg2 )
 
     return new BinOp( BITOR, high, low );
 }
+
+Exp *translate_64HLto128( Exp *arg1, Exp *arg2 )
+{
+    assert(arg1);
+    assert(arg2);
+
+    Exp *high = new Cast( arg1, REG_128, CAST_UNSIGNED );
+    Exp *low = new Cast( arg2, REG_128, CAST_UNSIGNED );
+
+    high = new BinOp( LSHIFT, high, ex_const(64) );
+
+    return new BinOp( BITOR, high, low );
+}
+
 Exp *translate_64HLto64( Exp *high, Exp *low )
 {
     assert(high);
@@ -578,6 +592,80 @@ Exp *translate_CmpF64( IRExpr *expr, IRSB *irbb, vector<Stmt *> *irout )
     return temp;
 }
 
+// Low-lane single-precision FP, as in the x86 SSE addss, for instance.
+// The low 32-bits are operated on, and the high 96 bits are passed through
+// from the left operand.
+Exp *translate_low32fp_128_binop(fbinop_type_t op, Exp *left, Exp *right) {
+    Exp *left_high = ex_h_cast(left, REG_64);
+    Exp *left_low = _ex_l_cast(left, REG_64);
+    Exp *left32 = _ex_l_cast(left_low, REG_32);
+    Exp *right32 = _ex_l_cast(right, REG_32);
+    Exp *result32 = new FBinOp(op, ROUND_NEAREST, left32, right32);
+    Exp *lane3 = ex_h_cast(left_low, REG_32);
+    Exp *result64 = translate_32HLto64(lane3, result32);
+    return translate_64HLto128(left_high, result64);
+}
+
+// Low-lane double-precision FP, as in the x86 SSE addsd, for instance.
+// The low 64-bits are operated on, and the high 64 bits are passed through
+// from the left operand.
+Exp *translate_low64fp_128_binop(fbinop_type_t op, Exp *left, Exp *right) {
+    Exp *left_high = ex_h_cast(left, REG_64);
+    Exp *left64 = _ex_l_cast(left, REG_64);
+    Exp *right64 = _ex_l_cast(right, REG_64);
+    Exp *result64 = new FBinOp(op, ROUND_NEAREST, left64, right64);
+    return translate_64HLto128(left_high, result64);
+}
+
+// Bitwise concatenate 4 32-bit values, high to low, into a 128-bit
+// value.
+Exp *assemble4x32(Exp *e1, Exp *e2, Exp *e3, Exp *e4) {
+    Exp *e1w = new Cast(e1, REG_128, CAST_UNSIGNED);
+    Exp *e2w = new Cast(e2, REG_128, CAST_UNSIGNED);
+    Exp *e3w = new Cast(e3, REG_128, CAST_UNSIGNED);
+    Exp *e4w = new Cast(e4, REG_128, CAST_UNSIGNED);
+
+    Exp *e1s = new BinOp(LSHIFT, e1w, ex_const(96));
+    Exp *e2s = new BinOp(LSHIFT, e2w, ex_const(64));
+    Exp *e3s = new BinOp(LSHIFT, e3w, ex_const(32));
+
+    return _ex_or(e1s, e2s, e3s, e4w);
+}
+
+// SIMD FP on 4 single-precision values at once, as in the x86 addps.
+Exp *translate_par32fp_128_binop(fbinop_type_t op, Exp *left, Exp *right) {
+    Exp *left1 = _ex_h_cast(left, REG_32);
+    Exp *left2 = _ex_l_cast(ex_h_cast(left, REG_64), REG_32);
+    Exp *left3 = _ex_h_cast(ex_l_cast(left, REG_64), REG_32);
+    Exp *left4 = ex_l_cast(left, REG_32);
+
+    Exp *right1 = _ex_h_cast(right, REG_32);
+    Exp *right2 = _ex_l_cast(ex_h_cast(right, REG_64), REG_32);
+    Exp *right3 = _ex_h_cast(ex_l_cast(right, REG_64), REG_32);
+    Exp *right4 = ex_l_cast(right, REG_32);
+
+    Exp *result1 = new FBinOp(op, ROUND_NEAREST, left1, right1);
+    Exp *result2 = new FBinOp(op, ROUND_NEAREST, left2, right2);
+    Exp *result3 = new FBinOp(op, ROUND_NEAREST, left3, right3);
+    Exp *result4 = new FBinOp(op, ROUND_NEAREST, left4, right4);
+
+    return assemble4x32(result1, result2, result3, result4);
+}
+
+// SIMD FP on 2 double-precision values at once, as in the x86 addpd.
+Exp *translate_par64fp_128_binop(fbinop_type_t op, Exp *left, Exp *right) {
+    Exp *left_h = _ex_h_cast(left, REG_64);
+    Exp *left_l = ex_l_cast(left, REG_64);
+
+    Exp *right_h = _ex_h_cast(right, REG_64);
+    Exp *right_l = ex_l_cast(right, REG_64);
+
+    Exp *result_h = new FBinOp(op, ROUND_NEAREST, left_h, right_h);
+    Exp *result_l = new FBinOp(op, ROUND_NEAREST, left_l, right_l);
+
+    return translate_64HLto128(result_h, result_l);
+}
+
 Exp *translate_const( IRExpr *expr )
 {
     assert(expr);
@@ -673,6 +761,8 @@ Exp *translate_simple_unop( IRExpr *expr, IRSB *irbb, vector<Stmt *> *irout )
         case Iop_32UtoV128: return new Cast( arg, REG_128, CAST_UNSIGNED );
         case Iop_64UtoV128: return new Cast( arg, REG_128, CAST_UNSIGNED );
         case Iop_V128to32:  return new Cast( arg, REG_32, CAST_LOW );
+        case Iop_V128to64:  return new Cast( arg, REG_64, CAST_LOW );
+        case Iop_V128HIto64:return new Cast( arg, REG_64, CAST_HIGH );
 //         case Iop_F32toF64:  return new Cast( arg, REG_64, CAST_FLOAT );
 //         case Iop_I32toF64:  return new Cast( arg, REG_64, CAST_FLOAT );
 
@@ -808,6 +898,7 @@ Exp *translate_simple_binop( IRExpr *expr, IRSB *irbb, vector<Stmt *> *irout )
 
         case Iop_16HLto32:          return translate_16HLto32(arg1, arg2);
         case Iop_32HLto64:          return translate_32HLto64(arg1, arg2);
+        case Iop_64HLtoV128:        return translate_64HLto128(arg1, arg2);
         case Iop_MullU8:            return translate_MullU8(arg1, arg2);
         case Iop_MullS8:            return translate_MullS8(arg1, arg2);
         case Iop_MullU16:           return translate_MullU16(arg1, arg2);
@@ -817,10 +908,47 @@ Exp *translate_simple_binop( IRExpr *expr, IRSB *irbb, vector<Stmt *> *irout )
         case Iop_DivModU64to32:     return translate_DivModU64to32(arg1, arg2);
         case Iop_DivModS64to32:     return translate_DivModS64to32(arg1, arg2);
 
-    case Iop_DivU32: return new BinOp(DIVIDE, arg1, arg2);
-    case Iop_DivS32: return new BinOp(SDIVIDE, arg1, arg2);
-    case Iop_DivU64: return new BinOp(DIVIDE, arg1, arg2);
-    case Iop_DivS64: return new BinOp(SDIVIDE, arg1, arg2);
+        case Iop_DivU32: return new BinOp(DIVIDE, arg1, arg2);
+        case Iop_DivS32: return new BinOp(SDIVIDE, arg1, arg2);
+        case Iop_DivU64: return new BinOp(DIVIDE, arg1, arg2);
+        case Iop_DivS64: return new BinOp(SDIVIDE, arg1, arg2);
+
+        case Iop_Add32F0x4:
+	    return translate_low32fp_128_binop(FPLUS, arg1, arg2);
+        case Iop_Sub32F0x4:
+	    return translate_low32fp_128_binop(FMINUS, arg1, arg2);
+        case Iop_Mul32F0x4:
+	    return translate_low32fp_128_binop(FTIMES, arg1, arg2);
+        case Iop_Div32F0x4:
+	    return translate_low32fp_128_binop(FDIVIDE, arg1, arg2);
+
+        case Iop_Add32Fx4:
+	    return translate_par32fp_128_binop(FPLUS, arg1, arg2);
+        case Iop_Sub32Fx4:
+	    return translate_par32fp_128_binop(FMINUS, arg1, arg2);
+        case Iop_Mul32Fx4:
+	    return translate_par32fp_128_binop(FTIMES, arg1, arg2);
+        case Iop_Div32Fx4:
+	    return translate_par32fp_128_binop(FDIVIDE, arg1, arg2);
+
+        case Iop_Add64F0x2:
+	    return translate_low64fp_128_binop(FPLUS, arg1, arg2);
+        case Iop_Sub64F0x2:
+	    return translate_low64fp_128_binop(FMINUS, arg1, arg2);
+        case Iop_Mul64F0x2:
+	    return translate_low64fp_128_binop(FTIMES, arg1, arg2);
+        case Iop_Div64F0x2:
+	    return translate_low64fp_128_binop(FDIVIDE, arg1, arg2);
+
+        case Iop_Add64Fx2:
+	    return translate_par64fp_128_binop(FPLUS, arg1, arg2);
+        case Iop_Sub64Fx2:
+	    return translate_par64fp_128_binop(FMINUS, arg1, arg2);
+        case Iop_Mul64Fx2:
+	    return translate_par64fp_128_binop(FTIMES, arg1, arg2);
+        case Iop_Div64Fx2:
+	    return translate_par64fp_128_binop(FDIVIDE, arg1, arg2);
+
         default:
             break;
     }

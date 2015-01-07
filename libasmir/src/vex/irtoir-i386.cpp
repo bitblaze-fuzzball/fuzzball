@@ -185,6 +185,7 @@ using namespace std;
 vector<VarDecl *> i386_get_reg_decls()
 {
   vector<VarDecl *> ret;
+  reg_t r128 = REG_128;
   reg_t r32 = REG_32;
   reg_t r16 = REG_16;
   reg_t r8 = REG_8;
@@ -259,6 +260,17 @@ vector<VarDecl *> i386_get_reg_decls()
   ret.push_back(new VarDecl("R_BH", r8));  
   ret.push_back(new VarDecl("R_CH", r8));  
   ret.push_back(new VarDecl("R_DH", r8));  
+
+  // XMM registers
+  ret.push_back(new VarDecl("R_XMM0", r128));
+  ret.push_back(new VarDecl("R_XMM1", r128));
+  ret.push_back(new VarDecl("R_XMM2", r128));
+  ret.push_back(new VarDecl("R_XMM3", r128));
+  ret.push_back(new VarDecl("R_XMM4", r128));
+  ret.push_back(new VarDecl("R_XMM5", r128));
+  ret.push_back(new VarDecl("R_XMM6", r128));
+  ret.push_back(new VarDecl("R_XMM7", r128));
+
   return ret;
 }
 
@@ -326,7 +338,11 @@ static string reg_offset_to_name( int offset, bool *is_good )
 #endif
 
 	// The real XMM registers are 128-bit, so these cases only 
-	// show up when the code is accessing the low 4 bytes.
+	// show up when the code is accessing 4-byte lanes.
+	// Sometimes VEX's translation accesses parts of a XMM register
+	// at an offset, just like %ah is part of %eax. If we want to
+	// fully support SSE instructions, we'll need to apply a similar
+	// strategy as we use say with %ah, but for now we'll just punt.
         case OFFB_XMM0:     name = "XMM0";      good=false; break;
         case OFFB_XMM1:     name = "XMM1";      good=false; break;
         case OFFB_XMM2:     name = "XMM2";      good=false; break;
@@ -336,10 +352,6 @@ static string reg_offset_to_name( int offset, bool *is_good )
         case OFFB_XMM6:     name = "XMM6";      good=false; break;
         case OFFB_XMM7:     name = "XMM7";      good=false; break;
 
-	// Sometimes VEX's translation accesses parts of a XMM register
-	// at an offset, just like %ah is part of %eax. If we want to
-	// properly support SSE instructions, we'll need to apply a similar
-	// strategy as we use say with %ah, but for now we'll just punt.
         case OFFB_XMM0+4:     name = "XMM0";      good=false; break;
         case OFFB_XMM1+4:     name = "XMM1";      good=false; break;
         case OFFB_XMM2+4:     name = "XMM2";      good=false; break;
@@ -395,7 +407,7 @@ static Exp *translate_get_reg_8( unsigned int offset )
     string name;
 
     if (offset >= OFFB_XMM0 && offset < OFFB_XMM7+16) {
-	// SSE sub-register: not supported.
+	// SSE sub-register: not yet supported.
 	return new Unknown("Unhandled 8-bit XMM lane");
     }
 
@@ -436,7 +448,7 @@ static Exp *translate_get_reg_16( unsigned int offset )
     bool sub;
 
     if (offset >= OFFB_XMM0 && offset < OFFB_XMM7+16) {
-	// SSE sub-register: not supported.
+	// SSE sub-register: not yet supported.
 	assert(((offset - OFFB_XMM0) & 1) == 0);
 	return new Unknown("Unhandled 16-bit XMM lane");
     }
@@ -503,6 +515,32 @@ static Exp *translate_get_reg_32( int offset )
     return result;
 }
 
+static Exp *translate_get_reg_128( unsigned int offset )
+{
+    string name;
+
+    switch ( offset )
+    {
+    case OFFB_XMM0: name = "XMM0"; break;
+    case OFFB_XMM1: name = "XMM1"; break;
+    case OFFB_XMM2: name = "XMM2"; break;
+    case OFFB_XMM3: name = "XMM3"; break;
+    case OFFB_XMM4: name = "XMM4"; break;
+    case OFFB_XMM5: name = "XMM5"; break;
+    case OFFB_XMM6: name = "XMM6"; break;
+    case OFFB_XMM7: name = "XMM7"; break;
+    default:
+	assert(0);
+    }
+
+    Exp *value = NULL;
+
+    value = mk_reg(name, REG_128);
+
+    return value;
+}
+
+
 Exp *i386_translate_get( IRExpr *expr, IRSB *irbb, vector<Stmt *> *irout )
 {
     assert(expr);
@@ -539,28 +577,20 @@ Exp *i386_translate_get( IRExpr *expr, IRSB *irbb, vector<Stmt *> *irout )
 	result = new Cast(translate_get_reg_32(offset), REG_64, CAST_UNSIGNED);
     }
 
-    else if ( type == Ity_I64 )
+    else if ( type == Ity_I64 || type == Ity_F64 )
     {
-	// We could handle this, but there shouldn't be any 64-bit integer
-	// registers.
-        result = new Unknown("register type (I64)");
+	// In the future, we'll want to implement this for the halves
+        // of XMM registers, among other things.
+        result = new Unknown("register type (64-bit)");
     }
     else if ( type == Ity_F32 )
     {
         result = new Unknown("register type (F32)");
     }
-    else if ( type == Ity_F64 )
-    {
-        result = new Unknown("register type (F64)");
-    }
 
-    else if ( type == Ity_I128 )
+    else if ( type == Ity_I128 || type == Ity_V128 )
     {
-        result = new Unknown("register type (I128)");
-    }
-    else if ( type == Ity_V128 )
-    {
-        result = new Unknown("register type (V128)");
+        result = translate_get_reg_128(offset);
     }
 
     else
@@ -1126,6 +1156,31 @@ static Stmt *translate_put_reg_32( int offset, Exp *data, IRSB *irbb )
     return st;
 }
 
+static Stmt *translate_put_reg_128(unsigned int offset, Exp *data, IRSB *irbb)
+{
+    assert(data);
+
+    string name;
+
+    switch ( offset )
+    {
+    case OFFB_XMM0: name = "XMM0"; break;
+    case OFFB_XMM1: name = "XMM1"; break;
+    case OFFB_XMM2: name = "XMM2"; break;
+    case OFFB_XMM3: name = "XMM3"; break;
+    case OFFB_XMM4: name = "XMM4"; break;
+    case OFFB_XMM5: name = "XMM5"; break;
+    case OFFB_XMM6: name = "XMM6"; break;
+    case OFFB_XMM7: name = "XMM7"; break;
+        default:
+	    assert(0);
+    }
+
+    Temp *reg = mk_reg(name, REG_16);
+
+    return new Move( reg, data );
+}
+
 Stmt *i386_translate_put( IRStmt *stmt, IRSB *irbb, vector<Stmt *> *irout )
 {
     assert(stmt);
@@ -1172,6 +1227,11 @@ Stmt *i386_translate_put( IRStmt *stmt, IRSB *irbb, vector<Stmt *> *irout )
 	// but pretend that the register is still 32.
 	Exp *ndata = new Cast(data, REG_32, CAST_LOW);
 	result = translate_put_reg_32(offset, ndata, irbb);
+    }
+
+    else if ( type == Ity_I128 || type == Ity_V128 )
+    {
+	result = translate_put_reg_128(offset, data, irbb);
     }
 
     else
