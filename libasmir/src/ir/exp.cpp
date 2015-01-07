@@ -271,8 +271,8 @@ string
 FBinOp::tostring() const
 {
   string ret;
-  ret = lhs->tostring() + optype_to_string(fbinop_type)
-    + rounding_mode_to_letter_string(rounding_mode) + rhs->tostring();
+  ret = lhs->tostring() + " " + optype_to_string(fbinop_type)
+    + rounding_mode_to_letter_string(rounding_mode) + " " + rhs->tostring();
   ret = "(" + ret + ")";
   return ret;
 }
@@ -394,7 +394,7 @@ FUnOp::tostring() const
    string rm_str = rounding_mode_to_letter_string(rounding_mode);
    switch(funop_type){
    case FNEG:
-     ret = "-." + rm_str + exp->tostring();
+     ret = "-." + rm_str + " " + exp->tostring();
      break;
    }
    ret = "(" + ret + ")";
