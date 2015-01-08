@@ -548,48 +548,22 @@ Exp *translate_Ctz32( IRExpr *expr, IRSB *irbb, vector<Stmt *> *irout )
     return new Temp(*counter);
 }
 
-Exp *translate_CmpF64( IRExpr *expr, IRSB *irbb, vector<Stmt *> *irout )
-{
-    assert(expr);
-    assert(irbb);
-    assert(irout); 
-
-    Exp *arg1 = translate_expr(expr->Iex.Binop.arg1, irbb, irout);
-    Exp *arg2 = translate_expr(expr->Iex.Binop.arg2, irbb, irout);
-
-    Exp *condEQ = new BinOp( EQ, arg1, arg2 );
-    Exp *condGT = new BinOp( GT, ecl(arg1), ecl(arg2) );
-    Exp *condLT = new BinOp( LT, ecl(arg1), ecl(arg2) );
-
-    Label *labelEQ = mk_label();
-    Label *labelGT = mk_label();
-    Label *labelLT = mk_label();
-    Label *labelUN = mk_label();
-    Label *labelNext0 = mk_label();
-    Label *labelNext1 = mk_label();
-    Label *done = mk_label();
-
-    Temp *temp = mk_temp( Ity_I32,irout );
-   
-    irout->push_back( new CJmp( condEQ, new Name(labelEQ->label), new Name(labelNext0->label) ) );
-    irout->push_back( labelNext0 );
-    irout->push_back( new CJmp( condGT, new Name(labelGT->label), new Name(labelNext1->label) ) );
-    irout->push_back( labelNext1 );
-    irout->push_back( new CJmp( condLT, new Name(labelLT->label), new Name(labelUN->label) ) );
-    irout->push_back( labelUN );
-    irout->push_back( new Move( new Temp(*temp), ex_const( 0x45 ) ) );
-    irout->push_back( new Jmp( new Name(done->label) ) );
-    irout->push_back( labelEQ );
-    irout->push_back( new Move( new Temp(*temp), ex_const( 0x40 ) ) );
-    irout->push_back( new Jmp( new Name(done->label) ) );
-    irout->push_back( labelGT );
-    irout->push_back( new Move( new Temp(*temp), ex_const( 0x00 ) ) );
-    irout->push_back( new Jmp( new Name(done->label) ) );
-    irout->push_back( labelLT );
-    irout->push_back( new Move( new Temp(*temp), ex_const( 0x01 ) ) );
-    irout->push_back( done );
-
-    return temp;
+Exp *translate_CmpF(Exp *arg1, Exp *arg2, reg_t sz) {
+    /* arg1 == arg2 ? 0x40 :
+         (arg1 < arg2 ? 0x01 :
+	     (arg1 > arg2 ? 0x00 : 0x45)) */
+    /* This weird combination of operations does a comparison of
+       floating-point values, including the unordered case that can
+       happen with NaNs, and represents the results as bits that could
+       go into x86-style EFLAGS. VEX has standardized on this encoding,
+       presumably for historical reasons. */
+    (void)sz; // Not needed for the current implementation
+    Exp *cmp_eq = new FBinOp(FEQ, ROUND_NEAREST, arg1, arg2);
+    Exp *cmp_lt = new FBinOp(FLT, ROUND_NEAREST, ecl(arg1), ecl(arg2));
+    Exp *cmp_gt = new FBinOp(FLT, ROUND_NEAREST, ecl(arg2), ecl(arg1));
+    return _ex_ite(cmp_eq, ex_const(0x40),
+		   _ex_ite(cmp_lt, ex_const(0x01),
+			   _ex_ite(cmp_gt, ex_const(0), ex_const(0x45))));
 }
 
 // Low-lane single-precision FP, as in the x86 SSE addss, for instance.
@@ -715,7 +689,9 @@ Exp *translate_simple_unop( IRExpr *expr, IRSB *irbb, vector<Stmt *> *irout )
         case Iop_Not8:
 	case Iop_Not16:
 	case Iop_Not32:
-	case Iop_Not64:    return new UnOp( NOT, arg );
+	case Iop_Not64:
+        case Iop_NotV128:
+	    return new UnOp( NOT, arg );
 #if VEX_VERSION < 1770
         case Iop_Neg8:
 	case Iop_Neg16:
@@ -763,25 +739,30 @@ Exp *translate_simple_unop( IRExpr *expr, IRSB *irbb, vector<Stmt *> *irout )
         case Iop_V128to32:  return new Cast( arg, REG_32, CAST_LOW );
         case Iop_V128to64:  return new Cast( arg, REG_64, CAST_LOW );
         case Iop_V128HIto64:return new Cast( arg, REG_64, CAST_HIGH );
-//         case Iop_F32toF64:  return new Cast( arg, REG_64, CAST_FLOAT );
-//         case Iop_I32toF64:  return new Cast( arg, REG_64, CAST_FLOAT );
 
-//         case Iop_ReinterpI64asF64:  return new Cast( arg, REG_64, CAST_RFLOAT );
-//         case Iop_ReinterpF64asI64:  return new Cast( arg, REG_64, CAST_RINTEGER );
+	// These next few are the rare FP conversions that never have
+	// to round, so they take no rounding mode in VEX. The others
+	// are VEX binops to take a rounding mode.
+        case Iop_F32toF64:
+	    return new FCast(arg, REG_64, CAST_FWIDEN, ROUND_NEAREST);
 
-        case Iop_F32toF64: 
 #if VEX_VERSION < 1949
         case Iop_I32toF64:
 #else
         case Iop_I32StoF64:
-        case Iop_I32UtoF64:
 #endif
+	    return new FCast(arg, REG_64, CAST_SFLOAT, ROUND_NEAREST);
+
+#if VEX_VERSION >= 1949
+        case Iop_I32UtoF64:
+	    return new FCast(arg, REG_64, CAST_UFLOAT, ROUND_NEAREST);
+#endif
+
         case Iop_ReinterpI32asF32:
         case Iop_ReinterpF32asI32:
         case Iop_ReinterpI64asF64:
         case Iop_ReinterpF64asI64:
-	  Exp::destroy(arg);
-          return new Unknown("floatcast");
+	    return arg; // We don't make any distinction here
 
         default:
             break;
@@ -840,15 +821,21 @@ Exp *translate_simple_binop( IRExpr *expr, IRSB *irbb, vector<Stmt *> *irout )
         case Iop_Or8:
 	case Iop_Or16:
 	case Iop_Or32:
-	case Iop_Or64:          return new BinOp(BITOR, arg1, arg2);
+	case Iop_Or64:
+        case Iop_OrV128:
+	    return new BinOp(BITOR, arg1, arg2);
         case Iop_And8:
 	case Iop_And16:
 	case Iop_And32:
-	case Iop_And64:        return new BinOp(BITAND, arg1, arg2);
+	case Iop_And64:
+        case Iop_AndV128:
+	    return new BinOp(BITAND, arg1, arg2);
         case Iop_Xor8:
 	case Iop_Xor16:
 	case Iop_Xor32:
-	case Iop_Xor64:        return new BinOp(XOR, arg1, arg2);
+	case Iop_Xor64:
+        case Iop_XorV128:
+	    return new BinOp(XOR, arg1, arg2);
         case Iop_Shl8:
 	case Iop_Shl16:
 	case Iop_Shl32:
@@ -949,6 +936,45 @@ Exp *translate_simple_binop( IRExpr *expr, IRSB *irbb, vector<Stmt *> *irout )
         case Iop_Div64Fx2:
 	    return translate_par64fp_128_binop(FDIVIDE, arg1, arg2);
 
+        case Iop_CmpF32:
+	    return translate_CmpF(arg1, arg2, REG_32);
+        case Iop_CmpF64:
+	    return translate_CmpF(arg1, arg2, REG_64);
+
+	// arg1 is a rounding mode, currently unsupported. Pretend it's
+	// always ROUND_NEAREST.
+	// Float to int:
+        case Iop_F64toI16S:
+	    return new FCast(arg2, REG_16, CAST_SFIX, ROUND_NEAREST);
+        case Iop_F32toI32S:
+        case Iop_F64toI32S:
+	    return new FCast(arg2, REG_32, CAST_SFIX, ROUND_NEAREST);
+        case Iop_F32toI64S:
+        case Iop_F64toI64S:
+	    return new FCast(arg2, REG_64, CAST_SFIX, ROUND_NEAREST);
+        case Iop_F32toI32U:
+        case Iop_F64toI32U:
+	    return new FCast(arg2, REG_32, CAST_UFIX, ROUND_NEAREST);
+        case Iop_F32toI64U:
+        case Iop_F64toI64U:
+	    return new FCast(arg2, REG_64, CAST_UFIX, ROUND_NEAREST);
+	// Int to float:
+	// Iop_I32StoF64: see unops above
+        case Iop_I64StoF64:
+	    return new FCast(arg2, REG_64, CAST_SFLOAT, ROUND_NEAREST);
+        case Iop_I64UtoF64:
+	    return new FCast(arg2, REG_64, CAST_UFLOAT, ROUND_NEAREST);
+        case Iop_I32UtoF32:
+        case Iop_I64UtoF32:
+	    return new FCast(arg2, REG_32, CAST_UFLOAT, ROUND_NEAREST);
+        case Iop_I32StoF32:
+        case Iop_I64StoF32:
+	    return new FCast(arg2, REG_32, CAST_SFLOAT, ROUND_NEAREST);
+	// Iop_I32UtoF64: see unops above
+	// Float narrowing (for widening see unops)
+        case Iop_F64toF32:
+	    return new FCast(arg2, REG_32, CAST_FNARROW, ROUND_NEAREST);
+
         default:
             break;
     }
@@ -973,47 +999,10 @@ Exp *translate_binop( IRExpr *expr, IRSB *irbb, vector<Stmt *> *irout )
 
     switch ( expr->Iex.Binop.op ) 
     {
-        case Iop_CmpF64:
         // arg1 in this case, specifies rounding mode, and so is ignored
-#if VEX_VERSION < 1949
-        case Iop_I64toF64:
-        case Iop_F64toI64:
-        case Iop_F64toI32:
-        case Iop_F64toI16:
-#else
-        case Iop_I64StoF64:
-        case Iop_F64toI64S:
-        case Iop_F64toI32S:
-        case Iop_F64toI32U:
-        case Iop_F64toI16S:
-#endif
-        case Iop_F64toF32:          
         case Iop_RoundF64toInt:
         case Iop_2xm1F64:
             return new Unknown("Floating point binop");
-
-//         case Iop_CmpF64:            return translate_CmpF64(expr, irbb, irout);
-
-//         // arg1 in this case, specifies rounding mode, and so is ignored
-//         case Iop_I64toF64:
-//             arg2 = translate_expr(expr->Iex.Binop.arg2, irbb, irout);
-//             return new Cast( arg2, REG_64, CAST_FLOAT );
-//         case Iop_F64toI64:
-//             arg2 = translate_expr(expr->Iex.Binop.arg2, irbb, irout);
-//             return new Cast( arg2, REG_64, CAST_INTEGER );
-//         case Iop_F64toF32:          
-//             arg2 = translate_expr(expr->Iex.Binop.arg2, irbb, irout);
-//             return new Cast( arg2, REG_32, CAST_FLOAT );
-//         case Iop_F64toI32:
-//             arg2 = translate_expr(expr->Iex.Binop.arg2, irbb, irout);
-//             return new Cast( arg2, REG_32, CAST_INTEGER );
-//         case Iop_F64toI16:
-//             arg2 = translate_expr(expr->Iex.Binop.arg2, irbb, irout);
-//             return new Cast( arg2, REG_16, CAST_INTEGER );
-
-//         case Iop_RoundF64toInt:
-//         case Iop_2xm1F64:
-//             return new Unknown("Floating point op");
 
         default:  
 	    return new Unknown("Unrecognized binary op");
