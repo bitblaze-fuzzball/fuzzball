@@ -9,15 +9,15 @@
 #include "irvisitor.h"
 
 /* defines for types which will be declared either globally for C, or 
- * whithin certain classes for C++ */
+ * within certain classes for C++ */
 // Stuff in Exp
 enum exp_type_t {
   BINOP, UNOP, CONSTANT, MEM, TEMP, PHI, CAST,
   NAME, UNKNOWN, LET, ITE,
-  FBINOP, FUNOP, FCAST,
+  FBINOP, FUNOP, FCAST, VECTOR,
   EXTENSION };
 
-enum reg_t { REG_1, REG_8, REG_16, REG_32, REG_64, REG_128 };
+enum reg_t { REG_1, REG_8, REG_16, REG_32, REG_64 };
 
 // The size of an address.
 #define REG_ADDRESS_T  REG_32
@@ -112,6 +112,11 @@ using namespace std;
 ///   - Cast is a widening or narrowing integer conversion
 ///   - FCast is an intra-FP or between-FP-and-int conversion, with a
 ///     rounding mode.
+///   - Vector is a combination of smaller values that are processed
+///     together in architecture (i.e., SIMD). Currently only a
+///     128-bit value expressed in terms of two 64-bit values. In
+///     our current translation strategy Vectors exist temporarily
+///     but are expanded out into separate operations on the subparts.
 /// Temp, Mem, and Constant's are all operands, and have associated
 /// with them their type which is just their bit-width.
 class Exp {
@@ -323,6 +328,20 @@ class FCast : public Exp {
   rounding_mode_t rounding_mode;
 };
 
+class Vector : public Exp {
+ public:
+  Vector(Exp *high, Exp *low);
+  virtual void accept(IRVisitor *v) { v->visitVector(this); }
+  virtual ~Vector() {};
+  Vector(const Vector& copy);
+  virtual string tostring() const;
+  virtual Vector *clone() const;
+
+  static void destroy( Vector *expr );
+
+  Exp *lanes[2]; // least-significant first, though we elsewhere we usually
+                 // write most-significant first
+};
 
 class Name : public Exp {
 
@@ -437,6 +456,8 @@ FCast *ex_is_cast( Exp *arg, reg_t width );
 FCast *ex_iu_cast( Exp *arg, reg_t width );
 FCast *ex_fs_cast( Exp *arg, reg_t width );
 FCast *ex_fu_cast( Exp *arg, reg_t width );
+Vector *ex_vector2x64( Exp *h, Exp *l );
+Vector *_ex_vector2x64( Exp *h, Exp *l );
 Ite *ex_ite( Exp *cond, Exp *t, Exp *f );
 Ite *_ex_ite( Exp *cond, Exp *t, Exp *f );
 
@@ -470,6 +491,7 @@ extern "C" {
   extern reg_t fcast_width(Exp*);
   extern fcast_t fcast_casttype(Exp*);
   extern Exp* fcast_subexp(Exp*);
+  extern Exp* vector_select(Exp *, int);
   extern const char* name_string(Exp*);
   extern Exp *let_var(Exp *);
   extern Exp *let_exp(Exp *);

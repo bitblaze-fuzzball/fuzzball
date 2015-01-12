@@ -21,6 +21,7 @@ class ExpStmt;
 class Unknown;
 class Cast;
 class FCast;
+class Vector;
 class Name;
 class Exp;
 class Let;
@@ -45,6 +46,7 @@ class IRVisitor {
   virtual void visitUnknown(Unknown *) = 0;
   virtual void visitCast(Cast *) = 0;
   virtual void visitFCast(FCast *) = 0;
+  virtual void visitVector(Vector *) = 0;
   virtual void visitName(Name *) = 0;
   virtual void visitJmp(Jmp *) = 0;
   virtual void visitCJmp(CJmp *) = 0;
@@ -65,7 +67,9 @@ class DefaultIRVisitor : public virtual IRVisitor {
  public:
   DefaultIRVisitor() {};
   virtual void visitBinOp(BinOp *);
+  virtual void visitFBinOp(FBinOp *);
   virtual void visitUnOp(UnOp *);
+  virtual void visitFUnOp(FUnOp *);
   virtual void visitConstant(Constant *);
   virtual void visitTemp(Temp *);
   virtual void visitPhi(Phi *);
@@ -74,6 +78,8 @@ class DefaultIRVisitor : public virtual IRVisitor {
   virtual void visitMem(Mem *);
   virtual void visitUnknown(Unknown *);
   virtual void visitCast(Cast *);
+  virtual void visitFCast(FCast *);
+  virtual void visitVector(Vector *);
   virtual void visitName(Name *);
   virtual void visitJmp(Jmp *);
   virtual void visitCJmp(CJmp *);
@@ -108,6 +114,7 @@ class IRChangeVisitor : public IRVisitor {
   virtual void visitUnknown(Unknown *);
   virtual void visitCast(Cast *);
   virtual void visitFCast(FCast *);
+  virtual void visitVector(Vector *);
   virtual void visitName(Name *);
   virtual void visitJmp(Jmp *);
   virtual void visitCJmp(CJmp *);

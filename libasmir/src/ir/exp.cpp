@@ -80,9 +80,6 @@ Exp::cast_value(reg_t t, uint64_t v)
   case REG_16: u16 = (uint16_t) v; return u16; break;
   case REG_32: u32 = (uint32_t) v; return u32; break;
   case REG_64: u64 = (uint64_t) v; return u64; break;
-  case REG_128:
-    cerr << "cast_value unsupported on REG_128" << endl;
-    assert(0);
   }
   assert(0); // eliminates warnings.
 }
@@ -97,7 +94,6 @@ Exp::reg_to_bits(const reg_t &reg)
     case REG_16: return 16; break;
     case REG_32: return 32; break;
     case REG_64: return 64; break;
-    case REG_128: return 128; break;
     }
   assert(0); // eliminates warnings.
 }
@@ -125,6 +121,7 @@ void Exp::destroy( Exp *expr )
     case UNKNOWN:   Unknown::destroy((Unknown *)expr);      break;
     case CAST:      Cast::destroy((Cast *)expr);            break;
     case FCAST:     FCast::destroy((FCast *)expr);          break;
+    case VECTOR:    Vector::destroy((Vector *)expr);        break;
     case NAME:      Name::destroy((Name *)expr);            break;
     case LET:       Let::destroy((Let *)expr);              break; 
     case ITE:       Ite::destroy((Ite *)expr);              break;
@@ -147,7 +144,6 @@ Exp::string_type(const reg_t &typ)
     case REG_16: s = "reg16_t"; break;
     case REG_32: s = "reg32_t"; break;
     case REG_64: s = "reg64_t"; break;
-    case REG_128: s = "reg128_t"; break;
     }
   return s;
 }
@@ -468,7 +464,6 @@ void Mem::destroy( Mem *expr )
 Constant::Constant(reg_t t, const_val_t v)
   : Exp(CONSTANT), typ(t), val(v)
 {
-  assert(t != REG_128);
 }
 
 
@@ -500,9 +495,6 @@ Constant::tostring() const
   case REG_16: u16 = (uint16_t) val; os << u16; break;
   case REG_32: u32 = (uint32_t) val; os << u32; break;
   case REG_64: u64 = (uint64_t) val; os << u64; break;
-  case REG_128:
-    cerr << "REG_128 unsupported in Constant::tostring" << endl;
-    assert(0);
   }
   os << ":" << Exp::string_type(typ);
   return os.str();
@@ -832,6 +824,48 @@ string FCast::fcast_type_to_string( const fcast_t ctype )
   }
 
   return tstr;
+}
+
+
+Vector::Vector(Exp *h, Exp *l)
+  : Exp(VECTOR)
+{
+  lanes[1] = h;
+  lanes[0] = l;
+}
+
+Vector::Vector(const Vector &copy)
+  : Exp(VECTOR)
+{
+  lanes[0] = copy.lanes[0]->clone();
+  lanes[1] = copy.lanes[1]->clone();
+}
+
+Vector *
+Vector::clone() const
+{
+  return new Vector(*this);
+}
+
+string
+Vector::tostring() const
+{
+  string ret = "[";
+  ret += lanes[1]->tostring();
+  ret += ", ";
+  ret += lanes[0]->tostring();
+  ret += "]";
+  return ret;
+}
+
+void Vector::destroy( Vector *expr )
+{
+    assert(expr);
+
+    Exp::destroy(expr->lanes[1]);
+    Exp::destroy(expr->lanes[0]);
+
+    delete expr;
 }
 
 

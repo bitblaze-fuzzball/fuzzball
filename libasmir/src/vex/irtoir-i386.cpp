@@ -185,7 +185,7 @@ using namespace std;
 vector<VarDecl *> i386_get_reg_decls()
 {
   vector<VarDecl *> ret;
-  reg_t r128 = REG_128;
+  reg_t r64 = REG_64;
   reg_t r32 = REG_32;
   reg_t r16 = REG_16;
   reg_t r8 = REG_8;
@@ -261,15 +261,24 @@ vector<VarDecl *> i386_get_reg_decls()
   ret.push_back(new VarDecl("R_CH", r8));  
   ret.push_back(new VarDecl("R_DH", r8));  
 
-  // XMM registers
-  ret.push_back(new VarDecl("R_XMM0", r128));
-  ret.push_back(new VarDecl("R_XMM1", r128));
-  ret.push_back(new VarDecl("R_XMM2", r128));
-  ret.push_back(new VarDecl("R_XMM3", r128));
-  ret.push_back(new VarDecl("R_XMM4", r128));
-  ret.push_back(new VarDecl("R_XMM5", r128));
-  ret.push_back(new VarDecl("R_XMM6", r128));
-  ret.push_back(new VarDecl("R_XMM7", r128));
+  // XMM registers, each split into a low (L) and high (H) 64-bit
+  // half.
+  ret.push_back(new VarDecl("R_XMM0L", r64));
+  ret.push_back(new VarDecl("R_XMM0H", r64));
+  ret.push_back(new VarDecl("R_XMM1L", r64));
+  ret.push_back(new VarDecl("R_XMM1H", r64));
+  ret.push_back(new VarDecl("R_XMM2L", r64));
+  ret.push_back(new VarDecl("R_XMM2H", r64));
+  ret.push_back(new VarDecl("R_XMM3L", r64));
+  ret.push_back(new VarDecl("R_XMM3H", r64));
+  ret.push_back(new VarDecl("R_XMM4L", r64));
+  ret.push_back(new VarDecl("R_XMM4H", r64));
+  ret.push_back(new VarDecl("R_XMM5L", r64));
+  ret.push_back(new VarDecl("R_XMM5H", r64));
+  ret.push_back(new VarDecl("R_XMM6L", r64));
+  ret.push_back(new VarDecl("R_XMM6H", r64));
+  ret.push_back(new VarDecl("R_XMM7L", r64));
+  ret.push_back(new VarDecl("R_XMM7H", r64));
 
   return ret;
 }
@@ -340,9 +349,8 @@ static string reg_offset_to_name( int offset, bool *is_good )
 	// The real XMM registers are 128-bit, so these cases only 
 	// show up when the code is accessing 4-byte lanes.
 	// Sometimes VEX's translation accesses parts of a XMM register
-	// at an offset, just like %ah is part of %eax. If we want to
-	// fully support SSE instructions, we'll need to apply a similar
-	// strategy as we use say with %ah, but for now we'll just punt.
+	// at an offset, just like %ah is part of %eax. But that doesn't
+        // fit with this function's remit.
         case OFFB_XMM0:     name = "XMM0";      good=false; break;
         case OFFB_XMM1:     name = "XMM1";      good=false; break;
         case OFFB_XMM2:     name = "XMM2";      good=false; break;
@@ -510,38 +518,38 @@ static Exp *translate_get_reg_32( int offset )
 
     // First, check if it's a subregister of a SIMD register
     switch (offset) {
-    case OFFB_XMM0: name = "XMM0"; lane = 0; is_good = true; break;
-    case OFFB_XMM1: name = "XMM1"; lane = 0; is_good = true; break;
-    case OFFB_XMM2: name = "XMM2"; lane = 0; is_good = true; break;
-    case OFFB_XMM3: name = "XMM3"; lane = 0; is_good = true; break;
-    case OFFB_XMM4: name = "XMM4"; lane = 0; is_good = true; break;
-    case OFFB_XMM5: name = "XMM5"; lane = 0; is_good = true; break;
-    case OFFB_XMM6: name = "XMM6"; lane = 0; is_good = true; break;
-    case OFFB_XMM7: name = "XMM7"; lane = 0; is_good = true; break;
-    case OFFB_XMM0+4: name = "XMM0"; lane = 1; is_good = true; break;
-    case OFFB_XMM1+4: name = "XMM1"; lane = 1; is_good = true; break;
-    case OFFB_XMM2+4: name = "XMM2"; lane = 1; is_good = true; break;
-    case OFFB_XMM3+4: name = "XMM3"; lane = 1; is_good = true; break;
-    case OFFB_XMM4+4: name = "XMM4"; lane = 1; is_good = true; break;
-    case OFFB_XMM5+4: name = "XMM5"; lane = 1; is_good = true; break;
-    case OFFB_XMM6+4: name = "XMM6"; lane = 1; is_good = true; break;
-    case OFFB_XMM7+4: name = "XMM7"; lane = 1; is_good = true; break;
-    case OFFB_XMM0+8: name = "XMM0"; lane = 2; is_good = true; break;
-    case OFFB_XMM1+8: name = "XMM1"; lane = 2; is_good = true; break;
-    case OFFB_XMM2+8: name = "XMM2"; lane = 2; is_good = true; break;
-    case OFFB_XMM3+8: name = "XMM3"; lane = 2; is_good = true; break;
-    case OFFB_XMM4+8: name = "XMM4"; lane = 2; is_good = true; break;
-    case OFFB_XMM5+8: name = "XMM5"; lane = 2; is_good = true; break;
-    case OFFB_XMM6+8: name = "XMM6"; lane = 2; is_good = true; break;
-    case OFFB_XMM7+8: name = "XMM7"; lane = 2; is_good = true; break;
-    case OFFB_XMM0+12: name = "XMM0"; lane = 3; is_good = true; break;
-    case OFFB_XMM1+12: name = "XMM1"; lane = 3; is_good = true; break;
-    case OFFB_XMM2+12: name = "XMM2"; lane = 3; is_good = true; break;
-    case OFFB_XMM3+12: name = "XMM3"; lane = 3; is_good = true; break;
-    case OFFB_XMM4+12: name = "XMM4"; lane = 3; is_good = true; break;
-    case OFFB_XMM5+12: name = "XMM5"; lane = 3; is_good = true; break;
-    case OFFB_XMM6+12: name = "XMM6"; lane = 3; is_good = true; break;
-    case OFFB_XMM7+12: name = "XMM7"; lane = 3; is_good = true; break;
+    case OFFB_XMM0: name = "XMM0L"; lane = 0; is_good = true; break;
+    case OFFB_XMM1: name = "XMM1L"; lane = 0; is_good = true; break;
+    case OFFB_XMM2: name = "XMM2L"; lane = 0; is_good = true; break;
+    case OFFB_XMM3: name = "XMM3L"; lane = 0; is_good = true; break;
+    case OFFB_XMM4: name = "XMM4L"; lane = 0; is_good = true; break;
+    case OFFB_XMM5: name = "XMM5L"; lane = 0; is_good = true; break;
+    case OFFB_XMM6: name = "XMM6L"; lane = 0; is_good = true; break;
+    case OFFB_XMM7: name = "XMM7L"; lane = 0; is_good = true; break;
+    case OFFB_XMM0+4: name = "XMM0L"; lane = 1; is_good = true; break;
+    case OFFB_XMM1+4: name = "XMM1L"; lane = 1; is_good = true; break;
+    case OFFB_XMM2+4: name = "XMM2L"; lane = 1; is_good = true; break;
+    case OFFB_XMM3+4: name = "XMM3L"; lane = 1; is_good = true; break;
+    case OFFB_XMM4+4: name = "XMM4L"; lane = 1; is_good = true; break;
+    case OFFB_XMM5+4: name = "XMM5L"; lane = 1; is_good = true; break;
+    case OFFB_XMM6+4: name = "XMM6L"; lane = 1; is_good = true; break;
+    case OFFB_XMM7+4: name = "XMM7L"; lane = 1; is_good = true; break;
+    case OFFB_XMM0+8: name = "XMM0H"; lane = 0; is_good = true; break;
+    case OFFB_XMM1+8: name = "XMM1H"; lane = 0; is_good = true; break;
+    case OFFB_XMM2+8: name = "XMM2H"; lane = 0; is_good = true; break;
+    case OFFB_XMM3+8: name = "XMM3H"; lane = 0; is_good = true; break;
+    case OFFB_XMM4+8: name = "XMM4H"; lane = 0; is_good = true; break;
+    case OFFB_XMM5+8: name = "XMM5H"; lane = 0; is_good = true; break;
+    case OFFB_XMM6+8: name = "XMM6H"; lane = 0; is_good = true; break;
+    case OFFB_XMM7+8: name = "XMM7H"; lane = 0; is_good = true; break;
+    case OFFB_XMM0+12: name = "XMM0H"; lane = 1; is_good = true; break;
+    case OFFB_XMM1+12: name = "XMM1H"; lane = 1; is_good = true; break;
+    case OFFB_XMM2+12: name = "XMM2H"; lane = 1; is_good = true; break;
+    case OFFB_XMM3+12: name = "XMM3H"; lane = 1; is_good = true; break;
+    case OFFB_XMM4+12: name = "XMM4H"; lane = 1; is_good = true; break;
+    case OFFB_XMM5+12: name = "XMM5H"; lane = 1; is_good = true; break;
+    case OFFB_XMM6+12: name = "XMM6H"; lane = 1; is_good = true; break;
+    case OFFB_XMM7+12: name = "XMM7H"; lane = 1; is_good = true; break;
     default:
 	is_good = false;
 	break;
@@ -549,13 +557,11 @@ static Exp *translate_get_reg_32( int offset )
 
     if (is_good) {
 	// Matched a SIMD subregister, so extract the bits we want
-	assert(lane >= 0 && lane < 4);
-	Exp *reg = mk_reg(name, REG_128);
+	assert(lane >= 0 && lane < 2);
+	Exp *reg = mk_reg(name, REG_64);
 	switch (lane) {
 	case 0: result = _ex_l_cast(reg, REG_32); break;
-	case 1: result = _ex_h_cast(_ex_l_cast(reg, REG_64), REG_32);
-	case 2: result = _ex_l_cast(_ex_h_cast(reg, REG_64), REG_32);
-	case 3: result = _ex_h_cast(reg, REG_32); break;
+	case 1: result = _ex_h_cast(reg, REG_32); break;
 	}
 	return result;
     }
@@ -577,41 +583,35 @@ static Exp *translate_get_reg_64( int offset )
 
     bool is_good = false;
     string name;
-    int lane = -1;
     Exp *result;
 
     // First, check if it's a subregister of a SIMD register
     switch (offset) {
-    case OFFB_XMM0: name = "XMM0"; lane = 0; is_good = true; break;
-    case OFFB_XMM1: name = "XMM1"; lane = 0; is_good = true; break;
-    case OFFB_XMM2: name = "XMM2"; lane = 0; is_good = true; break;
-    case OFFB_XMM3: name = "XMM3"; lane = 0; is_good = true; break;
-    case OFFB_XMM4: name = "XMM4"; lane = 0; is_good = true; break;
-    case OFFB_XMM5: name = "XMM5"; lane = 0; is_good = true; break;
-    case OFFB_XMM6: name = "XMM6"; lane = 0; is_good = true; break;
-    case OFFB_XMM7: name = "XMM7"; lane = 0; is_good = true; break;
-    case OFFB_XMM0+8: name = "XMM0"; lane = 1; is_good = true; break;
-    case OFFB_XMM1+8: name = "XMM1"; lane = 1; is_good = true; break;
-    case OFFB_XMM2+8: name = "XMM2"; lane = 1; is_good = true; break;
-    case OFFB_XMM3+8: name = "XMM3"; lane = 1; is_good = true; break;
-    case OFFB_XMM4+8: name = "XMM4"; lane = 1; is_good = true; break;
-    case OFFB_XMM5+8: name = "XMM5"; lane = 1; is_good = true; break;
-    case OFFB_XMM6+8: name = "XMM6"; lane = 1; is_good = true; break;
-    case OFFB_XMM7+8: name = "XMM7"; lane = 1; is_good = true; break;
+    case OFFB_XMM0: name = "XMM0L"; is_good = true; break;
+    case OFFB_XMM1: name = "XMM1L"; is_good = true; break;
+    case OFFB_XMM2: name = "XMM2L"; is_good = true; break;
+    case OFFB_XMM3: name = "XMM3L"; is_good = true; break;
+    case OFFB_XMM4: name = "XMM4L"; is_good = true; break;
+    case OFFB_XMM5: name = "XMM5L"; is_good = true; break;
+    case OFFB_XMM6: name = "XMM6L"; is_good = true; break;
+    case OFFB_XMM7: name = "XMM7L"; is_good = true; break;
+    case OFFB_XMM0+8: name = "XMM0H"; is_good = true; break;
+    case OFFB_XMM1+8: name = "XMM1H"; is_good = true; break;
+    case OFFB_XMM2+8: name = "XMM2H"; is_good = true; break;
+    case OFFB_XMM3+8: name = "XMM3H"; is_good = true; break;
+    case OFFB_XMM4+8: name = "XMM4H"; is_good = true; break;
+    case OFFB_XMM5+8: name = "XMM5H"; is_good = true; break;
+    case OFFB_XMM6+8: name = "XMM6H"; is_good = true; break;
+    case OFFB_XMM7+8: name = "XMM7H"; is_good = true; break;
     default:
 	is_good = false;
 	break;
     }
 
     if (is_good) {
-	// Matched a SIMD subregister, so extract the bits we want
-	assert(lane >= 0 && lane < 2);
-	Exp *reg = mk_reg(name, REG_128);
-	switch (lane) {
-	case 0: result = _ex_l_cast(reg, REG_64); break;
-	case 1: result = _ex_h_cast(reg, REG_64); break;
-	}
-	return result;
+	// Matched a SIMD subregister, which is already the right size
+	// because of our split representation
+	return mk_reg(name, REG_64);
     }
 
     // Here's where we'd look for real 64-bit registers, if we
@@ -641,9 +641,11 @@ static Exp *translate_get_reg_128( unsigned int offset )
 	assert(0);
     }
 
-    Exp *value = NULL;
+    string name_l = name + "L";
+    string name_h = name + "H";
 
-    value = mk_reg(name, REG_128);
+    Exp *value = new Vector(mk_reg(name_h, REG_64),
+			    mk_reg(name_l, REG_64));
 
     return value;
 }
@@ -1243,14 +1245,6 @@ static Exp *assemble64(Exp *arg1, Exp *arg2) {
     return new BinOp(BITOR, high_s, low);
 }
 
-// Basically the same as translate_64HLto128
-static Exp *assemble128(Exp *arg1, Exp *arg2) {
-    Exp *high = new Cast(arg1, REG_128, CAST_UNSIGNED);
-    Exp *low = new Cast(arg2, REG_128, CAST_UNSIGNED);
-    Exp *high_s = new BinOp(LSHIFT, high, ex_const(64));
-    return new BinOp(BITOR, high_s, low);
-}
-
 static Stmt *translate_put_reg_32( int offset, Exp *data, IRSB *irbb )
 {
     assert(data);
@@ -1263,38 +1257,38 @@ static Stmt *translate_put_reg_32( int offset, Exp *data, IRSB *irbb )
 
     // First, check if it's a subregister of a SIMD register
     switch (offset) {
-    case OFFB_XMM0: name = "XMM0"; lane = 0; is_good = true; break;
-    case OFFB_XMM1: name = "XMM1"; lane = 0; is_good = true; break;
-    case OFFB_XMM2: name = "XMM2"; lane = 0; is_good = true; break;
-    case OFFB_XMM3: name = "XMM3"; lane = 0; is_good = true; break;
-    case OFFB_XMM4: name = "XMM4"; lane = 0; is_good = true; break;
-    case OFFB_XMM5: name = "XMM5"; lane = 0; is_good = true; break;
-    case OFFB_XMM6: name = "XMM6"; lane = 0; is_good = true; break;
-    case OFFB_XMM7: name = "XMM7"; lane = 0; is_good = true; break;
-    case OFFB_XMM0+4: name = "XMM0"; lane = 1; is_good = true; break;
-    case OFFB_XMM1+4: name = "XMM1"; lane = 1; is_good = true; break;
-    case OFFB_XMM2+4: name = "XMM2"; lane = 1; is_good = true; break;
-    case OFFB_XMM3+4: name = "XMM3"; lane = 1; is_good = true; break;
-    case OFFB_XMM4+4: name = "XMM4"; lane = 1; is_good = true; break;
-    case OFFB_XMM5+4: name = "XMM5"; lane = 1; is_good = true; break;
-    case OFFB_XMM6+4: name = "XMM6"; lane = 1; is_good = true; break;
-    case OFFB_XMM7+4: name = "XMM7"; lane = 1; is_good = true; break;
-    case OFFB_XMM0+8: name = "XMM0"; lane = 2; is_good = true; break;
-    case OFFB_XMM1+8: name = "XMM1"; lane = 2; is_good = true; break;
-    case OFFB_XMM2+8: name = "XMM2"; lane = 2; is_good = true; break;
-    case OFFB_XMM3+8: name = "XMM3"; lane = 2; is_good = true; break;
-    case OFFB_XMM4+8: name = "XMM4"; lane = 2; is_good = true; break;
-    case OFFB_XMM5+8: name = "XMM5"; lane = 2; is_good = true; break;
-    case OFFB_XMM6+8: name = "XMM6"; lane = 2; is_good = true; break;
-    case OFFB_XMM7+8: name = "XMM7"; lane = 2; is_good = true; break;
-    case OFFB_XMM0+12: name = "XMM0"; lane = 3; is_good = true; break;
-    case OFFB_XMM1+12: name = "XMM1"; lane = 3; is_good = true; break;
-    case OFFB_XMM2+12: name = "XMM2"; lane = 3; is_good = true; break;
-    case OFFB_XMM3+12: name = "XMM3"; lane = 3; is_good = true; break;
-    case OFFB_XMM4+12: name = "XMM4"; lane = 3; is_good = true; break;
-    case OFFB_XMM5+12: name = "XMM5"; lane = 3; is_good = true; break;
-    case OFFB_XMM6+12: name = "XMM6"; lane = 3; is_good = true; break;
-    case OFFB_XMM7+12: name = "XMM7"; lane = 3; is_good = true; break;
+    case OFFB_XMM0: name = "XMM0L"; lane = 0; is_good = true; break;
+    case OFFB_XMM1: name = "XMM1L"; lane = 0; is_good = true; break;
+    case OFFB_XMM2: name = "XMM2L"; lane = 0; is_good = true; break;
+    case OFFB_XMM3: name = "XMM3L"; lane = 0; is_good = true; break;
+    case OFFB_XMM4: name = "XMM4L"; lane = 0; is_good = true; break;
+    case OFFB_XMM5: name = "XMM5L"; lane = 0; is_good = true; break;
+    case OFFB_XMM6: name = "XMM6L"; lane = 0; is_good = true; break;
+    case OFFB_XMM7: name = "XMM7L"; lane = 0; is_good = true; break;
+    case OFFB_XMM0+4: name = "XMM0L"; lane = 1; is_good = true; break;
+    case OFFB_XMM1+4: name = "XMM1L"; lane = 1; is_good = true; break;
+    case OFFB_XMM2+4: name = "XMM2L"; lane = 1; is_good = true; break;
+    case OFFB_XMM3+4: name = "XMM3L"; lane = 1; is_good = true; break;
+    case OFFB_XMM4+4: name = "XMM4L"; lane = 1; is_good = true; break;
+    case OFFB_XMM5+4: name = "XMM5L"; lane = 1; is_good = true; break;
+    case OFFB_XMM6+4: name = "XMM6L"; lane = 1; is_good = true; break;
+    case OFFB_XMM7+4: name = "XMM7L"; lane = 1; is_good = true; break;
+    case OFFB_XMM0+8: name = "XMM0H"; lane = 0; is_good = true; break;
+    case OFFB_XMM1+8: name = "XMM1H"; lane = 0; is_good = true; break;
+    case OFFB_XMM2+8: name = "XMM2H"; lane = 0; is_good = true; break;
+    case OFFB_XMM3+8: name = "XMM3H"; lane = 0; is_good = true; break;
+    case OFFB_XMM4+8: name = "XMM4H"; lane = 0; is_good = true; break;
+    case OFFB_XMM5+8: name = "XMM5H"; lane = 0; is_good = true; break;
+    case OFFB_XMM6+8: name = "XMM6H"; lane = 0; is_good = true; break;
+    case OFFB_XMM7+8: name = "XMM7H"; lane = 0; is_good = true; break;
+    case OFFB_XMM0+12: name = "XMM0H"; lane = 1; is_good = true; break;
+    case OFFB_XMM1+12: name = "XMM1H"; lane = 1; is_good = true; break;
+    case OFFB_XMM2+12: name = "XMM2H"; lane = 1; is_good = true; break;
+    case OFFB_XMM3+12: name = "XMM3H"; lane = 1; is_good = true; break;
+    case OFFB_XMM4+12: name = "XMM4H"; lane = 1; is_good = true; break;
+    case OFFB_XMM5+12: name = "XMM5H"; lane = 1; is_good = true; break;
+    case OFFB_XMM6+12: name = "XMM6H"; lane = 1; is_good = true; break;
+    case OFFB_XMM7+12: name = "XMM7H"; lane = 1; is_good = true; break;
     default:
 	is_good = false;
 	break;
@@ -1302,29 +1296,18 @@ static Stmt *translate_put_reg_32( int offset, Exp *data, IRSB *irbb )
 
     if (is_good) {
 	// Matched a SIMD subregister, so divide and reassemble.
-	assert(lane >= 0 && lane < 4);
-	bool change_high = (lane >= 2);
-	bool change_high_quarter = (lane & 1);
-        Exp *old_val = mk_reg(name, REG_128);
-	Exp *high_half = _ex_h_cast(old_val, REG_64);
-	Exp *low_half = ex_l_cast(old_val, REG_64);
-	Exp *changed_half = change_high ? high_half : low_half;
-	Exp *high_quarter, *low_quarter;
-	if (change_high_quarter) {
-	    high_quarter = data;
-	    low_quarter = _ex_l_cast(changed_half, REG_32);
+	assert(lane >= 0 && lane < 2);
+        Exp *old_val = mk_reg(name, REG_64);
+	Exp *high, *low;
+	if (lane == 0) {
+	    high = _ex_h_cast(old_val, REG_32);
+	    low = data;
 	} else {
-	    high_quarter = _ex_h_cast(changed_half, REG_32);
-	    low_quarter = data;
+	    high = data;
+	    low = _ex_l_cast(old_val, REG_32);
 	}
-	changed_half = assemble64(high_quarter, low_quarter);
-	if (change_high) {
-	    high_half = changed_half;
-	} else {
-	    low_half = changed_half;
-	}
-	Exp *new_val = assemble128(high_half, low_half);
-	return new Move(mk_reg(name, REG_128), new_val);
+	Exp *new_val = assemble64(high, low);
+	return new Move(mk_reg(name, REG_64), new_val);
     }
 
     // Next, try the regular 32-bit registers
@@ -1350,46 +1333,34 @@ static Stmt *translate_put_reg_64(unsigned int offset, Exp *data, IRSB *irbb)
 
     bool is_good = false;
     string name;
-    int lane = -1;
 
     // First, check if it's a subregister of a SIMD register
     switch (offset) {
-    case OFFB_XMM0: name = "XMM0"; lane = 0; is_good = true; break;
-    case OFFB_XMM1: name = "XMM1"; lane = 0; is_good = true; break;
-    case OFFB_XMM2: name = "XMM2"; lane = 0; is_good = true; break;
-    case OFFB_XMM3: name = "XMM3"; lane = 0; is_good = true; break;
-    case OFFB_XMM4: name = "XMM4"; lane = 0; is_good = true; break;
-    case OFFB_XMM5: name = "XMM5"; lane = 0; is_good = true; break;
-    case OFFB_XMM6: name = "XMM6"; lane = 0; is_good = true; break;
-    case OFFB_XMM7: name = "XMM7"; lane = 0; is_good = true; break;
-    case OFFB_XMM0+8: name = "XMM0"; lane = 1; is_good = true; break;
-    case OFFB_XMM1+8: name = "XMM1"; lane = 1; is_good = true; break;
-    case OFFB_XMM2+8: name = "XMM2"; lane = 1; is_good = true; break;
-    case OFFB_XMM3+8: name = "XMM3"; lane = 1; is_good = true; break;
-    case OFFB_XMM4+8: name = "XMM4"; lane = 1; is_good = true; break;
-    case OFFB_XMM5+8: name = "XMM5"; lane = 1; is_good = true; break;
-    case OFFB_XMM6+8: name = "XMM6"; lane = 1; is_good = true; break;
-    case OFFB_XMM7+8: name = "XMM7"; lane = 1; is_good = true; break;
+    case OFFB_XMM0: name = "XMM0L"; is_good = true; break;
+    case OFFB_XMM1: name = "XMM1L"; is_good = true; break;
+    case OFFB_XMM2: name = "XMM2L"; is_good = true; break;
+    case OFFB_XMM3: name = "XMM3L"; is_good = true; break;
+    case OFFB_XMM4: name = "XMM4L"; is_good = true; break;
+    case OFFB_XMM5: name = "XMM5L"; is_good = true; break;
+    case OFFB_XMM6: name = "XMM6L"; is_good = true; break;
+    case OFFB_XMM7: name = "XMM7L"; is_good = true; break;
+    case OFFB_XMM0+8: name = "XMM0H"; is_good = true; break;
+    case OFFB_XMM1+8: name = "XMM1H"; is_good = true; break;
+    case OFFB_XMM2+8: name = "XMM2H"; is_good = true; break;
+    case OFFB_XMM3+8: name = "XMM3H"; is_good = true; break;
+    case OFFB_XMM4+8: name = "XMM4H"; is_good = true; break;
+    case OFFB_XMM5+8: name = "XMM5H"; is_good = true; break;
+    case OFFB_XMM6+8: name = "XMM6H"; is_good = true; break;
+    case OFFB_XMM7+8: name = "XMM7H"; is_good = true; break;
     default:
 	is_good = false;
 	break;
     }
 
     if (is_good) {
-	// Matched a SIMD subregister, so divide and reassemble.
-	assert(lane >= 0 && lane < 2);
-	bool change_high = (lane & 1);
-        Exp *old_val = mk_reg(name, REG_128);
-	Exp *high_half, *low_half;
-	if (change_high) {
-	    high_half = data;
-	    low_half = _ex_l_cast(old_val, REG_64);
-	} else {
-	    high_half = _ex_h_cast(old_val, REG_64);
-	    low_half = data;
-	}
-	Exp *new_val = assemble128(high_half, low_half);
-	return new Move(mk_reg(name, REG_128), new_val);
+	// Matched a SIMD subregister, which happens to already be the
+	// right size because of our representation strategy.
+	return new Move(mk_reg(name, REG_64), data);
     }
 
     // Here's where we'd support regular 64-bit registers, when we
@@ -1399,7 +1370,8 @@ static Stmt *translate_put_reg_64(unsigned int offset, Exp *data, IRSB *irbb)
     return new Special("Unknown 64-bit register");
 }
 
-static Stmt *translate_put_reg_128(unsigned int offset, Exp *data, IRSB *irbb)
+static Stmt *translate_put_reg_128(unsigned int offset, Exp *data, IRSB *irbb,
+				   vector<Stmt *> *irout)
 {
     assert(data);
 
@@ -1419,9 +1391,18 @@ static Stmt *translate_put_reg_128(unsigned int offset, Exp *data, IRSB *irbb)
 	    assert(0);
     }
 
-    Temp *reg = mk_reg(name, REG_128);
+    // The value should be a Vector; deconstruct it
+    assert(data->exp_type == VECTOR);
+    Vector *v = (Vector *)data;
+    Exp *high = v->lanes[1];
+    Exp *low = v->lanes[0];
+    delete v; // Shallow delete, since we reuse high and low
 
-    return new Move( reg, data );
+    string name_l = name + "L";
+    string name_h = name + "H";
+
+    irout->push_back(new Move(mk_reg(name_h, REG_64), high));
+    return new Move(mk_reg(name_l, REG_64), low);
 }
 
 Stmt *i386_translate_put( IRStmt *stmt, IRSB *irbb, vector<Stmt *> *irout )
@@ -1479,7 +1460,7 @@ Stmt *i386_translate_put( IRStmt *stmt, IRSB *irbb, vector<Stmt *> *irout )
 
     else if ( type == Ity_I128 || type == Ity_V128 )
     {
-	result = translate_put_reg_128(offset, data, irbb);
+	result = translate_put_reg_128(offset, data, irbb, irout);
     }
 
 

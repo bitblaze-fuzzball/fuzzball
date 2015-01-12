@@ -231,10 +231,10 @@ reg_t IRType_to_reg_type( IRType type )
       t = REG_64; break;
     case Ity_I128:   print_debug("warning", 
 				 "Int128 register encountered");
-      t = REG_128; break;
+      t = REG_64; break;
     case Ity_V128:   print_debug("warning", 
 				 "SIMD128 register encountered");
-      t = REG_128; break;
+      t = REG_64; break;
     default:
       assert(0);
     }
@@ -270,6 +270,14 @@ Temp *mk_temp( IRTemp temp_num, IRType ty )
     return new Temp(r_typ, vex_temp_name(temp_num, r_typ));
 }
 
+void mk_temps128(IRTemp temp_num, Temp **high_p, Temp **low_p) {
+    string name = vex_temp_name(temp_num, REG_64);
+    string name_h = name + "h";
+    string name_l = name + "l";
+    *high_p = new Temp(REG_64, name_h);
+    *low_p = new Temp(REG_64, name_l);
+}
+
 Temp *mk_temp( reg_t type, vector<Stmt *> *stmts )
 {
     static int temp_counter = 0;
@@ -287,6 +295,10 @@ Temp *mk_temp( IRType ty, vector<Stmt *> *stmts )
 
 Exp *mk_u32(UInt val) {
     return new Constant(REG_32, val);
+}
+
+Exp *mk_u64(uint64_t val) {
+    return new Constant(REG_64, val);
 }
 
 string addr_to_string( Addr64 dest )
@@ -359,12 +371,7 @@ Exp *translate_64HLto128( Exp *arg1, Exp *arg2 )
     assert(arg1);
     assert(arg2);
 
-    Exp *high = new Cast( arg1, REG_128, CAST_UNSIGNED );
-    Exp *low = new Cast( arg2, REG_128, CAST_UNSIGNED );
-
-    high = new BinOp( LSHIFT, high, ex_const(64) );
-
-    return new BinOp( BITOR, high, low );
+    return new Vector(arg1, arg2);
 }
 
 Exp *translate_64HLto64( Exp *high, Exp *low )
@@ -566,14 +573,35 @@ Exp *translate_CmpF(Exp *arg1, Exp *arg2, reg_t sz) {
 			   _ex_ite(cmp_gt, ex_const(0), ex_const(0x45))));
 }
 
+void split_vector(Exp *exp_v, Exp **high, Exp **low) {
+    if (exp_v->exp_type == VECTOR) {
+	// Expected case
+	Vector *v = (Vector *)exp_v;
+	*high = v->lanes[1];
+	*low = v->lanes[0];
+	delete v; // Shallow delete, since we reuse high and low
+    } else if (exp_v->exp_type == UNKNOWN) {
+	// An error or unhandled case. Propagate times two.
+	*high = exp_v;
+	*low = ecl(exp_v);
+    } else {
+	assert(exp_v->exp_type == VECTOR);
+    }
+}
+
 // Low-lane single-precision FP, as in the x86 SSE addss, for instance.
 // The low 32-bits are operated on, and the high 96 bits are passed through
 // from the left operand.
 Exp *translate_low32fp_128_binop(fbinop_type_t op, Exp *left, Exp *right) {
-    Exp *left_high = ex_h_cast(left, REG_64);
-    Exp *left_low = _ex_l_cast(left, REG_64);
+    Exp *left_high, *left_low;
+    split_vector(left, &left_high, &left_low);
     Exp *left32 = _ex_l_cast(left_low, REG_32);
-    Exp *right32 = _ex_l_cast(right, REG_32);
+
+    Exp *right_high, *right_low;
+    split_vector(right, &right_high, &right_low);
+    Exp *right32 = _ex_l_cast(right_low, REG_32);
+    Exp::destroy(right_high); // unusued
+
     Exp *result32 = new FBinOp(op, ROUND_NEAREST, left32, right32);
     Exp *lane3 = ex_h_cast(left_low, REG_32);
     Exp *result64 = translate_32HLto64(lane3, result32);
@@ -584,39 +612,41 @@ Exp *translate_low32fp_128_binop(fbinop_type_t op, Exp *left, Exp *right) {
 // The low 64-bits are operated on, and the high 64 bits are passed through
 // from the left operand.
 Exp *translate_low64fp_128_binop(fbinop_type_t op, Exp *left, Exp *right) {
-    Exp *left_high = ex_h_cast(left, REG_64);
-    Exp *left64 = _ex_l_cast(left, REG_64);
-    Exp *right64 = _ex_l_cast(right, REG_64);
-    Exp *result64 = new FBinOp(op, ROUND_NEAREST, left64, right64);
+    Exp *left_high, *left_low;
+    split_vector(left, &left_high, &left_low);
+
+    Exp *right_high, *right_low;
+    split_vector(right, &right_high, &right_low);
+    Exp::destroy(right_high); // unusued
+
+    Exp *result64 = new FBinOp(op, ROUND_NEAREST, left_low, right_low);
     return translate_64HLto128(left_high, result64);
 }
 
 // Bitwise concatenate 4 32-bit values, high to low, into a 128-bit
 // value.
 Exp *assemble4x32(Exp *e1, Exp *e2, Exp *e3, Exp *e4) {
-    Exp *e1w = new Cast(e1, REG_128, CAST_UNSIGNED);
-    Exp *e2w = new Cast(e2, REG_128, CAST_UNSIGNED);
-    Exp *e3w = new Cast(e3, REG_128, CAST_UNSIGNED);
-    Exp *e4w = new Cast(e4, REG_128, CAST_UNSIGNED);
+    Exp *high = translate_32HLto64(e1, e2);
+    Exp *low = translate_32HLto64(e3, e4);
 
-    Exp *e1s = new BinOp(LSHIFT, e1w, ex_const(96));
-    Exp *e2s = new BinOp(LSHIFT, e2w, ex_const(64));
-    Exp *e3s = new BinOp(LSHIFT, e3w, ex_const(32));
-
-    return _ex_or(e1s, e2s, e3s, e4w);
+    return new Vector(high, low);
 }
 
 // SIMD FP on 4 single-precision values at once, as in the x86 addps.
 Exp *translate_par32fp_128_binop(fbinop_type_t op, Exp *left, Exp *right) {
-    Exp *left1 = _ex_h_cast(left, REG_32);
-    Exp *left2 = _ex_l_cast(ex_h_cast(left, REG_64), REG_32);
-    Exp *left3 = _ex_h_cast(ex_l_cast(left, REG_64), REG_32);
-    Exp *left4 = ex_l_cast(left, REG_32);
+    Exp *left_high, *left_low;
+    split_vector(left, &left_high, &left_low);
+    Exp *left1 = _ex_h_cast(left_high, REG_32);
+    Exp *left2 = ex_l_cast(left_high, REG_32);
+    Exp *left3 = _ex_h_cast(left_low, REG_32);
+    Exp *left4 = ex_l_cast(left_low, REG_32);
 
-    Exp *right1 = _ex_h_cast(right, REG_32);
-    Exp *right2 = _ex_l_cast(ex_h_cast(right, REG_64), REG_32);
-    Exp *right3 = _ex_h_cast(ex_l_cast(right, REG_64), REG_32);
-    Exp *right4 = ex_l_cast(right, REG_32);
+    Exp *right_high, *right_low;
+    split_vector(right, &right_high, &right_low);
+    Exp *right1 = _ex_h_cast(right_high, REG_32);
+    Exp *right2 = ex_l_cast(right_high, REG_32);
+    Exp *right3 = _ex_h_cast(right_low, REG_32);
+    Exp *right4 = ex_l_cast(right_low, REG_32);
 
     Exp *result1 = new FBinOp(op, ROUND_NEAREST, left1, right1);
     Exp *result2 = new FBinOp(op, ROUND_NEAREST, left2, right2);
@@ -628,11 +658,11 @@ Exp *translate_par32fp_128_binop(fbinop_type_t op, Exp *left, Exp *right) {
 
 // SIMD FP on 2 double-precision values at once, as in the x86 addpd.
 Exp *translate_par64fp_128_binop(fbinop_type_t op, Exp *left, Exp *right) {
-    Exp *left_h = _ex_h_cast(left, REG_64);
-    Exp *left_l = ex_l_cast(left, REG_64);
+    Exp *left_h, *left_l;
+    split_vector(left, &left_h, &left_l);
 
-    Exp *right_h = _ex_h_cast(right, REG_64);
-    Exp *right_l = ex_l_cast(right, REG_64);
+    Exp *right_h, *right_l;
+    split_vector(right, &right_h, &right_l);
 
     Exp *result_h = new FBinOp(op, ROUND_NEAREST, left_h, right_h);
     Exp *result_l = new FBinOp(op, ROUND_NEAREST, left_l, right_l);
@@ -666,8 +696,8 @@ Exp *translate_const( IRExpr *expr )
  	                width = REG_64;   value = co->Ico.F64i;   break;
 	
       case Ico_V128:
-        // These are used in SIMD instructions. We won't be able to handle
-	// them correctly without 128-bit types.
+        // These are used in SIMD instructions, but VEX uses a slightly
+        // weird compressed representation.
 	return new Unknown("Untranslatable Ico_V128 constant");
       default:
             panic("Unrecognized constant type");
@@ -734,11 +764,33 @@ Exp *translate_simple_unop( IRExpr *expr, IRSB *irbb, vector<Stmt *> *irout )
         case Iop_1Sto16:    return new Cast( arg, REG_16, CAST_SIGNED );
         case Iop_1Sto32:    return new Cast( arg, REG_32, CAST_SIGNED );
         case Iop_1Sto64:    return new Cast( arg, REG_64, CAST_SIGNED );
-        case Iop_32UtoV128: return new Cast( arg, REG_128, CAST_UNSIGNED );
-        case Iop_64UtoV128: return new Cast( arg, REG_128, CAST_UNSIGNED );
-        case Iop_V128to32:  return new Cast( arg, REG_32, CAST_LOW );
-        case Iop_V128to64:  return new Cast( arg, REG_64, CAST_LOW );
-        case Iop_V128HIto64:return new Cast( arg, REG_64, CAST_HIGH );
+
+        case Iop_32UtoV128:
+	    return new Vector(mk_u64(0),
+			      new Cast(arg, REG_64, CAST_UNSIGNED));
+        case Iop_64UtoV128:
+	    return new Vector(mk_u64(0), arg);
+
+        case Iop_V128to32: {
+	    Exp *arg_high, *arg_low;
+	    split_vector(arg, &arg_high, &arg_low);
+	    Exp::destroy(arg_high);
+	    return new Cast(arg_low, REG_32, CAST_LOW);
+	}
+
+        case Iop_V128to64: {
+	    Exp *arg_high, *arg_low;
+	    split_vector(arg, &arg_high, &arg_low);
+	    Exp::destroy(arg_high);
+	    return arg_low;
+	}
+
+        case Iop_V128HIto64: {
+	    Exp *arg_high, *arg_low;
+	    split_vector(arg, &arg_high, &arg_low);
+	    Exp::destroy(arg_low);
+	    return arg_high;
+	}
 
 	// These next few are the rare FP conversions that never have
 	// to round, so they take no rounding mode in VEX. The others
@@ -799,6 +851,17 @@ Exp *translate_unop( IRExpr *expr, IRSB *irbb, vector<Stmt *> *irout )
     return NULL;
 }
 
+Exp *distribute_binop128(binop_type_t op, Exp *left_v, Exp *right_v) {
+    Exp *left_high, *left_low;
+    split_vector(left_v, &left_high, &left_low);
+
+    Exp *right_high, *right_low;
+    split_vector(right_v, &right_high, &right_low);
+
+    return new Vector(new BinOp(op, left_high, right_high),
+		      new BinOp(op, left_low, right_low));
+}
+
 Exp *translate_simple_binop( IRExpr *expr, IRSB *irbb, vector<Stmt *> *irout )
 {
     Exp *arg1 = translate_expr(expr->Iex.Binop.arg1, irbb, irout);
@@ -822,20 +885,23 @@ Exp *translate_simple_binop( IRExpr *expr, IRSB *irbb, vector<Stmt *> *irout )
 	case Iop_Or16:
 	case Iop_Or32:
 	case Iop_Or64:
-        case Iop_OrV128:
 	    return new BinOp(BITOR, arg1, arg2);
+        case Iop_OrV128:
+	    return distribute_binop128(BITOR, arg1, arg2);
         case Iop_And8:
 	case Iop_And16:
 	case Iop_And32:
 	case Iop_And64:
-        case Iop_AndV128:
 	    return new BinOp(BITAND, arg1, arg2);
+        case Iop_AndV128:
+	    return distribute_binop128(BITAND, arg1, arg2);
         case Iop_Xor8:
 	case Iop_Xor16:
 	case Iop_Xor32:
 	case Iop_Xor64:
-        case Iop_XorV128:
 	    return new BinOp(XOR, arg1, arg2);
+        case Iop_XorV128:
+	    return distribute_binop128(XOR, arg1, arg2);
         case Iop_Shl8:
 	case Iop_Shl16:
 	case Iop_Shl32:
@@ -1194,8 +1260,14 @@ Exp *translate_tmp( IRTemp temp, IRSB *irbb, vector<Stmt *> *irout )
     assert(irout);
 
     IRType type = typeOfIRTemp(irbb->tyenv, temp);
-    return mk_temp(temp, type);
 
+    if (type == Ity_I128 || type == Ity_V128) {
+	Temp *t_high, *t_low;
+	mk_temps128(temp, &t_high, &t_low);
+	return new Vector(t_high, t_low);
+    }
+
+    return mk_temp(temp, type);
 }
 
 Exp *translate_tmp_ex( IRExpr *expr, IRSB *irbb, vector<Stmt *> *irout ) {
@@ -1268,6 +1340,17 @@ Stmt *mk_assign_tmp(IRTemp tmp, Exp *rhs_e, IRSB *irbb,
     assert(irout);
 
     IRType type = typeOfIRTemp(irbb->tyenv, tmp);
+
+    if (type == Ity_I128 || type == Ity_V128) {
+	// Split into two 64-bit temps
+	Exp *rhs_high, *rhs_low;
+	split_vector(rhs_e, &rhs_high, &rhs_low);
+	Temp *t_high, *t_low;
+	mk_temps128(tmp, &t_high, &t_low);
+	irout->push_back(new Move(t_high, rhs_high));
+	return new Move(t_low, rhs_low);
+    }
+
     return new Move( mk_temp(tmp, type), rhs_e );
 }
 
