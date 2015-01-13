@@ -1741,10 +1741,17 @@ vector<Stmt *> *translate_irbb( Instruction *inst, IRSB *irbb )
 
     for(int i = 0; i < irbb->tyenv->types_used; i++){
       IRType ty = irbb->tyenv->types[i];
-      reg_t typ = IRType_to_reg_type(ty);
-      string name = vex_temp_name(i, typ);
 
-      irout->push_back(new VarDecl(name, typ));
+      if (ty == Ity_I128 || ty == Ity_V128) {
+	  // "Vector" type: print as a pair of smaller variables
+	  string name = vex_temp_name(i, REG_64);
+	  irout->push_back(new VarDecl(name + "h", REG_64));
+	  irout->push_back(new VarDecl(name + "l", REG_64));
+      } else {
+	  reg_t typ = IRType_to_reg_type(ty);
+	  string name = vex_temp_name(i, typ);
+	  irout->push_back(new VarDecl(name, typ));
+      }
     }
     
     for ( i = 1; i < irbb->stmts_used; i++ )

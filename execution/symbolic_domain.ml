@@ -389,5 +389,85 @@ module SymbolicDomain : Exec_domain.DOMAIN = struct
   let ite32 = ite
   let ite64 = ite
 
+  let fbinop op rm v1 v2 = V.FBinOp(op, rm, v1, v2)
+
+  let fplus32 = fbinop V.FPLUS
+  let fplus64 = fbinop V.FPLUS
+
+  let fminus32 = fbinop V.FMINUS
+  let fminus64 = fbinop V.FMINUS
+
+  let ftimes32 = fbinop V.FTIMES
+  let ftimes64 = fbinop V.FTIMES
+
+  let fdivide32 = fbinop V.FDIVIDE
+  let fdivide64 = fbinop V.FDIVIDE
+
+  let feq32 = fbinop V.FEQ
+  let feq64 = fbinop V.FEQ
+
+  let fneq32 = fbinop V.FNEQ
+  let fneq64 = fbinop V.FNEQ
+
+  let flt32 = fbinop V.FLT
+  let flt64 = fbinop V.FLT
+
+  let fle32 = fbinop V.FLE
+  let fle64 = fbinop V.FLE
+
+  let funop op rm v1 = V.FUnOp(op, rm, v1)
+
+  let fneg32 = funop V.FNEG
+  let fneg64 = funop V.FNEG
+
+  let fcast op ty rm v = V.FCast(op, rm, ty, v)
+
+  let float1s32  = fcast V.CAST_SFLOAT V.REG_32
+  let float8s32  = fcast V.CAST_SFLOAT V.REG_32
+  let float16s32 = fcast V.CAST_SFLOAT V.REG_32
+  let float32s32 = fcast V.CAST_SFLOAT V.REG_32
+  let float64s32 = fcast V.CAST_SFLOAT V.REG_32
+  let float1s64  = fcast V.CAST_SFLOAT V.REG_64
+  let float8s64  = fcast V.CAST_SFLOAT V.REG_64
+  let float16s64 = fcast V.CAST_SFLOAT V.REG_64
+  let float32s64 = fcast V.CAST_SFLOAT V.REG_64
+  let float64s64 = fcast V.CAST_SFLOAT V.REG_64
+
+  let float1u32  = fcast V.CAST_UFLOAT V.REG_32
+  let float8u32  = fcast V.CAST_UFLOAT V.REG_32
+  let float16u32 = fcast V.CAST_UFLOAT V.REG_32
+  let float32u32 = fcast V.CAST_UFLOAT V.REG_32
+  let float64u32 = fcast V.CAST_UFLOAT V.REG_32
+  let float1u64  = fcast V.CAST_UFLOAT V.REG_64
+  let float8u64  = fcast V.CAST_UFLOAT V.REG_64
+  let float16u64 = fcast V.CAST_UFLOAT V.REG_64
+  let float32u64 = fcast V.CAST_UFLOAT V.REG_64
+  let float64u64 = fcast V.CAST_UFLOAT V.REG_64
+
+  let fix32s1  = fcast V.CAST_SFIX V.REG_1
+  let fix32s8  = fcast V.CAST_SFIX V.REG_8
+  let fix32s16 = fcast V.CAST_SFIX V.REG_16
+  let fix32s32 = fcast V.CAST_SFIX V.REG_32
+  let fix32s64 = fcast V.CAST_SFIX V.REG_64
+  let fix64s1  = fcast V.CAST_SFIX V.REG_1
+  let fix64s8  = fcast V.CAST_SFIX V.REG_8
+  let fix64s16 = fcast V.CAST_SFIX V.REG_16
+  let fix64s32 = fcast V.CAST_SFIX V.REG_32
+  let fix64s64 = fcast V.CAST_SFIX V.REG_64
+
+  let fix32u1  = fcast V.CAST_UFIX V.REG_1
+  let fix32u8  = fcast V.CAST_UFIX V.REG_8
+  let fix32u16 = fcast V.CAST_UFIX V.REG_16
+  let fix32u32 = fcast V.CAST_UFIX V.REG_32
+  let fix32u64 = fcast V.CAST_UFIX V.REG_64
+  let fix64u1  = fcast V.CAST_UFIX V.REG_1
+  let fix64u8  = fcast V.CAST_UFIX V.REG_8
+  let fix64u16 = fcast V.CAST_UFIX V.REG_16
+  let fix64u32 = fcast V.CAST_UFIX V.REG_32
+  let fix64u64 = fcast V.CAST_UFIX V.REG_64
+
+  let fwiden32to64  = fcast V.CAST_FWIDEN  V.REG_64
+  let fnarrow64to32 = fcast V.CAST_FNARROW V.REG_32
+
   let get_tag v = 0L
 end

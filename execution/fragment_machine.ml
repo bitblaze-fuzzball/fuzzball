@@ -54,6 +54,10 @@ type register_name =
   | R_DFLAG | R_IDFLAG | R_ACFLAG
   | R_CS | R_DS| R_ES | R_FS | R_GS | R_SS
   | R_FTOP | R_FPROUND | R_FC3210 | R_SSEROUND 
+  (* SSE, currently only supported on x86: *)
+  | R_XMM0L | R_XMM0H | R_XMM1L | R_XMM1H | R_XMM2L | R_XMM2H
+  | R_XMM3L | R_XMM3H | R_XMM4L | R_XMM4H | R_XMM5L | R_XMM5H
+  | R_XMM6L | R_XMM6H | R_XMM7L | R_XMM7H
   (* x86 *)
   | R_EBP | R_ESP | R_ESI | R_EDI | R_EIP | R_EAX | R_EBX | R_ECX | R_EDX
   | EFLAGSREST | R_LDT | R_GDT 
@@ -93,6 +97,14 @@ let reg_to_regstr reg = match reg with
   | R_ES -> "R_ES" | R_FS -> "R_FS" | R_GS -> "R_GS"| R_SS -> "R_SS"
   | R_FTOP -> "R_FTOP" | R_FPROUND -> "R_FPROUND" | R_FC3210  -> "R_FC3210"
   | R_SSEROUND -> "R_SSEROUND" | R_IP_AT_SYSCALL -> "R_IP_AT_SYSCALL"
+  | R_XMM0L -> "R_XMM0L" | R_XMM0H -> "R_XMM0H"
+  | R_XMM1L -> "R_XMM1L" | R_XMM1H -> "R_XMM1H"
+  | R_XMM2L -> "R_XMM2L" | R_XMM2H -> "R_XMM2H"
+  | R_XMM3L -> "R_XMM3L" | R_XMM3H -> "R_XMM3H"
+  | R_XMM4L -> "R_XMM4L" | R_XMM4H -> "R_XMM4H"
+  | R_XMM5L -> "R_XMM5L" | R_XMM5H -> "R_XMM5H"
+  | R_XMM6L -> "R_XMM6L" | R_XMM6H -> "R_XMM6H"
+  | R_XMM7L -> "R_XMM7L" | R_XMM7H -> "R_XMM7H"
   | R0  ->  "R0" | R1  ->  "R1" |  R2 ->  "R2" | R3  -> "R3"
   | R4  ->  "R4" | R5  ->  "R5" |  R6 ->  "R6" | R7  -> "R7"
   | R8  ->  "R8" | R9  ->  "R9" | R10 -> "R10" | R11 -> "R11"
@@ -134,6 +146,14 @@ let regstr_to_reg s = match s with
   | "R_ES" -> R_ES | "R_FS" -> R_FS | "R_GS" -> R_GS| "R_SS" -> R_SS
   | "R_FTOP" -> R_FTOP | "R_FPROUND" -> R_FPROUND | "R_FC3210"  -> R_FC3210
   | "R_SSEROUND" -> R_SSEROUND | "R_IP_AT_SYSCALL" -> R_IP_AT_SYSCALL
+  | "R_XMM0L" -> R_XMM0L | "R_XMM0H" -> R_XMM0H
+  | "R_XMM1L" -> R_XMM1L | "R_XMM1H" -> R_XMM1H
+  | "R_XMM2L" -> R_XMM2L | "R_XMM2H" -> R_XMM2H
+  | "R_XMM3L" -> R_XMM3L | "R_XMM3H" -> R_XMM3H
+  | "R_XMM4L" -> R_XMM4L | "R_XMM4H" -> R_XMM4H
+  | "R_XMM5L" -> R_XMM5L | "R_XMM5H" -> R_XMM5H
+  | "R_XMM6L" -> R_XMM6L | "R_XMM6H" -> R_XMM6H
+  | "R_XMM7L" -> R_XMM7L | "R_XMM7H" -> R_XMM7H
   | "R0"  ->  R0 | "R1"  ->  R1 |  "R2" ->  R2 | "R3"  -> R3
   | "R4"  ->  R4 | "R5"  ->  R5 |  "R6" ->  R6 | "R7"  -> R7
   | "R8"  ->  R8 | "R9"  ->  R9 | "R10" -> R10 | "R11" -> R11
@@ -641,6 +661,22 @@ struct
 	reg R_CC_DEP2 (D.from_concrete_32 0L);
 	reg R_CC_NDEP (D.from_concrete_32 0L);
 	reg R_SSEROUND (D.from_concrete_32 0L);
+	reg R_XMM0L (D.from_concrete_64 0L);
+	reg R_XMM0H (D.from_concrete_64 0L);
+	reg R_XMM1L (D.from_concrete_64 0L);
+	reg R_XMM1H (D.from_concrete_64 0L);
+	reg R_XMM2L (D.from_concrete_64 0L);
+	reg R_XMM2H (D.from_concrete_64 0L);
+	reg R_XMM3L (D.from_concrete_64 0L);
+	reg R_XMM3H (D.from_concrete_64 0L);
+	reg R_XMM4L (D.from_concrete_64 0L);
+	reg R_XMM4H (D.from_concrete_64 0L);
+	reg R_XMM5L (D.from_concrete_64 0L);
+	reg R_XMM5H (D.from_concrete_64 0L);
+	reg R_XMM6L (D.from_concrete_64 0L);
+	reg R_XMM6H (D.from_concrete_64 0L);
+	reg R_XMM7L (D.from_concrete_64 0L);
+	reg R_XMM7H (D.from_concrete_64 0L);
 	()
 
     method private make_x64_regs_zero =
@@ -745,6 +781,22 @@ struct
 	reg R_SF (D.from_concrete_1 0);
 	reg R_OF (D.from_concrete_1 0);
 	reg R_ZF (D.from_concrete_1 0);
+	reg R_XMM0L (D.from_concrete_64 0L);
+	reg R_XMM0H (D.from_concrete_64 0L);
+	reg R_XMM1L (D.from_concrete_64 0L);
+	reg R_XMM1H (D.from_concrete_64 0L);
+	reg R_XMM2L (D.from_concrete_64 0L);
+	reg R_XMM2H (D.from_concrete_64 0L);
+	reg R_XMM3L (D.from_concrete_64 0L);
+	reg R_XMM3H (D.from_concrete_64 0L);
+	reg R_XMM4L (D.from_concrete_64 0L);
+	reg R_XMM4H (D.from_concrete_64 0L);
+	reg R_XMM5L (D.from_concrete_64 0L);
+	reg R_XMM5H (D.from_concrete_64 0L);
+	reg R_XMM6L (D.from_concrete_64 0L);
+	reg R_XMM6H (D.from_concrete_64 0L);
+	reg R_XMM7L (D.from_concrete_64 0L);
+	reg R_XMM7H (D.from_concrete_64 0L);
 	(* reg EFLAGSREST (form_man#fresh_symbolic_32 "initial_eflagsrest");*)
 	reg R_FTOP (D.from_concrete_32 0L);
 	(* Linux user space CS segment: *)
@@ -922,6 +974,14 @@ struct
 	  (D.to_string_1 
 	     (self#get_int_var (Hashtbl.find reg_to_var r)))
 
+    method private print_reg128 str rh rl =
+      Printf.printf "%s: " str;
+      Printf.printf "%s %s\n"
+	(D.to_string_64
+	   (self#get_int_var (Hashtbl.find reg_to_var rh)))
+	(D.to_string_64
+	   (self#get_int_var (Hashtbl.find reg_to_var rl)));
+
     method private print_x86_regs =
       self#print_reg32 "%eax" R_EAX;
       self#print_reg32 "%ebx" R_EBX;
@@ -936,7 +996,16 @@ struct
       self#print_reg1 "AF" R_AF;
       self#print_reg1 "ZF" R_ZF;
       self#print_reg1 "SF" R_SF;
-      self#print_reg1 "OF" R_OF
+      self#print_reg1 "OF" R_OF;
+      self#print_reg128 "XMM0" R_XMM0H R_XMM0L;
+      self#print_reg128 "XMM1" R_XMM1H R_XMM1L;
+      self#print_reg128 "XMM2" R_XMM2H R_XMM2L;
+      self#print_reg128 "XMM3" R_XMM3H R_XMM3L;
+      self#print_reg128 "XMM4" R_XMM4H R_XMM4L;
+      self#print_reg128 "XMM5" R_XMM5H R_XMM5L;
+      self#print_reg128 "XMM6" R_XMM6H R_XMM6L;
+      self#print_reg128 "XMM7" R_XMM7H R_XMM7L;
+      ()
 
     method private print_reg64 str r = 
 	Printf.printf "%s: " str;
@@ -1006,6 +1075,10 @@ struct
       let var = Hashtbl.find reg_to_var r in
 	self#set_int_var var (form_man#simplify1 (self#get_int_var var))
 
+    method private simplify_reg64 r =
+      let var = Hashtbl.find reg_to_var r in
+	self#set_int_var var (form_man#simplify64 (self#get_int_var var))
+
     method private simplify_x86_regs =
       self#simplify_reg32 R_EAX;
       self#simplify_reg32 R_EBX;
@@ -1021,11 +1094,15 @@ struct
       self#simplify_reg1 R_ZF;
       self#simplify_reg1 R_SF;
       self#simplify_reg1 R_OF;
+      self#simplify_reg64 R_XMM0L; self#simplify_reg64 R_XMM0H;
+      self#simplify_reg64 R_XMM1L; self#simplify_reg64 R_XMM1H;
+      self#simplify_reg64 R_XMM2L; self#simplify_reg64 R_XMM2H;
+      self#simplify_reg64 R_XMM3L; self#simplify_reg64 R_XMM3H;
+      self#simplify_reg64 R_XMM4L; self#simplify_reg64 R_XMM4H;
+      self#simplify_reg64 R_XMM5L; self#simplify_reg64 R_XMM5H;
+      self#simplify_reg64 R_XMM6L; self#simplify_reg64 R_XMM6H;
+      self#simplify_reg64 R_XMM7L; self#simplify_reg64 R_XMM7H;
       ()
-
-    method private simplify_reg64 r =
-      let var = Hashtbl.find reg_to_var r in
-	self#set_int_var var (form_man#simplify64 (self#get_int_var var))
 
     method private simplify_x64_regs =
       self#simplify_reg64 R_RAX;
@@ -1437,6 +1514,35 @@ struct
       let (v1', v2') = self#maybe_concretize_binop op v1 v2 ty1 ty2 in
 	(func v1' v2'), ty
 
+    method private eval_fbinop op rm v1 ty1 v2 ty2 =
+      let ty =
+	(match op with
+	   | V.FPLUS | V.FMINUS | V.FTIMES | V.FDIVIDE
+	       -> assert(ty1 = ty2); ty1
+	   | V.FEQ | V.FNEQ | V.FLT | V.FLE
+	       -> assert(ty1 = ty2); V.REG_1) in
+      let func =
+	(match (op, ty1) with
+	   | (V.FPLUS, V.REG_32) -> D.fplus32
+	   | (V.FPLUS, V.REG_64) -> D.fplus64
+	   | (V.FMINUS, V.REG_32) -> D.fminus32
+	   | (V.FMINUS, V.REG_64) -> D.fminus64
+	   | (V.FTIMES, V.REG_32) -> D.ftimes32
+	   | (V.FTIMES, V.REG_64) -> D.ftimes64
+	   | (V.FDIVIDE, V.REG_32) -> D.fdivide32
+	   | (V.FDIVIDE, V.REG_64) -> D.fdivide64
+	   | (V.FEQ, V.REG_32) -> D.feq32
+	   | (V.FEQ, V.REG_64) -> D.feq64
+	   | (V.FNEQ, V.REG_32) -> D.fneq32
+	   | (V.FNEQ, V.REG_64) -> D.fneq64
+	   | (V.FLT, V.REG_32) -> D.flt32
+	   | (V.FLT, V.REG_64) -> D.flt64
+	   | (V.FLE, V.REG_32) -> D.fle32
+	   | (V.FLE, V.REG_64) -> D.fle64
+	   | _ -> failwith "unexpected fbinop/type in eval_fbinop")
+      in
+	(func rm v1 v2), ty
+
     method private eval_unop op v1 ty1 =
       let result = 
 	(match (op, ty1) with
@@ -1451,6 +1557,15 @@ struct
 	   | (V.NOT, V.REG_32) -> D.not32 v1
 	   | (V.NOT, V.REG_64) -> D.not64 v1
 	   | _ -> failwith "unexpected unop/type in eval_int_exp_ty")
+      in
+	result, ty1
+
+    method private eval_funop op rm v1 ty1 =
+      let result =
+	(match (op, ty1) with
+	   | (V.FNEG, V.REG_32) -> D.fneg32 rm v1
+	   | (V.FNEG, V.REG_64) -> D.fneg64 rm v1
+	   | _ -> failwith "unexpected funop/type in eval_funop")
       in
 	result, ty1
 
@@ -1501,6 +1616,55 @@ struct
       in
 	((func v1), ty)
 
+    method private eval_fcast kind rm ty v1 ty1 =
+      let func =
+	match (kind, ty1, ty) with
+	  | (V.CAST_SFLOAT, V.REG_1,  V.REG_32) -> D.float1s32
+	  | (V.CAST_SFLOAT, V.REG_8,  V.REG_32) -> D.float8s32
+	  | (V.CAST_SFLOAT, V.REG_16, V.REG_32) -> D.float16s32
+	  | (V.CAST_SFLOAT, V.REG_32, V.REG_32) -> D.float32s32
+	  | (V.CAST_SFLOAT, V.REG_64, V.REG_32) -> D.float64s32
+	  | (V.CAST_SFLOAT, V.REG_1,  V.REG_64) -> D.float1s64
+	  | (V.CAST_SFLOAT, V.REG_8,  V.REG_64) -> D.float8s64
+	  | (V.CAST_SFLOAT, V.REG_16, V.REG_64) -> D.float16s64
+	  | (V.CAST_SFLOAT, V.REG_32, V.REG_64) -> D.float32s64
+	  | (V.CAST_SFLOAT, V.REG_64, V.REG_64) -> D.float64s64
+	  | (V.CAST_UFLOAT, V.REG_1,  V.REG_32) -> D.float1u32
+	  | (V.CAST_UFLOAT, V.REG_8,  V.REG_32) -> D.float8u32
+	  | (V.CAST_UFLOAT, V.REG_16, V.REG_32) -> D.float16u32
+	  | (V.CAST_UFLOAT, V.REG_32, V.REG_32) -> D.float32u32
+	  | (V.CAST_UFLOAT, V.REG_64, V.REG_32) -> D.float64u32
+	  | (V.CAST_UFLOAT, V.REG_1,  V.REG_64) -> D.float1u64
+	  | (V.CAST_UFLOAT, V.REG_8,  V.REG_64) -> D.float8u64
+	  | (V.CAST_UFLOAT, V.REG_16, V.REG_64) -> D.float16u64
+	  | (V.CAST_UFLOAT, V.REG_32, V.REG_64) -> D.float32u64
+	  | (V.CAST_UFLOAT, V.REG_64, V.REG_64) -> D.float64u64
+	  | (V.CAST_SFIX, V.REG_32, V.REG_1)  -> D.fix32s1
+	  | (V.CAST_SFIX, V.REG_32, V.REG_8)  -> D.fix32s8
+	  | (V.CAST_SFIX, V.REG_32, V.REG_16) -> D.fix32s16
+	  | (V.CAST_SFIX, V.REG_32, V.REG_32) -> D.fix32s32
+	  | (V.CAST_SFIX, V.REG_32, V.REG_64) -> D.fix32s64
+	  | (V.CAST_SFIX, V.REG_64, V.REG_1)  -> D.fix64s1
+	  | (V.CAST_SFIX, V.REG_64, V.REG_8)  -> D.fix64s8
+	  | (V.CAST_SFIX, V.REG_64, V.REG_16) -> D.fix64s16
+	  | (V.CAST_SFIX, V.REG_64, V.REG_32) -> D.fix64s32
+	  | (V.CAST_SFIX, V.REG_64, V.REG_64) -> D.fix64s64
+	  | (V.CAST_UFIX, V.REG_32, V.REG_1)  -> D.fix32u1
+	  | (V.CAST_UFIX, V.REG_32, V.REG_8)  -> D.fix32u8
+	  | (V.CAST_UFIX, V.REG_32, V.REG_16) -> D.fix32u16
+	  | (V.CAST_UFIX, V.REG_32, V.REG_32) -> D.fix32u32
+	  | (V.CAST_UFIX, V.REG_32, V.REG_64) -> D.fix32u64
+	  | (V.CAST_UFIX, V.REG_64, V.REG_1)  -> D.fix64u1
+	  | (V.CAST_UFIX, V.REG_64, V.REG_8)  -> D.fix64u8
+	  | (V.CAST_UFIX, V.REG_64, V.REG_16) -> D.fix64u16
+	  | (V.CAST_UFIX, V.REG_64, V.REG_32) -> D.fix64u32
+	  | (V.CAST_UFIX, V.REG_64, V.REG_64) -> D.fix64u64
+	  | (V.CAST_FWIDEN, V.REG_32, V.REG_64) -> D.fwiden32to64
+	  | (V.CAST_FNARROW, V.REG_64, V.REG_32) -> D.fnarrow64to32
+	  | _ -> failwith "bad fcast kind in eval_fcast"
+      in
+	((func rm v1), ty)
+
     method private eval_ite v_c v_t v_f ty_t =
       let func =
 	match ty_t with
@@ -1513,15 +1677,26 @@ struct
       in
 	((func v_c v_t v_f), ty_t)
 
+    (* Since we don't make any type distinction between integers and
+       floats of the same size, the "eval_int" family of methods all
+       include floating point operations in addition to integer
+       ones. Perhaps misleading, but the names predated FP support. *)
     method eval_int_exp_ty exp =
       match exp with
 	| V.BinOp(op, e1, e2) ->
 	    let (v1, ty1) = self#eval_int_exp_ty e1 and
 		(v2, ty2) = self#eval_int_exp_ty e2 in
 	      self#eval_binop op v1 ty1 v2 ty2
+	| V.FBinOp(op, rm, e1, e2) ->
+	    let (v1, ty1) = self#eval_int_exp_ty e1 and
+		(v2, ty2) = self#eval_int_exp_ty e2 in
+	      self#eval_fbinop op rm v1 ty1 v2 ty2
 	| V.UnOp(op, e1) ->
 	    let (v1, ty1) = self#eval_int_exp_ty e1 in
 	      self#eval_unop op v1 ty1
+	| V.FUnOp(op, rm, e1) ->
+	    let (v1, ty1) = self#eval_int_exp_ty e1 in
+	      self#eval_funop op rm v1 ty1
 	| V.Constant(V.Int(V.REG_1, i)) ->
 	    (D.from_concrete_1 (Int64.to_int i)), V.REG_1
 	| V.Constant(V.Int(V.REG_8, i)) ->
@@ -1537,6 +1712,9 @@ struct
 	| V.Cast(kind, ty, e) ->
 	    let (v1, ty1) = self#eval_int_exp_ty e in
 	      self#eval_cast kind ty v1 ty1
+	| V.FCast(kind, rm, ty, e) ->
+	    let (v1, ty1) = self#eval_int_exp_ty e in
+	      self#eval_fcast kind rm ty v1 ty1
 	| V.Ite(cond, true_e, false_e) ->
 	    let (v_c, ty_c) = self#eval_int_exp_ty cond and
 		(v_t, ty_t) = self#eval_int_exp_ty true_e and
@@ -1552,10 +1730,6 @@ struct
 	| V.Name(_)
 	| V.Constant(V.Str(_))
 	  -> failwith "Unsupported (or non-int) expr type in eval_int_exp_ty"
-	| V.FBinOp(_, _, _, _)
-	| V.FUnOp(_, _, _)
-	| V.FCast(_, _, _, _)
-	  -> failwith "FP ops unsupported in eval_int_exp_ty"
 	    
     method private eval_int_exp exp =
       let (v, _) = self#eval_int_exp_ty exp in

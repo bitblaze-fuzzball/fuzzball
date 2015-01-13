@@ -228,5 +228,79 @@ module type DOMAIN = sig
   val ite32 : t -> t -> t -> t
   val ite64 : t -> t -> t -> t
 
+  val fplus32 : Vine_util.round_mode -> t -> t -> t
+  val fplus64 : Vine_util.round_mode -> t -> t -> t
+
+  val fminus32 : Vine_util.round_mode -> t -> t -> t
+  val fminus64 : Vine_util.round_mode -> t -> t -> t
+
+  val ftimes32 : Vine_util.round_mode -> t -> t -> t
+  val ftimes64 : Vine_util.round_mode -> t -> t -> t
+
+  val fdivide32 : Vine_util.round_mode -> t -> t -> t
+  val fdivide64 : Vine_util.round_mode -> t -> t -> t
+
+  val feq32 : Vine_util.round_mode -> t -> t -> t
+  val feq64 : Vine_util.round_mode -> t -> t -> t
+
+  val fneq32 : Vine_util.round_mode -> t -> t -> t
+  val fneq64 : Vine_util.round_mode -> t -> t -> t
+
+  val flt32 : Vine_util.round_mode -> t -> t -> t
+  val flt64 : Vine_util.round_mode -> t -> t -> t
+
+  val fle32 : Vine_util.round_mode -> t -> t -> t
+  val fle64 : Vine_util.round_mode -> t -> t -> t
+
+  val fneg32 : Vine_util.round_mode -> t -> t
+  val fneg64 : Vine_util.round_mode -> t -> t
+
+  val float1s32 : Vine_util.round_mode -> t -> t
+  val float8s32 : Vine_util.round_mode -> t -> t
+  val float16s32 : Vine_util.round_mode -> t -> t
+  val float32s32 : Vine_util.round_mode -> t -> t
+  val float64s32 : Vine_util.round_mode -> t -> t
+  val float1s64 : Vine_util.round_mode -> t -> t
+  val float8s64 : Vine_util.round_mode -> t -> t
+  val float16s64 : Vine_util.round_mode -> t -> t
+  val float32s64 : Vine_util.round_mode -> t -> t
+  val float64s64 : Vine_util.round_mode -> t -> t
+
+  val float1u32 : Vine_util.round_mode -> t -> t
+  val float8u32 : Vine_util.round_mode -> t -> t
+  val float16u32 : Vine_util.round_mode -> t -> t
+  val float32u32 : Vine_util.round_mode -> t -> t
+  val float64u32 : Vine_util.round_mode -> t -> t
+  val float1u64 : Vine_util.round_mode -> t -> t
+  val float8u64 : Vine_util.round_mode -> t -> t
+  val float16u64 : Vine_util.round_mode -> t -> t
+  val float32u64 : Vine_util.round_mode -> t -> t
+  val float64u64 : Vine_util.round_mode -> t -> t
+
+  val fix32s1 : Vine_util.round_mode -> t -> t
+  val fix32s8 : Vine_util.round_mode -> t -> t
+  val fix32s16 : Vine_util.round_mode -> t -> t
+  val fix32s32 : Vine_util.round_mode -> t -> t
+  val fix32s64 : Vine_util.round_mode -> t -> t
+  val fix64s1 : Vine_util.round_mode -> t -> t
+  val fix64s8 : Vine_util.round_mode -> t -> t
+  val fix64s16 : Vine_util.round_mode -> t -> t
+  val fix64s32 : Vine_util.round_mode -> t -> t
+  val fix64s64 : Vine_util.round_mode -> t -> t
+
+  val fix32u1 : Vine_util.round_mode -> t -> t
+  val fix32u8 : Vine_util.round_mode -> t -> t
+  val fix32u16 : Vine_util.round_mode -> t -> t
+  val fix32u32 : Vine_util.round_mode -> t -> t
+  val fix32u64 : Vine_util.round_mode -> t -> t
+  val fix64u1 : Vine_util.round_mode -> t -> t
+  val fix64u8 : Vine_util.round_mode -> t -> t
+  val fix64u16 : Vine_util.round_mode -> t -> t
+  val fix64u32 : Vine_util.round_mode -> t -> t
+  val fix64u64 : Vine_util.round_mode -> t -> t
+
+  val fwiden32to64 : Vine_util.round_mode -> t -> t
+  val fnarrow64to32 : Vine_util.round_mode -> t -> t
+
   val get_tag : t -> int64
 end

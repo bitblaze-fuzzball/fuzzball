@@ -1318,6 +1318,16 @@ FCast *ex_fu_cast( Exp *arg, reg_t width )
     return new FCast(arg, width, CAST_UFLOAT, ROUND_NEAREST);
 }
 
+Vector *ex_vector2x64(Exp *h, Exp *l) {
+    h = h->clone();
+    l = l->clone();
+    return new Vector(h, l);
+}
+
+Vector *_ex_vector2x64(Exp *h, Exp *l) {
+    return new Vector(h, l);
+}
+
 Ite *_ex_ite( Exp *c, Exp *t, Exp *f) {
     return new Ite(c, t, f);
 }
