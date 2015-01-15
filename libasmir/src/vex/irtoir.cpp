@@ -670,6 +670,27 @@ Exp *translate_par64fp_128_binop(fbinop_type_t op, Exp *left, Exp *right) {
     return translate_64HLto128(result_h, result_l);
 }
 
+const_val_t expand_lane_const(int bits) {
+    const_val_t x = 0;
+    if (bits & 1)
+	x |= 0xff;
+    if (bits & 2)
+	x |= 0xff00;
+    if (bits & 4)
+	x |= 0xff0000;
+    if (bits & 8)
+	x |= 0xff000000ULL;
+    if (bits & 16)
+	x |= 0xff00000000ULL;
+    if (bits & 32)
+	x |= 0xff0000000000ULL;
+    if (bits & 64)
+	x |= 0xff000000000000ULL;
+    if (bits & 128)
+	x |= 0xff00000000000000ULL;
+    return x;
+}
+
 Exp *translate_const( IRExpr *expr )
 {
     assert(expr);
@@ -698,7 +719,12 @@ Exp *translate_const( IRExpr *expr )
       case Ico_V128:
         // These are used in SIMD instructions, but VEX uses a slightly
         // weird compressed representation.
-	return new Unknown("Untranslatable Ico_V128 constant");
+	{
+	    const_val_t high = expand_lane_const(co->Ico.V128 >> 8);
+	    const_val_t low = expand_lane_const(co->Ico.V128 & 0xff);
+	    return new Vector(new Constant(REG_64, high),
+			      new Constant(REG_64, low));
+	}
       default:
             panic("Unrecognized constant type");
     }
@@ -1241,16 +1267,21 @@ Exp *translate_load( IRExpr *expr, IRSB *irbb, vector<Stmt *> *irout )
     assert(irbb);
     assert(irout);
 
-    Exp *addr;
-    Mem *mem;
-    reg_t rtype;
+    IRType type = expr->Iex.Load.ty;
 
-    rtype = IRType_to_reg_type(expr->Iex.Load.ty);
+    if (type == Ity_I128 || type == Ity_V128) {
+	// Split into two adjacent 64-bit loads
+	Exp *addr_l = translate_expr(expr->Iex.Load.addr, irbb, irout);
+	Exp *addr_h = _ex_add(ecl(addr_l), ex_const(8));
+	Mem *mem_l = new Mem(addr_l, REG_64);
+	Mem *mem_h = new Mem(addr_h, REG_64);
+	return new Vector(mem_h, mem_l);
+    } else {
+	reg_t rtype = IRType_to_reg_type(expr->Iex.Load.ty);
 
-    addr = translate_expr(expr->Iex.Load.addr, irbb, irout);
-    mem = new Mem(addr, rtype);
-
-    return mem;
+	Exp *addr = translate_expr(expr->Iex.Load.addr, irbb, irout);
+	return new Mem(addr, rtype);
+    }
 }
 
 Exp *translate_tmp( IRTemp temp, IRSB *irbb, vector<Stmt *> *irout )
@@ -1371,17 +1402,23 @@ Stmt *translate_store( IRStmt *stmt, IRSB *irbb, vector<Stmt *> *irout )
 
     Exp *dest;
     Exp *data;
-    Mem *mem;
     IRType itype;
-    reg_t rtype;
 
     dest = translate_expr(stmt->Ist.Store.addr, irbb, irout);
     itype = typeOfIRExpr(irbb->tyenv, stmt->Ist.Store.data);
-    rtype = IRType_to_reg_type(itype);
-    mem = new Mem(dest, rtype);
     data = translate_expr(stmt->Ist.Store.data, irbb, irout);
 
-    return new Move(mem, data); 
+    if (itype == Ity_I128 || itype == Ity_V128) {
+	// Split into two 64-bit stores
+	Exp *data_high, *data_low;
+	split_vector(data, &data_high, &data_low);
+	Exp *dest_h = _ex_add(ecl(dest), ex_const(8));
+	irout->push_back(new Move(new Mem(dest, REG_64), data_low));
+	return new Move(new Mem(dest_h, REG_64), data_high);
+    } else {
+	reg_t rtype = IRType_to_reg_type(itype);
+	return new Move(new Mem(dest, rtype), data);
+    }
 }
 
 Stmt *translate_imark( IRStmt *stmt, IRSB *irbb )
