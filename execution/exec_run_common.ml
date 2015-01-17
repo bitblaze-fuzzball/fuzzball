@@ -154,6 +154,11 @@ let known_unknowns = (
     Hashtbl.replace h "CCall: x86g_create_fpucw" ();
     Hashtbl.replace h "CCall: x86g_calculate_FXAM" ();
     Hashtbl.replace h "CCall: x86g_check_fldcw" ();
+    Hashtbl.replace h "register type (I64)" ();
+    Hashtbl.replace h "register type (F32)" ();
+    Hashtbl.replace h "register type (F64)" ();
+    Hashtbl.replace h "register type (I128)" ();
+    Hashtbl.replace h "register type (V128)" ();
     h)
 
 (* Disable "unknown" statments it seems safe to ignore *)
