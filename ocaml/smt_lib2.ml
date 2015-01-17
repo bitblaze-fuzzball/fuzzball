@@ -62,6 +62,26 @@ let iter_first_last f list =
       | [e] -> f e true true
       | e :: r -> f e true false; (loop r)
 
+let smtlib2_rm = function
+  | Vine_util.ROUND_NEAREST           -> "RNE"
+  | Vine_util.ROUND_NEAREST_AWAY_ZERO -> "RNA"
+  | Vine_util.ROUND_POSITIVE          -> "RTP"
+  | Vine_util.ROUND_NEGATIVE          -> "RTN"
+  | Vine_util.ROUND_ZERO              -> "RTZ"
+
+let wrap_bv2fpa = function
+  | REG_32 -> ("((_ to_fp 8 24) ", ")")
+  | REG_64 -> ("((_ to_fp 11 53) ", ")")
+  | _ -> failwith "Unsupported FP width in wrap_bv2fpa"
+
+(* This functionality was intentionally left out of the SMTLIB FP
+   proposal (I'm looking at version 3), ostensibly because of worries
+   about the NaN representation not being unique. But we really want a
+   function because of the way we translate expressions. This is Z3's
+   non-standard one. *)
+let wrap_fpa2bv = function
+  | _ -> ("(asIEEEBV ", ")")
+
 (** Visitor for printing out SMT-LIB2 syntax for an expression. *)
 class vine_smtlib_print_visitor puts =
   let rec type2s = function
@@ -180,6 +200,89 @@ object (self)
 	    | (NOT, _)   -> puts "(bvnot "
 	  in
 	    ChangeDoChildrenPost(e, fun x ->(puts ")";x))
+      | FUnOp(uop, rm, e1) ->
+	  let ty1 = Vine_typecheck.infer_type_fast e1 and
+	      op = match uop with
+		| FNEG -> ignore(rm); "fp.neg" (* no rounding needed *)
+	  in
+	  let (to_fp_pre, to_fp_post) = wrap_bv2fpa ty1 and
+	      (to_bv_pre, to_bv_post) = wrap_fpa2bv ty1 in
+	    puts to_bv_pre;
+	    puts ("(" ^ op ^ " ");
+	    puts to_fp_pre;
+	    ignore(exp_accept (self :> vine_visitor) e1);
+	    puts to_fp_post;
+	    puts ")";
+	    puts to_bv_post;
+	    SkipChildren
+      | FBinOp(bop, rm, e1, e2) ->
+	  let ty1 = Vine_typecheck.infer_type_fast e1 in
+	  let (op, is_pred, need_rm) = match bop with
+	    | FPLUS   -> ("fp.add", None,       true)
+	    | FMINUS  -> ("fp.sub", None,       true)
+	    | FTIMES  -> ("fp.mul", None,       true)
+	    | FDIVIDE -> ("fp.div", None,       true)
+	    | FEQ     -> ("fp.eq",  Some true,  false)
+	    | FNEQ    -> ("fp.eq",  Some false, false)
+	    | FLT     -> ("fp.lt",  Some true,  false)
+	    | FLE     -> ("fp.leq", Some true,  false)
+	  in
+	  let (to_fp_pre, to_fp_post) = wrap_bv2fpa ty1 and
+	      (to_bv_pre, to_bv_post) = wrap_fpa2bv ty1 in
+	    (match is_pred with
+	       | None -> puts to_bv_pre
+	       | Some true -> ()
+	       | Some false -> puts "(not ");
+	    puts ("(" ^ op ^ " ");
+	    if need_rm then
+	      puts (smtlib2_rm rm ^ " ");
+	    puts to_fp_pre;
+	    ignore(exp_accept (self :> vine_visitor) e1);
+	    puts to_fp_post;
+	    puts " ";
+	    puts to_fp_pre;
+	    ignore(exp_accept (self :> vine_visitor) e2);
+	    puts to_fp_post;
+	    puts ")";
+	    (match is_pred with
+	       | None -> puts to_bv_post
+	       | Some true -> ()
+	       | Some false -> puts ")");
+	    SkipChildren
+      | FCast(ct, rm, ty2, e1) ->
+	  let ty1 = Vine_typecheck.infer_type_fast e1 in
+	  let (fp_in, fp_out) = match ct with
+	    | (CAST_SFLOAT|CAST_UFLOAT) -> (false, true)
+	    | (CAST_SFIX|CAST_UFIX) -> (true, false)
+	    | (CAST_FWIDEN|CAST_FNARROW) -> (true, true)
+	  in
+	  let rm_s = smtlib2_rm rm in
+	  let sz2 = string_of_int (bits_of_width ty2) in
+	  let op = match (ct, ty2) with
+	    | (CAST_SFLOAT,  REG_32) -> "(_ to_fp 8 24)"
+	    | (CAST_SFLOAT,  REG_64) -> "(_ to_fp 11 53)"
+	    | (CAST_UFLOAT,  REG_32) -> "(_ to_fp_unsigned 8 24)"
+	    | (CAST_UFLOAT,  REG_64) -> "(_ to_fp_unsigned 11 53)"
+	    | (CAST_FWIDEN,  REG_64) -> "(_ to_fp 11 53)"
+	    | (CAST_FNARROW, REG_32) -> "(_ to_fp 8 24)"
+	    | (CAST_SFIX,    _)      -> "(_ fp_to_sbv " ^ sz2 ^ ") "
+	    | (CAST_UFIX,    _)      -> "(_ fp_to_ubv " ^ sz2 ^ ") "
+	    | _ -> failwith "Unsupported FCast combination"
+	  in
+	  let (to_fp_pre, to_fp_post) = wrap_bv2fpa ty1 and
+	      (to_bv_pre, to_bv_post) = wrap_fpa2bv ty2 in
+	    if fp_out then
+	      puts to_bv_pre;
+	    puts ("(" ^ op ^ " " ^ rm_s ^ " ");
+	    if fp_in then
+	      puts to_fp_pre;
+	    ignore(exp_accept (self :> vine_visitor) e1);
+	    if fp_in then
+	      puts to_fp_post;
+	    puts ")";
+	    if fp_out then
+	      puts to_bv_post;
+	    SkipChildren
       | (BinOp(BITOR,
 	       (Cast(CAST_UNSIGNED, REG_16, e1)
 	       | BinOp(LSHIFT, Cast(CAST_UNSIGNED, REG_16, e1),
@@ -484,7 +587,7 @@ object (self)
 		   string_of_int(bits1-bits)^") ", "))")
 	    | (CAST_HIGH, _, _) ->
 		("((_ extract "^string_of_int(bits1-1)^" "^
-		   string_of_int(bits1-bits)^")", ")")
+		   string_of_int(bits1-bits)^") ", ")")
 	    | (CAST_UNSIGNED, REG_1, _) ->
 		("(ite ", " " ^ (make_one bits) ^
 		   " " ^ (make_zeros bits) ^ ")")

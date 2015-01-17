@@ -17,11 +17,14 @@ open Sym_path_frag_machine
 let collect_let_vars e =
   let rec loop e = match e with
     | V.BinOp(_, e1, e2) -> (loop e1) @ (loop e2)
+    | V.FBinOp(_, _, e1, e2) -> (loop e1) @ (loop e2)
     | V.UnOp(_, e1) -> loop e1
+    | V.FUnOp(_, _, e1) -> loop e1
     | V.Constant(_) -> []
     | V.Lval(_) -> []
     | V.Name(_) -> []
     | V.Cast(_, _, e1) -> loop e1
+    | V.FCast(_, _, _, e1) -> loop e1
     | V.Unknown(_) -> []
     | V.Let(V.Mem(_, _, _), _, _)
 	-> failwith "Let-mem unsupported in collect_let_vars"

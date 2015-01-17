@@ -158,6 +158,10 @@ let rec vine_to_stp vc ctx e =
 	  failwith "Unsupported memory lvalue in vine_stpvc"
       | Name _ -> failwith "vine_stpvc: translation from Name unsupported"
 (*      | Phi _ -> failwith "vine_stpvc: Phi unsupported" *)
+      | FUnOp(_, _, _)
+      | FBinOp(_, _, _, _)
+      | FCast(_, _, _, _)
+	-> failwith "vine_stpvc: STP does not support floating point"
       | Ite(ce, te, fe) ->
 	  let (s1, ty1) = tr ce and
 	      (s2, ty2) = tr te and

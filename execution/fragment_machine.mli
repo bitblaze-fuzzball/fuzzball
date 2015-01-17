@@ -21,6 +21,10 @@ type register_name =
   | R_DFLAG | R_IDFLAG | R_ACFLAG
   | R_CS | R_DS| R_ES | R_FS | R_GS | R_SS
   | R_FTOP | R_FPROUND | R_FC3210 | R_SSEROUND 
+  (* SSE, currently only supported on x86: *)
+  | R_XMM0L | R_XMM0H | R_XMM1L | R_XMM1H | R_XMM2L | R_XMM2H
+  | R_XMM3L | R_XMM3H | R_XMM4L | R_XMM4H | R_XMM5L | R_XMM5H
+  | R_XMM6L | R_XMM6H | R_XMM7L | R_XMM7H
   (* x86 *)
   | R_EBP | R_ESP | R_ESI | R_EDI | R_EIP | R_EAX | R_EBX | R_ECX | R_EDX
   | EFLAGSREST | R_LDT | R_GDT 

@@ -178,6 +178,30 @@ let parse_z3_ce_line s v =
 		  failwith "Unhandled value case in parse_z3_ce_lines"
 	  in
 	    (Assignment (varname, v), None)
+    (* Ignore comments *)
+    | (s, _) when String.length s > 4 &&
+	String.sub s 0 4 = "  ;;" ->
+	(No_CE_here, None)
+    (* Ignore some weird lines about rounding modes and float formats that
+       sometimes show up when floats are involved. *)
+    | (s, _) when String.length s > 27 &&
+	String.sub s 0 27 = "  (declare-fun RoundingMode" ->
+	(No_CE_here, None)
+    | (s, _) when String.length s > 26 &&
+	String.sub s 0 26 = "  (forall ((x RoundingMode" ->
+	(No_CE_here, None)
+    | (s, _) when String.length s > 30 &&
+	String.sub s 0 30 = "  (forall ((x (_ FloatingPoint" ->
+	(No_CE_here, None)
+    | (s, _) when String.length s > 28 &&
+	String.sub s 0 28 = "  (declare-fun FloatingPoint" ->
+	(No_CE_here, None)
+    | (s, _) when String.length s > 32 &&
+	String.sub s 0 32 = "          (or (= x FloatingPoint" ->
+	(No_CE_here, None)
+    | (s, _) when String.length s > 32 &&
+	String.sub s 0 32 = "              (= x FloatingPoint" ->
+	(No_CE_here, None)
     | (s, _) ->
 	  Printf.printf "Parse failure on <%s>\n" s;
 	  failwith "Unhandled loop case in parse_z3_ce_line"

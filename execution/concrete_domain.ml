@@ -385,5 +385,123 @@ module ConcreteDomain : Exec_domain.DOMAIN = struct
   let ite32 cond t f = if as_bool cond then t else f
   let ite64 cond t f = if as_bool cond then t else f
 
+  let fbinop32 op =
+    fun rm x y ->
+      let x32 = Int64.to_int32 x and
+	  y32 = Int64.to_int32 y in
+	Int64.of_int32 (op rm x32 y32)
+
+  let fplus32 = fbinop32 Vine_util.f32_add
+  let fplus64 = Vine_util.f64_add
+
+  let fminus32 = fbinop32 Vine_util.f32_sub
+  let fminus64 = Vine_util.f64_sub
+
+  let ftimes32 = fbinop32 Vine_util.f32_mul
+  let ftimes64 = Vine_util.f64_mul
+
+  let fdivide32 = fbinop32 Vine_util.f32_div
+  let fdivide64 = Vine_util.f64_div
+
+  let fbinpred32 op =
+    fun rm x y ->
+      let x32 = Int64.to_int32 x and
+	  y32 = Int64.to_int32 y in
+	bool (op rm x32 y32)
+
+  let fbinpred64 op =
+    fun rm x y -> bool (op rm x y)
+
+  let feq32 = fbinpred32 Vine_util.f32_eq
+  let feq64 = fbinpred64 Vine_util.f64_eq
+
+  let fneq32 = fbinpred32 Vine_util.f32_ne
+  let fneq64 = fbinpred64 Vine_util.f64_ne
+
+  let flt32 = fbinpred32 Vine_util.f32_lt
+  let flt64 = fbinpred64 Vine_util.f64_lt
+
+  let fle32 = fbinpred32 Vine_util.f32_le
+  let fle64 = fbinpred64 Vine_util.f64_le
+
+  let funop32 op =
+    fun rm x ->
+      let x32 = Int64.to_int32 x in
+	Int64.of_int32 (op rm x32)
+
+  let fneg32 = funop32 Vine_util.f32_neg
+  let fneg64 = Vine_util.f64_neg
+
+  let fixed x = x
+
+  let float_s64 = Int64.to_float
+  let float_u64 = Vine_util.int64_u_to_float
+
+  let enc_float32 f = Int64.of_int32 (Int32.bits_of_float f)
+  let enc_float64 f = Int64.bits_of_float f
+
+  let do_float fixer floater encoder =
+    fun rm v ->
+      ignore(rm);
+      encoder (floater (fixer v))
+
+  let float1s32  = do_float fix_s1  float_s64 enc_float32
+  let float8s32  = do_float fix_s8  float_s64 enc_float32
+  let float16s32 = do_float fix_s16 float_s64 enc_float32
+  let float32s32 = do_float fix_s32 float_s64 enc_float32
+  let float64s32 = do_float fixed   float_s64 enc_float32
+  let float1s64  = do_float fix_s1  float_s64 enc_float64
+  let float8s64  = do_float fix_s8  float_s64 enc_float64
+  let float16s64 = do_float fix_s16 float_s64 enc_float64
+  let float32s64 = do_float fix_s32 float_s64 enc_float64
+  let float64s64 = do_float fixed   float_s64 enc_float64
+
+  let float1u32  = do_float fix_u1  float_s64 enc_float32
+  let float8u32  = do_float fix_u8  float_s64 enc_float32
+  let float16u32 = do_float fix_u16 float_s64 enc_float32
+  let float32u32 = do_float fix_u32 float_s64 enc_float32
+  let float64u32 = do_float fixed   float_u64 enc_float32
+  let float1u64  = do_float fix_u1  float_s64 enc_float64
+  let float8u64  = do_float fix_u8  float_s64 enc_float64
+  let float16u64 = do_float fix_u16 float_s64 enc_float64
+  let float32u64 = do_float fix_u32 float_s64 enc_float64
+  let float64u64 = do_float fixed   float_u64 enc_float64
+
+  let dec_float32 v = Int32.float_of_bits (Int64.to_int32 v)
+  let dec_float64 v = Int64.float_of_bits v
+
+  let unfloat_s64 = Int64.of_float
+  let unfloat_u64 = Vine_util.int64_u_of_float
+
+  let do_fix decoder unfloater fixer =
+    fun rm v ->
+      ignore(rm);
+      fixer (unfloater (decoder v))
+
+  let fix32s1  = do_fix dec_float32 unfloat_s64 fix_s1
+  let fix32s8  = do_fix dec_float32 unfloat_s64 fix_s8
+  let fix32s16 = do_fix dec_float32 unfloat_s64 fix_s16
+  let fix32s32 = do_fix dec_float32 unfloat_s64 fix_s32
+  let fix32s64 = do_fix dec_float32 unfloat_s64 fixed
+  let fix64s1  = do_fix dec_float64 unfloat_s64 fix_s1
+  let fix64s8  = do_fix dec_float64 unfloat_s64 fix_s8
+  let fix64s16 = do_fix dec_float64 unfloat_s64 fix_s16
+  let fix64s32 = do_fix dec_float64 unfloat_s64 fix_s32
+  let fix64s64 = do_fix dec_float64 unfloat_s64 fixed
+
+  let fix32u1  = do_fix dec_float32 unfloat_s64 fix_u1
+  let fix32u8  = do_fix dec_float32 unfloat_s64 fix_u8
+  let fix32u16 = do_fix dec_float32 unfloat_s64 fix_u16
+  let fix32u32 = do_fix dec_float32 unfloat_s64 fix_u32
+  let fix32u64 = do_fix dec_float32 unfloat_u64 fixed
+  let fix64u1  = do_fix dec_float64 unfloat_s64 fix_u1
+  let fix64u8  = do_fix dec_float64 unfloat_s64 fix_u8
+  let fix64u16 = do_fix dec_float64 unfloat_s64 fix_u16
+  let fix64u32 = do_fix dec_float64 unfloat_s64 fix_u32
+  let fix64u64 = do_fix dec_float64 unfloat_u64 fixed
+
+  let fwiden32to64  rm v = ignore(rm); enc_float64 (dec_float32 v)
+  let fnarrow64to32 rm v = ignore(rm); enc_float32 (dec_float64 v)
+
   let get_tag v = 0L
 end

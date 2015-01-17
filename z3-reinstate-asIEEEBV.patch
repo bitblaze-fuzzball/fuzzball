@@ -1,0 +1,13 @@
+diff --git a/src/ast/float_decl_plugin.cpp b/src/ast/float_decl_plugin.cpp
+index f51101d..1022da9 100644
+--- a/src/ast/float_decl_plugin.cpp
++++ b/src/ast/float_decl_plugin.cpp
+@@ -644,6 +644,8 @@ void float_decl_plugin::get_op_names(svector<builtin_name> & op_names, symbol co
+     op_names.push_back(builtin_name("fp.to_sbv", OP_FLOAT_TO_SBV));
+         
+     op_names.push_back(builtin_name("to_fp", OP_TO_FLOAT));    
++
++    op_names.push_back(builtin_name("asIEEEBV", OP_FLOAT_TO_IEEE_BV));
+ }
+ 
+ void float_decl_plugin::get_sort_names(svector<builtin_name> & sort_names, symbol const & logic) {

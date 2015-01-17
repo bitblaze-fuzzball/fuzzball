@@ -332,3 +332,56 @@ let run_with_remapped_fd fd_from fd_to f =
 
   rv
 
+(* Floating point operations on raw IEEE single and double precision
+   values represented as Int32s and Int64s. The current implementation
+   is not ideal: in particular we should actually pay attention to the
+   rounding mode, though AFAIK OCaml's builtins don't support that. *)
+
+(* This is the list from the SMT-LIB 2 floating point theory; VEX
+   has a superset of these *)
+type round_mode = | ROUND_NEAREST (* ties to even *)
+		  | ROUND_NEAREST_AWAY_ZERO
+		  | ROUND_POSITIVE
+		  | ROUND_NEGATIVE
+		  | ROUND_ZERO
+
+let wrap_f32_unop f a =
+  Int32.bits_of_float (f (Int32.float_of_bits a))
+
+let wrap_f32_binpred f a b =
+  f (Int32.float_of_bits a) (Int32.float_of_bits b)
+
+let wrap_f32_binop f a b =
+  Int32.bits_of_float (f (Int32.float_of_bits a) (Int32.float_of_bits b))
+
+let f32_neg (rm:round_mode) = ignore(rm); wrap_f32_unop (~-.)
+let f32_eq (rm:round_mode) = ignore(rm); wrap_f32_binpred (=)
+let f32_ne (rm:round_mode) = ignore(rm); wrap_f32_binpred (<>)
+let f32_lt (rm:round_mode) = ignore(rm); wrap_f32_binpred (<)
+let f32_le (rm:round_mode) = ignore(rm); wrap_f32_binpred (<=)
+let f32_add (rm:round_mode) = ignore(rm); wrap_f32_binop (+.)
+let f32_sub (rm:round_mode) = ignore(rm); wrap_f32_binop (-.)
+let f32_mul (rm:round_mode) = ignore(rm); wrap_f32_binop ( *. )
+let f32_div (rm:round_mode) = ignore(rm); wrap_f32_binop (/.)
+let f32_rem (rm:round_mode) = ignore(rm); wrap_f32_binop mod_float
+
+let wrap_f64_unop f a =
+  Int64.bits_of_float (f (Int64.float_of_bits a))
+
+let wrap_f64_binpred f a b =
+  f (Int64.float_of_bits a) (Int64.float_of_bits b)
+
+let wrap_f64_binop f a b =
+  Int64.bits_of_float (f (Int64.float_of_bits a) (Int64.float_of_bits b))
+
+let f64_neg (rm:round_mode) = ignore(rm); wrap_f64_unop (~-.)
+let f64_eq (rm:round_mode) = ignore(rm); wrap_f64_binpred (=)
+let f64_ne (rm:round_mode) = ignore(rm); wrap_f64_binpred (<>)
+let f64_lt (rm:round_mode) = ignore(rm); wrap_f64_binpred (<)
+let f64_le (rm:round_mode) = ignore(rm); wrap_f64_binpred (<=)
+let f64_add (rm:round_mode) = ignore(rm); wrap_f64_binop (+.)
+let f64_sub (rm:round_mode) = ignore(rm); wrap_f64_binop (-.)
+let f64_mul (rm:round_mode) = ignore(rm); wrap_f64_binop ( *. )
+let f64_div (rm:round_mode) = ignore(rm); wrap_f64_binop (/.)
+let f64_rem (rm:round_mode) = ignore(rm); wrap_f64_binop mod_float
+

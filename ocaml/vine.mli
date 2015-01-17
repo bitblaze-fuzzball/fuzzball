@@ -49,6 +49,9 @@ module VarMap : Map.S with type key = var
 module VarSet : Set.S with type elt = var
 
 type cast_type = CAST_UNSIGNED | CAST_SIGNED | CAST_HIGH | CAST_LOW
+type fcast_type =
+  | CAST_SFLOAT | CAST_UFLOAT | CAST_SFIX | CAST_UFIX
+  | CAST_FWIDEN | CAST_FNARROW
 type binop_type =
     PLUS
   | MINUS
@@ -69,7 +72,9 @@ type binop_type =
   | LE
   | SLT
   | SLE
+type fbinop_type = FPLUS | FMINUS | FTIMES | FDIVIDE | FEQ | FNEQ | FLT | FLE
 type unop_type = NEG | NOT
+type funop_type = FNEG
 type value = Int of typ *  int64
 	     | Str of string
 
@@ -82,11 +87,14 @@ type lvalue = Temp of var
 	      | Mem of var * exp * typ
 and exp =
     BinOp of binop_type * exp * exp
+  | FBinOp of fbinop_type * Vine_util.round_mode * exp * exp
   | UnOp of unop_type * exp
+  | FUnOp of funop_type * Vine_util.round_mode * exp
   | Constant of value
   | Lval of lvalue
   | Name of label
   | Cast of cast_type * typ * exp
+  | FCast of fcast_type * Vine_util.round_mode * typ * exp
   | Unknown of string
   | Let of lvalue * exp * exp
   | Ite of exp * exp * exp
@@ -140,9 +148,13 @@ val const_of_stringt : typ -> string -> value
 val type_of_string : string -> typ
 
 val attr_to_string : attribute -> string
+val round_mode_to_string : Vine_util.round_mode -> string
 val binop_to_string : binop_type -> string
+val fbinop_to_string : fbinop_type -> string
 val unop_to_string : unop_type -> string
+val funop_to_string : funop_type -> string
 val casttype_to_string : cast_type -> string
+val fcasttype_to_string : fcast_type -> string
 val type_to_string : typ -> string
 val val_to_string : value -> string
 val pp_var : (string -> unit) -> var -> unit
@@ -216,6 +228,10 @@ val get_last_static_stmt : stmt list -> stmt option
 
 (** [is_integer_type t] returns true when [t] is an integral type *)
 val is_integer_type : typ -> bool
+
+(** [is_float_type t] returns true when [t] is a type that could
+    contain a floating point value *)
+val is_float_type : typ -> bool
 
 (** [unwind_type t] unwinds any type attributes and returns the
     real type *)

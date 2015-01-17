@@ -311,12 +311,15 @@ struct
       let rec loop e =
 	match e with
 	  | V.BinOp(op, e1, e2) -> V.BinOp(op, (loop e1), (loop e2))
+	  | V.FBinOp(op, rm, e1, e2) -> V.FBinOp(op, rm, (loop e1), (loop e2))
 	  | V.UnOp(op, e1) -> V.UnOp(op, (loop e1))
+	  | V.FUnOp(op, rm, e1) -> V.FUnOp(op, rm, (loop e1))
 	  | V.Constant(_) -> e
 	  | V.Lval(V.Temp(_)) -> e
 	  | V.Lval(V.Mem(_, _, _)) -> self#rewrite_mem_expr e
 	  | V.Name(_) -> e
 	  | V.Cast(kind, ty, e1) -> V.Cast(kind, ty, (loop e1))
+	  | V.FCast(kind, rm, ty, e1) -> V.FCast(kind, rm, ty, (loop e1))
 	  | V.Unknown(_) -> e
 	  | V.Let(V.Temp(v), e1, e2) ->
 	      V.Let(V.Temp(v), (loop e1), (loop e2))
@@ -425,8 +428,12 @@ struct
       let rec loop e =
 	match e with
 	  | V.BinOp(op, e1, e2) -> cf_eval (V.BinOp(op, loop e1, loop e2))
+	  | V.FBinOp(op, rm, e1, e2)
+	    -> cf_eval (V.FBinOp(op, rm, loop e1, loop e2))
 	  | V.UnOp(op, e1) -> cf_eval (V.UnOp(op, loop e1))
+	  | V.FUnOp(op, rm, e1) -> cf_eval (V.FUnOp(op, rm, loop e1))
 	  | V.Cast(op, ty, e1) -> cf_eval (V.Cast(op, ty, loop e1))
+	  | V.FCast(op, rm, ty, e1) -> cf_eval (V.FCast(op, rm, ty, loop e1))
 	  | V.Lval(V.Mem(_, _, ty) as lv) ->
 	      let d = self#eval_var lv in
 	      let v = match ty with
@@ -508,8 +515,12 @@ struct
       let rec loop e =
 	match e with
 	  | V.BinOp(op, e1, e2) -> cf_eval (V.BinOp(op, loop e1, loop e2))
+	  | V.FBinOp(op, rm, e1, e2)
+	    -> cf_eval (V.FBinOp(op, rm, loop e1, loop e2))
 	  | V.UnOp(op, e1) -> cf_eval (V.UnOp(op, loop e1))
+	  | V.FUnOp(op, rm, e1) -> cf_eval (V.FUnOp(op, rm, loop e1))
 	  | V.Cast(op, ty, e1) -> cf_eval (V.Cast(op, ty, loop e1))
+	  | V.FCast(op, rm, ty, e1) -> cf_eval (V.FCast(op, rm, ty, loop e1))
 	  | V.Constant(V.Int(_, _)) -> e
 	  | V.Lval(V.Temp(n,s,t))
 	      when Hashtbl.mem temp_var_num_to_subexpr n ->
@@ -549,8 +560,11 @@ struct
       let rec loop e =
 	match e with
 	  | V.BinOp(op, e1, e2) -> (loop e1) || (loop e2)
+	  | V.FBinOp(op, _, e1, e2) -> (loop e1) || (loop e2)
 	  | V.UnOp(op, e1) -> loop e1
+	  | V.FUnOp(op, _, e1) -> loop e1
 	  | V.Cast(op, ty, e1) -> loop e1
+	  | V.FCast(op, _, ty, e1) -> loop e1
 	  | V.Lval(V.Mem(_, _, _)) -> false
 	  | V.Constant(V.Int(_, _)) -> false
 	  | V.Lval(V.Temp(n,s,t))
@@ -931,7 +945,9 @@ struct
       let nontemps = ref [] in
       let rec walk = function
 	| V.BinOp(_, e1, e2) -> walk e1; walk e2
+	| V.FBinOp(_, rm, e1, e2) -> walk e1; walk e2
 	| V.UnOp(_, e1) -> walk e1
+	| V.FUnOp(_, _, e1) -> walk e1
 	| V.Constant(_) -> ()
 	| V.Lval(V.Temp(var)) ->
 	    if not (V.VarHash.mem h var) then
@@ -948,6 +964,7 @@ struct
 	| V.Lval(V.Mem(_, e1, _)) -> walk e1
 	| V.Name(_) -> ()
 	| V.Cast(_, _, e1) -> walk e1
+	| V.FCast(_, _, _, e1) -> walk e1
 	| V.Unknown(_) -> ()
 	| V.Let(_, e1, e2) -> walk e1; walk e2 
 	| V.Ite(ce, te, fe) -> walk ce; walk te; walk fe

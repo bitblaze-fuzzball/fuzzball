@@ -97,7 +97,10 @@ struct
 	| V.Ite(_, te, fe) -> max (loop te) (loop fe)
 	| V.UnOp(_)
 	| V.Let(_, _, _)
-	| V.Name(_) ->
+	| V.Name(_)
+	| V.FBinOp(_, _, _, _)
+	| V.FUnOp(_, _, _)
+	| V.FCast(_, _, _, _) ->
 	    V.bits_of_width (Vine_typecheck.infer_type_fast e)
 	| V.Constant(V.Str(_)) ->
 	    failwith "Unhandled string in narrow_bitwidth"
