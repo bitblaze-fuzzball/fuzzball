@@ -228,7 +228,19 @@ let opt_memory_watching = ref false
 let opt_bb_size = ref 1
 let opt_veritesting = ref NoVeritesting
 
-let opt_ignore_div_0 = ref false
+type div_0_notice =
+| Raise
+| Warn
+| Ignore
+
+let div_0_notice_of_string s =
+  match (String.uppercase s) with
+  | "RAISE" -> Raise
+  | "WARN" -> Warn
+  | "IGNORE" -> Ignore
+  | _ -> failwith (Printf.sprintf "%s not a recognized div_0 notice option. Expected RAISE, WARN or IGNORE" s)
+
+let opt_ignore_div_0 = ref Raise
 
 let convert_string_to_veritesting str =
   let str' = String.uppercase str in
