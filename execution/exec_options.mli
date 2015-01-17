@@ -225,3 +225,4 @@ val opt_veritesting : supported_veritesting ref
 val div_0_notice_of_string : string -> div_0_notice
 val opt_ignore_div_0 : div_0_notice ref
 val opt_log_random : random_notice ref
+val opt_big_alloc : Int64.t option ref

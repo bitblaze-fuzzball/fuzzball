@@ -65,13 +65,20 @@ method private is_overlapping v1 v2 r1 r2 =
     self#is_overlapping_not_contained v1 v2 r1 r2
 
 method add_alloc addr len = 
-  if (len = Int64.zero)
-  then (self#report [("tag", (`String ":zero-length-allocate"));
-		     ("zero-length-allocate-addr", (json_addr addr))])
-  else 
+  if (len = Int64.zero) then
+    (self#report [("tag", (`String ":zero-length-allocate"));
+		  ("zero-length-allocate-addr", (json_addr addr))])
+  else
     (let start_addr = addr
     and end_addr = Int64.add addr (Int64.sub len Int64.one) in
      let this_interval = { Interval_tree.low = start_addr; Interval_tree.high = end_addr;} in
+     match !Exec_options.opt_big_alloc with
+     | None -> ()
+     | Some size ->
+       if len >= size
+       then self#report [("tag", (`String ":suspiciously-big-allocate"));
+			 ("alloc size", (`String (Printf.sprintf "%Li" len)));
+			 ("suspiciously-big-allocate-addr", (json_addr addr))];
      try
        assign_ranges <- Interval_tree.attempt_allocate assign_ranges this_interval
      with Interval_tree.AllocatingAllocated (collides_with, this_range) -> raise Overlapping_Alloc)

@@ -298,3 +298,4 @@ let opt_start_addr = ref None
 let opt_argv = ref []
 let state_start_addr = ref None
 let opt_log_random = ref Never
+let opt_big_alloc = ref None

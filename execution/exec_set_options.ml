@@ -401,6 +401,8 @@ let cmdline_opts =
      " Use symbolic values for uninit. memory reads");
     ("-zero-memory", Arg.Set(opt_zero_memory),
      " Use zero values for uninit. memory reads");
+    ("-warn-large-alloc", Arg.String(fun s -> opt_big_alloc := Some (Int64.of_string s)),
+     "Int64.t Sets a threshold where, if a larger alloc occurs, a warning will be issued.");
     ("-trace-basic",
      (Arg.Unit
 	(fun () ->
