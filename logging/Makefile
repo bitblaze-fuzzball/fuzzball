@@ -8,6 +8,7 @@ export SOURCES = \
 	logger_config.ml \
 	text_logger.ml \
 	yojson_logger.ml \
+	yojson_list_logger.ml \
 	log_configs.ml \
 	pov_xml.ml \
 	loggers.ml \
@@ -38,7 +39,7 @@ bytecode: dcl top
 
 display: logger_config.ml log_configs.ml \
 	 text_logger.ml test_logger.ml
-	ocamlfind ocamlc -package unix, yojson, tyxml -linkpkg $^ -o $@
+	 ocamlfind ocamlc -package unix, yojson, tyxml -linkpkg $^ -o $@
 
 
 include $(OCAMLMAKEFILE)
