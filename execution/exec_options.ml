@@ -12,6 +12,18 @@ type supported_veritesting =
 | Linear
 | Diamond of int
 
+type random_notice =
+| Never
+| Always
+| Once
+
+let random_notice_of_string s =
+  match (String.uppercase s) with
+  | "NEVER" -> Never
+  | "ALWAYS" -> Always
+  | "ONCE" -> Once
+  | _ -> failwith (Printf.sprintf "Unrecognized Random Notice %s. Expected NEVER, ALWAYS, or ONCE." s)
+
 
 let offset_strategy_of_string s =
   match s with
@@ -273,3 +285,4 @@ let get_program_name () =
 let opt_start_addr = ref None
 let opt_argv = ref []
 let state_start_addr = ref None
+let opt_log_random = ref Never

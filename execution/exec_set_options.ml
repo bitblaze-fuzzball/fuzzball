@@ -543,6 +543,8 @@ let cmdline_opts =
      " Pay attention to memory related issues");
     ("-basic-block-size", Arg.Set_int(opt_bb_size), "N Sets basic block size to N.  Default 1."); 
     ("-veritesting-style", Arg.String set_opt_veritesting, "String Sets veritesting strategy.  Default NoVeritesting.");     
+    ("-record-random", Arg.String (fun s -> opt_log_random := (random_notice_of_string s)),
+     "String Sets how loud to be about calls to cgc_random.  Defaults to never.");
   ]
 
 let trace_replay_cmdline_opts =

@@ -7,6 +7,7 @@ open Exec_options
 open Fragment_machine
 
 class cgcos_special_handler (fm : fragment_machine) =
+  let printed_random = ref false in
   let put_reg = fm#set_word_var in
   let put_return =
     (match !opt_arch with
@@ -388,6 +389,15 @@ object(self)
 	| _ -> failwith ("Unexpected errno value " ^ (string_of_int err))
 
   method private handle_cgcos_syscall () =
+    let module Log = (val !Loggers.cgc_restart_json : Yojson_list_logger.JSONListLog) in
+    let log_random addr_p = 
+      Log.always
+	(Yojson_list_logger.LazyJson
+	   (lazy
+	      (`Assoc
+		  ["function", `String "cgc_os_call";
+		   "type", `String ":called_random";
+		   "called_at", `String (Printf.sprintf "0x%08LX" addr_p);]))) in
     let get_reg r = 
       if !opt_symbolic_syscall_error <> None then
         fm#get_word_var r (* fail if not concrete *)
@@ -481,6 +491,13 @@ object(self)
 		if !opt_trace_syscalls then
 		  Printf.printf "allocate(%Ld, %d, 0x%08Lx)"
 		    len is_exec addr_p;
+	      (match !opt_log_random with
+	      | Never -> ()
+	      | Once ->
+		(if not !printed_random
+		 then (printed_random := true;
+		       log_random addr_p))
+	      | Always -> log_random addr_p);
 		self#cgcos_allocate len is_exec addr_p;
 		Some addr_p
 	  | 6 -> (* deallocate = Linux sys_munmap *)

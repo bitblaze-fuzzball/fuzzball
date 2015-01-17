@@ -12,8 +12,14 @@ type supported_veritesting =
 | Linear
 | Diamond of int
 
+type random_notice =
+| Never
+| Always
+| Once
+
 
 val offset_strategy_of_string : string -> offset_strategy
+val random_notice_of_string : string -> random_notice
 
 type execution_arch = X86 | X64 | ARM
 
@@ -213,3 +219,4 @@ val opt_bb_size : int ref
 val set_opt_veritesting : string -> unit
 val opt_veritesting : supported_veritesting ref
 val opt_ignore_div_0 : bool ref
+val opt_log_random : random_notice ref
