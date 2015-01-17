@@ -125,10 +125,15 @@ class smtlib_external_engine solver = object(self)
 
   method private real_prepare =
     let (solver_in, solver_out) = solver_chans in
+    let logic = match solver with
+      | Z3 -> "QF_FPABV"
+      | _ -> "QF_BV"
+    in
       visitor <- Some(new Smt_lib2.vine_smtlib_print_visitor
-                       (output_string_log log_file solver_out));
+			(output_string_log log_file solver_out));
+      output_string_log log_file solver_out ("(set-logic " ^ logic ^ ")\n");
       output_string_log log_file solver_out
-	"(set-logic QF_BV)\n(set-info :smt-lib-version 2.0)\n\n";
+	"(set-info :smt-lib-version 2.0)\n\n";
       first_query <- false
 
   method query qe =
