@@ -1,8 +1,6 @@
 open Exec_exceptions
 
-exception Safe
 exception Overlapping_Alloc
-exception ZeroLengthAlloc
 
 let json_addr i64 = `String (Printf.sprintf "0x%08Lx" i64) 
 
@@ -67,15 +65,16 @@ method private is_overlapping v1 v2 r1 r2 =
     self#is_overlapping_not_contained v1 v2 r1 r2
 
 method add_alloc addr len = 
-  if (len = Int64.zero) then raise ZeroLengthAlloc;
-  let start_addr = addr
-  and end_addr = Int64.add addr (Int64.sub len Int64.one) in
-  let this_interval = { Interval_tree.low = start_addr; Interval_tree.high = end_addr;} in
-  Printf.eprintf "Adding:  ";
-  Interval_tree.print_interval this_interval;
-  try
-    assign_ranges <- Interval_tree.attempt_allocate assign_ranges this_interval
-  with Interval_tree.AllocatingAllocated (collides_with, this_range) -> raise Overlapping_Alloc
+  if (len = Int64.zero)
+  then (self#report [("tag", (`String ":zero-length-allocate"));
+		     ("zero-length-allocate-addr", (json_addr addr))])
+  else 
+    (let start_addr = addr
+    and end_addr = Int64.add addr (Int64.sub len Int64.one) in
+     let this_interval = { Interval_tree.low = start_addr; Interval_tree.high = end_addr;} in
+     try
+       assign_ranges <- Interval_tree.attempt_allocate assign_ranges this_interval
+     with Interval_tree.AllocatingAllocated (collides_with, this_range) -> raise Overlapping_Alloc)
 
 val mutable info_reporter = None
 	  
@@ -99,14 +98,11 @@ method private report l =
 *)
 
 method add_dealloc addr len =
-	(* Has this pointer already been deallocated? *)
+  (* Has this pointer already been deallocated? *)
   assert(len > Int64.zero);
   let start_addr = addr
   and end_addr = Int64.add addr (Int64.sub len Int64.one) in
   let this_interval = { Interval_tree.low = start_addr; Interval_tree.high = end_addr; } in
-  Printf.eprintf "Removin: ";
-    Interval_tree.print_interval this_interval;
-    flush stderr;
   try
     let assign_ranges', io_ranges' = Interval_tree.attempt_deallocate assign_ranges io_ranges this_interval in
     assign_ranges <- assign_ranges';
@@ -129,9 +125,6 @@ method is_safe_read addr len =
   let this_interval = {Interval_tree.low = start_addr;
 		       Interval_tree.high = end_addr; }
   and is_safe = ref false in
-  Printf.eprintf "Reading: ";
-  Interval_tree.print_interval this_interval;
-  flush stderr;
 	(* fully in the heap *)
   if self#is_contained start_addr end_addr heap_start heap_end then (
     try (Interval_tree.attempt_read assign_ranges io_ranges this_interval;
@@ -162,13 +155,10 @@ method is_safe_read addr len =
 	  start_addr_ref := Int64.add !start_addr_ref (Int64.one)
 	done
       );
-			(* otherwise we assume we're safe for now *)
+      (* otherwise we assume we're safe for now *)
       is_safe := true
     );
   );
-  if not !is_safe
-  then Printf.eprintf "Unsafe read!\n";
-  flush stderr;
   !is_safe
 
 method is_safe_write addr len =
@@ -177,27 +167,19 @@ method is_safe_write addr len =
   and end_addr = Int64.add addr (Int64.sub len Int64.one)
   and is_safe = ref false in
   let this_interval = {Interval_tree.low = start_addr; Interval_tree.high = end_addr;} in
-  Printf.eprintf "Writing: ";
-  Interval_tree.print_interval this_interval;  
-  flush stderr;
-	(* fully in the heap *)
+  (* fully in the heap *)
   if self#is_contained start_addr end_addr heap_start heap_end then (
     (* is it in an allocated block *)
     try
       io_ranges <- Interval_tree.attempt_write assign_ranges io_ranges this_interval;
       is_safe := true
-    with Interval_tree.WritingUnallocated _ ->
-      (Printf.eprintf "Writing to unallocated memory\n";
-       flush stderr;
-       is_safe := false)
+    with Interval_tree.WritingUnallocated _ -> is_safe := false
   ) else (
-		(* overlapping unsafe memory between heap and stack *)
+    (* overlapping unsafe memory between heap and stack *)
     if (self#is_overlapping start_addr end_addr heap_end stack_end)  ||
-			 (* overlapping the heap but not contained *)
+      (* overlapping the heap but not contained *)
       (self#is_overlapping_not_contained start_addr end_addr heap_start heap_end) then
-      (Printf.eprintf "writing between heap and stack\n";
-       flush stderr;
-       is_safe := false)
+      is_safe := false
     else (
       if (self#is_contained start_addr end_addr stack_end stack_start) then (
 	let start_addr_ref = ref start_addr in
@@ -210,17 +192,14 @@ method is_safe_write addr len =
       is_safe := true
     )
   );
-  if not !is_safe
-  then Printf.eprintf "Unsafe write!\n";
-      flush stderr;
   !is_safe
     
 method clear =
-	        (* Hashtbl.clear and Hashtbl.reset have the same
-	           visible semantics; the difference is just a time/space
-	        tradeoff. But Hashtbl.reset is a fairly recent
-	        addition: sticking with clear retains compatibilty
-	        with 3.x versions of OCaml. *)
+  (* Hashtbl.clear and Hashtbl.reset have the same
+     visible semantics; the difference is just a time/space
+     tradeoff. But Hashtbl.reset is a fairly recent
+     addition: sticking with clear retains compatibilty
+     with 3.x versions of OCaml. *)
   assign_ranges <- Interval_tree.IntervalMap.empty;
   io_ranges <- Interval_tree.IntervalMap.empty
 
