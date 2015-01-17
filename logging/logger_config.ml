@@ -15,15 +15,8 @@ type log_channel =
 let logger_level = Hashtbl.create 10
 
 let logger_channels = Hashtbl.create 10
-(*
-  (let table = Hashtbl.create 10 in
-   Hashtbl.add table "yo mama" (Fixed Pervasives.stdout);
-   table)
-*)
+
 let json_logging = ref false
-
-
-
 
 let level_to_int = function
   | `Always ->    5
@@ -39,14 +32,17 @@ let level_to_string = function
   | `Trace ->     "Trace"
   | `Never ->     "Never"
 
+
 let get_level name =
   try
     let level, _ = Hashtbl.find logger_level name in
     level
   with _ -> `Standard
 
+
 let file_perms name =
     (Unix.stat name).Unix.st_perm
+
 
 let rec ensure_dir dirname =
     (** ensures that the given directory exists, creating any
@@ -57,6 +53,7 @@ let rec ensure_dir dirname =
     (* check again to avoid failure of Filename.dirname on "/foo/bar/" *)
        if not (Sys.file_exists dirname)
        then Unix.mkdir dirname (file_perms sub)
+
 
 let next_incrementing_channel = function
   | Fixed _ -> failwith "Expected an incrementing channel in next_incrementing_channel"
@@ -70,6 +67,7 @@ let next_incrementing_channel = function
     let next = Incrementing ((index', loggername, filename), (open_out next_chan)) in
     Hashtbl.replace logger_channels filename next;
     next
+
 
 let get_logfile_channel (frequency, logger_name) =
   try

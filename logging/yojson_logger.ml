@@ -1,12 +1,13 @@
 open Yojson.Safe  (* For the json output *)
 open Logger_config
 
-type lazy_type = LazyString of string Lazy.t
-		 | LazyInt of int Lazy.t
-		 | LazyInt64 of int64 Lazy.t
-		 | LazyFloat of float Lazy.t
-		 | LazyBool of bool Lazy.t
-		 | LazyJson of json Lazy.t
+type lazy_type =
+| LazyString of string Lazy.t
+| LazyInt of int Lazy.t
+| LazyInt64 of int64 Lazy.t
+| LazyFloat of float Lazy.t
+| LazyBool of bool Lazy.t
+| LazyJson of json Lazy.t
 
 let evaluateLazyTypeToJson lazyType =
   match lazyType with
