@@ -60,7 +60,8 @@ let next_incrementing_channel = function
   | Incrementing ((index, loggername, filename), old_chan) ->
     let index' = index + 1 in
     let next_chan = Printf.sprintf "%s/%s-%i.json" filename loggername index' in
-    if index >= 0 (* default channel is stdout. Don't close stdout! *)
+    (* I think this close channel can be dealt away with.  POV closes it's own.  JSON list does its own too. *)
+    if index >= 0 && old_chan != stdout && old_chan != stderr (* default channel is stdout. Don't close stdout! *)
     then (try close_out old_chan
       with _ -> ());
     ensure_dir filename; (* we want the binary name here for cgc *)
@@ -80,7 +81,11 @@ let get_logfile_channel (frequency, logger_name) =
       try
 	match Hashtbl.find logger_channels filename with 
 	| Fixed oc as foc -> foc
-	| Incrementing ((index, loggername, filename), chan) as ic -> next_incrementing_channel ic
+	| Incrementing ((index, loggername, filename), chan) as ic ->
+	  try
+	    Printf.fprintf chan "";
+	    ic
+	  with _ ->  next_incrementing_channel ic
       with Not_found ->
 	(let regex = Str.regexp ".*:[0-9]+" in
 	 let chan = 

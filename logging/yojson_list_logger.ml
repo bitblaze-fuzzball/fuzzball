@@ -22,12 +22,11 @@ let evaluateLazyTypeToJson lazyType =
 
 
 module type JSONListLog = sig
-  val add_always   : lazy_type -> unit
-  val add_standard : lazy_type -> unit
-  val add_debug    : lazy_type -> unit
-  val add_trace    : lazy_type -> unit
-  val add_never    : lazy_type -> unit
-  val open_list    : unit -> unit
+  val always   : lazy_type -> unit
+  val standard : lazy_type -> unit
+  val debug    : lazy_type -> unit
+  val trace    : lazy_type -> unit
+  val never    : lazy_type -> unit
   val close_list   : unit -> unit
 end
 
@@ -77,8 +76,10 @@ let json_command_arg = function
 
 let log lazy_message =
   let chan = Verb.out_channel () in
+  Printf.eprintf "Printing message %i\n" !element_count;
   (if !element_count <> 0
-   then Printf.fprintf chan ",\n");
+   then Printf.fprintf chan ",\n"
+   else Printf.fprintf chan "[\n");
   pretty_to_channel
     chan
     (`Assoc
@@ -88,50 +89,43 @@ let log lazy_message =
           "subcomponent", `String Verb.minor_name;
           "message", (evaluateLazyTypeToJson lazy_message)
 	]);
-  if chan = stderr || chan = stdout
-  then (Printf.eprintf "Channel wasn't a file, flushing and not closing\n";
-	flush chan)
-  else (Printf.eprintf "Channel WAS a file, closing.\n"; close_out chan);
-  flush stderr
+  element_count := !element_count + 1
 
 let dummy_log _ = ()
 
-let add_always =
+let always =
   if Logger_config.sufficient (Verb.major_name,Verb.minor_name) `Always
   then log
   else dummy_log
 
-let add_standard =
+let standard =
   if Logger_config.sufficient (Verb.major_name,Verb.minor_name) `Standard
   then log
   else dummy_log
 
-let add_debug =
+let debug =
   if Logger_config.sufficient (Verb.major_name,Verb.minor_name) `Debug
   then log
   else dummy_log
 
-let add_trace =
+let trace =
   if Logger_config.sufficient (Verb.major_name,Verb.minor_name) `Trace
   then log
   else dummy_log
 
-let add_never =
+let never =
   if Logger_config.sufficient (Verb.major_name,Verb.minor_name) `Never
   then log
   else dummy_log
 
-let open_list () =
-  element_count := 0;
-  let chan = Verb.out_channel () in
-  Printf.fprintf chan "[\n"
-
 let close_list () = 
   let chan = Verb.out_channel () in
+  (if !element_count = 0
+   then Printf.fprintf chan "[\n");
   Printf.fprintf chan "]\n";
-  close_out chan
-
-
+  flush chan;
+  if chan != stdout && chan != stderr
+  then close_out chan;
 end
 
 let make_logger verb =
@@ -187,7 +181,8 @@ let fuzzball_config () =
 let log lazy_message =
   let chan = Verb.out_channel () in
   (if !element_count <> 0
-   then Printf.fprintf chan ",\n");
+   then Printf.fprintf chan ",\n"
+   else Printf.fprintf chan "[\n");
   pretty_to_channel
     chan
     (`Assoc
@@ -196,43 +191,43 @@ let log lazy_message =
           "component", `String Verb.major_name;
           "subcomponent", `String Verb.minor_name;
           "message", (evaluateLazyTypeToJson lazy_message)
-	])
+	]);
+  element_count := !element_count + 1
 
 let dummy_log _ = ()
 
-let add_always =
+let always =
   if Logger_config.sufficient (Verb.major_name,Verb.minor_name) `Always
   then log
   else dummy_log
 
-let add_standard =
+let standard =
   if Logger_config.sufficient (Verb.major_name,Verb.minor_name) `Standard
   then log
   else dummy_log
 
-let add_debug =
+let debug =
   if Logger_config.sufficient (Verb.major_name,Verb.minor_name) `Debug
   then log
   else dummy_log
 
-let add_trace =
+let trace =
   if Logger_config.sufficient (Verb.major_name,Verb.minor_name) `Trace
   then log
   else dummy_log
 
-let add_never =
+let never =
   if Logger_config.sufficient (Verb.major_name,Verb.minor_name) `Never
   then log
   else dummy_log
 
-let open_list () =
-  element_count := 0;
-  let chan = Verb.out_channel () in
-  Printf.fprintf chan "[\n"
-
 let close_list () = 
   let chan = Verb.out_channel () in
+  (if !element_count = 0
+   then Printf.fprintf chan "[\n");
   Printf.fprintf chan "]\n";
-  close_out chan
+  flush chan;
+  if chan != stdout && chan != stderr
+  then close_out chan;
 
   end : JSONListLog );;

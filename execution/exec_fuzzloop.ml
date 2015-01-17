@@ -64,7 +64,7 @@ let log_fuzz_restart log str fm =
   in
   Pov_xml.write_pov (get_program_name ()) fm;
   log (
-    Yojson_logger.LazyJson
+    Yojson_list_logger.LazyJson
       (lazy 
 	 (`Assoc 
 	     ["function", `String "fuzz";
@@ -77,6 +77,7 @@ let log_fuzz_restart log str fm =
 	 )
       )
   );
+  
   (* and here is where we tell fuzzbomb where these things are. I'm just going to assume names. *)
   let pov_filename = Printf.sprintf "%s/pov-%i.xml" !Pov_xml.out_channel_name !restarts
   and info_filename = Printf.sprintf "%s/info-%i.json" !Pov_xml.out_channel_name !restarts in
@@ -120,8 +121,9 @@ let fuzz_sighandle_setup fm =
     (Sys.Signal_handle(fun _ -> periodic_stats fm false true))
 
 let fuzz_runloop fm fuzz_start_eip asmir_gamma end_eips =
-  let module Log = (val !Loggers.cgc_restart_json : Yojson_logger.JSONLog) in
+  let module Log = (val !Loggers.cgc_restart_json : Yojson_list_logger.JSONListLog) in
   let stop str =
+    Log.close_list ();
     if !opt_trace_stopping
     then Printf.printf "Stopping %s at 0x%08Lx\n" str fm#get_eip in
   try

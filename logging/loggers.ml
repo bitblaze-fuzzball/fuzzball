@@ -30,11 +30,11 @@ let update_fuzzball_timing_json () =
   fuzzball_timing_json := (Yojson_logger.make_logger
 			     (module FuzzballTimingCfg : Logger_config.LoggerConfig))
 
-let cgc_restart_json = ref (Yojson_logger.make_logger
+let cgc_restart_json = ref (Yojson_list_logger.make_logger
 			       (module RestartLogger : Logger_config.LoggerConfig))
 
 let update_restart_json () = 
-  fuzzball_timing_json := (Yojson_logger.make_logger
+  cgc_restart_json := (Yojson_list_logger.make_logger
 			     (module RestartLogger : Logger_config.LoggerConfig))
 
 let cgc_sexp_logger = ref (Text_logger.make_logger
