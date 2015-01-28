@@ -1138,9 +1138,10 @@ struct
     val mutable disqualified = false
 
     method finish_fuzz s =
-      fuzz_finish_reasons <- s :: fuzz_finish_reasons;
-      if !opt_trace_stopping then
-	Printf.printf "Final iteration, %s\n" s
+      if not disqualified then
+	(fuzz_finish_reasons <- s :: fuzz_finish_reasons;
+	 if !opt_trace_stopping then
+	   Printf.printf "Final iteration, %s\n" s)
 
     method unfinish_fuzz s =
       fuzz_finish_reasons <- [];
