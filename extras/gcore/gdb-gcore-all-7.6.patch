@@ -1,0 +1,11 @@
+--- gdb/gcore.c.orig	2013-06-18 14:08:39.674663219 -0500
++++ gdb/gcore.c	2013-06-18 14:09:25.387450336 -0500
+@@ -428,7 +428,7 @@ gcore_create_callback (CORE_ADDR vaddr,
+ 
+ 	     This BFD was synthesized from reading target memory,
+ 	     we don't want to omit that.  */
+-	  if (((vaddr >= start && vaddr + size <= end)
++	  if (0 && ((vaddr >= start && vaddr + size <= end)
+ 	       || (start >= vaddr && end <= vaddr + size))
+ 	      && !(bfd_get_file_flags (abfd) & BFD_IN_MEMORY))
+ 	    {
