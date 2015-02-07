@@ -1337,20 +1337,21 @@ struct
     val mutable disqualified = false
 
     method finish_fuzz s =
-      if !opt_finish_immediately then
-	(Printf.printf "Finishing (immediately), %s\n" s;
-	 fuzz_finish_reasons <- s :: fuzz_finish_reasons;
-	 raise FinishNow);
-      if !opt_trace_stopping then
-	Printf.printf "Final iteration (%d previous reasons), %s\n"
-	  (List.length fuzz_finish_reasons) s;
-      if List.length fuzz_finish_reasons < 15 then
-	fuzz_finish_reasons <- s :: fuzz_finish_reasons
-      else
-	if !opt_trace_stopping || reason_warned then (
-	  reason_warned <- true;
-	  Printf.printf ("fuzz_finish_reasons list exceeded 15..."
-			 ^^" ignoring new reason\n"))
+      if not disqualified then
+        (if !opt_finish_immediately then
+	   (Printf.printf "Finishing (immediately), %s\n" s;
+	    fuzz_finish_reasons <- s :: fuzz_finish_reasons;
+	    raise FinishNow);
+	 if !opt_trace_stopping then
+	   Printf.printf "Final iteration (%d previous reasons), %s\n"
+	     (List.length fuzz_finish_reasons) s;
+	 if List.length fuzz_finish_reasons < 15 then
+	   fuzz_finish_reasons <- s :: fuzz_finish_reasons
+	 else
+	   if !opt_trace_stopping || reason_warned then (
+	     reason_warned <- true;
+	     Printf.printf ("fuzz_finish_reasons list exceeded 15..."
+			    ^^" ignoring new reason\n")))
 
     method unfinish_fuzz s =
       fuzz_finish_reasons <- [];

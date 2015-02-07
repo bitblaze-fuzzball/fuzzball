@@ -177,6 +177,7 @@ let opt_target_region_string = ref ""
 let opt_target_region_formula_strings = ref []
 let opt_target_region_formulas = ref []
 let opt_trace_target = ref false
+let opt_target_no_prune = ref false
 let opt_finish_on_target_match = ref false
 let opt_target_guidance = ref 0.0
 let opt_trace_guidance = ref false

@@ -332,6 +332,8 @@ let explore_cmdline_opts =
      "base=exprs-file Try to make a buffer have the given contents");
     ("-trace-target", Arg.Set(opt_trace_target),
      " Print targeting checks");
+    ("-target-no-prune", Arg.Set(opt_target_no_prune),
+     " Do not stop path at target mismatch");
     ("-finish-on-target-match", Arg.Set(opt_finish_on_target_match),
      " Finish exploration on -target-string match");
     ("-finish-immediately", Arg.Set(opt_finish_immediately),

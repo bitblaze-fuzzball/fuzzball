@@ -1334,7 +1334,8 @@ struct
 	if not b then
 	  (dt#set_heur 0;
 	   self#unfinish_fuzz "Target match failure";
-	   raise DisqualifiedPath);
+	   if not !opt_target_no_prune then
+	     raise DisqualifiedPath);
 	true
 
     method private target_solve_single offset cond_v wd =

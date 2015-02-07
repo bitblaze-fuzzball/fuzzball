@@ -154,6 +154,7 @@ val opt_target_region_string : string ref
 val opt_target_region_formula_strings : string list ref
 val opt_target_region_formulas : Vine.exp list ref
 val opt_trace_target : bool ref
+val opt_target_no_prune : bool ref
 val opt_finish_on_target_match : bool ref
 val opt_target_guidance : float ref
 val opt_trace_guidance : bool ref
