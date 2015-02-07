@@ -1,4 +1,7 @@
-type interval = { low : int64; high : int64; }
+type interval = 
+  { low : int64;
+    high : int64; 
+    mutable accessed : int}
 
 val make_interval : int -> int -> interval
 
@@ -59,13 +62,27 @@ type claimStatus = Allocate | Deallocate
 
 type element = { key : interval; at : claimStatus; }
 
-exception AllocatingAllocated of (interval * interval)
+type conflicting_intervals =  {
+  original_interval : interval;
+  proposed_conflict : interval;
+}
+
+type multiconflict = {
+  existing_regions : interval list;
+  proposed : interval;
+}
+
+exception AllocatingAllocated of conflicting_intervals
 exception ReadingUnwritten of interval
 exception ReadingUnallocated of interval
-exception DoubleFree of (interval * interval)
+exception DoubleFree of conflicting_intervals
 exception DeallocatingUnallocated of interval
-exception DeallocationSizeMismatch of (interval * interval)
+exception DeallocationSizeMismatch of conflicting_intervals
 exception WritingUnallocated of interval
+exception WriteBefore of conflicting_intervals
+exception WriteAfter of conflicting_intervals
+exception WriteAcross of conflicting_intervals
+exception MultiWriteConflict of multiconflict
 
 val optional_find : 'a IntervalMap.t -> IntervalMap.key -> 'a option
 
@@ -84,8 +101,10 @@ val attempt_read :
 val attempt_write :
   element IntervalMap.t ->
   IntervalMap.key IntervalMap.t ->
-  IntervalMap.key -> IntervalMap.key IntervalMap.t
+  IntervalMap.key -> IntervalMap.key * (IntervalMap.key IntervalMap.t)
 
 val copy : 'a IntervalMap.t -> 'a IntervalMap.t
+
+val find_all : element IntervalMap.t -> IntervalMap.key -> IntervalMap.key list
 
 val print_interval : interval -> unit
