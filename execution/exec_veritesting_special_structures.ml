@@ -36,7 +36,6 @@ let find_linear_region ?maxdepth:(maxdepth = 100) root expansion =
   loop ~-1 root;
   Some root
 
-
 let detect_diamond ?max_depth:(max_depth = 2) root expansion =
   (* Find a diamond of at most size max_depth.  If that structure
      exists, return its root. Otherwise, return none.*)
@@ -70,4 +69,48 @@ let detect_diamond ?max_depth:(max_depth = 2) root expansion =
       | _ -> loop it (List.rev_append tail (expansion head))) in
   Hashtbl.add closed (key root) root;
   loop 0 [root]
-       
+
+let detect_diamond_lopsided ?max_depth:(max_depth = 2) root expansion =
+  (* Find a diamond of at most size max_depth.  If that structure
+     exists, return its root. Otherwise, return none. *)
+  let closed = Hashtbl.create 100 in
+  let add_child parent accum child =
+    try
+      let prev = Hashtbl.find closed (key child) in
+      replace_child child prev;
+      if (check_cycle child parent)
+      then accum (* this isn't DAG any more, do I want to bail? *)
+      else accum
+    with Not_found ->
+      (Hashtbl.add closed (key child) child;
+       child::accum) in
+  let expansion node =
+    let children = List.fold_left (add_child node) [] (expansion node) in
+    assert (2 >= List.length children);
+    children in
+  let rec loop it = function 
+    | [] -> None
+    | head::tail as openlist ->
+      if (it = max_depth)
+      then
+	begin
+	  if ((List.length openlist) = 1)
+	  then Some root
+	  else None
+	end
+      else if ((List.length openlist) > 2)
+      then None (* Branches means this is not a clean diamond. *)
+      else if ((Hashtbl.mem closed (key head)))
+      then Some root (* Lopsided diamond *)
+        else (match head with
+      | Undecoded _ -> loop (it + 1) (List.rev_append tail (expansion head))
+      | _ -> loop it (List.rev_append tail (expansion head))) in
+  Hashtbl.add closed (key root) root;
+  loop 0 [root]
+
+(* perhaps better idea for diamond: label all edges by branch count, then when you find a matching 
+   node (same branch numbers && same EIP), you're done. regress up both sides for common root. 
+   otherwise, as it is now, the common root will _always_ have to be the root we're searching from. *)
+
+(* currently we cannot find > two paths that lead to same spot; just two. *)
+   
