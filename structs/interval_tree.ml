@@ -138,7 +138,8 @@ exception ReadingUnallocated of interval
 exception DoubleFree of conflicting_intervals
 exception DeallocatingUnallocated of interval
 exception DeallocationSizeMismatch of conflicting_intervals
-exception WritingUnallocated of interval
+exception WriteBeforeAllocated of interval
+exception WriteAfterDeallocated of interval
 exception WriteBefore of conflicting_intervals
 exception WriteAfter of conflicting_intervals
 exception WriteAcross of conflicting_intervals
@@ -229,10 +230,10 @@ let find_all base_imap key =
 
 let attempt_write alloc_map io_map attempted_range =
     match optional_find alloc_map attempted_range with
-  | None -> raise (WritingUnallocated attempted_range)
+  | None -> raise (WriteBeforeAllocated attempted_range)
   | Some interval ->
     (match interval.at with
-    | Deallocate -> raise (WritingUnallocated attempted_range)
+    | Deallocate -> raise (WriteAfterDeallocated attempted_range)
     | Allocate ->
       (* write range in allocated range *)
       (if is_in interval.key attempted_range

@@ -78,7 +78,8 @@ exception ReadingUnallocated of interval
 exception DoubleFree of conflicting_intervals
 exception DeallocatingUnallocated of interval
 exception DeallocationSizeMismatch of conflicting_intervals
-exception WritingUnallocated of interval
+exception WriteBeforeAllocated of interval
+exception WriteAfterDeallocated of interval
 exception WriteBefore of conflicting_intervals
 exception WriteAfter of conflicting_intervals
 exception WriteAcross of conflicting_intervals

@@ -13,8 +13,9 @@ class pointer_management = object(self)
 (* Thi is where the stack is supposed to start *)
   val stack_start = 0xbaaab000L
   val mutable stack_end = 0xbaaab000L
-
+    (* allocate / deallocate range table *)
   val mutable assign_ranges = Interval_tree.IntervalMap.empty
+    (* read / write range table *)
   val mutable io_ranges = Interval_tree.IntervalMap.empty
 
   val stack_table = Hashtbl.create 100
@@ -65,28 +66,32 @@ class pointer_management = object(self)
       self#is_overlapping_not_contained v1 v2 r1 r2
 
   method add_alloc addr len = 
+    flush stderr;
     if (len = Int64.zero) then
       (self#report [("tag", (`String ":zero-length-allocate"));
-		    ("zero-length-allocate-addr", (json_addr addr))])
-    else
-      (let start_addr = addr
-      and end_addr = Int64.add addr (Int64.sub len Int64.one) in
-       let this_interval = { Interval_tree.low = start_addr;
+		    ("zero-length-allocate-addr", (json_addr addr))]) else
+      begin
+	let start_addr = addr
+	and end_addr = Int64.add addr (Int64.sub len Int64.one) in
+	let this_interval = { Interval_tree.low = start_addr;
 			     Interval_tree.high = end_addr;
 			     accessed = 0;} in
-       match !Exec_options.opt_big_alloc with
-       | None -> ()
-       | Some size ->
-	 if len >= size
-	 then self#report [("tag", (`String ":suspiciously-big-allocate"));
-			   ("alloc size", (`String (Printf.sprintf "%Li" len)));
-			   ("suspiciously-big-allocate-addr", (json_addr addr))];
-	 try
-	   assign_ranges <- (Interval_tree.attempt_allocate
-			       assign_ranges this_interval)
-	 with Interval_tree.AllocatingAllocated _ ->
-	   raise Overlapping_Alloc)
-
+	begin
+	  match !Exec_options.opt_big_alloc with
+	  | None -> ()
+	  | Some size ->
+	    if len >= size
+	    then self#report [("tag", (`String ":suspiciously-big-allocate"));
+			      ("alloc size", (`String (Printf.sprintf "%Li" len)));
+			      ("suspiciously-big-allocate-addr", (json_addr addr))]
+	end;
+	try
+	  assign_ranges <- (Interval_tree.attempt_allocate
+			      assign_ranges this_interval)
+	with Interval_tree.AllocatingAllocated _ ->
+	  raise Overlapping_Alloc
+      end
+	
   val mutable info_reporter = None
     
   method set_reporter (r : ((string * Yojson.Safe.json) list -> unit)) =
@@ -115,7 +120,12 @@ class pointer_management = object(self)
     and end_addr = Int64.add addr (Int64.sub len Int64.one) in
     let this_interval = { Interval_tree.low = start_addr; Interval_tree.high = end_addr; Interval_tree.accessed = 0;} in
     try
-      let assign_ranges', io_ranges' = Interval_tree.attempt_deallocate assign_ranges io_ranges this_interval in
+      let assign_ranges', io_ranges' =
+	Interval_tree.attempt_deallocate assign_ranges io_ranges this_interval in
+      Printf.eprintf "Dealloc Range ";
+      Interval_tree.print_interval this_interval;
+      Printf.eprintf "\n";
+      flush stderr;
       assign_ranges <- assign_ranges';
       io_ranges <- io_ranges'
     with
@@ -193,10 +203,18 @@ class pointer_management = object(self)
 			  ("write-end", (json_addr end_addr));];
 	is_safe := true
       with
-      | Interval_tree.WritingUnallocated _ -> 
+      | Interval_tree.WriteBeforeAllocated _ -> 
 	begin
 	  self#report [("tag", (`String ":unsafe-write"));
-		      ("subtag", (`String ":write-to-unallocated"));
+		      ("subtag", (`String ":write-before-allocation"));
+		      ("write-start", (json_addr start_addr));
+		      ("write-end", (json_addr end_addr));];
+	 is_safe := false
+	end
+      | Interval_tree.WriteAfterDeallocated _ -> 
+	begin
+	  self#report [("tag", (`String ":unsafe-write"));
+		      ("subtag", (`String ":write-after-dealloc"));
 		      ("write-start", (json_addr start_addr));
 		      ("write-end", (json_addr end_addr));];
 	 is_safe := false
