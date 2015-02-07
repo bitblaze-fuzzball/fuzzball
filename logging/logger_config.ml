@@ -108,7 +108,16 @@ let establish_socket filename =
 
 let get_logfile_channel (frequency, logger_name) =
   let name = frequency, logger_name in 
-  let _, filename = Hashtbl.find logger_level name in
+  let _, filename =
+    try
+      Hashtbl.find logger_level name
+    with Not_found ->
+      begin
+	let ret = (`Standard, "stderr") in
+	Hashtbl.replace logger_level name ret;
+	ret
+      end
+  in
   match filename with
   | "stdout" -> (Fixed Pervasives.stdout)
   | "stderr" -> (Fixed Pervasives.stderr)
