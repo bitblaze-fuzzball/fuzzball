@@ -390,14 +390,15 @@ object(self)
 
   method private handle_cgcos_syscall () =
     let module Log = (val !Loggers.cgc_restart_json : Yojson_list_logger.JSONListLog) in
-    let log_random addr_p = 
+    let log_random start_addr len = 
       Log.always
 	(Yojson_list_logger.LazyJson
 	   (lazy
 	      (`Assoc
 		  ["function", `String "cgc_os_call";
 		   "type", `String ":called_random";
-		   "called_at", `String (Printf.sprintf "0x%08LX" addr_p);]))) in
+		   "starts_at", `String (Printf.sprintf "0x%08LX" start_addr);
+		   "length", `Int len;]))) in
     let get_reg r = 
       if !opt_symbolic_syscall_error <> None then
         fm#get_word_var r (* fail if not concrete *)
@@ -516,8 +517,8 @@ object(self)
 	      | Once ->
 		(if not !printed_random
 		 then (printed_random := true;
-		       log_random buf))
-	      | Always -> log_random buf);
+		       log_random buf count))
+	      | Always -> log_random buf count);
 		self#cgcos_random buf count count_out_p;
 		Some count_out_p
 	  | _ -> 
