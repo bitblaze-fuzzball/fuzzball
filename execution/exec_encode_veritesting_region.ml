@@ -69,7 +69,7 @@ let merge_diamond test (true_path, false_path) =
   stmt_helper false (fst false_path);
   Hashtbl.fold kv_to_v stmts [], decls
 
-
+                                   
 (** I'd really rather not have the next three functions be mutually
     recursive, but we need to be able to get data from regions that
     are part of a branching structure being considered for

@@ -204,7 +204,7 @@ let fuzz_runloop fm fuzz_start_eip asmir_gamma end_eips =
   | UnproductivePath ->
     log_fuzz_restart Log.always ":unproductive_path" fm;
     stop "on unproductive path"
-  | FinishNow ->
+  | FinishNow -> (* split into multiple cases *)
     log_fuzz_restart Log.always ":-finish-immediately" fm;
     stop "on -finish_immediately";
   | Signal("USR1") -> 

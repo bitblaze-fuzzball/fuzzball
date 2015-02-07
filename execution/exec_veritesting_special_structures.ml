@@ -101,8 +101,22 @@ let detect_diamond_lopsided ?max_depth:(max_depth = 2) root expansion =
       else if ((List.length openlist) > 2)
       then None (* Branches means this is not a clean diamond. *)
       else if ((Hashtbl.mem closed (key head)))
-      then Some root (* Lopsided diamond *)
-        else (match head with
+      then
+        begin
+          let same_eip_node = Hashtbl.find closed (key head) in
+          match same_eip_node with
+          | Completed c ->
+             (match c with
+              | Segment s -> 
+                 s.p_core.next <- None;
+                 ();
+              (*| Branch b ->
+                 () (* JDB: FIXME: I think we might want something here...*) *)
+              | _ -> ());
+             Some root (* Lopsided diamond *)
+          | _ -> Some root
+        end
+      else (match head with
       | Undecoded _ -> loop (it + 1) (List.rev_append tail (expansion head))
       | _ -> loop it (List.rev_append tail (expansion head))) in
   Hashtbl.add closed (key root) root;
