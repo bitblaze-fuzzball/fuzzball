@@ -13,10 +13,7 @@ type log_channel =
 | Incrementing of ((int * string * string) * out_channel)
 
 let logger_level = Hashtbl.create 10
-
 let logger_channels = Hashtbl.create 10
-
-let json_logging = ref false
 
 let level_to_int = function
   | `Always ->    5
@@ -54,21 +51,29 @@ let rec ensure_dir dirname =
        if not (Sys.file_exists dirname)
        then Unix.mkdir dirname (file_perms sub)
 
+let is_closed chan =
+  try
+    Printf.fprintf chan " ";
+    false
+  with _ -> true
+
 
 let next_incrementing_channel = function
   | Fixed _ -> failwith
     "Expected an incrementing channel in next_incrementing_channel"
   | Incrementing ((index, loggername, filename), old_chan) ->
     let index' = index + 1 in
-    let next_chan = Printf.sprintf "%s/%s-%i.json" filename loggername index in
+    let next_chan = Printf.sprintf "%s/%s-%i.json" filename loggername index' in
     (* Make sure the channel won't clobber an extant file *)
     if Sys.file_exists next_chan then 
       failwith (Printf.sprintf "%s already exists and it shouldn't yet." next_chan);
     (* so long as the old channel isn't stdout, check to see that it was closed! *)
     if index >= 0 && old_chan != stdout && old_chan != stderr then
-      (try Printf.fprintf old_chan " ";
-	   failwith "Expected old incrementing channel to be closed."
-       with _ -> ());
+      if not (is_closed old_chan)
+      then failwith "Expected old incrementing channel to be closed.";
+    if index' < 0 then
+      failwith (Printf.sprintf
+		  "Not a 0-indexed file! Index was %i, expected at least 0." index);
     ensure_dir filename; (* we want the binary name here for cgc *)
     let next = Incrementing ((index', loggername, filename), (open_out next_chan)) in
     Printf.eprintf "Opened %s up as next channel!\n" next_chan;
@@ -79,6 +84,10 @@ let next_incrementing_channel = function
 let establish_socket filename =
   try
     let tokens = Str.split (Str.regexp ":") filename in
+    if ((List.length tokens) != 2)
+    then failwith (Printf.sprintf
+		     "%s not a properly formatted socket string. Expected IP:PORT"
+		     filename);
     let host_token = List.hd tokens
     and port_token = (List.hd (List.tl tokens)) in
     let addr = 
@@ -88,10 +97,13 @@ let establish_socket filename =
     and port = int_of_string port_token in
     let _, outchan = Unix.open_connection (Unix.ADDR_INET(addr, port)) in
     Fixed outchan
-  with (Unix.Unix_error (enum, s1, s2)) ->
+  with
+  | (Unix.Unix_error (enum, s1, s2)) ->
     (failwith (Printf.sprintf
-		 "Failed to open socket: %s %s %s\n"
+		 "Failed to open socket to %s: %s %s %s\n" filename
 		 (Unix.error_message enum) s1 s2))
+  | Not_found -> failwith (Printf.sprintf
+			     "Couldn't find server associated with %s" filename)
 
 
 let get_logfile_channel (frequency, logger_name) =
@@ -105,12 +117,9 @@ let get_logfile_channel (frequency, logger_name) =
 	match Hashtbl.find logger_channels filename with 
 	| Fixed oc as foc -> foc
 	| Incrementing ((index, loggername, filename), chan) as ic ->
-	  (if index < 0 then
-	      next_incrementing_channel ic else
-	      (try
-		 Printf.fprintf chan " ";
-		 ic
-	       with Sys_error _ ->  next_incrementing_channel ic))
+	  (if (index < 0) || (is_closed chan)
+	   then next_incrementing_channel ic
+	   else ic)
       with Not_found ->
 	(let regex = Str.regexp ".*:[0-9]+" in
 	 let chan = 
@@ -198,4 +207,16 @@ let usage_msg =
     "Trace -- Prune logs from here beneath the trace threshold\n" ^
     "Never -- Print everything.\n"
 
+let close_wrapped_channel _ = function
+  | Fixed chan
+  | Incrementing (_, chan) ->
+    try
+      close_out chan
+    with _ -> ()
 
+(* HERE BE DRAGONS.  Seriously though, this is going to iterate across all
+   open channels and close them out.  This is supposed to happen as the program
+   is tearing down and at no other time. *)
+let close_all_channels () =
+  Hashtbl.iter close_wrapped_channel logger_channels
+  

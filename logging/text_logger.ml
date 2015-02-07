@@ -37,10 +37,11 @@ let timestamp use_highres =
            (time.Unix.tm_sec)
 
 let log ?(sign = true) lazy_message =
+  let chan = Verb.out_channel () in
   if sign
   then
       Printf.fprintf
-        (Verb.out_channel ())
+	chan
         "%s %s %s: %s\n"
         (timestamp Verb.use_hr_time)
         Verb.major_name
@@ -48,9 +49,11 @@ let log ?(sign = true) lazy_message =
         (evaluateLazyTypeToString lazy_message)
   else
       Printf.fprintf
-        (Verb.out_channel ())
+	chan
         "%s\n"
-        (evaluateLazyTypeToString lazy_message)
+        (evaluateLazyTypeToString lazy_message);
+  flush chan
+	
 
 let dummy_log ?(sign = true) _ = ()
 

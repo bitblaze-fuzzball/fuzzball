@@ -90,7 +90,7 @@ let main argv =
       (fun _ -> ());
     TIMING.trace (Yojson_logger.LazyJson (lazy (`Assoc ["Search", `String "end"])));
     TIMING.trace (Yojson_logger.LazyJson (lazy (`Assoc ["Everything", `String "end"])));
-    ()
+    Logger_config.close_all_channels ()
 ;;
 
 main Sys.argv;;
