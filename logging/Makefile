@@ -12,15 +12,15 @@ export SOURCES = \
 	log_configs.ml \
 	pov_xml.ml \
 	loggers.ml \
-
+	indirect_target_logger.ml indirect_target_logger.mli \
 
 RESULT = logging
 
 export PACKS = unix yojson tyxml
 export YFLAGS = -v
-export LIBS = execution ocaml
-export INCDIRS = ../execution ../ocaml
-export OCAMLDEP = ocamldep -I ../execution ../ocaml
+export LIBS = execution ocaml structs
+export INCDIRS = ../execution ../ocaml ../structs
+export OCAMLDEP = ocamldep -I ../execution ../ocaml ../structs
 
 OCAMLFLAGS := -warn-error Aelz
 ifdef PROFILE

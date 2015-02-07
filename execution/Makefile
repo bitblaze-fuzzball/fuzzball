@@ -7,7 +7,7 @@ export VINE_TRACEDIR=../trace
 export STP_OCAMLDIR=../stp/ocaml
 export LIBASMIR=../libasmir
 include $(LIBASMIR)/makefile.inc
-export INCDIRS += ../stp ../stp/ocaml $(VINE_OCAMLDIR) $(VINE_TRACEDIR) ../logging ../structs
+export INCDIRS += ../stp ../stp/ocaml $(VINE_OCAMLDIR) $(VINE_TRACEDIR) ../structs ../logging
 export EXTLIBDIRS += ../stp ../stp/ocaml
 export LIBS += stpvc ../ocaml/vine ../trace/trace
 

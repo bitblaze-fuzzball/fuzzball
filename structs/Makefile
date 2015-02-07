@@ -3,6 +3,7 @@ export OCAMLMAKEFILE=../ocaml/OCamlMakefile
 export SOURCES = \
 	int64Array.ml \
         interval_tree.ml \
+	build_assoc.ml \
 
 RESULT = structs
 
