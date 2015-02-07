@@ -672,7 +672,7 @@ struct
     method jump_hook last_insn last_eip eip =
       (* I think this might be the right place to add the indirect table updates
 	 JTT *)
-(*      Indirect_target_logger.add last_eip eip; *)
+      Indirect_target_logger.add last_eip eip;
       if !opt_trace_callstack then
 	self#trace_callstack last_insn last_eip eip
 
@@ -2003,7 +2003,7 @@ struct
 			     translate one instruction at a time), so it's
 			     an overapproximation. *)
 			  if saw_jump then
-			    self#run_jump_hooks last_insn last_eip eip;
+			      self#run_jump_hooks last_insn last_eip eip;
 			  self#run_eip_hooks;
 			  last_eip <- eip;
 			  saw_jump <- false);

@@ -5,12 +5,16 @@
    In fuzzball, we use this to build out an address table for indirect jumps.
 *)
 
-let add table key element =
+let add table (key : int64) (element : int64) =
   let prev =
     try 
       Hashtbl.find table key
     with Not_found ->
-      Hashtbl.create 10 in
+      begin
+	let ht = Hashtbl.create 10 in
+	Hashtbl.add table key ht;
+	ht 
+      end in
   Hashtbl.replace prev element element
 
 let clear table = Hashtbl.clear table

@@ -88,6 +88,7 @@ let main argv =
     Exec_fuzzloop.fuzz start_addr fuzz_start
       !Exec_options.opt_fuzz_end_addrs fm asmir_gamma symbolic_init
       (fun _ -> ());
+    Indirect_target_logger.flush ();
     TIMING.trace (Yojson_logger.LazyJson (lazy (`Assoc ["Search", `String "end"])));
     TIMING.trace (Yojson_logger.LazyJson (lazy (`Assoc ["Everything", `String "end"])));
     Logger_config.close_all_channels ()
