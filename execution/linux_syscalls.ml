@@ -2507,11 +2507,12 @@ object(self)
       put_return 0L (* success *)
 
   method sys_alarm sec =
-    try
-      let ret = Unix.alarm sec in
-      put_return (Int64.of_int ret)
-    with
-      | Unix.Unix_error(err, _, _) -> self#put_errno err
+    if sec != 0 then
+      raise (Unix.Unix_error
+               (Unix.EOPNOTSUPP, 
+               "Nonzero argument to alarm(2) not supported", ""))
+    else
+      put_return 0L
 
   method sys_unlink path =
     try
