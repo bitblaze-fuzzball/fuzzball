@@ -636,14 +636,6 @@ static Exp *arm_cond_formula(int cond) {
     return result;
 }
 
-static Exp *_ex_get_bit(Exp *e, int which) {
-    return _ex_l_cast(_ex_shr(e, ex_const(REG_32, which)), REG_1);
-}
-
-static Exp *ex_get_bit(Exp *e, int which) {
-    return _ex_get_bit(ecl(e), which);
-}
-
 Exp  *arm_translate_ccall( IRExpr *expr, IRSB *irbb, vector<Stmt *> *irout )
 {
     Exp *result = NULL;
