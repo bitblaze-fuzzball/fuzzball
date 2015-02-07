@@ -3,6 +3,12 @@
   Security Inc.  All rights reserved.
 *)
 
+type null_info = {
+  eip_of_deref : int64;
+  last_set_to_null : int64;
+  addr_derefed : int64;
+}
+
 exception BranchLimit
 exception DeepPath
 exception DisqualifiedPath
@@ -13,7 +19,7 @@ exception JumpToNull
 exception KnownPath
 exception LastIteration
 exception NotConcrete of Vine.exp
-exception NullDereference
+exception NullDereference of null_info
 exception ReachedInfluenceBound
 exception ReachedMeasurePoint
 exception Signal of string

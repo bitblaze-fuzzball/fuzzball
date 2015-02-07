@@ -145,7 +145,19 @@ let fuzz_runloop fm fuzz_start_eip asmir_gamma end_eips =
   | SymbolicJump ->
     log_fuzz_restart Log.always ":symbolic_jump" fm;
     stop "at symbolic jump"
-  | NullDereference ->
+  | NullDereference info ->
+    Log.always (
+      Yojson_list_logger.LazyJson
+	(lazy
+	   (`Assoc
+	       ["function", `String "fuzz";
+		"type", `String ":null-dereference-info";
+		"dereferenced_at",
+		`String (Printf.sprintf "0x%08LX" info.eip_of_deref);
+		"set_to_null_at",
+		`String (Printf.sprintf "0x%08LX" info.last_set_to_null);
+		"addr_derefed",
+		`String (Printf.sprintf "0x%08LX" info.addr_derefed);])));
     if !opt_finish_on_null_deref then (
       log_fuzz_restart Log.always ":concrete_null_dereference" fm;
       fm#finish_fuzz "concrete null dereference"

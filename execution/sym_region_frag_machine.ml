@@ -23,7 +23,7 @@ struct
   module FormMan = FormulaManagerFunctor(D)
   module GM = GranularMemoryFunctor(D)
   module SPFM = SymPathFragMachineFunctor(D)
-
+    
   let is_high_mask ty v =
     let is_power_of_2_or_zero x =
       Int64.logand x (Int64.pred x) = 0L
@@ -695,7 +695,11 @@ struct
 		(List.map V.exp_to_string syms)));
 	let cbase = List.fold_left Int64.add 0L cbases in
 	let (base, off_syms) = match (cbase, syms, ambig) with
-	  | (0L, [], []) -> raise NullDereference
+	  | (0L, [], []) -> raise
+	    (NullDereference
+	       { eip_of_deref = self#get_eip;
+		 last_set_to_null = Int64.sub Int64.zero Int64.one;
+		 addr_derefed =  Int64.sub Int64.zero Int64.one; })
 	  | (0L, [], el) -> (Some 0, el)
 	  | (0L, [v], _) -> (Some(self#region_for v), ambig)
 	  | (0L, vl, _) ->
@@ -935,6 +939,7 @@ struct
 	  | _ -> (v1, v2)
 
     val mutable extra_store_hooks = []
+    val mutable last_set_null = Hashtbl.create 100
 
     method add_extra_store_hook f = 
 	extra_store_hooks <- f :: extra_store_hooks
@@ -947,12 +952,31 @@ struct
     method private store_byte_region  r addr b =
       (self#region r)#store_byte  addr b;
       self#run_store_hooks addr 8
+
     method private store_short_region r addr s =
       (self#region r)#store_short addr s;
       self#run_store_hooks addr 16
+
     method private store_word_region  r addr w =
       (self#region r)#store_word  addr w;
+      if !opt_check_for_null then
+	(* if we're checking for nulls, I want to know when it was (potentially)
+	   introduced.  This code checks to see if the stored word might be null *)
+	begin
+	  let might_be_zero = 
+	    try (D.to_concrete_32 w) = Int64.zero
+	    with NotConcrete e ->
+	      match self#check_cond
+		(V.BinOp(V.EQ, e, V.Constant(V.Int(V.REG_32, 0L)))) with
+		| Some false -> false 
+		| Some true
+		| None -> true in
+	  if might_be_zero then
+	    (* if it is null, we keep track of it for later use. *)
+	    Hashtbl.replace last_set_null addr self#get_eip
+	end;
       self#run_store_hooks addr 32
+
     method private store_long_region  r addr l =
       (self#region r)#store_long  addr l;
       self#run_store_hooks addr 64
@@ -1171,8 +1195,14 @@ struct
 	   (if !opt_use_tags then
 	      Printf.printf " (%Ld @ %08Lx)" (D.get_tag v) location_id);
 	   Printf.printf "\n"));
-	if r = Some 0 && (Int64.abs (fix_s32 addr)) < 4096L then
-	  raise NullDereference;
+      if r = Some 0 && (Int64.abs (fix_s32 addr)) < 4096L then
+	raise (NullDereference
+		 { eip_of_deref = self#get_eip;
+		   last_set_to_null =
+		     (try
+		       Hashtbl.find last_set_null addr
+		      with Not_found -> Int64.sub Int64.zero Int64.one);
+		   addr_derefed = addr;});
 	(v, ty)
 
     method private push_cond_prefer_true cond_v = 
@@ -1511,7 +1541,13 @@ struct
 	not (self#maybe_table_store addr_e ty value) then
       let (r, addr) = self#eval_addr_exp_region addr_e in
 	if r = Some 0 && (Int64.abs (fix_s32 addr)) < 4096L then
-	  raise NullDereference;
+	raise (NullDereference
+		 { eip_of_deref = self#get_eip;
+		   last_set_to_null =
+		     (try
+		       Hashtbl.find last_set_null addr
+		      with Not_found -> Int64.sub Int64.zero Int64.one);
+		   addr_derefed = addr;});
 	if !opt_trace_stores then
 	  if not (ty = V.REG_8 && r = None) then
 	    (Printf.printf "Store to %s "
@@ -1579,6 +1615,7 @@ struct
       spfm#reset ();
       List.iter clear regions;
       Hashtbl.clear concrete_cache;
-      Hashtbl.clear ret_addrs
+      Hashtbl.clear ret_addrs;
+      Hashtbl.clear last_set_null
   end
 end
