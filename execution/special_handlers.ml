@@ -92,7 +92,7 @@ end
 
 
 class sse_floating_point_punter (fm : fragment_machine) =
-  (** CLang encodes floating point math in a differnt way than GCC by default.
+  (** CLang encodes floating point math in a different way than GCC by default.
       This code just punts on SSE floating point instructions *)
 object(self)
   method handle_special (str : string) : V.stmt list option =
