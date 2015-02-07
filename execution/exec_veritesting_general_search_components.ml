@@ -41,6 +41,13 @@ type 'a finished_type =
 | Branch of 'a branch     (* encode the test and continuations *)
 | Segment of 'a progn     (* completely interpreted segment *)
 
+type key_type =
+| HaltingEIP of int64
+| UndecodedEIP of int64
+| RawEIP of int64
+| BranchingEIP of int64
+| CompletedEIP of int64 
+
 type veritesting_node =
 | Undecoded of veritesting_node minimal
 | Raw of veritesting_node progn
@@ -63,17 +70,25 @@ let key (ft : veritesting_node finished_type) =
   | FunCall eip
   | SysCall eip
   | Special eip
-  | SearchLimit eip -> eip
-  | Branch b -> Int64.neg b.b_core.eip (* don't want it to colide with prev. block *)
-  | Segment progn -> progn.p_core.m_core.eip
+  | SearchLimit eip -> HaltingEIP eip
+  | Branch b -> BranchingEIP (Int64.neg b.b_core.eip) (* don't want it to colide with prev. block *)
+  | Segment progn -> CompletedEIP progn.p_core.m_core.eip
 
 
 let key (node : veritesting_node) =
 (** uniquely identify a node *)
   match node with
-  | Undecoded m -> m.m_core.eip
-  | Raw progn -> progn.p_core.m_core.eip
+  | Undecoded m -> UndecodedEIP m.m_core.eip
+  | Raw progn -> RawEIP progn.p_core.m_core.eip
   | Completed ft -> key ft
+
+let eip_of_node (node : veritesting_node) =
+  match (key node) with
+  | UndecodedEIP eip
+  | RawEIP eip
+  | CompletedEIP eip
+  | BranchingEIP eip
+  | HaltingEIP eip -> eip
 
 
 let equal (a : veritesting_node) (b : veritesting_node) =
@@ -176,7 +191,7 @@ let complete_node (raw_node : veritesting_node) (child : veritesting_node)
      (* stitch the completed child into the code segment. *)
       let closed_variant =
 	Completed
-	  (Segment {p_core = {m_core = {eip = (key raw_node);
+	  (Segment {p_core = {m_core = {eip = (eip_of_node raw_node);
 					parent = raw_node;};
 			      next = Some child;};
 		    stmts = (List.rev sl);

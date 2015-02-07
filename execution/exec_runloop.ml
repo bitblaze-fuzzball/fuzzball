@@ -106,7 +106,10 @@ let runloop (fm : fragment_machine) eip asmir_gamma until =
 	fm#set_frag prog';
 	(* flush stdout; *)
 	let new_label = fm#run () in
-	let new_eip = label_to_eip (new_label) in
+	let new_eip = 
+	  try 
+	    label_to_eip (new_label)
+	  with Failure s -> failwith (Printf.sprintf "Couldn't decode eip in runloop: %s" s) in
 	  if is_final_loop then
 	    Printf.printf "End jump to: %Lx\n" new_eip
 	  else

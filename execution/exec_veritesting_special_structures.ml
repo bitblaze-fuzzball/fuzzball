@@ -2,6 +2,8 @@ module V = Vine
 
 open Exec_veritesting_general_search_components
 
+exception NotDag
+
 
 let find_linear_region ?maxdepth:(maxdepth = 100) root expansion =
   (* Note, there must always be a linear veritesting region of at least
@@ -36,6 +38,7 @@ let find_linear_region ?maxdepth:(maxdepth = 100) root expansion =
   loop ~-1 root;
   Some root
 
+
 let detect_diamond ?max_depth:(max_depth = 2) root expansion =
   (* Find a diamond of at most size max_depth.  If that structure
      exists, return its root. Otherwise, return none.*)
@@ -43,32 +46,46 @@ let detect_diamond ?max_depth:(max_depth = 2) root expansion =
   let add_child parent accum child =
     try
       let prev = Hashtbl.find closed (key child) in
+(*      Printf.eprintf "Found additional path to %Lx\n" (eip_of_node child);
+	Printf.eprintf "%s vs %s\n" (node_to_string prev) (node_to_string child);
+*)
       replace_child child prev;
       if (check_cycle child parent)
-      then accum (* this isn't DAG any more, do I want to bail? *)
+      then raise NotDag
       else accum
     with Not_found ->
       (Hashtbl.add closed (key child) child;
        child::accum) in
   let expansion node =
-    let children = List.fold_left (add_child node) [] (expansion node)in
-    assert (2 >= List.length children);
+    let children = List.fold_left (add_child node) [] (expansion node) in
+(*    Printf.eprintf "%Lx generates " (eip_of_node node);
+    List.iter (fun c -> Printf.eprintf "%Lx\t" (eip_of_node c)) children;
+    Printf.eprintf "\n";
+*)
     children in
   let rec loop it = function 
-    | [] -> None
+    | [] -> 
+      begin
+(*	Printf.eprintf "Empty open list. No region.\n"; *)
+	None
+      end
     | head::tail as openlist ->
-      if (it = max_depth)
-      then
+      if (it = max_depth) then
 	begin
 	  if ((List.length openlist) = 1)
-	  then Some root
-	  else None
-	end
-      else (match head with
-      | Undecoded _ -> loop (it + 1) (List.rev_append tail (expansion head))
-      | _ -> loop it (List.rev_append tail (expansion head))) in
+	  then ((*Printf.eprintf "Detected a diamond.\n";*)
+		truncate_node (List.hd openlist);
+		Some root)
+	  else ((*Printf.eprintf "Didn't detect a diamond.\n";*)
+		None)
+	end else
+	(match head with
+	| Undecoded _ ->
+	  loop (it + 1) (List.rev_append tail (expansion head))
+	| _ -> loop it (List.rev_append tail (expansion head))) in
   Hashtbl.add closed (key root) root;
-  loop 0 [root]
+  loop ~-1 [root]
+
 
 let detect_diamond_lopsided ?max_depth:(max_depth = 2) root expansion =
   (* Find a diamond of at most size max_depth.  If that structure

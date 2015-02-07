@@ -2,6 +2,7 @@ module V = Vine
 module VOpt = Vine_opt
 module Search = Exec_veritesting_general_search_components
 
+
 (*
 
   Just a couple of notes on the translation:
@@ -76,6 +77,7 @@ let merge_diamond test (true_path, false_path) =
     veritesting. There's no performance hit (that I know of), it's
     just needlessly complicated. *)
 let rec recover_diamond (ft : Search.veritesting_node Search.finished_type) =
+(*  Printf.eprintf "Recovering diamond...\n";*)
   let tuple_append (dl,sl) (dl',sl') = dl@dl', sl@sl' in
   let rec helper true_node false_node true_accum false_accum =
     if Search.equal true_node false_node
@@ -112,8 +114,12 @@ and data_of_ft (ft : Search.veritesting_node Search.finished_type) =
 
 and data_of_node (n : Search.veritesting_node) =
   match n with
-  | Search.Undecoded _ -> no_data
-  | Search.Raw _ -> no_data
+  | Search.Undecoded _
+  | Search.Raw _ ->
+    begin
+(*      Printf.eprintf "%s has no associated data, moving to next node\n" (Search.node_to_string n);*)
+      no_data
+    end
   | Search.Completed ft -> data_of_ft ft
 
 
@@ -125,10 +131,18 @@ let build_simplest_equations root =
     stmt_accum := stmts::!stmt_accum;
     decl_accum := decls::!decl_accum;
     match Search.successor node with
-    | None -> ()
-    | Some s -> internal s in
+    | None -> () (* Printf.eprintf "%s has no successors, returning.\n" (Search.node_to_string node);*)
+    | Some s -> 
+      begin
+(*      Printf.eprintf "%s -> %s\n" (Search.node_to_string node) (Search.node_to_string s);
+*)
+      internal s
+      end in
   internal root;
-  List.concat (List.rev !stmt_accum), List.concat (List.rev !decl_accum)
+  let stmts = List.concat (List.rev !stmt_accum)
+  and decls = List.concat (List.rev !decl_accum) in
+  (*List.iter (fun s -> Vine.stmt_to_channel stderr s) stmts;*)
+  stmts,decls
     
 
 let encode_region root =

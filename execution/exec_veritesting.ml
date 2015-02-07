@@ -22,16 +22,23 @@ let find_veritesting_region fm gamma starting_eip max_depth =
       Some (DFS.depth_first_search ~max_depth:max_depth
 	      search_root expand)
     | EO.Linear -> VSS.find_linear_region search_root expand
-    | EO.Diamond size -> VSS.detect_diamond ~max_depth:size search_root expand
+    | EO.Diamond size -> 
+      begin
+(*	Printf.eprintf "Detecting Diamond Region of size %i\n" size;
+*)
+	VSS.detect_diamond ~max_depth:size search_root expand
+      end
   in
   
   match root_of_region with
   | None -> None
   | Some root_of_region ->
     (*try*)
+    begin
+(*      Printf.eprintf "Detected region, encoding starting from %s...\n" (node_to_string root_of_region);*)
       let stmts, decls = Encode.encode_region root_of_region in
     (* HACK HACK HACK -- We should find a better way to detect valid regions *)
       if ((List.length stmts) > 1)
       then Some (decls, stmts)
       else None
-(*    with _ -> None*)
+    end
