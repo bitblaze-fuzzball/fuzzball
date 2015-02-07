@@ -491,13 +491,6 @@ object(self)
 		if !opt_trace_syscalls then
 		  Printf.printf "allocate(%Ld, %d, 0x%08Lx)"
 		    len is_exec addr_p;
-	      (match !opt_log_random with
-	      | Never -> ()
-	      | Once ->
-		(if not !printed_random
-		 then (printed_random := true;
-		       log_random addr_p))
-	      | Always -> log_random addr_p);
 		self#cgcos_allocate len is_exec addr_p;
 		Some addr_p
 	  | 6 -> (* deallocate = Linux sys_munmap *)
@@ -510,14 +503,21 @@ object(self)
 		self#cgcos_deallocate addr len;
 		None
 	  | 7 -> (* random, similar to Linux read from /dev/urandom  *)
-	      let (arg1, arg2, arg3) = read_3_regs () in
-	      let buf         = arg1 and
-		  count       = Int64.to_int arg2 and
-		  count_out_p = arg3
-	      in
-		if !opt_trace_syscalls then
-		  Printf.printf "random(0x%08Lx, %d, 0x%08Lx)"
-		    buf count count_out_p;
+	    let (arg1, arg2, arg3) = read_3_regs () in
+	    let buf         = arg1 and
+		count       = Int64.to_int arg2 and
+		count_out_p = arg3
+	    in
+	    if !opt_trace_syscalls then
+	      Printf.printf "random(0x%08Lx, %d, 0x%08Lx)"
+		buf count count_out_p;
+	      (match !opt_log_random with
+	      | Never -> ()
+	      | Once ->
+		(if not !printed_random
+		 then (printed_random := true;
+		       log_random buf))
+	      | Always -> log_random buf);
 		self#cgcos_random buf count count_out_p;
 		Some count_out_p
 	  | _ -> 
