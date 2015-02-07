@@ -160,7 +160,9 @@ let fuzz_runloop fm fuzz_start_eip asmir_gamma end_eips =
 		`String (Printf.sprintf "0x%08LX" info.addr_derefed);])));
     if !opt_finish_on_null_deref then (
       log_fuzz_restart Log.always ":concrete_null_dereference" fm;
-      fm#finish_fuzz "concrete null dereference"
+      try
+	fm#finish_fuzz "concrete null dereference"
+      with FinishNow -> stop "an null deref"
     );
     log_fuzz_restart Log.always ":null_deref" fm;
     stop "at null deref"
@@ -205,6 +207,8 @@ let fuzz_runloop fm fuzz_start_eip asmir_gamma end_eips =
     log_fuzz_restart Log.always ":unproductive_path" fm;
     stop "on unproductive path"
   | FinishNow -> (* split into multiple cases *)
+    Printf.eprintf "Catching finish now\n";
+    flush stderr;
     log_fuzz_restart Log.always ":-finish-immediately" fm;
     stop "on -finish_immediately";
   | Signal("USR1") -> 
