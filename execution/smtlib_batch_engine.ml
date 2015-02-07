@@ -116,7 +116,7 @@ class smtlib_batch_engine e_s_t fname = object(self)
   method private real_prepare =
     let fname = self#get_fresh_fname in
     let logic = match e_s_t with
-      | Z3 -> "QF_FPABV"
+      | Z3 -> "QF_FPBV"
       | _ -> "QF_BV"
     in
       chan <- Some(open_out (fname ^ ".smt2"));
