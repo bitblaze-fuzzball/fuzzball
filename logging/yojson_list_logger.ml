@@ -134,6 +134,7 @@ let close_list () =
   end;
   if chan != stdout && chan != stderr
   then close_out chan;
+  element_count := 0;
   
 end
 
@@ -245,5 +246,6 @@ let close_list () =
   end;
   if chan != stdout && chan != stderr
   then close_out chan;
+  element_count := 0;
 
   end : JSONListLog );;
