@@ -299,3 +299,4 @@ let opt_argv = ref []
 let state_start_addr = ref None
 let opt_log_random = ref Never
 let opt_big_alloc = ref None
+let opt_read_write_warn_ratio = ref 5

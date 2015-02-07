@@ -186,7 +186,7 @@ class pointer_management = object(self)
 	let new_write, io_ranges' = 
 	  Interval_tree.attempt_write assign_ranges io_ranges this_interval in
 	io_ranges <- io_ranges';
-	if new_write.Interval_tree.accessed > 1
+	if new_write.Interval_tree.accessed > !Exec_options.opt_read_write_warn_ratio
 	then self#report [("tag" , (`String ":suspicious-write"));
 			  ("subtag", (`String ":write-before-read"));
 			  ("write-start", (json_addr start_addr));

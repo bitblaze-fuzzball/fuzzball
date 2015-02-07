@@ -403,6 +403,8 @@ let cmdline_opts =
      " Use zero values for uninit. memory reads");
     ("-warn-large-alloc", Arg.String(fun s -> opt_big_alloc := Some (Int64.of_string s)),
      "Int64.t Sets a threshold where, if a larger alloc occurs, a warning will be issued.");
+    ("-read-write-ratio-warn", Arg.Set_int opt_read_write_warn_ratio,
+     "Int Sets a threshold where, if we see more than X writes per read for a piece of memory, a warning is issued");
     ("-trace-basic",
      (Arg.Unit
 	(fun () ->
