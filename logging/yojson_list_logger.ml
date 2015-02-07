@@ -76,6 +76,9 @@ let json_command_arg = function
 
 let log lazy_message =
   let chan = Verb.out_channel () in
+  (try
+     Printf.fprintf chan ""
+   with _ ->  failwith "Expected channel to be open, it was not!");
   Printf.eprintf "Printing message %i\n" !element_count;
   (if !element_count <> 0
    then Printf.fprintf chan ",\n"
@@ -120,12 +123,18 @@ let never =
 
 let close_list () = 
   let chan = Verb.out_channel () in
-  (if !element_count = 0
-   then Printf.fprintf chan "[\n");
-  Printf.fprintf chan "]\n";
-  flush chan;
+  begin
+    try
+      (if !element_count = 0
+       then Printf.fprintf chan "[\n");
+      Printf.fprintf chan "]\n";
+      flush chan;
+     with _ ->
+       failwith "Expected channel to be open when closing list, but it was closed."
+  end;
   if chan != stdout && chan != stderr
   then close_out chan;
+  
 end
 
 let make_logger verb =
@@ -180,6 +189,9 @@ let fuzzball_config () =
 	  
 let log lazy_message =
   let chan = Verb.out_channel () in
+  (try
+     Printf.fprintf chan ""
+   with _ ->  failwith "Expected channel to be open, it was not!");
   (if !element_count <> 0
    then Printf.fprintf chan ",\n"
    else Printf.fprintf chan "[\n");
@@ -223,10 +235,14 @@ let never =
 
 let close_list () = 
   let chan = Verb.out_channel () in
-  (if !element_count = 0
-   then Printf.fprintf chan "[\n");
-  Printf.fprintf chan "]\n";
-  flush chan;
+  begin
+    try
+      (if !element_count = 0
+       then Printf.fprintf chan "[\n");
+      Printf.fprintf chan "]\n";
+      flush chan;
+    with _ -> failwith "Expected channel to be open, it was not!"
+  end;
   if chan != stdout && chan != stderr
   then close_out chan;
 

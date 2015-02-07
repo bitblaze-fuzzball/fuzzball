@@ -56,61 +56,72 @@ let rec ensure_dir dirname =
 
 
 let next_incrementing_channel = function
-  | Fixed _ -> failwith "Expected an incrementing channel in next_incrementing_channel"
+  | Fixed _ -> failwith
+    "Expected an incrementing channel in next_incrementing_channel"
   | Incrementing ((index, loggername, filename), old_chan) ->
     let index' = index + 1 in
-    let next_chan = Printf.sprintf "%s/%s-%i.json" filename loggername index' in
-    (* I think this close channel can be dealt away with.  POV closes it's own.  JSON list does its own too. *)
-    if index >= 0 && old_chan != stdout && old_chan != stderr (* default channel is stdout. Don't close stdout! *)
-    then (try close_out old_chan
-      with _ -> ());
+    let next_chan = Printf.sprintf "%s/%s-%i.json" filename loggername index in
+    (* Make sure the channel won't clobber an extant file *)
+    if Sys.file_exists next_chan then 
+      failwith (Printf.sprintf "%s already exists and it shouldn't yet." next_chan);
+    (* so long as the old channel isn't stdout, check to see that it was closed! *)
+    if index >= 0 && old_chan != stdout && old_chan != stderr then
+      (try Printf.fprintf old_chan " ";
+	   failwith "Expected old incrementing channel to be closed."
+       with _ -> ());
     ensure_dir filename; (* we want the binary name here for cgc *)
     let next = Incrementing ((index', loggername, filename), (open_out next_chan)) in
+    Printf.eprintf "Opened %s up as next channel!\n" next_chan;
     Hashtbl.replace logger_channels filename next;
     next
 
 
-let get_logfile_channel (frequency, logger_name) =
+let establish_socket filename =
   try
-    let name = frequency, logger_name in 
-    let _, filename = Hashtbl.find logger_level name in
-    match filename with
-    | "stdout" -> (Fixed Pervasives.stdout)
-    | "stderr" -> (Fixed Pervasives.stderr)
-    | _ ->
+    let tokens = Str.split (Str.regexp ":") filename in
+    let host_token = List.hd tokens
+    and port_token = (List.hd (List.tl tokens)) in
+    let addr = 
+      (try Unix.inet_addr_of_string host_token
+       with _ -> (let host_ent = Unix.gethostbyname host_token in
+		  host_ent.Unix.h_addr_list.(0)))
+    and port = int_of_string port_token in
+    let _, outchan = Unix.open_connection (Unix.ADDR_INET(addr, port)) in
+    Fixed outchan
+  with (Unix.Unix_error (enum, s1, s2)) ->
+    (failwith (Printf.sprintf
+		 "Failed to open socket: %s %s %s\n"
+		 (Unix.error_message enum) s1 s2))
+
+
+let get_logfile_channel (frequency, logger_name) =
+  let name = frequency, logger_name in 
+  let _, filename = Hashtbl.find logger_level name in
+  match filename with
+  | "stdout" -> (Fixed Pervasives.stdout)
+  | "stderr" -> (Fixed Pervasives.stderr)
+  | _ ->
       try
 	match Hashtbl.find logger_channels filename with 
 	| Fixed oc as foc -> foc
 	| Incrementing ((index, loggername, filename), chan) as ic ->
-	  try
-	    Printf.fprintf chan "";
-	    ic
-	  with _ ->  next_incrementing_channel ic
+	  (if index < 0 then
+	      next_incrementing_channel ic else
+	      (try
+		 Printf.fprintf chan " ";
+		 ic
+	       with Sys_error _ ->  next_incrementing_channel ic))
       with Not_found ->
 	(let regex = Str.regexp ".*:[0-9]+" in
 	 let chan = 
 	   if Str.string_match regex filename 0
-	   then
-	     (try
-		let tokens = Str.split (Str.regexp ":") filename in
-		let host_token = List.hd tokens
-		and port_token = (List.hd (List.tl tokens)) in
-		let addr =
-		  (try Unix.inet_addr_of_string host_token
-		   with _ -> (let host_ent = Unix.gethostbyname host_token in
-			      host_ent.Unix.h_addr_list.(0)))
-		and port = int_of_string port_token in
-		let _, outchan = Unix.open_connection (Unix.ADDR_INET(addr, port)) in
-		Printf.eprintf "Success!\n";
-		(Fixed outchan)
-	      with (Unix.Unix_error (enum, s1, s2)) ->
-		(Printf.eprintf "Failed to open socket: %s %s %s\n" (Unix.error_message enum) s1 s2;
-		 failwith "no socket!"))
-	   else next_incrementing_channel (Incrementing ((~-1, logger_name, filename), Pervasives.stdout)) in
-	 flush stderr;
+	   then establish_socket filename
+	   else (next_incrementing_channel
+		   (Incrementing ((~-1, logger_name, filename), Pervasives.stdout)))
+	 in
 	 Hashtbl.replace logger_channels filename chan;
 	 chan)
-	with _ -> (Fixed Pervasives.stdout)
+
 
 let sufficient name my_level =
   let min_level = level_to_int (get_level name)
