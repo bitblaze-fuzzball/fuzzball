@@ -120,7 +120,7 @@ class smtlib_batch_engine e_s_t fname = object(self)
       | _ -> "QF_BV"
     in
       chan <- Some(open_out (fname ^ ".smt2"));
-      visitor <- Some(new Smt_lib2.vine_smtlib_print_visitor
+      visitor <- Some(new Smt_lib2.vine_smtlib_printer
 			(output_string self#chan));
       output_string self#chan
 	("(set-logic "^logic^")\n(set-info :smt-lib-version 2.0)\n\n");
@@ -133,16 +133,13 @@ class smtlib_batch_engine e_s_t fname = object(self)
     let conj = List.fold_left
       (fun es e -> V.BinOp(V.BITAND, e, es)) qe (List.rev conds)
     in
-      (let visitor = (self#visitor :> V.vine_visitor) in
-       let rec loop = function
+      (let rec loop = function
 	 | V.BinOp(V.BITAND, e1, e2) ->
 	     loop e1;
 	     (* output_string self#chan "\n"; *)
 	     loop e2
 	 | e ->
-	     output_string self#chan "(assert ";
-	     ignore(V.exp_accept visitor e);
-	     output_string self#chan ")\n"
+	     self#visitor#assert_exp e;
        in
 	 loop conj);
     output_string self#chan "\n(check-sat)\n";

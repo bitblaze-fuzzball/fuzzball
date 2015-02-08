@@ -99,11 +99,7 @@ class smtlib_external_engine solver = object(self)
 
   method add_condition e =
     if first_query then self#real_prepare;
-    let (solver_in, solver_out) = solver_chans
-    and visitor = (self#visitor :> V.vine_visitor) in
-      output_string_log log_file solver_out "(assert ";
-      ignore(V.exp_accept visitor e);
-      output_string_log log_file solver_out ")\n"
+    self#visitor#assert_exp e
 
   method push =
     let (solver_in, solver_out) = solver_chans in
@@ -129,7 +125,7 @@ class smtlib_external_engine solver = object(self)
       | Z3 -> "QF_FPBV"
       | _ -> "QF_BV"
     in
-      visitor <- Some(new Smt_lib2.vine_smtlib_print_visitor
+      visitor <- Some(new Smt_lib2.vine_smtlib_printer
 			(output_string_log log_file solver_out));
       output_string_log log_file solver_out ("(set-logic " ^ logic ^ ")\n");
       output_string_log log_file solver_out
@@ -140,10 +136,7 @@ class smtlib_external_engine solver = object(self)
     if first_query then
       self#real_prepare;
     let (solver_in, solver_out) = solver_chans in
-    let visitor = (self#visitor :> V.vine_visitor) in
-      output_string_log log_file solver_out "(assert ";
-      ignore(V.exp_accept visitor qe);
-      output_string_log log_file solver_out ")\n";
+      self#visitor#assert_exp qe;
       output_string_log log_file solver_out "(check-sat)\n";
       flush solver_out;
       if !opt_save_solver_files then flush log_file;
