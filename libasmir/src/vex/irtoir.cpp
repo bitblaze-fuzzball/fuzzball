@@ -786,7 +786,9 @@ Exp *translate_simple_unop( IRExpr *expr, IRSB *irbb, vector<Stmt *> *irout )
 	case Iop_Neg32:
 	case Iop_Neg64:    return new UnOp( NEG, arg ); 
 #endif
+#if VEX_VERSION >= 1949
         case Iop_NegF32:
+#endif
         case Iop_NegF64:   return new FUnOp(FNEG, ROUND_NEAREST, arg);
 
         case Iop_Not1:                  return new UnOp( NOT, arg );
@@ -1059,40 +1061,78 @@ Exp *translate_simple_binop( IRExpr *expr, IRSB *irbb, vector<Stmt *> *irout )
         case Iop_Div64Fx2:
 	    return translate_par64fp_128_binop(FDIVIDE, arg1, arg2);
 
+#if VEX_VERSION >= 2105
         case Iop_CmpF32:
 	    return translate_CmpF(arg1, arg2, REG_32);
+#endif
         case Iop_CmpF64:
 	    return translate_CmpF(arg1, arg2, REG_64);
 
 	// arg1 is a rounding mode, currently unsupported. Pretend it's
 	// always ROUND_NEAREST.
 	// Float to int:
+#if VEX_VERSION < 1949
+        case Iop_F64toI16:
+#else
         case Iop_F64toI16S:
+#endif
 	    return new FCast(arg2, REG_16, CAST_SFIX, ROUND_NEAREST);
-        case Iop_F32toI32S:
+#if VEX_VERSION < 1949
+        case Iop_F64toI32:
+#else
         case Iop_F64toI32S:
+#endif
+	    return new FCast(arg2, REG_32, CAST_SFIX, ROUND_NEAREST);
+#if VEX_VERSION >= 2105
+        case Iop_F32toI32S:
 	    return new FCast(arg2, REG_32, CAST_SFIX, ROUND_NEAREST);
         case Iop_F32toI64S:
+#endif
+#if VEX_VERSION < 1949
+        case Iop_F64toI64:
+#else
         case Iop_F64toI64S:
+#endif
 	    return new FCast(arg2, REG_64, CAST_SFIX, ROUND_NEAREST);
+#if VEX_VERSION >= 2105
         case Iop_F32toI32U:
+#endif
+#if VEX_VERSION >= 1949
         case Iop_F64toI32U:
 	    return new FCast(arg2, REG_32, CAST_UFIX, ROUND_NEAREST);
+#endif
+#if VEX_VERSION >= 2105
         case Iop_F32toI64U:
+#endif
+#if VEX_VERSION >= 2184
         case Iop_F64toI64U:
 	    return new FCast(arg2, REG_64, CAST_UFIX, ROUND_NEAREST);
+#endif
+
 	// Int to float:
 	// Iop_I32StoF64: see unops above
+#if VEX_VERSION < 1949
+        case Iop_I64toF64:
+#else
         case Iop_I64StoF64:
+#endif
 	    return new FCast(arg2, REG_64, CAST_SFLOAT, ROUND_NEAREST);
+#if VEX_VERSION >= 2127
         case Iop_I64UtoF64:
 	    return new FCast(arg2, REG_64, CAST_UFLOAT, ROUND_NEAREST);
+#endif
+#if VEX_VERSION >= 2496
         case Iop_I32UtoF32:
+#endif
+#if VEX_VERSION >= 2127
         case Iop_I64UtoF32:
 	    return new FCast(arg2, REG_32, CAST_UFLOAT, ROUND_NEAREST);
+#endif
+#if VEX_VERSION >= 2105
         case Iop_I32StoF32:
         case Iop_I64StoF32:
 	    return new FCast(arg2, REG_32, CAST_SFLOAT, ROUND_NEAREST);
+#endif
 	// Iop_I32UtoF64: see unops above
 	// Float narrowing (for widening see unops)
         case Iop_F64toF32:
@@ -1163,16 +1203,24 @@ Exp *translate_triop( IRExpr *expr, IRSB *irbb, vector<Stmt *> *irout )
 	    ) 
     {
 
+#if VEX_VERSION >= 1949
         case Iop_AddF32:
+#endif
         case Iop_AddF64:
 	  return new FBinOp(FPLUS, ROUND_NEAREST, arg2, arg3);
+#if VEX_VERSION >= 1949
         case Iop_SubF32:
+#endif
         case Iop_SubF64:
 	  return new FBinOp(FMINUS, ROUND_NEAREST, arg2, arg3);
+#if VEX_VERSION >= 1949
         case Iop_MulF32:
+#endif
         case Iop_MulF64:
 	  return new FBinOp(FTIMES, ROUND_NEAREST, arg2, arg3);
+#if VEX_VERSION >= 1949
         case Iop_DivF32:
+#endif
         case Iop_DivF64:
 	  return new FBinOp(FDIVIDE, ROUND_NEAREST, arg2, arg3);
 

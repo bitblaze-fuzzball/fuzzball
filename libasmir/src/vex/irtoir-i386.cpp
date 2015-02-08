@@ -1591,19 +1591,25 @@ Stmt *i386_translate_put( IRStmt *stmt, IRSB *irbb, vector<Stmt *> *irout )
     return result;
 }
 
+#if VEX_VERSION >= 2361
+#define PutI_details(x) PutI.details->x
+#else
+#define PutI_details(x) PutI.x
+#endif
+
 Stmt *i386_translate_puti( IRStmt *stmt, IRSB *irbb, vector<Stmt *> *irout )
 {
     assert(stmt);
     assert(irbb);
     assert(irout);
 
-    IRRegArray* descr = stmt->Ist.PutI.details->descr;
-    IRExpr *ix = stmt->Ist.PutI.details->ix;
-    int bias = stmt->Ist.PutI.details->bias;
+    IRRegArray* descr = stmt->Ist.PutI_details(descr);
+    IRExpr *ix = stmt->Ist.PutI_details(ix);
+    int bias = stmt->Ist.PutI_details(bias);
     int elt_size;
     reg_t elt_t;
 
-    Exp *data = translate_expr(stmt->Ist.PutI.details->data, irbb, irout);
+    Exp *data = translate_expr(stmt->Ist.PutI_details(data), irbb, irout);
 
     if (descr->base == OFFB_FPREG0 && descr->elemTy == Ity_F64 &&
         descr->nElems == 8) {
