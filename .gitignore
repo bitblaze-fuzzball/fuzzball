@@ -22,3 +22,5 @@ missing
 .dirstamp
 /ar-lib
 /compile
+.z3-trace
+fuzzball-tmp-*
