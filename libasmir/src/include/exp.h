@@ -460,6 +460,8 @@ Vector *ex_vector2x64( Exp *h, Exp *l );
 Vector *_ex_vector2x64( Exp *h, Exp *l );
 Ite *ex_ite( Exp *cond, Exp *t, Exp *f );
 Ite *_ex_ite( Exp *cond, Exp *t, Exp *f );
+Exp *_ex_get_bit(Exp *e, int which);
+Exp *ex_get_bit(Exp *e, int which);
 
 extern "C" {
 #endif // def __cplusplus

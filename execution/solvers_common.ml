@@ -10,6 +10,7 @@ type external_solver_type =
   | CVC4
   | BOOLECTOR
   | Z3
+  | MATHSAT
 
 let map_lines f chan =
   let results = ref [] in
@@ -164,20 +165,36 @@ let parse_z3_ce_line s v =
 	  assert(l > 4 && String.sub s 0 4 = "    ");
 	  assert(String.sub s (l - 1) 1 = ")");
 	  let trim = String.sub s 4 (l - 5) in
-	  let v =
+	  let vo =
 	    match trim with
-	      | "false" -> 0L
-	      | "true" -> 1L
-	      | "#b0" -> 0L
-	      | "#b1" -> 1L
+	      | "false" -> Some 0L
+	      | "true" -> Some 1L
+	      | "#b0" -> Some 0L
+	      | "#b1" -> Some 1L
 	      | t when String.length t > 2 && String.sub t 0 2 = "#x" ->
 		  let l2 = (String.length t) in
-		    Int64.of_string ("0x" ^ (String.sub t 2 (l2 - 2)))
+		    Some (Int64.of_string ("0x" ^ (String.sub t 2 (l2 - 2))))
+	      (* Ignore FP assignments. *)
+	      | t when String.length t > 4 && String.sub t 0 4 = "(fp " ->
+		  None
+	      | t when String.length t > 6 &&
+		  (String.sub t 0 6 = "(_ +oo"
+		      || String.sub t 0 6 = "(_ -oo"
+		      || String.sub t 0 6 = "(_ NaN")
+		  ->
+		  None
+	      | t when String.length t > 8 &&
+		  (String.sub t 0 8 = "(_ +zero"
+		      || String.sub t 0 8 = "(_ -zero")
+		  ->
+		  None
 	      | _ ->
 		  Printf.printf "Value parse failure on <%s>\n" trim;
 		  failwith "Unhandled value case in parse_z3_ce_lines"
 	  in
-	    (Assignment (varname, v), None)
+	    (match vo with
+	       | None -> (No_CE_here, None)
+	       | Some v -> (Assignment (varname, v), None))
     (* Ignore comments *)
     | (s, _) when String.length s > 4 &&
 	String.sub s 0 4 = "  ;;" ->
@@ -206,11 +223,44 @@ let parse_z3_ce_line s v =
 	  Printf.printf "Parse failure on <%s>\n" s;
 	  failwith "Unhandled loop case in parse_z3_ce_line"
 
+(* MathSAT's output is multi-line like Z3's, though it's simpler in some
+   other ways. *)
+let parse_mathsat_ce_line s v =
+  let len = String.length s in
+    match (s, v) with
+      | (s, None) when len > 4 &&
+	  (String.sub s 0 3 = "  (" || String.sub s 0 3 = "( (") ->
+	let varname = String.sub s 3 (len - 3) in
+	  (No_CE_here, Some (smtlib_rename_var varname))
+      | (s, Some varname) when len > 6 && String.sub s 0 6 = " (_ bv" ->
+	  let s2 = String.sub s 6 (len - 6) in
+	  let num_end = String.index s2 ' ' in
+	  let num_str = String.sub s2 0 num_end in
+	  let v = Vine_util.int64_u_of_string num_str in
+	    (Assignment (varname, v), None)
+      | (" true", Some varname)  -> (Assignment (varname, 1L), None)
+      | (" false", Some varname) -> (Assignment (varname, 0L), None)
+      | (s, Some varname) when len > 9 &&
+	  (String.sub s 0 5 = " (fp " ||
+	      String.sub s 0 8 = " (_ +oo " ||
+	      String.sub s 0 8 = " (_ -oo " ||
+	      String.sub s 0 8 = " (_ NaN " ||
+	      String.sub s 0 9 = " (_ +zero" ||
+	      String.sub s 0 9 = " (_ -zero") ->
+	  (* Skip FP values *)
+	  (No_CE_here, None)
+      | (")", None) -> (No_CE_here, None)
+      | (") )", None) -> (End_of_CE, None)
+      | (s, _) ->
+	  Printf.printf "Parse failure on <%s>\n" s;
+	  failwith "Unhandled loop case in parse_mathsat_ce_line"
+
 let parse_ce e_s_t =
   match e_s_t with
     | (STP_CVC|STP_SMTLIB2) -> parse_stp_ce e_s_t
     | CVC4 -> parse_cvc4_ce
     | Z3 -> failwith "Z3 unsupported in parse_ce"
+    | MATHSAT -> failwith "MathSAT unsupported in parse_ce"
     | BOOLECTOR -> parse_btor_ce
 
 let create_temp_dir prefix =

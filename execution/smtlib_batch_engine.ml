@@ -18,13 +18,13 @@ let parse_counterex e_s_t line =
     | End_of_CE -> None
     | Assignment(s, i) -> Some (s, i)
 
-let parse_z3_ce_lines lines =
+let parse_stateful_ce_lines fn lines =
   let rec loop l v =
     match (l, v) with
       | ([], None) -> []
-      | ([], _) -> failwith "Dangling variable in parse_z3_ce_lines"
+      | ([], _) -> failwith "Dangling variable in parse_stateful_ce_lines"
       | (s :: r, v) ->
-	  let (mce, v') = parse_z3_ce_line s v
+	  let (mce, v') = fn s v
           in
             match mce with
               | No_CE_here -> loop r v'
@@ -32,6 +32,10 @@ let parse_z3_ce_lines lines =
               | Assignment (v, i) -> (v, i) :: loop r v'
   in
     loop lines None
+
+let parse_z3_ce_lines = parse_stateful_ce_lines parse_z3_ce_line
+
+let parse_mathsat_ce_lines = parse_stateful_ce_lines parse_mathsat_ce_line
 
 class smtlib_batch_engine e_s_t fname = object(self)
   inherit query_engine
@@ -116,11 +120,11 @@ class smtlib_batch_engine e_s_t fname = object(self)
   method private real_prepare =
     let fname = self#get_fresh_fname in
     let logic = match e_s_t with
-      | Z3 -> "QF_FPBV"
+      | (Z3|MATHSAT) -> "QF_FPBV"
       | _ -> "QF_BV"
     in
       chan <- Some(open_out (fname ^ ".smt2"));
-      visitor <- Some(new Smt_lib2.vine_smtlib_print_visitor
+      visitor <- Some(new Smt_lib2.vine_smtlib_printer
 			(output_string self#chan));
       output_string self#chan
 	("(set-logic "^logic^")\n(set-info :smt-lib-version 2.0)\n\n");
@@ -133,16 +137,13 @@ class smtlib_batch_engine e_s_t fname = object(self)
     let conj = List.fold_left
       (fun es e -> V.BinOp(V.BITAND, e, es)) qe (List.rev conds)
     in
-      (let visitor = (self#visitor :> V.vine_visitor) in
-       let rec loop = function
+      (let rec loop = function
 	 | V.BinOp(V.BITAND, e1, e2) ->
 	     loop e1;
 	     (* output_string self#chan "\n"; *)
 	     loop e2
 	 | e ->
-	     output_string self#chan "(assert ";
-	     ignore(V.exp_accept visitor e);
-	     output_string self#chan ")\n"
+	     self#visitor#assert_exp e;
        in
 	 loop conj);
     output_string self#chan "\n(check-sat)\n";
@@ -160,6 +161,8 @@ class smtlib_batch_engine e_s_t fname = object(self)
 	  "-t " ^ (string_of_int s) ^ " "
       | (Z3, Some s) ->
 	  "-t:" ^ (string_of_int s) ^ "000 "
+      | (MATHSAT, Some s) ->
+	  failwith "Mathsat does not support a timeout option"
       | (_, None) -> ""
     in
     let base_opt = match e_s_t with
@@ -168,8 +171,10 @@ class smtlib_batch_engine e_s_t fname = object(self)
       | CVC4 -> " --lang smt -m --dump-models "
       | BOOLECTOR -> " -m "
       | Z3 -> " -smt2 "
+      | MATHSAT -> " -model "
     in
-    let cmd = !opt_solver_path ^ base_opt ^ timeout_opt ^ curr_fname
+    let from = if e_s_t = MATHSAT then "<" else "" in
+    let cmd = !opt_solver_path ^ base_opt ^ timeout_opt ^ from ^ curr_fname
       ^ ".smt2 >" ^ curr_fname ^ ".smt2.out" in
       if !opt_trace_solver then
 	Printf.printf "Solver command: %s\n" cmd;
@@ -199,6 +204,8 @@ class smtlib_batch_engine e_s_t fname = object(self)
 	      let ce =
 		if e_s_t = Z3 then
 		  parse_z3_ce_lines (map_lines (fun s -> Some s) results)
+		else if e_s_t = MATHSAT then
+		  parse_mathsat_ce_lines (map_lines (fun s -> Some s) results)
 		else
 		  map_lines (parse_counterex e_s_t) results
 	      in

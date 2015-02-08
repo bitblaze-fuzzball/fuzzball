@@ -48,8 +48,10 @@
 #define OFFB_FPREGS    offsetof(VexGuestAMD64State,guest_FPREG[0])
 #define OFFB_FPTAGS    offsetof(VexGuestAMD64State,guest_FPTAG[0])
 #define OFFB_DFLAG     offsetof(VexGuestAMD64State,guest_DFLAG)
-#define OFFB_ACFLAG    offsetof(VexGuestAMD64State,guest_ACFLAG)
 #define OFFB_IDFLAG    offsetof(VexGuestAMD64State,guest_IDFLAG)
+#if VEX_VERSION >= 2050
+#define OFFB_ACFLAG    offsetof(VexGuestAMD64State,guest_ACFLAG)
+#endif
 #define OFFB_FTOP      offsetof(VexGuestAMD64State,guest_FTOP)
 #define OFFB_FC3210    offsetof(VexGuestAMD64State,guest_FC3210)
 #define OFFB_FPROUND   offsetof(VexGuestAMD64State,guest_FPROUND)
@@ -189,8 +191,10 @@ vector<VarDecl *> x64_get_reg_decls()
 
   // VEX flags
   ret.push_back(new VarDecl("R_DFLAG", r64));
-  ret.push_back(new VarDecl("R_ACFLAG", r64));
   ret.push_back(new VarDecl("R_IDFLAG", r64));
+#if VEX_VERSION >= 2050
+  ret.push_back(new VarDecl("R_ACFLAG", r64));
+#endif
 
   /* Since the most important contents of RFLAGS are in R_CF .. R_OF,
      we don't want to keep a separate copy of those in another
@@ -358,7 +362,9 @@ static string reg_offset_to_name( int offset, bool *is_good )
 
         case OFFB_DFLAG:    name = "DFLAG";     good=true; break;
         case OFFB_IDFLAG:   name = "IDFLAG";    good=true; break;
+#if VEX_VERSION >= 2050
         case OFFB_ACFLAG:   name = "ACFLAG";    good=true; break;
+#endif
         case OFFB_FC3210:   name = "FC3210";    good=true; break;
         case OFFB_FPROUND:  name = "FPROUND";   good=true; break;
 

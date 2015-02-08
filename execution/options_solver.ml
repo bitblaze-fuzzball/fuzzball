@@ -29,6 +29,7 @@ let solver_cmdline_opts =
 	  | "cvc4" -> opt_smtlib_solver_type := Some CVC4
 	  | "btor"|"boolector" -> opt_smtlib_solver_type := Some BOOLECTOR
 	  | "z3" -> opt_smtlib_solver_type := Some Z3
+	  | "mathsat" -> opt_smtlib_solver_type := Some MATHSAT
 	  | _ -> failwith "Unrecognized -smtlib-solver-type"
        ),
      "type stp,cvc4,btor,z3 (default is guessed from path)");
@@ -82,6 +83,8 @@ let solvers_table =
 		  BOOLECTOR
 		else if ends_with !opt_solver_path "z3" then
 		  Z3
+		else if ends_with !opt_solver_path "mathsat" then
+		  MATHSAT
 		else
 		  failwith "Please specify -smtlib-solver-type"
 	  in
@@ -102,6 +105,8 @@ let solvers_table =
 		  failwith "Boolector does not support incremental solving"
 		else if ends_with !opt_solver_path "z3" then
 		  Z3
+		else if ends_with !opt_solver_path "mathsat" then
+		  MATHSAT
 		else
 		  failwith "Please specify -smtlib-solver-type"
 	  in

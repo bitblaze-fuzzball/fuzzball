@@ -11,56 +11,10 @@ module List = ExtList.List
 module D = Debug.Make(struct let name = "SMT" and default=`NoDebug end)
 open D
 
-(* Translate a variable to conform to SMT-LIB2's syntax *)
-let transvar s = s
-
 let is_not_memory t =
   match unwind_type t with
       TMem _ -> false
     | _ -> true
-
-
-let rec repeat = function 0 -> (fun _ -> ())
-  | n -> (fun f -> ( f(); repeat (n-1) f))
-
-let width_cvt t1 t2 e =
-  let wd1 = Vine.bits_of_width t1 and
-      wd2 = Vine.bits_of_width t2 in
-    if wd1 = wd2 then
-      e
-    else if wd1 < wd2 then
-      Cast(CAST_UNSIGNED, t2, e)
-    else
-      Cast(CAST_LOW, t2, e)
-
-let index_type ty =
-  match ty with
-    | TMem(t, _) -> t
-    | Array(_, sz) when sz <= 2L -> REG_1
-    | Array(_, sz) when sz <= 256L -> REG_8
-    | Array(_, sz) when sz <= 65536L -> REG_16
-    | Array(_, sz) when sz <= 0x1000000000L -> REG_32
-    | Array(_, _) -> REG_64
-    | _ -> failwith "Nonindexable type in index_type"
-
-let rec collect_bindings = function
-    | Let(lv, rhs, e2) ->
-	let (bl1, body) = collect_bindings e2 in
-	  ((lv, rhs) :: bl1,  body)
-    | e -> ([], e)
-
-(* Like List.iter, but pass flags to allow f to treat the first and
-   last items specially. *)
-let iter_first_last f list =
-  let rec loop = function
-    | [] -> failwith "List length invariant failure in iter_first_last"
-    | [e] -> f e false true
-    | e :: r -> f e false false; loop r
-  in
-    match list with
-      | [] -> ()
-      | [e] -> f e true true
-      | e :: r -> f e true false; (loop r)
 
 let smtlib2_rm = function
   | Vine_util.ROUND_NEAREST           -> "RNE"
@@ -69,21 +23,8 @@ let smtlib2_rm = function
   | Vine_util.ROUND_NEGATIVE          -> "RTN"
   | Vine_util.ROUND_ZERO              -> "RTZ"
 
-let wrap_bv2fpa = function
-  | REG_32 -> ("((_ to_fp 8 24) ", ")")
-  | REG_64 -> ("((_ to_fp 11 53) ", ")")
-  | _ -> failwith "Unsupported FP width in wrap_bv2fpa"
-
-(* This functionality was intentionally left out of the SMTLIB FP
-   proposal (I'm looking at version 3), ostensibly because of worries
-   about the NaN representation not being unique. But we really want a
-   function because of the way we translate expressions. This is Z3's
-   non-standard one. *)
-let wrap_fpa2bv = function
-  | _ -> ("(to_ieee_bv ", ")")
-
-(** Visitor for printing out SMT-LIB2 syntax for an expression. *)
-class vine_smtlib_print_visitor puts =
+(** Class for printing out SMT-LIB2 syntax for an expression. *)
+class vine_smtlib_printer puts =
   let rec type2s = function
     | REG_1 -> "Bool"
     | t when is_integer_type t ->
@@ -119,22 +60,21 @@ class vine_smtlib_print_visitor puts =
 	rename_var (name^"_"^(string_of_int num))
   in
 object (self)
-  inherit nop_vine_visitor
     (* variables already used in this output (needed for mems) *)
   val used_vars = Hashtbl.create 57
     (* map vine var to var we are using *)
   val g = VH.create 57
   val mutable unknown_counter = 0
 
-  method extend2 v s =
+  method private extend2 v s =
     assert(not(Hashtbl.mem used_vars s));
     Hashtbl.add used_vars s ();
     dprintf "Extending %s -> %s" (var2s v) s;
     VH.add g v s
-  method unextend v =
+  method private unextend v =
     dprintf "Unextending %s" (var2s v);
     VH.remove g v
-  method tr_var v =
+  method private tr_var v =
     let v' =
     try VH.find g v
     with Not_found -> (* free variable *)
@@ -147,23 +87,56 @@ object (self)
     puts(sprintf "(declare-fun %s () %s)\n" (var2s v) (type2s t))
 
   method declare_var_value ((_,_,t) as v) e =
-    puts(sprintf "(declare-fun %s () %s)\n" (var2s v) (type2s t));
-    puts(sprintf "(assert (= %s " (var2s v));
-    ignore(exp_accept (self :> vine_visitor) e);
-    puts "))\n"
+    let def = self#translate_exp e in
+      puts(sprintf "(declare-fun %s () %s)\n" (var2s v) (type2s t));
+      puts(sprintf "(assert (= %s " (var2s v));
+      puts(def);
+      puts "))\n"
 
-  method declare_freevars e =
+  method private declare_freevars e =
     let fvs = get_req_ctx e in
       dprintf "%d free variables\n%!" (List.length fvs);
       List.iter self#declare_var fvs
 
+  method private unwrap_fp_exp ty s =
+    if String.length s > 3 && String.sub s 0 3 = "bfp" then
+      (* Cheat: this is the result of a wrap_fp_exp conversion (below),
+	 so we know the unwraped variable name. *)
+      String.sub s 1 ((String.length s) - 1)
+    else
+      match ty with
+	| REG_32 -> "((_ to_fp 8 24) " ^ s ^ ")"
+	| REG_64 -> "((_ to_fp 11 53) " ^ s ^ ")"
+	| _ -> failwith "Unsupported float size in unwrap_fp_exp"
 
-  method visit_exp e =
+  (* Z3 has a non-standard "to_ieee_bv" function we could use here,
+     but the standard recommends a more cumbersome indirect
+     expression that requires introducing a new variable. *)
+  val mutable fp_counter = 1
+  method private wrap_fp_exp ty s =
+    let varname = "fp" ^ (string_of_int fp_counter) in
+    let bvarname = "b" ^ varname in
+    let (fp_sz, bv_ty) = match ty with
+      | REG_32 -> ("8 24", "(_ BitVec 32)")
+      | REG_64 -> ("11 53", "(_ BitVec 64)")
+      | _ -> failwith "Unsupported float size in wrap_fp_exp"
+    in
+    let fp_ty = "(_ FloatingPoint " ^ fp_sz ^ ")" in
+    let to_fp = "(_ to_fp " ^ fp_sz ^ ")" in
+      puts(sprintf "(declare-fun %s () %s)\n" varname fp_ty);
+      puts(sprintf "(assert (= %s %s))\n" varname s);
+      puts(sprintf "(declare-fun %s () %s)\n" bvarname bv_ty);
+      puts(sprintf "(assert (= %s (%s %s)))\n" varname to_fp bvarname);
+      fp_counter <- fp_counter + 1;
+      bvarname
+
+  method private translate_exp e =
+  let rec tr_exp e =
     match e with
 	Constant(v) ->
 	  (match v with
 	     | Int(REG_1, i) ->
-		 if bool_of_const e then puts "true" else puts "false"
+		 if bool_of_const e then "true" else "false"
 	     | Int(t,i) ->
 		let (format, mask) = match (Vine.unwind_type t) with
 		  | REG_8  -> (format_of_string "#x%02Lx", 0xffL)
@@ -177,15 +150,13 @@ object (self)
 		in
 		let maskedval = Int64.logand i mask
 		in
-		  puts(sprintf format maskedval)
+		  sprintf format maskedval
 	     | _ ->
 		 raise (Invalid_argument
-			  "Only constant integer types supported")
-	  );
-	  SkipChildren
+			  "Only integer constant types supported")
+	  )
       | Lval(Temp v) ->
-	  puts(self#tr_var v);
-	  SkipChildren
+	  self#tr_var v
       | Lval(Mem(((_,_,m_ty)), idx,t)) when is_not_memory t ->
 	  failwith "Memory access translation to SMT-LIB2 not supported"
       | Lval(Mem _) ->
@@ -194,27 +165,19 @@ object (self)
       | Let(_,_,_) ->
 	  failwith "Let expression translation to SMT-LIB2 not supported"
       | UnOp(uop, e1) ->
-	  let () = match (uop, (Vine_typecheck.infer_type_fast e1)) with
-	    | (_, REG_1) -> puts "(not "
-	    | (NEG, _)   -> puts "(bvneg "
-	    | (NOT, _)   -> puts "(bvnot "
+	  let pre = match (uop, (Vine_typecheck.infer_type_fast e1)) with
+	    | (_, REG_1) -> "(not "
+	    | (NEG, _)   -> "(bvneg "
+	    | (NOT, _)   -> "(bvnot "
 	  in
-	    ChangeDoChildrenPost(e, fun x ->(puts ")";x))
+	    pre ^ (tr_exp e1) ^ ")"
       | FUnOp(uop, rm, e1) ->
 	  let ty1 = Vine_typecheck.infer_type_fast e1 and
 	      op = match uop with
 		| FNEG -> ignore(rm); "fp.neg" (* no rounding needed *)
 	  in
-	  let (to_fp_pre, to_fp_post) = wrap_bv2fpa ty1 and
-	      (to_bv_pre, to_bv_post) = wrap_fpa2bv ty1 in
-	    puts to_bv_pre;
-	    puts ("(" ^ op ^ " ");
-	    puts to_fp_pre;
-	    ignore(exp_accept (self :> vine_visitor) e1);
-	    puts to_fp_post;
-	    puts ")";
-	    puts to_bv_post;
-	    SkipChildren
+	    self#wrap_fp_exp ty1
+	      ("(" ^ op ^ " " ^ (self#unwrap_fp_exp ty1 (tr_exp e1)) ^ ")")
       | FBinOp(bop, rm, e1, e2) ->
 	  let ty1 = Vine_typecheck.infer_type_fast e1 in
 	  let (op, is_pred, need_rm) = match bop with
@@ -227,28 +190,17 @@ object (self)
 	    | FLT     -> ("fp.lt",  Some true,  false)
 	    | FLE     -> ("fp.leq", Some true,  false)
 	  in
-	  let (to_fp_pre, to_fp_post) = wrap_bv2fpa ty1 and
-	      (to_bv_pre, to_bv_post) = wrap_fpa2bv ty1 in
+	  let core = 
+	      "(" ^ op ^ " " ^
+	      (if need_rm then (smtlib2_rm rm ^ " ") else "") ^
+		(self#unwrap_fp_exp ty1 (tr_exp e1)) ^ " " ^
+		(self#unwrap_fp_exp ty1 (tr_exp e2)) ^
+		")"
+	  in
 	    (match is_pred with
-	       | None -> puts to_bv_pre
-	       | Some true -> ()
-	       | Some false -> puts "(not ");
-	    puts ("(" ^ op ^ " ");
-	    if need_rm then
-	      puts (smtlib2_rm rm ^ " ");
-	    puts to_fp_pre;
-	    ignore(exp_accept (self :> vine_visitor) e1);
-	    puts to_fp_post;
-	    puts " ";
-	    puts to_fp_pre;
-	    ignore(exp_accept (self :> vine_visitor) e2);
-	    puts to_fp_post;
-	    puts ")";
-	    (match is_pred with
-	       | None -> puts to_bv_post
-	       | Some true -> ()
-	       | Some false -> puts ")");
-	    SkipChildren
+	       | None -> self#wrap_fp_exp ty1 core
+	       | Some true -> core
+	       | Some false -> "(not " ^ core ^ ")")
       | FCast(ct, rm, ty2, e1) ->
 	  let ty1 = Vine_typecheck.infer_type_fast e1 in
 	  let (fp_in, fp_out) = match ct with
@@ -269,20 +221,18 @@ object (self)
 	    | (CAST_UFIX,    _)      -> "(_ fp.to_ubv " ^ sz2 ^ ") "
 	    | _ -> failwith "Unsupported FCast combination"
 	  in
-	  let (to_fp_pre, to_fp_post) = wrap_bv2fpa ty1 and
-	      (to_bv_pre, to_bv_post) = wrap_fpa2bv ty2 in
+	  let core =
+	    ("(" ^ op ^ " " ^ rm_s ^ " " ^
+	       (if fp_in then
+		  self#unwrap_fp_exp ty1 (tr_exp e1)
+		else
+		  (tr_exp e1)) ^
+	       ")")
+	  in
 	    if fp_out then
-	      puts to_bv_pre;
-	    puts ("(" ^ op ^ " " ^ rm_s ^ " ");
-	    if fp_in then
-	      puts to_fp_pre;
-	    ignore(exp_accept (self :> vine_visitor) e1);
-	    if fp_in then
-	      puts to_fp_post;
-	    puts ")";
-	    if fp_out then
-	      puts to_bv_post;
-	    SkipChildren
+	      self#wrap_fp_exp ty2 core
+	    else
+	      core
       | (BinOp(BITOR,
 	       (Cast(CAST_UNSIGNED, REG_16, e1)
 	       | BinOp(LSHIFT, Cast(CAST_UNSIGNED, REG_16, e1),
@@ -298,12 +248,7 @@ object (self)
 	  when (Vine_typecheck.infer_type_fast e1) = REG_8
 	    && (Vine_typecheck.infer_type_fast e2) = REG_8
 	    ->
-	  (puts "(concat ";
-	   ignore(exp_accept (self :> vine_visitor) e2);
-	   puts " ";
-	   ignore(exp_accept (self :> vine_visitor) e1);
-	   puts ")";
-	   SkipChildren)
+	  "(concat " ^ (tr_exp e2) ^ " " ^ (tr_exp e1) ^ ")"
       | (BinOp(BITOR,
 	       Cast(CAST_UNSIGNED, REG_32, e1),
 	       BinOp(LSHIFT,
@@ -317,12 +262,7 @@ object (self)
 	  when (Vine_typecheck.infer_type_fast e1) = REG_16
 	    && (Vine_typecheck.infer_type_fast e2) = REG_16
 	    ->
-	  (puts "(concat ";
-	   ignore(exp_accept (self :> vine_visitor) e2);
-	   puts " ";
-	   ignore(exp_accept (self :> vine_visitor) e1);
-	   puts ")";
-	   SkipChildren)
+	  "(concat " ^ (tr_exp e2) ^ " " ^ (tr_exp e1) ^ ")"
       | (BinOp(BITOR,
 	       Cast(CAST_UNSIGNED, REG_64, e1),
 	       BinOp(LSHIFT,
@@ -336,12 +276,7 @@ object (self)
 	  when ((Vine_typecheck.infer_type_fast e1) = REG_32
 	      && (Vine_typecheck.infer_type_fast e2) = REG_32)
 	    ->
-	  (puts "(concat ";
-	   ignore(exp_accept (self :> vine_visitor) e2);
-	   puts " ";
-	   ignore(exp_accept (self :> vine_visitor) e1);
-	   puts ")";
-	   SkipChildren)
+	  "(concat " ^ (tr_exp e2) ^ " " ^ (tr_exp e1) ^ ")"
       | (BinOp(
 	  BITOR,
 	  BinOp(
@@ -386,16 +321,8 @@ object (self)
 	    && (Vine_typecheck.infer_type_fast e3) = REG_8
 	    && (Vine_typecheck.infer_type_fast e4) = REG_8
 	  ->
-	  (puts "(concat (concat ";
-	   ignore(exp_accept (self :> vine_visitor) e4);
-	   puts " ";
-	   ignore(exp_accept (self :> vine_visitor) e3);
-	   puts ") (concat ";
-	   ignore(exp_accept (self :> vine_visitor) e2);
-	   puts " ";
-	   ignore(exp_accept (self :> vine_visitor) e1);
-	   puts "))";
-	   SkipChildren)
+	  "(concat (concat " ^ (tr_exp e4) ^ " " ^ (tr_exp e3) ^ ") " ^
+	    "(concat " ^ (tr_exp e2) ^ " " ^ (tr_exp e1) ^ "))"
       | BinOp(
 	  BITOR,
 	  BinOp(
@@ -435,24 +362,10 @@ object (self)
 	    && (Vine_typecheck.infer_type_fast e7) = REG_8
 	    && (Vine_typecheck.infer_type_fast e8) = REG_8
 	    ->
-	  (puts "(concat (concat (concat ";
-	   ignore(exp_accept (self :> vine_visitor) e8);
-	   puts " ";
-	   ignore(exp_accept (self :> vine_visitor) e7);
-	   puts ") (concat ";
-	   ignore(exp_accept (self :> vine_visitor) e6);
-	   puts " ";
-	   ignore(exp_accept (self :> vine_visitor) e5);
-	   puts ")) (concat (concat ";
-	   ignore(exp_accept (self :> vine_visitor) e4);
-	   puts " ";
-	   ignore(exp_accept (self :> vine_visitor) e3);
-	   puts ") (concat ";
-	   ignore(exp_accept (self :> vine_visitor) e2);
-	   puts " ";
-	   ignore(exp_accept (self :> vine_visitor) e1);
-	   puts ")))";
-	   SkipChildren)
+	  "(concat (concat (concat " ^ (tr_exp e8) ^ " " ^ (tr_exp e7) ^ ") " ^
+	    "(concat " ^ (tr_exp e6) ^ " " ^ (tr_exp e5) ^ ")) " ^
+	    "(concat (concat " ^ (tr_exp e4) ^ " " ^ (tr_exp e3) ^ ") " ^
+	    "(concat " ^ (tr_exp e2) ^ " " ^ (tr_exp e1) ^ ")))"
       | BinOp(BITOR,
 	      BinOp(BITAND, Cast(CAST_SIGNED, ty1, cond1), x),
 	      BinOp(BITAND, UnOp(NOT, Cast(CAST_SIGNED, ty2, cond2)), y))
@@ -468,23 +381,11 @@ object (self)
 	  when ty1 = ty2 && cond1 = cond2 &&
 	    (Vine_typecheck.infer_type_fast cond1) = REG_1
 	    ->
-	  (puts "(ite ";
-	   ignore(exp_accept (self :> vine_visitor) cond1);
-	   puts " ";
-	   ignore(exp_accept (self :> vine_visitor) x);
-	   puts " ";
-	   ignore(exp_accept (self :> vine_visitor) y);
-	   puts ")";
-	   SkipChildren);
+	  "(ite " ^ (tr_exp cond1) ^ " " ^ (tr_exp x) ^ " " ^
+	    (tr_exp y) ^ ")"
       | Ite(cond, x, y) ->
-	  (puts "(ite ";
-	   ignore(exp_accept (self :> vine_visitor) cond);
-	   puts " ";
-	   ignore(exp_accept (self :> vine_visitor) x);
-	   puts " ";
-	   ignore(exp_accept (self :> vine_visitor) y);
-	   puts ")";
-	   SkipChildren);
+	  "(ite " ^ (tr_exp cond) ^ " " ^ (tr_exp x) ^ " " ^
+	    (tr_exp y) ^ ")"
       | BinOp(bop, e1, e2) ->
 	  let t = Vine_typecheck.infer_type_fast e1 in
 	  let (pre,mid,post) = match (bop, t) with
@@ -535,20 +436,12 @@ object (self)
 	    | _ ->
 	        e2
 	  in
-	      let () = puts pre in
-	      let _ = exp_accept (self :> vine_visitor) e1 in
-	      let () = puts  mid in
-	      let _ =  exp_accept (self :> vine_visitor) e2 in
-	      let () = puts post in
-		SkipChildren
+	    pre ^ (tr_exp e1) ^ mid ^ (tr_exp e2) ^ post
       | Cast(CAST_LOW, REG_1,
 	     (BinOp(ARSHIFT, e1, Constant(Int(REG_8, k))))) ->
 	  let bit = string_of_int (Int64.to_int k) in
 	  let extract = "((_ extract " ^ bit ^ " " ^ bit ^ ")" in
-	    puts ("(= #b1 " ^ extract);
-	    ignore(exp_accept (self :> vine_visitor) e1);
-	    puts "))";
-	    SkipChildren
+	    "(= #b1 " ^ extract ^ (tr_exp e1) ^ "))"
       | Cast(ct,t, e1) ->
 	  let make_zeros k =
 	    if k mod 4 = 0 then
@@ -594,20 +487,20 @@ object (self)
 	    | (CAST_UNSIGNED, _, _)  ->
 		("(concat "^(make_zeros (bits-bits1))^" ", ")")
 	  in
-	  let () = puts pre in
-	  ChangeDoChildrenPost(e, fun x-> puts post; x)
+	    pre ^ (tr_exp e1) ^ post
       | Unknown s ->
-	  puts ("unknown_"^string_of_int unknown_counter^" %");
-	  puts s;
-	  puts "\n";
-	  unknown_counter <- unknown_counter + 1;
-	  DoChildren
+	  let s =
+	    "unknown_"^string_of_int unknown_counter^" %" ^ s ^ "\n"
+	  in
+	    unknown_counter <- unknown_counter + 1;
+	    s
       | Name _ -> raise (Invalid_argument "Names should be here")
+  in
+    tr_exp e
 
-(*
-      | Name of string
-      | Phi of string * exp list
-      | Let of lvalue * exp * exp
-*)
+  method assert_exp e =
+    puts "(assert ";
+    puts(self#translate_exp e);
+    puts ")\n"
 
 end
