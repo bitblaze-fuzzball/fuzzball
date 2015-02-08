@@ -313,6 +313,25 @@ let int64_u_of_float x =
   else
     Int64.add 0x8000000000000000L (Int64.of_float (x -. (2.0 ** 63.0)))
 
+(** Like Int64.of_string, but convert decimal values greater than
+    2**63-1 to unsigned (negative) int64s *)
+let int64_u_of_string s =
+  let len = String.length s in
+    if len <= 18 then
+      Int64.of_string s (* Small enough to handle *)
+    else if len >= 3 &&
+      (String.sub s 0 2 = "0x" ||
+	  String.sub s 0 2 = "0b" ||
+	  String.sub s 0 2 = "0o") then
+	Int64.of_string s (* Non-decimal is OK *)
+    else
+      (* Split and recombine to avoid values large enough to be negative *)
+      let low_s = String.sub s (len - 18) 18 and
+	  high_s = String.sub s 0 (len - 18) in
+      let low_v  = Int64.of_string low_s and
+	  high_v = Int64.of_string high_s in
+	Int64.add low_v (Int64.mul high_v 1000000000000000000L)
+
 (* end stuff that should be in Int64 *)
 
 (** execute f with fd_from remapped to fd_to.
