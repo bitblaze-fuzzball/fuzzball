@@ -80,7 +80,7 @@ let wrap_bv2fpa = function
    function because of the way we translate expressions. This is Z3's
    non-standard one. *)
 let wrap_fpa2bv = function
-  | _ -> ("(asIEEEBV ", ")")
+  | _ -> ("(to_ieee_bv ", ")")
 
 (** Visitor for printing out SMT-LIB2 syntax for an expression. *)
 class vine_smtlib_print_visitor puts =
@@ -265,8 +265,8 @@ object (self)
 	    | (CAST_UFLOAT,  REG_64) -> "(_ to_fp_unsigned 11 53)"
 	    | (CAST_FWIDEN,  REG_64) -> "(_ to_fp 11 53)"
 	    | (CAST_FNARROW, REG_32) -> "(_ to_fp 8 24)"
-	    | (CAST_SFIX,    _)      -> "(_ fp_to_sbv " ^ sz2 ^ ") "
-	    | (CAST_UFIX,    _)      -> "(_ fp_to_ubv " ^ sz2 ^ ") "
+	    | (CAST_SFIX,    _)      -> "(_ fp.to_sbv " ^ sz2 ^ ") "
+	    | (CAST_UFIX,    _)      -> "(_ fp.to_ubv " ^ sz2 ^ ") "
 	    | _ -> failwith "Unsupported FCast combination"
 	  in
 	  let (to_fp_pre, to_fp_post) = wrap_bv2fpa ty1 and
