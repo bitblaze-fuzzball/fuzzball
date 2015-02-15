@@ -115,11 +115,15 @@ class smtlib_batch_engine e_s_t fname = object(self)
 
   method private real_prepare =
     let fname = self#get_fresh_fname in
+    let logic = match e_s_t with
+      | Z3 -> "QF_FPABV"
+      | _ -> "QF_BV"
+    in
       chan <- Some(open_out (fname ^ ".smt2"));
       visitor <- Some(new Smt_lib2.vine_smtlib_print_visitor
 			(output_string self#chan));
       output_string self#chan
-	"(set-logic QF_BV)\n(set-info :smt-lib-version 2.0)\n\n";
+	("(set-logic "^logic^")\n(set-info :smt-lib-version 2.0)\n\n");
       List.iter self#real_add_free_var (List.rev free_vars);
       List.iter self#real_assert_eq (List.rev eqns);
 
