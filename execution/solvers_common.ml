@@ -164,20 +164,36 @@ let parse_z3_ce_line s v =
 	  assert(l > 4 && String.sub s 0 4 = "    ");
 	  assert(String.sub s (l - 1) 1 = ")");
 	  let trim = String.sub s 4 (l - 5) in
-	  let v =
+	  let vo =
 	    match trim with
-	      | "false" -> 0L
-	      | "true" -> 1L
-	      | "#b0" -> 0L
-	      | "#b1" -> 1L
+	      | "false" -> Some 0L
+	      | "true" -> Some 1L
+	      | "#b0" -> Some 0L
+	      | "#b1" -> Some 1L
 	      | t when String.length t > 2 && String.sub t 0 2 = "#x" ->
 		  let l2 = (String.length t) in
-		    Int64.of_string ("0x" ^ (String.sub t 2 (l2 - 2)))
+		    Some (Int64.of_string ("0x" ^ (String.sub t 2 (l2 - 2))))
+	      (* Ignore FP assignments. *)
+	      | t when String.length t > 4 && String.sub t 0 4 = "(fp " ->
+		  None
+	      | t when String.length t > 6 &&
+		  (String.sub t 0 6 = "(_ +oo"
+		      || String.sub t 0 6 = "(_ -oo"
+		      || String.sub t 0 6 = "(_ NaN")
+		  ->
+		  None
+	      | t when String.length t > 8 &&
+		  (String.sub t 0 8 = "(_ +zero"
+		      || String.sub t 0 8 = "(_ -zero")
+		  ->
+		  None
 	      | _ ->
 		  Printf.printf "Value parse failure on <%s>\n" trim;
 		  failwith "Unhandled value case in parse_z3_ce_lines"
 	  in
-	    (Assignment (varname, v), None)
+	    (match vo with
+	       | None -> (No_CE_here, None)
+	       | Some v -> (Assignment (varname, v), None))
     (* Ignore comments *)
     | (s, _) when String.length s > 4 &&
 	String.sub s 0 4 = "  ;;" ->
