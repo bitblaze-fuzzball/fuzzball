@@ -59,7 +59,9 @@ typedef [abstract] void* vine_symbols_t;
 
 enum exp_type_t {
   BINOP, UNOP, CONSTANT, MEM, TEMP, PHI, CAST,
-  NAME, UNKNOWN, LET, ITE, EXTENSION };
+  NAME, UNKNOWN, LET, ITE,
+  FBINOP, FUNOP, FCAST,
+  EXTENSION };
 
 enum reg_t { REG_1, REG_8, REG_16, REG_32, REG_64 };
 
@@ -71,13 +73,33 @@ enum binop_type_t {
   NEQ,  GT,       LT,       GE,
   LE,SDIVIDE, SMOD    };
 
+enum fbinop_type_t {
+  FPLUS = 0, FMINUS, FTIMES, FDIVIDE,
+  FEQ, FNEQ, FLT, FLE };
+
+enum rounding_mode_t {
+  ROUND_NEAREST, // ties to even
+  ROUND_NEAREST_AWAY_ZERO,
+  ROUND_POSITIVE,
+  ROUND_NEGATIVE,
+  ROUND_ZERO
+};
+
 enum unop_type_t {NEG, NOT};
+
+enum funop_type_t {FNEG};
 
 typedef __int64 const_val_t;
 
 enum cast_t {
-  CAST_UNSIGNED, CAST_SIGNED, CAST_HIGH, CAST_LOW,
-  CAST_FLOAT, CAST_INTEGER, CAST_RFLOAT, CAST_RINTEGER };
+  CAST_UNSIGNED, CAST_SIGNED, CAST_HIGH, CAST_LOW
+};
+
+enum fcast_t {
+  CAST_SFLOAT, CAST_UFLOAT, // signed or unsigned int to float
+  CAST_SFIX, CAST_UFIX,     // float to signed or unsigned int
+  CAST_FWIDEN, CAST_FNARROW // increase or decrease FP precision
+};
 
 enum stmt_type_t {  JMP,   CJMP, SPECIAL, MOVE,  COMMENT,  LABEL, EXPSTMT, VARDECL, CALL, RETURN, FUNCTION, ASSERT};
 
@@ -86,8 +108,13 @@ enum exp_type_t exp_type( [in] Exp e);
 enum binop_type_t binop_type([in] Exp e);
 Exp binop_lhs([in] Exp e);
 Exp binop_rhs([in] Exp e);
+enum fbinop_type_t fbinop_type([in] Exp e);
+Exp fbinop_lhs([in] Exp e);
+Exp fbinop_rhs([in] Exp e);
 enum unop_type_t unop_type([in] Exp e);
 Exp unop_subexp([in] Exp e);
+enum funop_type_t funop_type([in] Exp e);
+Exp funop_subexp([in] Exp e);
 Exp mem_addr([in] Exp e);
 enum reg_t mem_regtype([in] Exp e);
 const_val_t constant_val([in] Exp e);
@@ -101,6 +128,9 @@ enum reg_t temp_regtype([in] Exp e);
 enum reg_t cast_width([in] Exp e);
 enum cast_t cast_casttype([in] Exp e);
 Exp cast_subexp([in] Exp e);
+enum reg_t fcast_width([in] Exp e);
+enum fcast_t fcast_casttype([in] Exp e);
+Exp fcast_subexp([in] Exp e);
 [string] char* name_string([in] Exp e);
 Exp let_var([in] Exp e);
 Exp let_exp([in] Exp e);

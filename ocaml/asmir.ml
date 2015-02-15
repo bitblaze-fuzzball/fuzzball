@@ -35,6 +35,9 @@ let tr_unop = function
     Libasmir.NEG -> NEG
   | Libasmir.NOT -> NOT
 
+let tr_funop = function
+  | Libasmir.FNEG -> FNEG
+
 (** Translate a type *)
 let tr_regtype = function
     Libasmir.REG_1   -> REG_1 
@@ -108,9 +111,14 @@ let rec tr_exp g e =
     match Libasmir.exp_type e with
     | BINOP ->
 	tr_binop g (Libasmir.binop_type e) (Libasmir.binop_lhs e) (Libasmir.binop_rhs e)
+    | FBINOP ->
+	tr_fbinop g (Libasmir.fbinop_type e) (Libasmir.fbinop_lhs e) (Libasmir.fbinop_rhs e)
     | UNOP ->
         UnOp(tr_unop(Libasmir.unop_type e),
 	     tr_exp g (Libasmir.unop_subexp e) )
+    | FUNOP ->
+        FUnOp(tr_funop(Libasmir.funop_type e), ROUND_NEAREST,
+	      tr_exp g (Libasmir.funop_subexp e) )
     | CONSTANT ->
         Constant(Int (tr_regtype (constant_regtype e), 
 		      Libasmir.constant_val e))
@@ -136,12 +144,20 @@ let rec tr_exp g e =
 	 | Libasmir.CAST_SIGNED   -> Cast(CAST_SIGNED, newt, sube)
 	 | Libasmir.CAST_HIGH	   -> Cast(CAST_HIGH, newt, sube)
 	 | Libasmir.CAST_LOW	   -> Cast(CAST_LOW, newt, sube)
-	 | Libasmir.CAST_FLOAT
-	 | Libasmir.CAST_INTEGER
-	 | Libasmir.CAST_RFLOAT
-	 | Libasmir.CAST_RINTEGER ->
-	     (prerr_string "Warning: Ignoring deprecated cast type\n"; sube)
 	)
+    | FCAST ->
+        let sube = tr_exp g (fcast_subexp e) in
+        let newt = tr_regtype(fcast_width e) in
+	let vine_ct =
+	  (match fcast_casttype e with
+	     | Libasmir.CAST_SFLOAT -> CAST_SFLOAT
+	     | Libasmir.CAST_UFLOAT -> CAST_UFLOAT
+	     | Libasmir.CAST_SFIX -> CAST_SFIX
+	     | Libasmir.CAST_UFIX -> CAST_UFIX
+	     | Libasmir.CAST_FWIDEN -> CAST_FWIDEN
+	     | Libasmir.CAST_FNARROW -> CAST_FNARROW)
+	in
+	  FCast(vine_ct, ROUND_NEAREST, newt, sube)
     | NAME ->
         Name(name_string e)
     | UNKNOWN ->
@@ -234,6 +250,18 @@ and tr_binop g b lhs rhs =
 	   if needed: *)
     | Libasmir.GT	-> BinOp(LT, rhs, lhs) (* (x > y) <-> (y < x) *)
     | Libasmir.GE	-> BinOp(LE, rhs, lhs) (* (x >= y) <-> (y <= x) *)
+
+and tr_fbinop g b lhs rhs =
+  let (lhs,rhs) = (tr_exp g lhs, tr_exp g rhs) in
+  match b with
+    | Libasmir.FPLUS   -> FBinOp(FPLUS,   ROUND_NEAREST, lhs, rhs)
+    | Libasmir.FMINUS  -> FBinOp(FMINUS,  ROUND_NEAREST, lhs, rhs)
+    | Libasmir.FTIMES  -> FBinOp(FTIMES,  ROUND_NEAREST, lhs, rhs)
+    | Libasmir.FDIVIDE -> FBinOp(FDIVIDE, ROUND_NEAREST, lhs, rhs)
+    | Libasmir.FEQ     -> FBinOp(FEQ,     ROUND_NEAREST, lhs, rhs)
+    | Libasmir.FNEQ    -> FBinOp(FNEQ,    ROUND_NEAREST, lhs, rhs)
+    | Libasmir.FLT     -> FBinOp(FLT,     ROUND_NEAREST, lhs, rhs)
+    | Libasmir.FLE     -> FBinOp(FLE,     ROUND_NEAREST, lhs, rhs)
 
 (** Translate an lvalue *)
 and tr_lval g e =
