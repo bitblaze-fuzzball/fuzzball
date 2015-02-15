@@ -503,6 +503,16 @@ static Exp *translate_get_reg_32( int offset )
     return result;
 }
 
+static Exp *translate_get_reg_64( int offset )
+{
+    assert(offset >= 0);
+    Exp *result;
+
+    result = new Unknown("Unknown 64-bit register");
+
+    return result;
+}
+
 Exp *i386_translate_get( IRExpr *expr, IRSB *irbb, vector<Stmt *> *irout )
 {
     assert(expr);
@@ -527,7 +537,7 @@ Exp *i386_translate_get( IRExpr *expr, IRSB *irbb, vector<Stmt *> *irout )
         result = translate_get_reg_16(offset);
     }
 
-    else if ( type == Ity_I32 )
+    else if ( type == Ity_I32 || type == Ity_F32 )
     {
         result = translate_get_reg_32(offset);
     }
@@ -539,11 +549,9 @@ Exp *i386_translate_get( IRExpr *expr, IRSB *irbb, vector<Stmt *> *irout )
 	result = new Cast(translate_get_reg_32(offset), REG_64, CAST_UNSIGNED);
     }
 
-    else if ( type == Ity_I64 )
+    else if ( type == Ity_I64 || type == Ity_F64 )
     {
-	// We could handle this, but there shouldn't be any 64-bit integer
-	// registers.
-        result = new Unknown("register type (I64)");
+	result = translate_get_reg_64(offset);
     }
     else if ( type == Ity_F32 )
     {
@@ -1132,6 +1140,20 @@ static Stmt *translate_put_reg_32( int offset, Exp *data, IRSB *irbb )
     return st;
 }
 
+static Stmt *translate_put_reg_64(unsigned int offset, Exp *data, IRSB *irbb)
+{
+    assert(offset >= 0);
+
+    bool is_good = false;
+    string name;
+    int lane = -1;
+    // Here's where we'd support regular 64-bit registers, when we
+    // have some.
+
+    Exp::destroy(data);
+    return new Special("Unknown 64-bit register");
+}
+
 Stmt *i386_translate_put( IRStmt *stmt, IRSB *irbb, vector<Stmt *> *irout )
 {
     assert(stmt);
@@ -1165,11 +1187,16 @@ Stmt *i386_translate_put( IRStmt *stmt, IRSB *irbb, vector<Stmt *> *irout )
     }
 
     //
-    // Regular 32 bit registers
+    // 32 bit registers
     //
-    else if ( type == Ity_I32 )
+    else if ( type == Ity_I32 || type == Ity_F32 )
     {
         result = translate_put_reg_32(offset, data, irbb);
+    }
+
+    else if ( type == Ity_I64 || type == Ity_F64 )
+    {
+        result = translate_put_reg_64(offset, data, irbb);
     }
 
     else if ( offset == OFFB_LDT || offset == OFFB_GDT )
