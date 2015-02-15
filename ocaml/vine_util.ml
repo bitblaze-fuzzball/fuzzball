@@ -355,7 +355,7 @@ let wrap_f32_binop f a b =
   Int32.bits_of_float (f (Int32.float_of_bits a) (Int32.float_of_bits b))
 
 let f32_neg (rm:round_mode) = ignore(rm); wrap_f32_unop (~-.)
-let f32_eq (rm:round_mode) = ignore(rm); wrap_f32_binpred (==)
+let f32_eq (rm:round_mode) = ignore(rm); wrap_f32_binpred (=)
 let f32_ne (rm:round_mode) = ignore(rm); wrap_f32_binpred (<>)
 let f32_lt (rm:round_mode) = ignore(rm); wrap_f32_binpred (<)
 let f32_le (rm:round_mode) = ignore(rm); wrap_f32_binpred (<=)
@@ -375,7 +375,7 @@ let wrap_f64_binop f a b =
   Int64.bits_of_float (f (Int64.float_of_bits a) (Int64.float_of_bits b))
 
 let f64_neg (rm:round_mode) = ignore(rm); wrap_f64_unop (~-.)
-let f64_eq (rm:round_mode) = ignore(rm); wrap_f64_binpred (==)
+let f64_eq (rm:round_mode) = ignore(rm); wrap_f64_binpred (=)
 let f64_ne (rm:round_mode) = ignore(rm); wrap_f64_binpred (<>)
 let f64_lt (rm:round_mode) = ignore(rm); wrap_f64_binpred (<)
 let f64_le (rm:round_mode) = ignore(rm); wrap_f64_binpred (<=)
