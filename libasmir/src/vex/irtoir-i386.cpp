@@ -641,12 +641,12 @@ static Exp *translate_get_reg_64( int offset )
     case OFFB_FPREG6: name = "FPREG6"; is_good = true; break;
     case OFFB_FPREG7: name = "FPREG7"; is_good = true; break;
     default:
-	is_good = false;
-	break;
+        is_good = false;
+        break;
     }
 
     if (is_good) {
-	return mk_reg(name, REG_64);
+        return mk_reg(name, REG_64);
     }
 
     result = new Unknown("Unknown 64-bit register");
@@ -801,7 +801,6 @@ Exp *i386_translate_geti( IRExpr *expr, IRSB *irbb, vector<Stmt *> *irout )
 
     return choice;
 }
-
 
 Stmt *i386_translate_dirty( IRStmt *stmt, IRSB *irbb, vector<Stmt *> *irout )
 {
@@ -1225,19 +1224,19 @@ static Stmt *translate_put_reg_8( unsigned int offset, Exp *data, IRSB *irbb )
     }
 
     if (offset >= OFFB_FPTAG0 && offset <= OFFB_FPTAG7) {
-	switch (offset) {
-	case OFFB_FPTAG0: name = "FPTAG0"; break;
-	case OFFB_FPTAG1: name = "FPTAG1"; break;
-	case OFFB_FPTAG2: name = "FPTAG2"; break;
-	case OFFB_FPTAG3: name = "FPTAG3"; break;
-	case OFFB_FPTAG4: name = "FPTAG4"; break;
-	case OFFB_FPTAG5: name = "FPTAG5"; break;
-	case OFFB_FPTAG6: name = "FPTAG6"; break;
-	case OFFB_FPTAG7: name = "FPTAG7"; break;
-	default:
-	    assert(0);
-	}
-	return new Move(mk_reg(name, REG_8), data);
+        switch (offset) {
+        case OFFB_FPTAG0: name = "FPTAG0"; break;
+        case OFFB_FPTAG1: name = "FPTAG1"; break;
+        case OFFB_FPTAG2: name = "FPTAG2"; break;
+        case OFFB_FPTAG3: name = "FPTAG3"; break;
+        case OFFB_FPTAG4: name = "FPTAG4"; break;
+        case OFFB_FPTAG5: name = "FPTAG5"; break;
+        case OFFB_FPTAG6: name = "FPTAG6"; break;
+        case OFFB_FPTAG7: name = "FPTAG7"; break;
+        default:
+            assert(0);
+        }
+        return new Move(mk_reg(name, REG_8), data);
     }
 
     // Determine which 32 bit register this 8 bit sub
@@ -1482,12 +1481,12 @@ static Stmt *translate_put_reg_64(unsigned int offset, Exp *data, IRSB *irbb)
     case OFFB_FPREG6: name = "FPREG6"; is_good = true; break;
     case OFFB_FPREG7: name = "FPREG7"; is_good = true; break;
     default:
-	is_good = false;
-	break;
+        is_good = false;
+        break;
     }
 
     if (is_good) {
-	return new Move(mk_reg(name, REG_64), data);
+        return new Move(mk_reg(name, REG_64), data);
     }
 
     Exp::destroy(data);
@@ -1569,17 +1568,17 @@ Stmt *i386_translate_put( IRStmt *stmt, IRSB *irbb, vector<Stmt *> *irout )
         result = translate_put_reg_32(offset, data, irbb);
     }
 
+    else if ( type == Ity_I64 || type == Ity_F64 )
+    {
+        result = translate_put_reg_64(offset, data, irbb);
+    }
+
     else if ( offset == OFFB_LDT || offset == OFFB_GDT )
     {
 	// On a 64-bit host, this is 64-bit, because it has type HWord,
 	// but pretend that the register is still 32.
 	Exp *ndata = new Cast(data, REG_32, CAST_LOW);
 	result = translate_put_reg_32(offset, ndata, irbb);
-    }
-
-    else if ( type == Ity_I64 || type == Ity_F64 )
-    {
-        result = translate_put_reg_64(offset, data, irbb);
     }
 
     else if ( type == Ity_I128 || type == Ity_V128 )
