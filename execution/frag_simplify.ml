@@ -162,6 +162,15 @@ let rec simplify_rec e =
     | V.Cast(op, ty, e) ->
 	Vine_opt.constant_fold_more (fun _ -> None)
 	  (V.Cast(op, ty, simplify_rec e))
+    | V.FBinOp(op, rm, e1, e2) ->
+	Vine_opt.constant_fold_more (fun _ -> None)
+	  (V.FBinOp(op, rm, simplify_rec e1, simplify_rec e2))
+    | V.FUnOp(op, rm, e) ->
+	Vine_opt.constant_fold_more (fun _ -> None)
+	  (V.FUnOp(op, rm, simplify_rec e))
+    | V.FCast(op, rm, ty, e) ->
+	Vine_opt.constant_fold_more (fun _ -> None)
+	  (V.FCast(op, rm, ty, simplify_rec e))
     | V.Lval(lv) -> V.Lval(simplify_rec_lv lv)
     | V.Ite(ce, te, fe) ->
 	Vine_opt.constant_fold_more (fun _ -> None)

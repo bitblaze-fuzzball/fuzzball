@@ -122,10 +122,6 @@ let rec constant_fold ctx e =
 		exp_bool((to64 v1) = (to64 v2))
 	    | NEQ ->
 		exp_bool((to64 v1) <> (to64 v2))
-
-(* FIXME: Enabling these seems to break stuff.
-   Do they still? Someone uncommented them.
- *)
 	    | LSHIFT ->
 		to_val t (Int64.shift_left
 			    (to64 v1) 
@@ -138,9 +134,6 @@ let rec constant_fold ctx e =
 		to_val t (Int64.shift_right
 			    (tos64  v1)
 			    (toshift (bits_of_width t) t2 v2) )
-
-
-
    (* Int64.div rounds towards zero. What do we want? *)
 	    | DIVIDE -> to_val t (int64_udiv (tos64  v1) (tos64 v2))
 	    | SDIVIDE -> to_val t (Int64.div (tos64 v1) (tos64  v2))
@@ -150,9 +143,133 @@ let rec constant_fold ctx e =
 	    | SLE -> exp_bool(tos64  v1 <= tos64  v2)
 	    | LT -> exp_bool(int64_ucompare (to64 v1) (to64 v2) < 0)
 	    | LE -> exp_bool(int64_ucompare (to64 v1) (to64 v2) <= 0)
-
-	    (* NB: Vine_ceval assumes this covers all operators. *)
 	 )
+    (* Lots of things (Vine_ceval, FuzzBALL, etc.) assume that constant
+       folding can simplify (evaluate) any expression using constants. So
+       fail if we run into a missing case. *)
+    | BinOp(_, Constant(_), Constant(_)) ->
+	failwith "Constant folding failed for BinOp"
+    | UnOp(op, Constant(Int(t,_) as v)) ->
+	(match op with
+	    NEG -> to_val t (Int64.neg (to64  v))
+	  | NOT -> to_val t (Int64.lognot (to64  v))
+	)
+    | UnOp(_, Constant(_)) ->
+	failwith "Constant folding failed for UnOp"
+    | FBinOp((FPLUS|FMINUS|FTIMES|FDIVIDE) as bop, rm,
+	     Constant(Int(REG_32,v1)), Constant(Int(REG_32,v2))) ->
+	let f32_op =
+	  match bop with
+	    | FPLUS   -> f32_add
+	    | FMINUS  -> f32_sub
+	    | FTIMES  -> f32_mul
+	    | FDIVIDE -> f32_div
+	    | (FEQ|FNEQ|FLT|FLE) -> failwith "Can't happen"
+	in
+	let vr = Int64.of_int32 (f32_op rm (Int64.to_int32 v1)
+				   (Int64.to_int32 v2))
+	in
+	  Constant(Int(REG_32, vr))
+    | FBinOp((FEQ|FNEQ|FLT|FLE) as bop, rm,
+	     Constant(Int(REG_32,v1)), Constant(Int(REG_32,v2))) ->
+	let f32_op =
+	  match bop with
+	    | FEQ  -> f32_eq
+	    | FNEQ -> f32_ne
+	    | FLT  -> f32_lt
+	    | FLE  -> f32_le
+	    | (FPLUS|FMINUS|FTIMES|FDIVIDE) -> failwith "Can't happen"
+	in
+	  exp_bool (f32_op rm (Int64.to_int32 v1) (Int64.to_int32 v2))
+
+    | FBinOp((FPLUS|FMINUS|FTIMES|FDIVIDE) as bop, rm,
+	     Constant(Int(REG_64,v1)), Constant(Int(REG_64,v2))) ->
+	let f64_op =
+	  match bop with
+	    | FPLUS   -> f64_add
+	    | FMINUS  -> f64_sub
+	    | FTIMES  -> f64_mul
+	    | FDIVIDE -> f64_div
+	    | (FEQ|FNEQ|FLT|FLE) -> failwith "Can't happen"
+	in
+	  Constant(Int(REG_64, (f64_op rm v1 v2)))
+    | FBinOp((FEQ|FNEQ|FLT|FLE) as bop, rm,
+	     Constant(Int(REG_64,v1)), Constant(Int(REG_64,v2))) ->
+	let f64_op =
+	  match bop with
+	    | FEQ  -> f64_eq
+	    | FNEQ -> f64_ne
+	    | FLT  -> f64_lt
+	    | FLE  -> f64_le
+	    | (FPLUS|FMINUS|FTIMES|FDIVIDE) -> failwith "Can't happen"
+	in
+	  exp_bool (f64_op rm v1 v2)
+    | FBinOp(_, _, Constant(_), Constant(_)) ->
+	failwith "Constant folding failed for FBinOp"
+    | FUnOp(uop, rm, Constant(Int((REG_32|REG_64) as ty, v))) ->
+	(match (uop, ty) with
+	   | (FNEG, REG_64) -> Constant(Int(REG_64, (f64_neg rm v)))
+	   | (FNEG, REG_32) ->
+	       let vr = Int64.of_int32 (f32_neg rm (Int64.to_int32 v)) in
+		 Constant(Int(ty, vr))
+	   | (FNEG, _) -> failwith "Can't happen")
+    | FUnOp(_, _, Constant(_)) ->
+	failwith "Constant folding failed for FUnOp"
+    | Cast(ct, t2, Constant(Int(t,_) as v)) ->
+	let bits1 = bits_of_width t in
+	let bits = bits_of_width t2 in
+	(match ct with
+	    CAST_UNSIGNED ->
+	      to_val t2 (to64  v)
+	  | CAST_SIGNED ->
+	      to_val t2 (tos64  v)
+	  | CAST_HIGH ->
+     	      to_val t2
+		(Int64.shift_right 
+		    (Int64.logand (to64  v)
+			(Int64.shift_left (-1L) (bits1-bits)) )
+		    (bits1-bits) )
+	  | CAST_LOW ->
+	      to_val t2
+		(Int64.logand (to64  v)
+		    ((Int64.lognot(Int64.shift_left (-1L) bits))) )
+	)
+    | Cast(_, _, Constant(_)) ->
+	failwith "Constant folding failed for Cast"
+    | FCast((CAST_SFLOAT|CAST_UFLOAT) as ct,
+	    rm, ((REG_32|REG_64) as ty2), Constant(Int(ty1, i) as v)) ->
+	let signed = (ct = CAST_SFLOAT) in
+	let i64 = (if signed then tos64 else to64) v in
+	let f = (if signed then Int64.to_float else int64_u_to_float) i64 in
+	let i2 =
+	  match ty2 with
+	    | REG_32 -> Int64.of_int32 (Int32.bits_of_float f)
+	    | REG_64 -> Int64.bits_of_float f
+	    | _ -> failwith "Can't happen"
+	in
+	  Constant(Int(ty2, i2))
+    | FCast((CAST_SFIX|CAST_UFIX) as ct, rm, ty2,
+	    Constant(Int((REG_32|REG_64) as ty1, i))) ->
+	let signed = (ct = CAST_SFIX) in
+	let f = match ty1 with
+	  | REG_32 -> Int32.float_of_bits (Int64.to_int32 i)
+	  | REG_64 -> Int64.float_of_bits i
+	  | _ -> failwith "Can't happen"
+	in
+	let i64 = (if signed then Int64.of_float else int64_u_of_float) f in
+	  to_val ty2 i64
+    | FCast(CAST_FWIDEN, rm, REG_64, Constant(Int(REG_32, i))) ->
+	ignore(rm);
+	let f = Int32.float_of_bits (Int64.to_int32 i) in
+	let i2 = Int64.bits_of_float f in
+	  Constant(Int(REG_64, i2))
+    | FCast(CAST_FNARROW, rm, REG_32, Constant(Int(REG_64, i))) ->
+	ignore(rm);
+	let f = Int64.float_of_bits i in
+	let i2 = Int64.of_int32 (Int32.bits_of_float f) in
+	  Constant(Int(REG_32, i2))
+    | FCast(_, _, _, Constant(_)) ->
+	failwith "Constant folding failed for FCast"
     (*  some identities *)
     | BinOp(BITAND, _, (Constant(Int(_, 0L)) as c)) ->
 	c
@@ -178,11 +295,6 @@ let rec constant_fold ctx e =
 	x
     | BinOp((MOD|SMOD), x, (Constant(Int(ty, 1L)))) ->
 	Constant(Int(ty, 0L))
-    | UnOp(op, Constant(Int(t,_) as v)) ->
-	(match op with
-	    NEG -> to_val t (Int64.neg (to64  v))
-	  | NOT -> to_val t (Int64.lognot (to64  v))
-	)
     | UnOp(NOT, BinOp(PLUS, e1, Constant(Int(_, -1L)))) ->
 	UnOp(NEG, e1)
     | UnOp(NEG, UnOp(NEG, x)) ->
@@ -190,25 +302,6 @@ let rec constant_fold ctx e =
     | UnOp(NOT, UnOp(NOT, x)) ->
 	x
 
-    | Cast(ct, t2, Constant(Int(t,_) as v)) ->
-	let bits1 = bits_of_width t in
-	let bits = bits_of_width t2 in
-	(match ct with
-	    CAST_UNSIGNED ->
-	      to_val t2 (to64  v)
-	  | CAST_SIGNED ->
-	      to_val t2 (tos64  v)
-	  | CAST_HIGH ->
-     	      to_val t2
-		(Int64.shift_right 
-		    (Int64.logand (to64  v)
-			(Int64.shift_left (-1L) (bits1-bits)) )
-		    (bits1-bits) )
-	  | CAST_LOW ->
-	      to_val t2
-		(Int64.logand (to64  v)
-		    ((Int64.lognot(Int64.shift_left (-1L) bits))) )
-	)
     | Cast(ct2, w2, Cast(ct1, w1, e1)) when ct1 = ct2 ->
 	Cast(ct1, w2, e1) (* no redundant double casts *)
     (* Redundant widening inside narrowing *)
