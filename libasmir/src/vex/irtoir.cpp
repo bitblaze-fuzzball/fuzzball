@@ -106,7 +106,7 @@ vector<VarDecl *> get_reg_decls(void) {
 }
 
 // Create a statement updating EIP, or your arch's equivalent PC
-// register, to a costant value. Needs to be arch-specific because the
+// register, to a constant value. Needs to be arch-specific because the
 // size and offset of the EIP guest state may be different.
 // Note that the calling code requires the statement to be a Put.
 IRStmt *make_pc_put_stmt(VexArch arch, Addr64 addr) {
@@ -814,10 +814,10 @@ Exp *translate_simple_binop( IRExpr *expr, IRSB *irbb, vector<Stmt *> *irout )
         case Iop_DivModU64to32:     return translate_DivModU64to32(arg1, arg2);
         case Iop_DivModS64to32:     return translate_DivModS64to32(arg1, arg2);
 
-    case Iop_DivU32: return new BinOp(DIVIDE, arg1, arg2);
-    case Iop_DivS32: return new BinOp(SDIVIDE, arg1, arg2);
-    case Iop_DivU64: return new BinOp(DIVIDE, arg1, arg2);
-    case Iop_DivS64: return new BinOp(SDIVIDE, arg1, arg2);
+	case Iop_DivU32: return new BinOp(DIVIDE, arg1, arg2);
+	case Iop_DivS32: return new BinOp(SDIVIDE, arg1, arg2);
+	case Iop_DivU64: return new BinOp(DIVIDE, arg1, arg2);
+	case Iop_DivS64: return new BinOp(SDIVIDE, arg1, arg2);
         default:
             break;
     }
