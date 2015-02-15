@@ -1114,6 +1114,22 @@ static Stmt *translate_put_reg_8( unsigned int offset, Exp *data, IRSB *irbb )
 	return new Special("Unhandled store to 8-bit XMM lane");
     }
 
+    if (offset >= OFFB_FPTAG0 && offset <= OFFB_FPTAG7) {
+        switch (offset) {
+        case OFFB_FPTAG0: name = "FPTAG0"; break;
+        case OFFB_FPTAG1: name = "FPTAG1"; break;
+        case OFFB_FPTAG2: name = "FPTAG2"; break;
+        case OFFB_FPTAG3: name = "FPTAG3"; break;
+        case OFFB_FPTAG4: name = "FPTAG4"; break;
+        case OFFB_FPTAG5: name = "FPTAG5"; break;
+        case OFFB_FPTAG6: name = "FPTAG6"; break;
+        case OFFB_FPTAG7: name = "FPTAG7"; break;
+        default:
+            assert(0);
+        }
+        return new Move(mk_reg(name, REG_8), data);
+    }
+
     // Determine which 32 bit register this 8 bit sub
     // register is a part of
     switch ( offset )
