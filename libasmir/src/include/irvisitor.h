@@ -65,7 +65,9 @@ class DefaultIRVisitor : public virtual IRVisitor {
  public:
   DefaultIRVisitor() {};
   virtual void visitBinOp(BinOp *);
+  virtual void visitFBinOp(FBinOp *);
   virtual void visitUnOp(UnOp *);
+  virtual void visitFUnOp(FUnOp *);
   virtual void visitConstant(Constant *);
   virtual void visitTemp(Temp *);
   virtual void visitPhi(Phi *);
@@ -74,6 +76,7 @@ class DefaultIRVisitor : public virtual IRVisitor {
   virtual void visitMem(Mem *);
   virtual void visitUnknown(Unknown *);
   virtual void visitCast(Cast *);
+  virtual void visitFCast(FCast *);
   virtual void visitName(Name *);
   virtual void visitJmp(Jmp *);
   virtual void visitCJmp(CJmp *);

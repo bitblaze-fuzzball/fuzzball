@@ -9,7 +9,7 @@
 #include "irvisitor.h"
 
 /* defines for types which will be declared either globally for C, or 
- * whithin certain classes for C++ */
+ * within certain classes for C++ */
 // Stuff in Exp
 enum exp_type_t {
   BINOP, UNOP, CONSTANT, MEM, TEMP, PHI, CAST,
