@@ -34,8 +34,22 @@
 #define OFFB_CC_DEP2   offsetof(VexGuestX86State,guest_CC_DEP2)
 #define OFFB_CC_NDEP   offsetof(VexGuestX86State,guest_CC_NDEP)
 
-#define OFFB_FPREGS    offsetof(VexGuestX86State,guest_FPREG[0])
-#define OFFB_FPTAGS    offsetof(VexGuestX86State,guest_FPTAG[0])
+#define OFFB_FPREG0    offsetof(VexGuestX86State,guest_FPREG[0])
+#define OFFB_FPREG1    offsetof(VexGuestX86State,guest_FPREG[1])
+#define OFFB_FPREG2    offsetof(VexGuestX86State,guest_FPREG[2])
+#define OFFB_FPREG3    offsetof(VexGuestX86State,guest_FPREG[3])
+#define OFFB_FPREG4    offsetof(VexGuestX86State,guest_FPREG[4])
+#define OFFB_FPREG5    offsetof(VexGuestX86State,guest_FPREG[5])
+#define OFFB_FPREG6    offsetof(VexGuestX86State,guest_FPREG[6])
+#define OFFB_FPREG7    offsetof(VexGuestX86State,guest_FPREG[7])
+#define OFFB_FPTAG0    offsetof(VexGuestX86State,guest_FPTAG[0])
+#define OFFB_FPTAG1    offsetof(VexGuestX86State,guest_FPTAG[1])
+#define OFFB_FPTAG2    offsetof(VexGuestX86State,guest_FPTAG[2])
+#define OFFB_FPTAG3    offsetof(VexGuestX86State,guest_FPTAG[3])
+#define OFFB_FPTAG4    offsetof(VexGuestX86State,guest_FPTAG[4])
+#define OFFB_FPTAG5    offsetof(VexGuestX86State,guest_FPTAG[5])
+#define OFFB_FPTAG6    offsetof(VexGuestX86State,guest_FPTAG[6])
+#define OFFB_FPTAG7    offsetof(VexGuestX86State,guest_FPTAG[7])
 #define OFFB_DFLAG     offsetof(VexGuestX86State,guest_DFLAG)
 #define OFFB_IDFLAG    offsetof(VexGuestX86State,guest_IDFLAG)
 #define OFFB_ACFLAG    offsetof(VexGuestX86State,guest_ACFLAG)
@@ -296,8 +310,6 @@ static string reg_offset_to_name( int offset, bool *is_good )
         case OFFB_CC_DEP2:  name = "CC_DEP2";   good=true; break;
         case OFFB_CC_NDEP:  name = "CC_NDEP";   good=true; break;
 
-        case OFFB_FPREGS:   name = "FPREGS";    good=true; break;
-        case OFFB_FPTAGS:   name = "FPTAGS";    good=true; break;
         case OFFB_DFLAG:    name = "DFLAG";     good=true; break;
         case OFFB_IDFLAG:   name = "IDFLAG";    good=true; break;
         case OFFB_ACFLAG:   name = "ACFLAG";    good=true; break;
@@ -397,6 +409,22 @@ static Exp *translate_get_reg_8( unsigned int offset )
     if (offset >= OFFB_XMM0 && offset < OFFB_XMM7+16) {
 	// SSE sub-register: not supported.
 	return new Unknown("Unhandled 8-bit XMM lane");
+    }
+
+    if (offset >= OFFB_FPTAG0 && offset <= OFFB_FPTAG7) {
+	switch (offset) {
+	case OFFB_FPTAG0: name = "FPTAG0"; break;
+	case OFFB_FPTAG1: name = "FPTAG1"; break;
+	case OFFB_FPTAG2: name = "FPTAG2"; break;
+	case OFFB_FPTAG3: name = "FPTAG3"; break;
+	case OFFB_FPTAG4: name = "FPTAG4"; break;
+	case OFFB_FPTAG5: name = "FPTAG5"; break;
+	case OFFB_FPTAG6: name = "FPTAG6"; break;
+	case OFFB_FPTAG7: name = "FPTAG7"; break;
+	default:
+	    assert(0);
+	}
+	return mk_reg(name, REG_8);
     }
 
     // Determine which 32 bit register this 8 bit sub
@@ -506,7 +534,28 @@ static Exp *translate_get_reg_32( int offset )
 static Exp *translate_get_reg_64( int offset )
 {
     assert(offset >= 0);
+
+    bool is_good = false;
+    string name;
     Exp *result;
+
+    switch (offset) {
+    case OFFB_FPREG0: name = "FPREG0"; is_good = true; break;
+    case OFFB_FPREG1: name = "FPREG1"; is_good = true; break;
+    case OFFB_FPREG2: name = "FPREG2"; is_good = true; break;
+    case OFFB_FPREG3: name = "FPREG3"; is_good = true; break;
+    case OFFB_FPREG4: name = "FPREG4"; is_good = true; break;
+    case OFFB_FPREG5: name = "FPREG5"; is_good = true; break;
+    case OFFB_FPREG6: name = "FPREG6"; is_good = true; break;
+    case OFFB_FPREG7: name = "FPREG7"; is_good = true; break;
+    default:
+        is_good = false;
+        break;
+    }
+
+    if (is_good) {
+        return mk_reg(name, REG_64);
+    }
 
     result = new Unknown("Unknown 64-bit register");
 
@@ -577,6 +626,71 @@ Exp *i386_translate_get( IRExpr *expr, IRSB *irbb, vector<Stmt *> *irout )
     }
 
     return result;
+}
+
+Exp *i386_translate_geti( IRExpr *expr, IRSB *irbb, vector<Stmt *> *irout )
+{
+    assert(expr);
+    assert(irbb);
+    assert(irout);
+
+    IRType type = typeOfIRExpr(irbb->tyenv, expr);
+    IRRegArray* descr = expr->Iex.GetI.descr;
+    IRExpr *ix = expr->Iex.GetI.ix;
+    int bias = expr->Iex.GetI.bias;
+    int elt_size;
+    reg_t elt_t;
+
+    assert(type == descr->elemTy);
+    if (descr->base == OFFB_FPREG0 && descr->elemTy == Ity_F64 &&
+	descr->nElems == 8) {
+	/* x87 FP registers, in VEX's 64-bit simulation */
+	elt_size = 8;
+	elt_t = REG_64;
+    } else if (descr->base == OFFB_FPTAG0 && descr->elemTy == Ity_I8 &&
+	descr->nElems == 8) {
+	/* In-use tags for x87 FP registers */
+	elt_size = 1;
+	elt_t = REG_8;
+    } else {
+	return new Unknown("Unrecognized GetI region");
+    }
+
+    int mask = descr->nElems - 1; /* NB must be a power of two */
+    Exp *ix_e = translate_expr(ix, irbb, irout);
+    Exp *index_e = _ex_and(_ex_add(ix_e, ex_const(bias)), ex_const(mask));
+
+    Exp **gets = (Exp **)malloc(descr->nElems * sizeof(Exp *));
+    for (int i = 0; i < descr->nElems; i++) {
+	if (elt_size == 1) {
+	    gets[i] = translate_get_reg_8(descr->base + i * elt_size);
+	} else if (elt_size == 8) {
+	    gets[i] = translate_get_reg_64(descr->base + i * elt_size);
+	}
+    }
+
+    /* Generate a tree of if-then-else choices */
+    assert(descr->nElems == 8);
+    Temp *cond_temp = mk_temp(REG_32, irout);
+    irout->push_back(new Move(cond_temp, index_e));
+    Exp *sel0_exp = ex_l_cast(cond_temp, REG_1);
+    Temp *sel0_temp = mk_temp(REG_1, irout);
+    irout->push_back(new Move(sel0_temp, sel0_exp));
+    Exp *sel1_exp = ex_get_bit(cond_temp, 1);
+    Temp *sel1_temp = mk_temp(REG_1, irout);
+    irout->push_back(new Move(sel1_temp, sel1_exp));
+    Exp *sel2_exp = ex_get_bit(cond_temp, 2);
+    Exp *choice01 = emit_ite(irout, elt_t, ecl(sel0_temp), gets[1], gets[0]);
+    Exp *choice23 = emit_ite(irout, elt_t, ecl(sel0_temp), gets[3], gets[2]);
+    Exp *choice45 = emit_ite(irout, elt_t, ecl(sel0_temp), gets[5], gets[4]);
+    Exp *choice67 = emit_ite(irout, elt_t, ecl(sel0_temp), gets[7], gets[6]);
+    Exp *choice03 = emit_ite(irout, elt_t, ecl(sel1_temp), choice23, choice01);
+    Exp *choice47 = emit_ite(irout, elt_t, ecl(sel1_temp), choice67, choice45);
+    Exp *choice = emit_ite(irout, elt_t, sel2_exp, choice47, choice03);
+
+    free(gets);
+
+    return choice;
 }
 
 Stmt *i386_translate_dirty( IRStmt *stmt, IRSB *irbb, vector<Stmt *> *irout )
@@ -1146,9 +1260,24 @@ static Stmt *translate_put_reg_64(unsigned int offset, Exp *data, IRSB *irbb)
 
     bool is_good = false;
     string name;
-    int lane = -1;
-    // Here's where we'd support regular 64-bit registers, when we
-    // have some.
+
+    switch (offset) {
+    case OFFB_FPREG0: name = "FPREG0"; is_good = true; break;
+    case OFFB_FPREG1: name = "FPREG1"; is_good = true; break;
+    case OFFB_FPREG2: name = "FPREG2"; is_good = true; break;
+    case OFFB_FPREG3: name = "FPREG3"; is_good = true; break;
+    case OFFB_FPREG4: name = "FPREG4"; is_good = true; break;
+    case OFFB_FPREG5: name = "FPREG5"; is_good = true; break;
+    case OFFB_FPREG6: name = "FPREG6"; is_good = true; break;
+    case OFFB_FPREG7: name = "FPREG7"; is_good = true; break;
+    default:
+        is_good = false;
+        break;
+    }
+
+    if (is_good) {
+        return new Move(mk_reg(name, REG_64), data);
+    }
 
     Exp::destroy(data);
     return new Special("Unknown 64-bit register");
@@ -1216,7 +1345,70 @@ Stmt *i386_translate_put( IRStmt *stmt, IRSB *irbb, vector<Stmt *> *irout )
     return result;
 }
 
+Stmt *i386_translate_puti( IRStmt *stmt, IRSB *irbb, vector<Stmt *> *irout )
+{
+    assert(stmt);
+    assert(irbb);
+    assert(irout);
 
+    IRRegArray* descr = stmt->Ist.PutI.details->descr;
+    IRExpr *ix = stmt->Ist.PutI.details->ix;
+    int bias = stmt->Ist.PutI.details->bias;
+    int elt_size;
+    reg_t elt_t;
+
+    Exp *data = translate_expr(stmt->Ist.PutI.details->data, irbb, irout);
+
+    if (descr->base == OFFB_FPREG0 && descr->elemTy == Ity_F64 &&
+        descr->nElems == 8) {
+        /* x87 FP registers, in VEX's 64-bit simulation */
+        elt_size = 8;
+        elt_t = REG_64;
+    } else if (descr->base == OFFB_FPTAG0 && descr->elemTy == Ity_I8 &&
+        descr->nElems == 8) {
+        /* In-use tags for x87 FP registers */
+        elt_size = 1;
+        elt_t = REG_8;
+    } else {
+        return new ExpStmt(new Unknown("Unrecognized PutI region"));
+    }
+
+    int mask = descr->nElems - 1;
+    Exp *ix_e = translate_expr(ix, irbb, irout);
+    Exp *index_e = _ex_and(_ex_add(ix_e, ex_const(bias)), ex_const(mask));
+    Temp *index_temp = mk_temp(REG_ADDRESS_T, irout);
+    irout->push_back(new Move(index_temp, index_e));
+
+    Stmt *last_stmt = 0;
+    for (int i = 0; i < descr->nElems; i++) {
+	if (last_stmt) {
+	    irout->push_back(last_stmt);
+	}
+	Exp *get = 0;
+	int offset = descr->base + i * elt_size;
+        if (elt_size == 1) {
+            get = translate_get_reg_8(offset);
+        } else if (elt_size == 8) {
+            get = translate_get_reg_64(offset);
+        } else {
+	    assert(0);
+	}
+	Exp *sel = _ex_eq(ecl(index_temp), ex_const(i));
+	Exp *data_clone = last_stmt ? ecl(data) : data;
+	Exp *maybe_up = emit_ite(irout, elt_t, sel, data_clone, get);
+	Stmt *put;
+	if (elt_size == 1) {
+	    put = translate_put_reg_8(offset, maybe_up, irbb);
+	} else if (elt_size == 8) {
+	    put = translate_put_reg_64(offset, maybe_up, irbb);
+	} else {
+	    assert(0);
+	}
+	last_stmt = put;
+    }
+    assert(last_stmt);
+    return last_stmt;
+}
 
 
 

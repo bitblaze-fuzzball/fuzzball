@@ -484,6 +484,24 @@ let x86_regs : decl list =
   ("R_FTOP", REG_32);
   ("R_FPROUND", REG_32);
   ("R_FC3210", REG_32);
+  (* main x87 FP registers, pretending they're 64-bit as VEX does *)
+  ("R_FPREG0", REG_64);
+  ("R_FPREG1", REG_64);
+  ("R_FPREG2", REG_64);
+  ("R_FPREG3", REG_64);
+  ("R_FPREG4", REG_64);
+  ("R_FPREG5", REG_64);
+  ("R_FPREG6", REG_64);
+  ("R_FPREG7", REG_64);
+  (* In-use tags for the above *)
+  ("R_FPTAG0", REG_8);
+  ("R_FPTAG1", REG_8);
+  ("R_FPTAG2", REG_8);
+  ("R_FPTAG3", REG_8);
+  ("R_FPTAG4", REG_8);
+  ("R_FPTAG5", REG_8);
+  ("R_FPTAG6", REG_8);
+  ("R_FPTAG7", REG_8);
 
   (* SIMD instructions *)
   ("R_SSEROUND", REG_32);

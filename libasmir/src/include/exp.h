@@ -439,6 +439,8 @@ FCast *ex_fs_cast( Exp *arg, reg_t width );
 FCast *ex_fu_cast( Exp *arg, reg_t width );
 Ite *ex_ite( Exp *cond, Exp *t, Exp *f );
 Ite *_ex_ite( Exp *cond, Exp *t, Exp *f );
+Exp *_ex_get_bit(Exp *e, int which);
+Exp *ex_get_bit(Exp *e, int which);
 
 extern "C" {
 #endif // def __cplusplus

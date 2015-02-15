@@ -20,6 +20,11 @@ type register_name =
   | R_DFLAG | R_IDFLAG | R_ACFLAG
   | R_CS | R_DS| R_ES | R_FS | R_GS | R_SS
   | R_FTOP | R_FPROUND | R_FC3210 | R_SSEROUND 
+  (* x87 FP, currently only supported on x86: *)
+  | R_FPREG0 | R_FPREG1 | R_FPREG2 | R_FPREG3
+  | R_FPREG4 | R_FPREG5 | R_FPREG6 | R_FPREG7
+  | R_FPTAG0 | R_FPTAG1 | R_FPTAG2 | R_FPTAG3
+  | R_FPTAG4 | R_FPTAG5 | R_FPTAG6 | R_FPTAG7
   (* x86 *)
   | R_EBP | R_ESP | R_ESI | R_EDI | R_EIP | R_EAX | R_EBX | R_ECX | R_EDX
   | EFLAGSREST | R_LDT | R_GDT 

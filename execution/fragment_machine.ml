@@ -54,6 +54,11 @@ type register_name =
   | R_DFLAG | R_IDFLAG | R_ACFLAG
   | R_CS | R_DS| R_ES | R_FS | R_GS | R_SS
   | R_FTOP | R_FPROUND | R_FC3210 | R_SSEROUND 
+  (* x87 FP, currently only supported on x86: *)
+  | R_FPREG0 | R_FPREG1 | R_FPREG2 | R_FPREG3
+  | R_FPREG4 | R_FPREG5 | R_FPREG6 | R_FPREG7
+  | R_FPTAG0 | R_FPTAG1 | R_FPTAG2 | R_FPTAG3
+  | R_FPTAG4 | R_FPTAG5 | R_FPTAG6 | R_FPTAG7
   (* x86 *)
   | R_EBP | R_ESP | R_ESI | R_EDI | R_EIP | R_EAX | R_EBX | R_ECX | R_EDX
   | EFLAGSREST | R_LDT | R_GDT 
@@ -92,6 +97,14 @@ let reg_to_regstr reg = match reg with
   | R_LDT -> "R_LDT" | R_GDT -> "R_GDT" | R_CS -> "R_CS" | R_DS -> "R_DS"
   | R_ES -> "R_ES" | R_FS -> "R_FS" | R_GS -> "R_GS"| R_SS -> "R_SS"
   | R_FTOP -> "R_FTOP" | R_FPROUND -> "R_FPROUND" | R_FC3210  -> "R_FC3210"
+  | R_FPREG0 -> "R_FPREG0" | R_FPREG1 -> "R_FPREG1"
+  | R_FPREG2 -> "R_FPREG2" | R_FPREG3 -> "R_FPREG3"
+  | R_FPREG4 -> "R_FPREG4" | R_FPREG5 -> "R_FPREG5"
+  | R_FPREG6 -> "R_FPREG6" | R_FPREG7 -> "R_FPREG7"
+  | R_FPTAG0 -> "R_FPTAG0" | R_FPTAG1 -> "R_FPTAG1"
+  | R_FPTAG2 -> "R_FPTAG2" | R_FPTAG3 -> "R_FPTAG3"
+  | R_FPTAG4 -> "R_FPTAG4" | R_FPTAG5 -> "R_FPTAG5"
+  | R_FPTAG6 -> "R_FPTAG6" | R_FPTAG7 -> "R_FPTAG7"
   | R_SSEROUND -> "R_SSEROUND" | R_IP_AT_SYSCALL -> "R_IP_AT_SYSCALL"
   | R0  ->  "R0" | R1  ->  "R1" |  R2 ->  "R2" | R3  -> "R3"
   | R4  ->  "R4" | R5  ->  "R5" |  R6 ->  "R6" | R7  -> "R7"
@@ -133,6 +146,14 @@ let regstr_to_reg s = match s with
   | "R_LDT" -> R_LDT | "R_GDT" -> R_GDT | "R_CS" -> R_CS | "R_DS" -> R_DS
   | "R_ES" -> R_ES | "R_FS" -> R_FS | "R_GS" -> R_GS| "R_SS" -> R_SS
   | "R_FTOP" -> R_FTOP | "R_FPROUND" -> R_FPROUND | "R_FC3210"  -> R_FC3210
+  | "R_FPREG0" -> R_FPREG0 | "R_FPREG1" -> R_FPREG1
+  | "R_FPREG2" -> R_FPREG2 | "R_FPREG3" -> R_FPREG3
+  | "R_FPREG4" -> R_FPREG4 | "R_FPREG5" -> R_FPREG5
+  | "R_FPREG6" -> R_FPREG6 | "R_FPREG7" -> R_FPREG7
+  | "R_FPTAG0" -> R_FPTAG0 | "R_FPTAG1" -> R_FPTAG1
+  | "R_FPTAG2" -> R_FPTAG2 | "R_FPTAG3" -> R_FPTAG3
+  | "R_FPTAG4" -> R_FPTAG4 | "R_FPTAG5" -> R_FPTAG5
+  | "R_FPTAG6" -> R_FPTAG6 | "R_FPTAG7" -> R_FPTAG7
   | "R_SSEROUND" -> R_SSEROUND | "R_IP_AT_SYSCALL" -> R_IP_AT_SYSCALL
   | "R0"  ->  R0 | "R1"  ->  R1 |  "R2" ->  R2 | "R3"  -> R3
   | "R4"  ->  R4 | "R5"  ->  R5 |  "R6" ->  R6 | "R7"  -> R7
@@ -629,7 +650,24 @@ struct
 	reg R_SF (D.from_concrete_1 0);
 	reg R_OF (D.from_concrete_1 0);
 	reg R_ZF (D.from_concrete_1 0);
-	reg R_FTOP (D.from_concrete_32 0L);	
+	reg R_FTOP (D.from_concrete_32 0L);
+	reg R_FC3210 (D.from_concrete_32 0L);
+	reg R_FPREG0 (D.from_concrete_64 0L);
+	reg R_FPREG1 (D.from_concrete_64 0L);
+	reg R_FPREG2 (D.from_concrete_64 0L);
+	reg R_FPREG3 (D.from_concrete_64 0L);
+	reg R_FPREG4 (D.from_concrete_64 0L);
+	reg R_FPREG5 (D.from_concrete_64 0L);
+	reg R_FPREG6 (D.from_concrete_64 0L);
+	reg R_FPREG7 (D.from_concrete_64 0L);
+	reg R_FPTAG0 (D.from_concrete_8 0);
+	reg R_FPTAG1 (D.from_concrete_8 0);
+	reg R_FPTAG2 (D.from_concrete_8 0);
+	reg R_FPTAG3 (D.from_concrete_8 0);
+	reg R_FPTAG4 (D.from_concrete_8 0);
+	reg R_FPTAG5 (D.from_concrete_8 0);
+	reg R_FPTAG6 (D.from_concrete_8 0);
+	reg R_FPTAG7 (D.from_concrete_8 0);
 	reg EFLAGSREST (D.from_concrete_32 0L);
 	reg R_LDT (D.from_concrete_32 0x00000000L);
 	reg R_GDT (D.from_concrete_32 0x00000000L);
@@ -670,6 +708,7 @@ struct
 	reg R_OF (D.from_concrete_1 0);
 	reg R_ZF (D.from_concrete_1 0);
 	reg R_FTOP (D.from_concrete_32 0L);	
+	reg R_FC3210 (D.from_concrete_32 0L);
 	reg R_RFLAGSREST (D.from_concrete_64 0L);
 	reg R_DFLAG (D.from_concrete_64 1L);
 	reg R_IDFLAG (D.from_concrete_64 0L);
@@ -747,6 +786,23 @@ struct
 	reg R_ZF (D.from_concrete_1 0);
 	(* reg EFLAGSREST (form_man#fresh_symbolic_32 "initial_eflagsrest");*)
 	reg R_FTOP (D.from_concrete_32 0L);
+	reg R_FC3210 (D.from_concrete_32 0L);
+	reg R_FPREG0 (D.from_concrete_64 0L);
+	reg R_FPREG1 (D.from_concrete_64 0L);
+	reg R_FPREG2 (D.from_concrete_64 0L);
+	reg R_FPREG3 (D.from_concrete_64 0L);
+	reg R_FPREG4 (D.from_concrete_64 0L);
+	reg R_FPREG5 (D.from_concrete_64 0L);
+	reg R_FPREG6 (D.from_concrete_64 0L);
+	reg R_FPREG7 (D.from_concrete_64 0L);
+	reg R_FPTAG0 (D.from_concrete_8 0);
+	reg R_FPTAG1 (D.from_concrete_8 0);
+	reg R_FPTAG2 (D.from_concrete_8 0);
+	reg R_FPTAG3 (D.from_concrete_8 0);
+	reg R_FPTAG4 (D.from_concrete_8 0);
+	reg R_FPTAG5 (D.from_concrete_8 0);
+	reg R_FPTAG6 (D.from_concrete_8 0);
+	reg R_FPTAG7 (D.from_concrete_8 0);
 	(* Linux user space CS segment: *)
 	self#store_byte_conc 0x60000020L 0xff;
 	self#store_byte_conc 0x60000021L 0xff;
@@ -851,6 +907,7 @@ struct
 	reg R_OF (D.from_concrete_1 0);
 	reg R_ZF (D.from_concrete_1 0);
 	reg R_FTOP (D.from_concrete_32 0L);
+	reg R_FC3210 (D.from_concrete_32 0L);
 
     method private make_arm_regs_symbolic =
       let reg r v =
@@ -922,6 +979,29 @@ struct
 	  (D.to_string_1 
 	     (self#get_int_var (Hashtbl.find reg_to_var r)))
 
+    method private print_reg64 str r =
+	Printf.printf "%s: " str;
+	Printf.printf "%s\n"
+	  (D.to_string_64
+	     (self#get_int_var (Hashtbl.find reg_to_var r)))
+
+    method private print_x87_fpreg idx reg tag =
+      let val_d = self#get_int_var (Hashtbl.find reg_to_var reg) in
+      let as_float = try
+	let f = Int64.float_of_bits (D.to_concrete_64 val_d) in
+	  Printf.sprintf " (%.30g)" f;
+      with
+	| NotConcrete(_) -> ""
+      in
+	(Printf.printf "FP%d[%s]: %s%s\n" idx
+	   (D.to_string_8
+	      (self#get_int_var (Hashtbl.find reg_to_var tag)))
+	   (D.to_string_64 val_d)) as_float
+
+    method private print_reg128 str rh rl =
+      Printf.printf "%s: " str;
+      Printf.printf "%s %s\n"
+
     method private print_x86_regs =
       self#print_reg32 "%eax" R_EAX;
       self#print_reg32 "%ebx" R_EBX;
@@ -937,13 +1017,17 @@ struct
       self#print_reg1 "ZF" R_ZF;
       self#print_reg1 "SF" R_SF;
       self#print_reg1 "OF" R_OF;
+      self#print_reg32 "FTOP" R_FTOP;
+      self#print_reg32 "FC3210" R_FC3210;
+      self#print_x87_fpreg 0 R_FPREG0 R_FPTAG0;
+      self#print_x87_fpreg 1 R_FPREG1 R_FPTAG1;
+      self#print_x87_fpreg 2 R_FPREG2 R_FPTAG2;
+      self#print_x87_fpreg 3 R_FPREG3 R_FPTAG3;
+      self#print_x87_fpreg 4 R_FPREG4 R_FPTAG4;
+      self#print_x87_fpreg 5 R_FPREG5 R_FPTAG5;
+      self#print_x87_fpreg 6 R_FPREG6 R_FPTAG6;
+      self#print_x87_fpreg 7 R_FPREG7 R_FPTAG7;
       ()
-
-    method private print_reg64 str r = 
-	Printf.printf "%s: " str;
-	Printf.printf "%s\n"
-	  (D.to_string_64
-	     (self#get_int_var (Hashtbl.find reg_to_var r)))
 
     method private print_x64_regs =
       self#print_reg64 "%rax" R_RAX;
@@ -1007,6 +1091,10 @@ struct
       let var = Hashtbl.find reg_to_var r in
 	self#set_int_var var (form_man#simplify1 (self#get_int_var var))
 
+    method private simplify_reg8 r =
+      let var = Hashtbl.find reg_to_var r in
+	self#set_int_var var (form_man#simplify8 (self#get_int_var var))
+
     method private simplify_reg64 r =
       let var = Hashtbl.find reg_to_var r in
 	self#set_int_var var (form_man#simplify64 (self#get_int_var var))
@@ -1026,6 +1114,22 @@ struct
       self#simplify_reg1 R_ZF;
       self#simplify_reg1 R_SF;
       self#simplify_reg1 R_OF;
+      self#simplify_reg64 R_FPREG0;
+      self#simplify_reg64 R_FPREG1;
+      self#simplify_reg64 R_FPREG2;
+      self#simplify_reg64 R_FPREG3;
+      self#simplify_reg64 R_FPREG4;
+      self#simplify_reg64 R_FPREG5;
+      self#simplify_reg64 R_FPREG6;
+      self#simplify_reg64 R_FPREG7;
+      self#simplify_reg8 R_FPTAG0;
+      self#simplify_reg8 R_FPTAG1;
+      self#simplify_reg8 R_FPTAG2;
+      self#simplify_reg8 R_FPTAG3;
+      self#simplify_reg8 R_FPTAG4;
+      self#simplify_reg8 R_FPTAG5;
+      self#simplify_reg8 R_FPTAG6;
+      self#simplify_reg8 R_FPTAG7;
       ()
 
     method private simplify_x64_regs =

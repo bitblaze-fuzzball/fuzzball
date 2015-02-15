@@ -1282,3 +1282,11 @@ Ite *_ex_ite( Exp *c, Exp *t, Exp *f) {
 Ite *ex_ite( Exp *c, Exp *t, Exp *f) {
     return _ex_ite(c->clone(), t->clone(), f->clone());
 }
+
+Exp *_ex_get_bit(Exp *e, int which) {
+    return _ex_l_cast(_ex_shr(e, ex_const(REG_32, which)), REG_1);
+}
+
+Exp *ex_get_bit(Exp *e, int which) {
+    return _ex_get_bit(ecl(e), which);
+}
