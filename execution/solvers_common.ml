@@ -10,6 +10,7 @@ type external_solver_type =
   | CVC4
   | BOOLECTOR
   | Z3
+  | MATHSAT
 
 let map_lines f chan =
   let results = ref [] in
@@ -222,11 +223,44 @@ let parse_z3_ce_line s v =
 	  Printf.printf "Parse failure on <%s>\n" s;
 	  failwith "Unhandled loop case in parse_z3_ce_line"
 
+(* MathSAT's output is multi-line like Z3's, though it's simpler in some
+   other ways. *)
+let parse_mathsat_ce_line s v =
+  let len = String.length s in
+    match (s, v) with
+      | (s, None) when len > 4 &&
+	  (String.sub s 0 3 = "  (" || String.sub s 0 3 = "( (") ->
+	let varname = String.sub s 3 (len - 3) in
+	  (No_CE_here, Some (smtlib_rename_var varname))
+      | (s, Some varname) when len > 6 && String.sub s 0 6 = " (_ bv" ->
+	  let s2 = String.sub s 6 (len - 6) in
+	  let num_end = String.index s2 ' ' in
+	  let num_str = String.sub s2 0 num_end in
+	  let v = Vine_util.int64_u_of_string num_str in
+	    (Assignment (varname, v), None)
+      | (" true", Some varname)  -> (Assignment (varname, 1L), None)
+      | (" false", Some varname) -> (Assignment (varname, 0L), None)
+      | (s, Some varname) when len > 9 &&
+	  (String.sub s 0 5 = " (fp " ||
+	      String.sub s 0 8 = " (_ +oo " ||
+	      String.sub s 0 8 = " (_ -oo " ||
+	      String.sub s 0 8 = " (_ NaN " ||
+	      String.sub s 0 9 = " (_ +zero" ||
+	      String.sub s 0 9 = " (_ -zero") ->
+	  (* Skip FP values *)
+	  (No_CE_here, None)
+      | (")", None) -> (No_CE_here, None)
+      | (") )", None) -> (End_of_CE, None)
+      | (s, _) ->
+	  Printf.printf "Parse failure on <%s>\n" s;
+	  failwith "Unhandled loop case in parse_mathsat_ce_line"
+
 let parse_ce e_s_t =
   match e_s_t with
     | (STP_CVC|STP_SMTLIB2) -> parse_stp_ce e_s_t
     | CVC4 -> parse_cvc4_ce
     | Z3 -> failwith "Z3 unsupported in parse_ce"
+    | MATHSAT -> failwith "MathSAT unsupported in parse_ce"
     | BOOLECTOR -> parse_btor_ce
 
 let create_temp_dir prefix =
