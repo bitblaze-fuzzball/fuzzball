@@ -598,6 +598,10 @@ object (self)
 	  unknown_counter <- unknown_counter + 1;
 	  DoChildren
       | Name _ -> raise (Invalid_argument "Names should be here") 
+      | FUnOp(_, _, _)
+      | FBinOp(_, _, _, _)
+      | FCast(_, _, _, _)
+	-> raise (Invalid_argument "STP does not support floating point")
 
 (*
       | Name of string

@@ -188,12 +188,15 @@ let rec simplify_fp e =
 let rec expr_size e =
   match e with
     | V.BinOp(_, e1, e2) -> 1 + (expr_size e1) + (expr_size e2)
+    | V.FBinOp(_, _, e1, e2) -> 1 + (expr_size e1) + (expr_size e2)
     | V.UnOp(_, e1) -> 1 + (expr_size e1)
+    | V.FUnOp(_, _, e1) -> 1 + (expr_size e1)
     | V.Constant(_) -> 1
     | V.Lval(V.Temp(_)) -> 2
     | V.Lval(V.Mem(_, e1, _)) -> 2 + (expr_size e1)
     | V.Name(_) -> 1
     | V.Cast(_, _, e1) -> 1 + (expr_size e1)
+    | V.FCast(_, _, _, e1) -> 1 + (expr_size e1)
     | V.Unknown(_) -> 1
     | V.Let(V.Temp(_), e1, e2) -> 2 + (expr_size e1) + (expr_size e2)
     | V.Let(V.Mem(_,e0,_), e1, e2) ->
@@ -240,6 +243,9 @@ let rec cfold_with_type e =
     | V.UnOp(op, e1) ->
 	let (e1', ty1) = cfold_with_type e1 in
 	  (V.UnOp(op, e1'), ty1)
+    | V.FUnOp(op, rm, e1) ->
+	let (e1', ty1) = cfold_with_type e1 in
+	  (V.FUnOp(op, rm, e1'), ty1)
     | V.BinOp(op, e1, e2) ->
 	let (e1', ty1) = cfold_with_type e1 and
 	    (e2', ty2) = cfold_with_type e2 in
@@ -255,6 +261,17 @@ let rec cfold_with_type e =
 		 -> assert(ty1 = ty2); V.REG_1)
 	in
 	  (V.BinOp(op, e1', e2'), ty)
+    | V.FBinOp(op, rm, e1, e2) ->
+	let (e1', ty1) = cfold_with_type e1 and
+	    (e2', ty2) = cfold_with_type e2 in
+	let ty =
+	  (match op with
+	     | V.FPLUS | V.FMINUS | V.FTIMES | V.FDIVIDE
+		 -> assert(ty1 = ty2); ty1
+	     | V.FEQ | V.FNEQ | V.FLT | V.FLE
+		 -> assert(ty1 = ty2); V.REG_1)
+	in
+	  (V.FBinOp(op, rm, e1', e2'), ty)
     | V.Constant(V.Int(ty, _)) -> (e, ty)
     | V.Constant(V.Str(_)) -> (e, V.TString)
     | V.Lval(V.Temp(_,_,ty)) -> (e, ty)
@@ -265,6 +282,10 @@ let rec cfold_with_type e =
     | V.Cast(kind, ty, e1) ->
 	let (e1', ty1) = cfold_with_type e1 in
 	let e' = if ty = ty1 then e1' else V.Cast(kind, ty, e1') in
+	  (e', ty)
+    | V.FCast(kind, rm, ty, e1) ->
+	let (e1', ty1) = cfold_with_type e1 in
+	let e' = V.FCast(kind, rm, ty, e1') in
 	  (e', ty)
     | V.Unknown("rdtsc") -> (e, V.REG_64)
     | V.Unknown("Unknown: Dirty") ->
@@ -361,8 +382,11 @@ let rm_unused_labels sl =
 let rec count_uses_e var e =
   match e with
     | V.BinOp(_, e1, e2) -> (count_uses_e var e1) + (count_uses_e var e2)
+    | V.FBinOp(_,_, e1, e2) -> (count_uses_e var e1) + (count_uses_e var e2)
     | V.UnOp(_, e) -> count_uses_e var e
+    | V.FUnOp(_, _, e) -> count_uses_e var e
     | V.Cast(_, _, e) -> count_uses_e var e
+    | V.FCast(_, _, _, e) -> count_uses_e var e
     | V.Lval(lv) -> count_uses_lv var lv
     | V.Let(lv, e1, e2) ->
 	(count_uses_lv var lv) + (count_uses_e var e1) + (count_uses_e var e2)
@@ -433,10 +457,16 @@ let copy_const_prop (dl, sl) =
     match expr with
       | V.BinOp(op, e1, e2) ->
 	  V.BinOp(op, replace_uses_e e1, replace_uses_e e2)
+      | V.FBinOp(op, rm, e1, e2) ->
+	  V.FBinOp(op, rm, replace_uses_e e1, replace_uses_e e2)
       | V.UnOp(op, e) ->
 	  V.UnOp(op, replace_uses_e e)
+      | V.FUnOp(op, rm, e) ->
+	  V.FUnOp(op, rm, replace_uses_e e)
       | V.Cast(op, ty, e) ->
 	  V.Cast(op, ty, replace_uses_e e)
+      | V.FCast(op, rm, ty, e) ->
+	  V.FCast(op, rm, ty, replace_uses_e e)
       | V.Lval(V.Temp(v)) when V.VarHash.mem map v ->
 	  V.VarHash.find map v
       | V.Lval(V.Temp(_)) ->
@@ -516,8 +546,11 @@ let copy_const_prop (dl, sl) =
 let rec rm_set_used_e hash e =
   match e with
     | V.BinOp(_, e1, e2) -> (rm_set_used_e hash e1); (rm_set_used_e hash e2)
+    | V.FBinOp(_,_, e1, e2) -> (rm_set_used_e hash e1); (rm_set_used_e hash e2)
     | V.UnOp(_, e) -> rm_set_used_e hash e
+    | V.FUnOp(_, _, e) -> rm_set_used_e hash e
     | V.Cast(_, _, e) -> rm_set_used_e hash e
+    | V.FCast(_, _, _, e) -> rm_set_used_e hash e
     | V.Lval(lv) -> rm_set_used_lv hash lv
     | V.Let(lv, e1, e2) ->
 	(rm_set_used_lv hash lv) ;
@@ -632,8 +665,11 @@ let split_divmod (dl, sl) =
 	let (div_var, _) = V.VarHash.find vars t1 in
 	  V.Lval(V.Temp(div_var))
     | V.Cast(_, _, _) as other -> other
+    | V.FCast(_, _, _, _) as other -> other
     | V.BinOp(op, e1, e2) -> V.BinOp(op, (walk e1), (walk e2))
+    | V.FBinOp(_, _, _, _) as other -> other
     | V.UnOp(op, e1) -> V.UnOp(op, (walk e1))
+    | V.FUnOp(_, _, _) as other -> other
     | V.Let(lv, e1, e2) -> V.Let(lv, (walk e1), (walk e2))
     | V.Ite(ce, te, fe) -> V.Ite((walk ce), (walk te), (walk fe))
     | V.Unknown(_) as other -> other
@@ -704,9 +740,16 @@ let lets_to_moves (dl, sl) =
 	let (bl1, e1') = expr_loop e1 in
 	let (bl2, e2') = expr_loop e2 in
 	  (bl1 @ bl2, (V.BinOp(op, e1', e2')))
+    | V.FBinOp(op, rm, e1, e2) ->
+	let (bl1, e1') = expr_loop e1 in
+	let (bl2, e2') = expr_loop e2 in
+	  (bl1 @ bl2, (V.FBinOp(op, rm, e1', e2')))
     | V.UnOp(op, e1) ->
 	let (bl1, e1') = expr_loop e1 in
 	  (bl1, V.UnOp(op, e1'))
+    | V.FUnOp(op, rm, e1) ->
+	let (bl1, e1') = expr_loop e1 in
+	  (bl1, V.FUnOp(op, rm, e1'))
     | V.Constant(_) as e -> ([], e)
     | V.Lval(V.Temp(_)) as e -> ([], e)
     | V.Lval(V.Mem(v, e1, ty)) ->
@@ -716,6 +759,9 @@ let lets_to_moves (dl, sl) =
     | V.Cast(ct, ty, e1) ->
 	let (bl1, e1') = expr_loop e1 in
 	  (bl1, (V.Cast(ct, ty, e1')))
+    | V.FCast(ct, rm, ty, e1) ->
+	let (bl1, e1') = expr_loop e1 in
+	  (bl1, (V.FCast(ct, rm, ty, e1')))
     | V.Unknown(_) as e -> ([], e)
     | V.Let(V.Temp(v), e1, e2) ->
 	let (bl1, e1') = expr_loop e1 in

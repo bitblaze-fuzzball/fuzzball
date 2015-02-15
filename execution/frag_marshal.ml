@@ -118,6 +118,16 @@ let encode_exp_flags e printable =
 	 ignore(VarWeak.merge canon_vars var);
 	 vars := var :: !vars)
   in
+  let push_round_mode rm =
+    let c = match rm with
+      | Vine_util.ROUND_NEAREST -> 'e'
+      | Vine_util.ROUND_NEAREST_AWAY_ZERO -> 'a'
+      | Vine_util.ROUND_POSITIVE -> 'P'
+      | Vine_util.ROUND_NEGATIVE -> 'N'
+      | Vine_util.ROUND_ZERO -> 'Z'
+    in
+      push c
+  in
   let rec loop e = match e with
     | V.BinOp(V.LT, V.BinOp(V.PLUS, e1, V.Constant(V.Int(V.REG_32, 1L))), e2)
 	when e1 = e2 ->
@@ -176,10 +186,32 @@ let encode_exp_flags e printable =
 	  push char;
 	  loop e1;
 	  loop e2
+    | V.FBinOp(op, rm, e1, e2) ->
+	push 'f';
+	let char =
+	  (match op with
+	     | V.FPLUS -> '+'
+	     | V.FMINUS -> '-'
+	     | V.FTIMES -> '*'
+	     | V.FDIVIDE -> '/'
+	     | V.FEQ -> '='
+	     | V.FNEQ -> '\\'
+	     | V.FLT -> '<'
+	     | V.FLE -> ',') in
+	  push char;
+	  push_round_mode rm;
+	  loop e1;
+	  loop e2
     | V.UnOp(op, e1) ->
 	let char = (match op with V.NEG -> '~' | V.NOT -> '!') in
 	  push char;
 	  loop e1
+    | V.FUnOp(op, rm, e1) ->
+	push 'f';
+	let char = (match op with V.FNEG -> '~') in
+	  push char;
+	  push_round_mode rm;
+	  loop e1;
     | V.Constant(V.Int(V.REG_1, 0L)) -> push 'F'
     | V.Constant(V.Int(V.REG_1, 1L)) -> push 'T'
     | V.Constant(V.Int(V.REG_8, c))  -> push '8'; push_int64 c
@@ -220,6 +252,22 @@ let encode_exp_flags e printable =
 	  push 'C';
 	  push ty_char;
 	  loop e1
+    | V.FCast(op, rm, ty, e1) ->
+	push 'f';
+	push 'C';
+	push_round_mode rm;
+	push (match op with
+		| V.CAST_SFLOAT  -> 'S'
+		| V.CAST_UFLOAT  -> 'U'
+		| V.CAST_SFIX    -> 's'
+		| V.CAST_UFIX    -> 'u'
+		| V.CAST_FWIDEN  -> 'W'
+		| V.CAST_FNARROW -> 'N');
+	push (match ty with
+		| V.REG_32 -> '3'
+		| V.REG_64 -> '6'
+		| _ -> failwith "Unsupported FP cast dest type in encode_exp");
+	loop e1
     | V.Ite(ce, te, fe) -> push '?'; loop ce; loop te; loop fe
     | V.Unknown(s) -> push 'U'; push_string s
     | V.Let(_, _, _)
@@ -241,6 +289,14 @@ let encode_exp e = encode_exp_flags e false
 
 let encode_printable_exp e =
   let (s, _) = encode_exp_flags e true in s
+
+let decode_round_mode = function
+  | 'e' -> Vine_util.ROUND_NEAREST
+  | 'a' -> Vine_util.ROUND_NEAREST_AWAY_ZERO
+  | 'P' -> Vine_util.ROUND_POSITIVE
+  | 'N' -> Vine_util.ROUND_NEGATIVE
+  | 'Z' -> Vine_util.ROUND_ZERO
+  | _ -> failwith "Unexpected char in decode_round_mode"
 
 let decode_exp s =
   let parse_short i =
@@ -312,13 +368,25 @@ let decode_exp s =
     in
       (i2, cvar)
   in
+  let parse_round_mode i =
+    (i + 1, decode_round_mode s.[i])
+  in
   let rec parse_binop op i =
     let (i2, e1) = parse i in
     let (i3, e2) = parse i2 in
       (i3, V.BinOp(op, e1, e2))
+  and parse_fbinop op i =
+    let (i2, rm) = parse_round_mode i in
+    let (i3, e1) = parse i2 in
+    let (i4, e2) = parse i3 in
+      (i4, V.FBinOp(op, rm, e1, e2))
   and parse_unop op i =
     let (i2, e1) = parse i in
       (i2, V.UnOp(op, e1))
+  and parse_funop op i =
+    let (i2, rm) = parse_round_mode i in
+    let (i3, e1) = parse i2 in
+      (i3, V.FUnOp(op, rm, e1))
   and parse_mem ty i =
     let (i2, var) = parse_var i in
     let (i3, e1) = parse i2 in
@@ -388,6 +456,41 @@ let decode_exp s =
 		 | _ -> failwith "Unknown cast type in decode_exp") in
 	    let (i2, e1) = parse (i' + 1) in
 	      (i2, V.Cast(ctype, ty, e1))
+	| 'f' ->
+	    let i'' = i' + 1 in
+	      (match s.[i'] with
+		 | '+'  -> parse_fbinop V.FPLUS i''
+		 | '-'  -> parse_fbinop V.FMINUS i''
+		 | '*'  -> parse_fbinop V.FTIMES i''
+		 | '/'  -> parse_fbinop V.FDIVIDE i''
+		 | '='  -> parse_fbinop V.FEQ i''
+		 | '\\' -> parse_fbinop V.FNEQ i''
+		 | '<'  -> parse_fbinop V.FLT i''
+		 | ','  -> parse_fbinop V.FLE i''
+		 | '~'  -> parse_funop V.FNEG i''
+		 | 'C' ->
+		     (let (i2, rm) = parse_round_mode i'' in
+		      let op = match s.[i2] with
+			| 'S' -> V.CAST_SFLOAT
+			| 'U' -> V.CAST_UFLOAT
+			| 's' -> V.CAST_SFIX
+			| 'u' -> V.CAST_UFIX
+			| 'W' -> V.CAST_FWIDEN
+			| 'N' -> V.CAST_FNARROW
+			| _ -> failwith "Unexpected FP cast type in decode_exp"
+		      in
+		      let i3 = i2 + 1 in
+		      let ty = match s.[i3] with
+			| '3' -> V.REG_32
+			| '6' -> V.REG_64
+			| _ -> failwith
+			    "Unexpected FP cast dest. type in decode_exp"
+		      in
+		      let i4 = i3 + 1 in
+		      let (i5, e) = parse i4 in
+			(i5, V.FCast(op, rm, ty, e))
+		     )
+		 | _ -> failwith "Unknown FP op type in decode_exp")
 	| '?' ->
 	    let (i2, e1) = parse (i + 1) in
 	    let (i3, e2) = parse i2 in

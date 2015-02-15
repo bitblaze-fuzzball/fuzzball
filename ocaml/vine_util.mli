@@ -60,3 +60,31 @@ val int64_u_of_float : float -> int64
 
 val run_with_remapped_fd :
   Unix.file_descr -> Unix.file_descr -> (unit -> 'a) -> 'a
+
+type round_mode = | ROUND_NEAREST (* ties to even *)
+		  | ROUND_NEAREST_AWAY_ZERO
+		  | ROUND_POSITIVE
+		  | ROUND_NEGATIVE
+		  | ROUND_ZERO
+
+val f32_neg : round_mode -> int32 -> int32
+val f32_eq : round_mode -> int32 -> int32 -> bool
+val f32_ne : round_mode -> int32 -> int32 -> bool
+val f32_lt : round_mode -> int32 -> int32 -> bool
+val f32_le : round_mode -> int32 -> int32 -> bool
+val f32_add : round_mode -> int32 -> int32 -> int32
+val f32_sub : round_mode -> int32 -> int32 -> int32
+val f32_mul : round_mode -> int32 -> int32 -> int32
+val f32_div : round_mode -> int32 -> int32 -> int32
+val f32_rem : round_mode -> int32 -> int32 -> int32
+
+val f64_neg : round_mode -> int64 -> int64
+val f64_eq : round_mode -> int64 -> int64 -> bool
+val f64_ne : round_mode -> int64 -> int64 -> bool
+val f64_lt : round_mode -> int64 -> int64 -> bool
+val f64_le : round_mode -> int64 -> int64 -> bool
+val f64_add : round_mode -> int64 -> int64 -> int64
+val f64_sub : round_mode -> int64 -> int64 -> int64
+val f64_mul : round_mode -> int64 -> int64 -> int64
+val f64_div : round_mode -> int64 -> int64 -> int64
+val f64_rem : round_mode -> int64 -> int64 -> int64
