@@ -111,13 +111,16 @@ void Exp::destroy( Exp *expr )
     switch ( expr->exp_type )
     {
     case BINOP:     BinOp::destroy((BinOp *)expr);          break;
+    case FBINOP:    FBinOp::destroy((FBinOp *)expr);        break;
     case UNOP:      UnOp::destroy((UnOp *)expr);            break;
+    case FUNOP:     FUnOp::destroy((FUnOp *)expr);          break;
     case CONSTANT:  Constant::destroy((Constant *)expr);    break;
     case MEM:       Mem::destroy((Mem *)expr);              break;
     case TEMP:      Temp::destroy((Temp *)expr);            break;
     case PHI:       Phi::destroy((Phi *)expr);              break;
     case UNKNOWN:   Unknown::destroy((Unknown *)expr);      break;
     case CAST:      Cast::destroy((Cast *)expr);            break;
+    case FCAST:     FCast::destroy((FCast *)expr);          break;
     case NAME:      Name::destroy((Name *)expr);            break;
     case LET:       Let::destroy((Let *)expr);              break; 
     case ITE:       Ite::destroy((Ite *)expr);              break;
@@ -210,6 +213,92 @@ void BinOp::destroy( BinOp *expr )
     delete expr;
 }
 
+FBinOp::FBinOp(fbinop_type_t t, rounding_mode_t rm, Exp *l, Exp *r)
+  : Exp(FBINOP), lhs(l), rhs(r), fbinop_type(t), rounding_mode(rm)
+{
+
+}
+
+FBinOp::FBinOp(const FBinOp& copy)
+  : Exp(FBINOP), fbinop_type(copy.fbinop_type),
+    rounding_mode(copy.rounding_mode)
+{
+  lhs = copy.lhs->clone();
+  rhs = copy.rhs->clone();
+}
+
+FBinOp *
+FBinOp::clone() const
+{
+  return new FBinOp(*this);
+}
+
+string
+FBinOp::optype_to_string(const fbinop_type_t fbinop_type) {
+  string s;
+  switch (fbinop_type) {
+  case FPLUS:   s = "+.";  break;
+  case FMINUS:  s = "-.";  break;
+  case FTIMES:  s = "*.";  break;
+  case FDIVIDE: s = "/.";  break;
+  case FEQ:     s = "==."; break;
+  case FNEQ:    s = "<>."; break;
+  case FLT:     s = "<.";  break;
+  case FLE:     s = "<=."; break;
+  }
+  return s;
+}
+
+string
+rounding_mode_to_letter_string(const rounding_mode_t rm) {
+  char c = '?';
+  switch (rm) {
+  case ROUND_NEAREST:           c = 'e'; break;
+  case ROUND_NEAREST_AWAY_ZERO: c = 'a'; break;
+  case ROUND_POSITIVE:          c = 'P'; break;
+  case ROUND_NEGATIVE:          c = 'N'; break;
+  case ROUND_ZERO:              c = 'Z'; break;
+  }
+  return string(1, c);
+}
+
+string
+FBinOp::tostring() const
+{
+  string ret;
+  ret = lhs->tostring() + optype_to_string(fbinop_type)
+    + rounding_mode_to_letter_string(rounding_mode) + rhs->tostring();
+  ret = "(" + ret + ")";
+  return ret;
+}
+
+string
+FBinOp::optype_to_name(const fbinop_type_t fbinop_type)
+{
+  string s;
+  switch (fbinop_type) {
+  case FPLUS:   s = "FPLUS";   break;
+  case FMINUS:  s = "FMINUS";  break;
+  case FTIMES:  s = "FTIMES";  break;
+  case FDIVIDE: s = "FDIVIDE"; break;
+  case FEQ:     s = "FEQ";     break;
+  case FNEQ:    s = "FNEQ";    break;
+  case FLT:     s = "FLT";     break;
+  case FLE:     s = "FLE";     break;
+  }
+  return s;
+}
+
+void FBinOp::destroy( FBinOp *expr )
+{
+    assert(expr);
+
+    Exp::destroy(expr->lhs);
+    Exp::destroy(expr->rhs);
+
+    delete expr;
+}
+
 UnOp::UnOp(const UnOp& copy)
   : Exp(UNOP), unop_type(copy.unop_type)
 {
@@ -268,6 +357,57 @@ UnOp::string_to_optype(const string s)
 }
 
 void UnOp::destroy( UnOp *expr )
+{
+    assert(expr);
+
+    Exp::destroy(expr->exp);
+
+    delete expr;
+}
+
+FUnOp::FUnOp(const FUnOp& copy)
+  : Exp(FUNOP), funop_type(copy.funop_type), rounding_mode(copy.rounding_mode)
+{
+  exp = copy.exp->clone();
+}
+
+FUnOp::FUnOp(funop_type_t typ, rounding_mode_t rm, Exp *e)
+  : Exp(FUNOP), funop_type(typ), rounding_mode(rm), exp(e)
+{
+}
+
+FUnOp *
+FUnOp::clone() const
+{
+  return new FUnOp(*this);
+}
+
+string
+FUnOp::tostring() const
+{
+   string ret;
+   string rm_str = rounding_mode_to_letter_string(rounding_mode);
+   switch(funop_type){
+   case FNEG:
+     ret = "-." + rm_str + exp->tostring();
+     break;
+   }
+   ret = "(" + ret + ")";
+   return ret;
+}
+
+string
+FUnOp::optype_to_string(const funop_type_t op)
+{
+  string ret;
+  switch(op){
+  case FNEG:
+    ret = "FNEG"; break;
+  }
+  return ret;
+}
+
+void FUnOp::destroy( FUnOp *expr )
 {
     assert(expr);
 
@@ -591,10 +731,6 @@ string Cast::tostring() const
     case CAST_SIGNED:   tstr = "S"; break;
     case CAST_HIGH:     tstr = "H"; break;
     case CAST_LOW:      tstr = "L"; break;
-    case CAST_FLOAT:    tstr = "F"; break;
-    case CAST_INTEGER:  tstr = "I"; break;
-    case CAST_RFLOAT:   tstr = "RF"; break;
-    case CAST_RINTEGER: tstr = "RI"; break;
     default: 
       cout << "Unrecognized cast type" << endl;
       assert(0);
@@ -608,17 +744,10 @@ string Cast::cast_type_to_string( const cast_t ctype )
   string  tstr;
   switch ( ctype )
   {
-  //!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-  // Do NOT change this. It is used in producing XML output.
-  //!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
     case CAST_UNSIGNED: tstr = "Unsigned"; break;
     case CAST_SIGNED:   tstr = "Signed"; break;
     case CAST_HIGH:     tstr = "High"; break;
     case CAST_LOW:      tstr = "Low"; break;
-    case CAST_FLOAT:    tstr = "Float"; break;
-    case CAST_INTEGER:  tstr = "Integer"; break;
-    case CAST_RFLOAT:   tstr = "ReinterpFloat"; break;
-    case CAST_RINTEGER: tstr = "ReinterpInteger"; break;
     default:
       cout << "Unrecognized cast type" << endl;
       assert(0);
@@ -626,6 +755,76 @@ string Cast::cast_type_to_string( const cast_t ctype )
 
   return tstr;
 }
+
+FCast::FCast( Exp *e, reg_t w, fcast_t t, rounding_mode_t rm )
+  : Exp(FCAST), exp(e), typ(w), fcast_type(t), rounding_mode(rm)
+{ }
+
+FCast::FCast( const FCast &other )
+  : Exp(FCAST), typ(other.typ), fcast_type(other.fcast_type),
+    rounding_mode(other.rounding_mode)
+{
+  exp = other.exp->clone();
+}
+
+FCast *
+FCast::clone() const
+{
+  return new FCast(*this);
+}
+
+void FCast::destroy( FCast *expr )
+{
+    assert(expr);
+
+    Exp::destroy(expr->exp);
+
+    delete expr;
+}
+
+string FCast::tostring() const
+{
+  string wstr, tstr;
+
+  wstr = Exp::string_type(this->typ);
+  string rm_str = rounding_mode_to_letter_string(rounding_mode);
+
+  switch ( fcast_type )
+  {
+    case CAST_SFLOAT:  tstr = "SFloat";  break;
+    case CAST_UFLOAT:  tstr = "UFloat";  break;
+    case CAST_SFIX:    tstr = "SFix";    break;
+    case CAST_UFIX:    tstr = "UFix";    break;
+    case CAST_FWIDEN:  tstr = "FWiden";  break;
+    case CAST_FNARROW: tstr = "FNarrow"; break;
+    default:
+      cout << "Unrecognized FP cast type" << fcast_type << endl;
+      assert(0);
+  }
+  string ret = "cast." + rm_str + "(" + exp->tostring() + ")"
+    + tstr + ":" + wstr;
+  return ret;
+}
+
+string FCast::fcast_type_to_string( const fcast_t ctype )
+{
+  string  tstr;
+  switch ( ctype )
+  {
+    case CAST_SFLOAT:  tstr = "SignedFloat";   break;
+    case CAST_UFLOAT:  tstr = "UnsignedFloat"; break;
+    case CAST_SFIX:    tstr = "SignedFix";     break;
+    case CAST_UFIX:    tstr = "UnsignedFix";   break;
+    case CAST_FWIDEN:  tstr = "FloatWiden";    break;
+    case CAST_FNARROW: tstr = "FloatNarrow";   break;
+    default:
+      cout << "Unrecognized FP cast type" << ctype << endl;
+      assert(0);
+  }
+
+  return tstr;
+}
+
 
 ///////////////////////////// LET ////////////////////////////////
 Let::Let(Exp *v, Exp *e, Exp *i) : Exp(LET), var(v), exp(e), in(i)
@@ -1052,28 +1251,28 @@ Cast *_ex_l_cast( Exp *arg, reg_t width )
     return new Cast(arg, width, CAST_LOW);
 }
 
-Cast *ex_i_cast( Exp *arg, reg_t width )
+FCast *ex_is_cast( Exp *arg, reg_t width )
 {
     arg = arg->clone();
-    return new Cast(arg, width, CAST_INTEGER);
+    return new FCast(arg, width, CAST_SFIX, ROUND_NEAREST);
 }
 
-Cast *ex_f_cast( Exp *arg, reg_t width )
+FCast *ex_iu_cast( Exp *arg, reg_t width )
 {
     arg = arg->clone();
-    return new Cast(arg, width, CAST_FLOAT);
+    return new FCast(arg, width, CAST_UFIX, ROUND_NEAREST);
 }
 
-Cast *ex_ri_cast( Exp *arg, reg_t width )
+FCast *ex_fs_cast( Exp *arg, reg_t width )
 {
     arg = arg->clone();
-    return new Cast(arg, width, CAST_RINTEGER);
+    return new FCast(arg, width, CAST_SFLOAT, ROUND_NEAREST);
 }
 
-Cast *ex_rf_cast( Exp *arg, reg_t width )
+FCast *ex_fu_cast( Exp *arg, reg_t width )
 {
     arg = arg->clone();
-    return new Cast(arg, width, CAST_RFLOAT);
+    return new FCast(arg, width, CAST_UFLOAT, ROUND_NEAREST);
 }
 
 Ite *_ex_ite( Exp *c, Exp *t, Exp *f) {

@@ -1429,7 +1429,7 @@ Stmt *translate_jumpkind( IRSB *irbb, vector<Stmt *> *irout )
       result = new Jmp(dest);
       break;
     case Ijk_Sys_int130:
-      irout->push_back( new Special("int 0x81") );
+      irout->push_back( new Special("int 0x82") );
       irout->push_back(mk_label());
       result = new Jmp(dest);
       break;
