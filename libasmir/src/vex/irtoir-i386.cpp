@@ -827,6 +827,12 @@ Stmt *i386_translate_dirty( IRStmt *stmt, IRSB *irbb, vector<Stmt *> *irout )
     {
 	result = new Special("cpuid");
     }
+    else if (func == "x86g_dirtyhelper_loadF80le") {
+        result = new ExpStmt(new Unknown("Unknown: loadF80"));
+    }
+    else if (func == "x86g_dirtyhelper_storeF80le") {
+        result = new ExpStmt(new Unknown("Unknown: storeF80"));
+    }
     else
     {
         result = new ExpStmt(new Unknown("Unknown: Dirty"));
