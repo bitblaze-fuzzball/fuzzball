@@ -114,7 +114,8 @@ let log ?(sign = true) lazy_message =
       Printf.fprintf
         (Verb.out_channel ())
         "%s\n"
-        (evaluateLazyTypeToString lazy_message)
+        (evaluateLazyTypeToString lazy_message);
+  flush (Verb.out_channel ())
 	    
 
 let dummy_log ?(sign = true) args = ()
