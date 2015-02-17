@@ -36,9 +36,5 @@ let find_veritesting_region fm gamma starting_eip max_depth =
     (*try*)
     begin
 (*      Printf.eprintf "Detected region, encoding starting from %s...\n" (node_to_string root_of_region);*)
-      let stmts, decls = Encode.encode_region root_of_region in
-    (* HACK HACK HACK -- We should find a better way to detect valid regions *)
-      if ((List.length stmts) > 1)
-      then Some (decls, stmts)
-      else None
+      Encode.encode_region root_of_region
     end

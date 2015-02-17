@@ -254,7 +254,7 @@ let convert_string_to_veritesting str =
   else if (String.compare "LINEAR" str') = 0
   then Linear
   else if (String.compare "DIAMOND" str') = 0
-  then Diamond 2 (* fix this later.  Should be able to supply a size as well in that stirng! *)
+  then Diamond 5 (* fix this later.  Should be able to supply a size as well in that stirng! *)
   else
     failwith (Printf.sprintf "Unrecognized: %s\n Expected NoVeritesting, BFS, DFS, Linear, or Diamond." str)
 

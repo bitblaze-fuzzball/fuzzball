@@ -34,10 +34,32 @@ type branch_move = {
 
 exception BranchMerge of string
 
+let exp_of_lvalue = function
+  | V.Temp (id, name, typ) ->
+    (* This is probably wrong, but it's a positing of what to do when a move on a loacl variable appears in one branch and not
+       the other.
+       (Printf.eprintf "I did something dangerous with a local var.\n";
+       match typ with 
+       | V.REG_1 -> Vine.exp_true
+       | V.REG_8
+       | V.REG_16
+       | V.REG_32
+       | V.REG_64 -> (Vine.const_of_int typ 0)
+       | V.TString
+       | V.TMem _
+       | V.TFun _
+       | V.Array _
+       | V.TAttr _ -> failwith "I give up.")*)
+    raise (BranchMerge "exp_of_lvalue: There was a move on a local variable unique to one branch; unsure how to merge.")
+  | V.Mem (var, exp, typ) -> exp
+
+
 let branch_move_to_ite (bmove : branch_move) test =
   match bmove.true_val, bmove.false_val with
   | Some tv, Some fv ->
     V.Move (bmove.var, (V.Ite (test, tv, fv)))
+  | Some tv, None -> V.Move (bmove.var, (V.Ite (test, tv, exp_of_lvalue bmove.var)))
+  | None, Some fv -> V.Move (bmove.var, (V.Ite (test, exp_of_lvalue bmove.var, fv)))
   | _ -> raise (BranchMerge "branch_move_to_ite: Don't know what to do when move isn't in both branches.")
 
 
@@ -81,7 +103,8 @@ let rec recover_diamond (ft : Search.veritesting_node Search.finished_type) =
   let tuple_append (dl,sl) (dl',sl') = dl@dl', sl@sl' in
   let rec helper true_node false_node true_accum false_accum =
     if Search.equal true_node false_node
-    then true_accum, false_accum
+    then (Printf.eprintf "Diamond converges at %Lx\n" (Search.eip_of_node true_node);
+	  true_accum, false_accum)
     else 
       begin
 	let next_true = Search.successor true_node
@@ -91,6 +114,8 @@ let rec recover_diamond (ft : Search.veritesting_node Search.finished_type) =
 	  helper t f 
 	    (tuple_append (data_of_node true_node) true_accum)
 	    (tuple_append (data_of_node false_node) false_accum)
+	| Some t, None -> helper t false_node (tuple_append (data_of_node true_node) true_accum) false_accum
+	| None, Some f -> helper true_node f true_accum (tuple_append (data_of_node false_node) false_accum)
 	| _ -> raise (BranchMerge ":recover_diamond: Diamond didn't rejoin")
       end in
   match ft with
@@ -108,7 +133,7 @@ and data_of_ft (ft : Search.veritesting_node Search.finished_type) =
   | Search.SysCall eip
   | Search.Special eip
   | Search.SearchLimit eip -> make_exit eip
-  | Search.Branch _ -> recover_diamond ft
+  | Search.Branch _ -> (Printf.eprintf "Merging branch...\n"; recover_diamond ft)
   | Search.Segment s -> s.Search.stmts, s.Search.decls
 
 
@@ -117,7 +142,7 @@ and data_of_node (n : Search.veritesting_node) =
   | Search.Undecoded _
   | Search.Raw _ ->
     begin
-(*      Printf.eprintf "%s has no associated data, moving to next node\n" (Search.node_to_string n);*)
+      Printf.eprintf "%s has no associated data, moving to next node\n" (Search.node_to_string n);
       no_data
     end
   | Search.Completed ft -> data_of_ft ft
@@ -131,20 +156,27 @@ let build_simplest_equations root =
     stmt_accum := stmts::!stmt_accum;
     decl_accum := decls::!decl_accum;
     match Search.successor node with
-    | None -> () (* Printf.eprintf "%s has no successors, returning.\n" (Search.node_to_string node);*)
+    | None -> Printf.eprintf "%s has no successors, returning.\n" (Search.node_to_string node);
     | Some s -> 
       begin
-(*      Printf.eprintf "%s -> %s\n" (Search.node_to_string node) (Search.node_to_string s);
-*)
+	Printf.eprintf "%s -> %s\n" (Search.node_to_string node) (Search.node_to_string s);
       internal s
       end in
   internal root;
   let stmts = List.concat (List.rev !stmt_accum)
   and decls = List.concat (List.rev !decl_accum) in
   (*List.iter (fun s -> Vine.stmt_to_channel stderr s) stmts;*)
-  stmts,decls
-    
+  decls, stmts
+
+
 
 let encode_region root =
-  build_simplest_equations root
+  Printf.eprintf "\n\nEncoding Veritesting Region:\n";
+  if false
+  then
+    Some (build_simplest_equations root)
+  else
+  try
+    Some (build_simplest_equations root)
+  with _ -> None
     
