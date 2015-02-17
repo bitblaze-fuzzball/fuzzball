@@ -621,6 +621,31 @@ let successor = function
       | Branch b -> None (* this is a lie *)
       | Segment s -> s.p_core.next)
 
+let successors = function
+    | Undecoded a ->
+      (match a.next with
+      | Some s -> [s]
+      | None -> [])
+    | Raw progn ->
+      (match progn.p_core.next with
+	Some s -> [s]
+      | None -> [])
+    | Completed c ->
+      (match c with
+      | ExternalLoop _
+      | InternalLoop _
+      | Return _
+      | Halt _
+      | FunCall _
+      | SysCall _
+      | Special _
+      | SearchLimit _ -> []
+      | Branch b -> [b.true_child; b.false_child]
+      | Segment s ->
+	(match s.p_core.next with
+	| Some x -> [x]
+	| None -> []))
+
 let do_offset ch offset =
   for i = 0 to offset
   do
@@ -671,3 +696,20 @@ let print_tree node = print_tree_opt (Some node)
 
 let print_tree_statements node =
   print_tree_opt ~print_fn:(node_and_stmts stderr) (Some node)
+
+let rec find_endpoints node =
+  match successors node with
+  | [] -> [node]
+  | [a] -> find_endpoints a
+  | [a;b] -> (find_endpoints a) @ (find_endpoints b)
+  | _ -> failwith "Successors should return 0, 1 or 2 children. I saw more!"
+
+let unique_endpoint node = 
+  let rec check = function
+    | [] -> None
+    | [ep] -> Some ep
+    | fst::snd::tl ->
+      if (equal fst snd) then
+	check (snd::tl)
+      else None in
+  check (find_endpoints node)

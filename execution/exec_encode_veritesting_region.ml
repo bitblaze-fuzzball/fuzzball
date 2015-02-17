@@ -57,13 +57,13 @@ let merge_diamond test true_path false_path =
 	  begin
 	    try
 	      let prev = Hashtbl.find stmts lvalue in
-	      if side
-	      then Hashtbl.replace stmts lvalue {var = lvalue; true_val = Some exp; false_val = prev.false_val;}
-	      else Hashtbl.replace stmts lvalue {var = lvalue; false_val = Some exp; true_val = prev.false_val;}
+	      if side then
+		Hashtbl.replace stmts lvalue {var = lvalue; true_val = Some exp; false_val = prev.false_val;} else
+		Hashtbl.replace stmts lvalue {var = lvalue; false_val = Some exp; true_val = prev.false_val;}
 	    with Not_found ->
-	      if side
-	      then Hashtbl.add stmts lvalue {var = lvalue; true_val = Some exp; false_val = None;}
-	      else Hashtbl.add stmts lvalue {var = lvalue; true_val = None; false_val = Some exp;}
+	      if side then
+		Hashtbl.add stmts lvalue {var = lvalue; true_val = Some exp; false_val = None;} else
+		Hashtbl.add stmts lvalue {var = lvalue; true_val = None; false_val = Some exp;}
 	  end
 	| _ -> ());
 	stmt_helper side tl
@@ -82,17 +82,14 @@ let rec recover_diamond (ft : Search.veritesting_node Search.finished_type) =
   (* Printf.eprintf "Recovering diamond...\n"; *)
   let tuple_append (dl,sl) (dl',sl') = dl@dl', sl@sl' in
   let rec helper true_node false_node true_accum false_accum =
-    (* Printf.eprintf "True: %s\tFalse: %s\n" (Search.node_to_string true_node) (Search.node_to_string false_node); *)
-    if Search.equal true_node false_node then
+(*  Printf.eprintf "True: %s\tFalse: %s\n" (Search.node_to_string true_node) (Search.node_to_string false_node);*)
+    if (Search.eip_of_node true_node) = (Search.eip_of_node false_node) then
       begin
 	(* Printf.eprintf "Diamond converges at %Lx\n" (Search.eip_of_node true_node);*)
 	true_accum, false_accum, true_node
-      end
-    else 
+      end else 
       begin
-	let next_true = Search.successor true_node
-	and next_false = Search.successor false_node in
-	match next_true, next_false with
+	match Search.successor true_node, Search.successor false_node with
 	| Some t, Some f ->
 	  helper t f 
 	    (tuple_append (data_of_node true_node) true_accum)
@@ -104,7 +101,7 @@ let rec recover_diamond (ft : Search.veritesting_node Search.finished_type) =
   match ft with
   | Search.Branch b ->
     let true_accum, false_accum, merge_point = helper b.Search.true_child b.Search.false_child ([],[]) ([],[]) in
-    tuple_append (merge_diamond b.Search.test true_accum false_accum) (data_of_node merge_point)
+    tuple_append (merge_diamond b.Search.test true_accum false_accum) (make_exit (Search.eip_of_node merge_point))
   | _ -> raise (BranchMerge "recover_diamond: not a branch, how did you call this?")
 
 
@@ -129,10 +126,7 @@ and data_of_ft (ft : Search.veritesting_node Search.finished_type) =
 and data_of_node (n : Search.veritesting_node) =
   match n with
   | Search.Undecoded _
-  | Search.Raw _ ->
-    begin
-      no_data
-    end
+  | Search.Raw _ -> no_data
   | Search.Completed ft -> data_of_ft ft
 
 
@@ -171,13 +165,7 @@ let build_simplest_equations root =
     Some (decls, stmts)
 
 
-
 let encode_region root =
-  (* Printf.eprintf "\n\nEncoding Veritesting Region:\n";
-  Search.print_tree_statements root; *)
-  if true (* set to false to turn on the guards around veritesting *) then
-    build_simplest_equations root else
-  try
-    build_simplest_equations root
-  with _ -> None
-    
+  (* Printf.eprintf "\n\nEncoding Veritesting Region:\n"; *)
+  (* Search.print_tree root;*)
+  build_simplest_equations root    
