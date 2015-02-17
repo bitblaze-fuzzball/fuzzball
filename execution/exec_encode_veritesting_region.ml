@@ -157,20 +157,27 @@ let build_simplest_equations root =
     Printf.eprintf "Beginning of translation:\n";
     List.iter (fun s -> Vine.stmt_to_channel stderr s) stmts;
     Printf.eprintf "End of translation\n";
+    flush stderr;
   *)
-  flush stderr;
-  decls, stmts
+  (* JTT - 12/2/15 this is horrible
+     However, if there is only one statement in the list, it's the statement
+     that jumps to the next / current instruction.  This causes an infinite loop.
+     
+     Ideally, we'd notice this before doing any encoding -- there aren't going to be any segments
+     in a trace producing such a statement list.
+  *)
+  if (List.length stmts) = 1 then
+    None else
+    Some (decls, stmts)
 
 
 
 let encode_region root =
   (* Printf.eprintf "\n\nEncoding Veritesting Region:\n";
   Search.print_tree_statements root; *)
-  if true (* set to false to turn on the guards around veritesting *)
-  then
-    Some (build_simplest_equations root)
-  else
+  if true (* set to false to turn on the guards around veritesting *) then
+    build_simplest_equations root else
   try
-    Some (build_simplest_equations root)
+    build_simplest_equations root
   with _ -> None
     
