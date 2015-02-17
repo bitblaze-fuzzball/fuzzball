@@ -1,5 +1,4 @@
 module V = Vine
-
 open Exec_exceptions
 open Exec_options
 open Frag_simplify
@@ -8,7 +7,7 @@ open Exec_run_common
 
 type 'a common = {
   eip : int64;
-  parent : 'a;
+  mutable parent : 'a;
   depth : int;
 }
 
@@ -200,8 +199,28 @@ let walk_to_label target_label tail =
   | Internal(ilabel) -> walk_to_label_help ilabel tail
 
 
-let complete_node (raw_node : veritesting_node) (child : veritesting_node)
-    (sl : V.stmt list) (dl: V.decl list) =
+let replace_parent target = function
+  | Undecoded a -> a.m_core.parent <- target
+  | Raw progn -> progn.p_core.m_core.parent <- target
+    | Completed c ->
+      (match c with
+      | ExternalLoop a
+      | InternalLoop a
+      | Return a
+      | Halt a
+      | FunCall a
+      | SysCall a
+      | Special a
+      | SearchLimit a -> ()
+      | Branch b -> b.b_core.parent <- target
+      | Segment s -> s.p_core.m_core.parent <- target)
+
+
+let complete_node
+    (raw_node : veritesting_node)
+    (child : veritesting_node)
+    (sl : V.stmt list)
+    (dl: V.decl list) =
   assert(sl != []);
   (match raw_node with
   | Raw progn -> 
@@ -215,10 +234,14 @@ let complete_node (raw_node : veritesting_node) (child : veritesting_node)
 			      next = Some child;};
 		    stmts = (List.rev sl);
 		    decls = dl;}) in
-      progn.p_core.next <- Some closed_variant
+      progn.p_core.next <- Some closed_variant;
+      replace_parent closed_variant child;
+(*    Printf.eprintf "Completing %s with %s\n"
+      (node_to_string raw_node) (node_to_string closed_variant); *)
+      closed_variant
     end
-  | _ -> failwith "Should only be able to call complete node on a raw_node");
-  child
+  | _ -> failwith "Should only be able to call complete node on a raw_node")(*;
+  child*)
 
 
 let add_exit progn next =
@@ -226,223 +249,6 @@ let add_exit progn next =
   progn.p_core.next <- Some next;
   next
 
-
-let rec truncate_node = function
-  (** If you're doing a truncated expand of a veritesting node, this is
-      the way you tell the search that the area beyond this point was
-      intentionally not considered because it was too far afield from
-      the root. *)
-  | Undecoded m -> m.next <- Some (Completed (SearchLimit m.m_core.eip))
-  | Raw progn -> progn.p_core.next <- Some (Completed (SearchLimit progn.p_core.m_core.eip))
-  | Completed ft -> match ft with
-    | Segment progn -> progn.p_core.next <- Some (Completed (SearchLimit progn.p_core.m_core.eip))
-    | Branch b -> 
-      begin
-	truncate_node b.true_child;
-	truncate_node b.false_child
-      end
-    | _ -> () (* everything else is a terminal anyway. You'd never expand it. *)
-
-
-let children = function
-  (** Standardized function for getting the successors of a veritesting
-      node after it has been generated *)
-  | Undecoded m ->
-    (match m.next with
-    |Some s -> [s]
-    | _ -> [])
-  | Raw progn ->
-    (match progn.p_core.next with
-    | Some s -> [s]
-    | _ -> [])
-  | Completed ft ->
-    (match ft with
-    | Segment progn ->
-      (match progn.p_core.next with 
-      | Some s -> [s]
-      | _ -> [])
-    | Branch b -> [b.true_child; b.false_child]
-    | _ -> [])
-
-let consider_statements (node : veritesting_node) = 
-  let progn = match node with
-    |Raw progn -> progn
-    | _ -> failwith "only for raw nodes" in
-  let rec wsl accum = function
-    | [] -> Completed (Segment progn)
-    | stmt::rest ->
-      begin
-	match stmt with
-	| V.Special("int 0x80") -> add_exit progn (Completed (SysCall progn.p_core.m_core.eip))
-	| V.Special _ ->           add_exit progn (Completed (Special progn.p_core.m_core.eip))
-	| V.Return _ ->            add_exit progn (Completed (Return progn.p_core.m_core.eip))
-	| V.Call _ ->              add_exit progn (Completed (FunCall progn.p_core.m_core.eip))
-	| V.Halt _  ->             add_exit progn (Completed (Halt progn.p_core.m_core.eip))
-	| V.Label(l) ->
-	  begin
-	    match (decode_eip l) with
-	    (* update this node to finished.  It's stmt list is just the current accum.
-	       then, generate the raw child, which is an undecoded of the target eip *)  
-	    | X86eip eip ->
-	      if progn.p_core.m_core.eip = eip
-	      then wsl (stmt::accum) rest (* this is this eip, no jumping. *)
-	      else
-	      (* this eip = nodes eip, skip it? *)
-		complete_node node (Undecoded 
-				      {m_core = {eip = eip;
-						 parent = node;
-						 depth = depth node;};
-				       next = None;}) accum progn.decls
-	    | Internal _ -> wsl accum rest (* drop internal labels on the floor *)
-	  end
-        | V.Jmp(V.Name(l)) ->
-	  begin
-	    match (decode_eip l) with
-	    | X86eip eip -> complete_node node (Undecoded {m_core = {eip = eip;
-								     parent = node;
-								     depth = 1 + (depth node);};
-							   next = None;}) accum progn.decls
-	    | Internal _ ->
-	      match walk_to_label l rest with
-	      | None -> add_exit progn (Completed (InternalLoop progn.p_core.m_core.eip))
-	      | Some rest' -> wsl accum rest'
-	  end 
-        | V.CJmp(test, V.Name(true_lab), V.Name(false_lab)) ->
-	  begin
-	    match (decode_eip true_lab, decode_eip false_lab) with
-	    | X86eip teip, X86eip feip -> 
-	      let rec branch = Completed (Branch { test = test;
-						   b_core = {eip = progn.p_core.m_core.eip;
-							     parent = node;
-							     depth = depth node;};
-						   true_child =  Undecoded {m_core = {eip = teip; 
-										      parent = branch;
-										      depth = 1 + (depth node);};
-									    next = None;};
-						   false_child = Undecoded {m_core = {eip = feip;
-										      parent = branch;
-										      depth = 1 + (depth node);};
-									    next = None;}}) in
-	      complete_node node branch accum progn.decls
-	    | X86eip teip, Internal flabel ->
-	      begin
-		match walk_to_label false_lab rest with
-		| None -> add_exit progn (Completed (InternalLoop progn.p_core.m_core.eip))
-		| Some rest' ->
-		  begin
-		    let rec branch = 
-		      Completed (Branch { test = test;
-					  b_core = {eip = progn.p_core.m_core.eip;
-						    parent = node;
-						    depth = depth node;};
-					  true_child = Undecoded {m_core = {eip = teip;
-									    parent = branch;
-									    depth = 1 + (depth node);};
-								  next = None};
-					  false_child = Raw {p_core = {m_core = {eip = progn.p_core.m_core.eip; (* dangerous!  should be the label. *)
-										 parent = branch;
-										 depth = 1 + (depth node);};
-								       next = None;};
-							     decls = [];
-							     stmts = rest';}}) in
-		    complete_node node branch accum progn.decls
-		  end
-	      end
-	    | Internal tlabel, X86eip feip ->
-	      begin
-		match walk_to_label true_lab rest with
-		| None -> add_exit progn (Completed (InternalLoop progn.p_core.m_core.eip))
-		| Some rest' ->
-		  begin
-		    let rec branch = Completed (Branch { test = test;
-							 b_core = {eip = progn.p_core.m_core.eip;
-								   parent = node;
-								   depth = depth node;};
-							 true_child = Raw {p_core = {m_core = {eip = progn.p_core.m_core.eip; (* dangerous!  should be the label. *)
-											       parent = branch;
-											       depth = 1 + (depth node);};
-										     next = None;};
-									   decls = [];
-									   stmts = rest';};
-						     false_child = Undecoded {m_core = {eip = feip;
-											parent = branch;
-											depth = 1 + (depth node);};
-									      next = None}}) in
-		    complete_node node branch accum progn.decls
-		  end
-	      end
-	    | Internal tlabel, Internal flabel ->
-	      begin
-		match (walk_to_label true_lab rest), (walk_to_label false_lab rest) with
-		| Some traw, Some fraw ->
-		  let rec branch = Completed (Branch {test = test;
-						      b_core = {eip = progn.p_core.m_core.eip;
-								parent = node;
-								depth = depth node;};
-						      true_child = Raw {p_core = {m_core = {eip = progn.p_core.m_core.eip;
-											    parent = branch;
-											    depth = 1 + (depth node);};
-										  next = None;};
-									decls = [];
-									stmts = traw};
-						      false_child = Raw {p_core = {m_core = {eip = progn.p_core.m_core.eip;
-											     parent = branch;
-											     depth = 1 + (depth node);};
-										   next = None};
-									 decls = [];
-									 stmts = fraw}}) in
-		  complete_node node branch accum progn.decls
-		| _ -> add_exit progn (Completed (InternalLoop progn.p_core.m_core.eip))
-	      end
-	  end
-	| _ -> wsl (stmt::accum) rest
-	  end
-  in
-  wsl [] progn.stmts
-
-
-let generate_children fm gamma = function
-  | Undecoded a as node->
-    begin
-      assert(None = a.next);
-      let decls, stmts = 
-	(with_trans_cache a.m_core.eip
-	   (fun () -> decode_insns fm gamma a.m_core.eip !opt_bb_size)) in
-      let child = Raw { p_core = {m_core = {eip = a.m_core.eip;
-					    parent = node;
-					    depth = depth node;};
-				  next = None;};
-			decls = decls;
-			stmts = stmts} in
-      a.next <- Some child;
-      [child]
-    end
-  | Raw progn as node -> [consider_statements node] (* this has to replace the current node with the appropriate structure? *)
-  | Completed ft ->
-    begin
-      match ft with
-	| ExternalLoop _
-	| InternalLoop _ 
-	| Return _
-	| Halt _
-	| FunCall _
-	| SysCall _
-	| Special _
-	| SearchLimit _
-	| Segment _ -> [] (* maybe this is progn.next *)
-	| Branch b -> [b.true_child; b.false_child]
-    end
-
-let expand fm gamma (node : veritesting_node) =
-  generate_children fm gamma node
-
-
-let make_root eip = 
-  let rec root = Undecoded {m_core = {eip = eip;
-				      parent = root;
-				      depth = 0;};
-			    next = None;} in
-  root
 
 let parent = function
     (* this is dangerous-- clearly some of the leaves have parents,
@@ -483,9 +289,106 @@ let replace_child current_node replacement =
   match (parent current_node) with
   | None -> ()
   | Some p ->
+    begin
+(*    Printf.eprintf "Changing successor of %s from %s to %s\n"
+      (node_to_string p) (node_to_string current_node) (node_to_string replacement); *)
     match p with
-    | Undecoded a -> a.next <- Some replacement
-    | Raw a -> a.p_core.next <- Some replacement
+    | Undecoded a -> 
+      begin
+	match a.next with 
+	| None -> failwith "Called replace_child on a node with no child."
+	| Some next ->
+	  begin
+	 (*Printf.eprintf "Old next: %s\n" (node_to_string next); *)
+	    if(next == current_node) then
+	      a.next <- Some replacement
+	    else failwith "replace_child: parent of current not current"
+	  end
+      end
+    | Raw a -> 
+      begin
+	match a.p_core.next with
+	| None -> failwith "Called replace_child on a node with no child."
+	| Some next ->
+	  begin
+	    (* Printf.eprintf "Old next: %s\n" (node_to_string next);*)
+	    if (next == current_node) then
+	      a.p_core.next <- Some replacement
+	    else failwith "replace_child: parent of current not current"
+	   end
+      end
+    | Completed c ->
+      begin
+	match c with
+	| ExternalLoop _
+	| InternalLoop _
+	| Return _
+      | Halt _
+      | FunCall _
+      | SysCall _
+      | Special _
+      | SearchLimit _ -> failwith "Illegal parent type!"
+      | Segment s ->
+	begin
+	  match s.p_core.next with
+	  | None -> failwith "Called replace_child on a node with no child."
+	  | Some next ->
+	    begin
+	    (* Printf.eprintf "Old next: %s\n" (node_to_string next);*)
+	      assert(next == current_node);
+	      s.p_core.next <- Some replacement
+	    end
+	end
+      | Branch b ->
+	(if current_node == b.true_child
+	 then b.true_child <- replacement
+	 else if b.false_child == current_node
+	 then b.false_child <- replacement
+	 else failwith "current_node isn't a child to its parent?")
+      end
+    end
+
+
+let rec truncate_node = function
+  (** If you're doing a truncated expand of a veritesting node, this is
+      the way you tell the search that the area beyond this point was
+      intentionally not considered because it was too far afield from
+      the root. *)
+  | Undecoded m -> m.next <- Some (Completed (SearchLimit m.m_core.eip))
+  | Raw progn -> progn.p_core.next <- Some (Completed (SearchLimit progn.p_core.m_core.eip))
+  | Completed ft as node -> match ft with
+    | Segment progn -> (replace_child node (Completed (SearchLimit progn.p_core.m_core.eip)))
+    | Branch b -> 
+      begin
+	truncate_node b.true_child;
+	truncate_node b.false_child
+      end
+    | _ -> () (* everything else is a terminal anyway. You'd never expand it. *)
+
+
+let children = function
+  (** Standardized function for getting the successors of a veritesting
+      node after it has been generated *)
+  | Undecoded m ->
+    (match m.next with
+    |Some s -> [s]
+    | _ -> [])
+  | Raw progn ->
+    (match progn.p_core.next with
+    | Some s -> [s]
+    | _ -> [])
+  | Completed ft ->
+    (match ft with
+    | Segment progn ->
+      (match progn.p_core.next with 
+      | Some s -> [s]
+      | _ -> [])
+    | Branch b -> [b.true_child; b.false_child]
+    | _ -> [])
+
+let set_successor value = function 
+    | Undecoded a -> a.next <- Some value
+    | Raw progn -> progn.p_core.next <- Some value
     | Completed c ->
       (match c with
       | ExternalLoop _
@@ -495,15 +398,212 @@ let replace_child current_node replacement =
       | FunCall _
       | SysCall _
       | Special _
-      | SearchLimit _ -> failwith "Illegal parent type!"
-      | Segment s -> s.p_core.next <- Some replacement
-      | Branch b ->
-	(if current_node == b.true_child
-	 then b.true_child <- replacement
-	 else if b.false_child == current_node
-	 then b.false_child <- replacement
-	 else failwith "current_node isn't a child to its parent?"))
+      | SearchLimit _
+      | Branch _ -> failwith "setting successor on a node with no natural successor."
+      | Segment s -> s.p_core.next <- Some value)
 
+let consider_statements (node : veritesting_node) = 
+  let progn = match node with
+    |Raw progn -> progn
+    | _ -> failwith "only for raw nodes" in
+  let rec wsl accum = function
+    | [] -> let comp = 
+	      Completed (Segment {p_core = {m_core = {eip = (eip_of_node node);
+						      parent = node;
+						      depth = depth node; };
+					    next = None;};
+				  stmts = List.rev accum;
+				  decls = progn.decls;}) in
+	    set_successor comp node;
+	    comp
+    | stmt::rest ->
+      begin
+	match stmt with
+	| V.Special("int 0x80") -> add_exit progn (Completed (SysCall progn.p_core.m_core.eip))
+	| V.Special _ ->           add_exit progn (Completed (Special progn.p_core.m_core.eip))
+	| V.Return _ ->            add_exit progn (Completed (Return progn.p_core.m_core.eip))
+	| V.Call _ ->              add_exit progn (Completed (FunCall progn.p_core.m_core.eip))
+	| V.Halt _  ->             add_exit progn (Completed (Halt progn.p_core.m_core.eip))
+	| V.Label(l) ->
+	  begin
+	    match (decode_eip l) with
+	    (* update this node to finished.  It's stmt list is just the current accum.
+	       then, generate the raw child, which is an undecoded of the target eip *)  
+	    | X86eip eip ->
+	      if progn.p_core.m_core.eip = eip
+	      then wsl (stmt::accum) rest (* this is this eip, no jumping. *)
+	      else
+	      (* this eip = nodes eip, skip it? *)
+		begin
+		  (* Printf.eprintf "Completing %s" (node_to_string node);*)
+		  complete_node node (Undecoded 
+					{m_core = {eip = eip;
+						   parent = node;
+						   depth = depth node;};
+					 next = None;}) accum progn.decls
+		end
+	    | Internal _ -> wsl accum rest (* drop internal labels on the floor *)
+	  end
+        | V.Jmp(V.Name(l)) ->
+	  begin
+	    match (decode_eip l) with
+	    | X86eip eip -> (complete_node
+			       node
+			       (Undecoded {m_core = {eip = eip;
+						     parent = node;
+						     depth = 1 + (depth node);};
+					   next = None;}) accum progn.decls)
+	    | Internal _ ->
+	      match walk_to_label l rest with
+	      | None -> add_exit progn (Completed (InternalLoop progn.p_core.m_core.eip))
+	      | Some rest' -> wsl accum rest'
+	  end 
+        | V.CJmp(test, V.Name(true_lab), V.Name(false_lab)) ->
+	  begin
+	    match (decode_eip true_lab, decode_eip false_lab) with
+	    | X86eip teip, X86eip feip -> 
+	      let rec branch = Completed (Branch { test = test;
+						   b_core = {eip = progn.p_core.m_core.eip;
+							     parent = node;
+							     depth = depth node;};
+						   true_child =  Undecoded {m_core = {eip = teip; 
+										      parent = branch;
+										      depth = 1 + (depth node);};
+									    next = None;};
+						   false_child = Undecoded {m_core = {eip = feip;
+										      parent = branch;
+										      depth = 1 + (depth node);};
+									    next = None;}}) in
+	      complete_node node branch accum progn.decls
+	    | X86eip teip, Internal flabel ->
+	      begin
+		match walk_to_label false_lab rest with
+		| None -> add_exit progn (Completed (InternalLoop progn.p_core.m_core.eip))
+		| Some rest' ->
+		  begin
+		    let rec branch = 
+		      Completed (Branch { test = test;
+					  b_core = {eip = progn.p_core.m_core.eip;
+						    parent = node;
+						    depth = depth node;};
+					  true_child = Undecoded {m_core = {eip = teip;
+									    parent = branch;
+									    depth = 1 + (depth node);};
+								  next = None};
+					  false_child = Raw {p_core = {m_core = {eip = progn.p_core.m_core.eip;
+										 (* dangerous!  should be the label. *)
+										 parent = branch;
+										 depth = 1 + (depth node);};
+								       next = None;};
+							     decls = [];
+							     stmts = rest';}}) in
+		    complete_node node branch accum progn.decls
+		  end
+	      end
+	    | Internal tlabel, X86eip feip ->
+	      begin
+		match walk_to_label true_lab rest with
+		| None -> add_exit progn (Completed (InternalLoop progn.p_core.m_core.eip))
+		| Some rest' ->
+		  begin
+		    let rec branch = Completed (Branch { test = test;
+							 b_core = {eip = progn.p_core.m_core.eip;
+								   parent = node;
+								   depth = depth node;};
+							 true_child = Raw {p_core = {m_core = {eip = progn.p_core.m_core.eip;
+											       (* dangerous!  should be the label. *)
+											       parent = branch;
+											       depth = 1 + (depth node);};
+										     next = None;};
+									   decls = [];
+									   stmts = rest';};
+						     false_child = Undecoded {m_core = {eip = feip;
+											parent = branch;
+											depth = 1 + (depth node);};
+									      next = None}}) in
+		    complete_node node branch accum progn.decls
+		  end
+	      end
+	    | Internal tlabel, Internal flabel ->
+	      begin
+		match (walk_to_label true_lab rest), (walk_to_label false_lab rest) with
+		| Some traw, Some fraw ->
+		  let rec branch = Completed (Branch {test = test;
+						      b_core = {eip = progn.p_core.m_core.eip;
+								parent = node;
+								depth = depth node;};
+						      true_child = Raw {p_core = {m_core = {eip = progn.p_core.m_core.eip;
+											    parent = branch;
+											    depth = 1 + (depth node);};
+										  next = None;};
+									decls = [];
+									stmts = traw};
+						      false_child = Raw {p_core = {m_core = {eip = progn.p_core.m_core.eip;
+											     parent = branch;
+											     depth = 1 + (depth node);};
+										   next = None};
+									 decls = [];
+									 stmts = fraw}}) in
+		  complete_node node branch accum progn.decls
+		| _ -> add_exit progn (Completed (InternalLoop progn.p_core.m_core.eip))
+	      end
+	  end
+	| _ -> wsl (stmt::accum) rest
+	  end
+  in
+  (* Printf.eprintf "Considering %s\n" (node_to_string node);
+     List.iter (Vine.stmt_to_channel stderr) progn.stmts;
+     let ret = wsl [] progn.stmts in
+     Printf.eprintf "Done, result was %s.\n" (node_to_string ret);
+     ret
+  *)
+  wsl [] progn.stmts
+
+let generate_children fm gamma = function
+  | Undecoded a as node->
+    begin
+      assert(None = a.next);
+      let decls, stmts = 
+	(with_trans_cache a.m_core.eip
+	   (fun () -> decode_insns fm gamma a.m_core.eip !opt_bb_size)) in
+      let child = Raw { p_core = {m_core = {eip = a.m_core.eip;
+					    parent = node;
+					    depth = depth node;};
+				  next = None;};
+			decls = decls;
+			stmts = stmts} in
+      a.next <- Some child;
+      [child]
+    end
+  | Raw progn as node -> [consider_statements node] (* this has to replace the current node with the appropriate structure? *)
+  | Completed ft ->
+    begin
+      match ft with
+	| ExternalLoop _
+	| InternalLoop _ 
+	| Return _
+	| Halt _
+	| FunCall _
+	| SysCall _
+	| Special _
+	| SearchLimit _ -> []
+	| Segment p ->
+	  (match p.p_core.next with
+	  | Some n -> [n]
+	  | None -> [] )
+	| Branch b -> [b.true_child; b.false_child]
+    end
+
+let expand fm gamma (node : veritesting_node) =
+  generate_children fm gamma node
+
+
+let make_root eip = 
+  let rec root = Undecoded {m_core = {eip = eip;
+				      parent = root;
+				      depth = 0;};
+			    next = None;} in
+  root
 
 let successor = function
     | Undecoded a -> a.next
@@ -527,9 +627,9 @@ let do_offset ch offset =
     Printf.fprintf ch "\t";
   done
 
-let node_to_stderr offset n =
-  do_offset stderr offset;
-  Printf.eprintf "%s\n" (node_to_string n)
+let node_to_ch ch offset n =
+  do_offset ch offset;
+  Printf.fprintf ch "%s\n" (node_to_string n)
 
 let node_and_stmts ch offset n =
   let indent _ = do_offset ch offset in
@@ -541,14 +641,14 @@ let node_and_stmts ch offset n =
     List.iter (fun d -> indent(); Vine.decl_to_channel ch d) s.decls
   | _ -> ()
 
-let rec print_tree_opt ?(print_fn = node_to_stderr) ?(offset = 0) = function
+let rec print_tree_opt ?(print_fn = (node_to_ch stderr)) ?(offset = 0) = function
   | None -> ()
   | Some node ->
     begin
       print_fn offset node;
       match node with
-      | Undecoded a -> print_tree_opt ~print_fn ~offset:(offset+1) a.next
-      | Raw progn -> print_tree_opt ~print_fn ~offset:(offset+1) progn.p_core.next
+      | Undecoded a -> print_tree_opt ~print_fn ~offset a.next
+      | Raw progn -> print_tree_opt ~print_fn ~offset progn.p_core.next
       | Completed c ->
 	(match c with
 	| ExternalLoop _
@@ -564,7 +664,7 @@ let rec print_tree_opt ?(print_fn = node_to_stderr) ?(offset = 0) = function
 	    print_tree_opt ~print_fn ~offset:(offset+1) (Some b.true_child); 
 	    print_tree_opt ~print_fn ~offset:(offset+1) (Some b.false_child)
 	  end 
-	| Segment s -> print_tree_opt ~print_fn ~offset:(offset+1) s.p_core.next)
+	| Segment s -> print_tree_opt ~print_fn ~offset s.p_core.next)
     end
 
 let print_tree node = print_tree_opt (Some node)

@@ -5,7 +5,7 @@ open Exec_veritesting_general_search_components
 exception NotDag
 
 
-let find_linear_region ?maxdepth:(maxdepth = 100) root expansion =
+let find_linear_region ?maxdepth:(maxdepth = 10) root expansion =
   (* Note, there must always be a linear veritesting region of at least
      one node in length.*)
   let add_child parent child =
@@ -25,18 +25,15 @@ let find_linear_region ?maxdepth:(maxdepth = 100) root expansion =
     | [child] -> add_child node child
     | []
     | _::_ -> (truncate_node node; None) in
-  let rec loop depth node =
-    if (depth = maxdepth)
-    then (truncate_node node)
+  let rec loop node =
+    if (depth node) = maxdepth
+    then (truncate_node node;
+	  Some root)
     else
       match expand node with
-      | None -> ()
-      | Some next -> 
-	(match next with
-	| Undecoded _ -> loop (depth + 1) next
-	| _ -> loop depth next) in
-  loop ~-1 root;
-  Some root
+      | None -> Some root
+      | Some next -> loop next in
+  loop root
 
 
 let detect_diamond ?max_depth:(max_depth = 100) root expansion =
@@ -47,14 +44,21 @@ let detect_diamond ?max_depth:(max_depth = 100) root expansion =
   let add_child parent accum child =
     try
       let prev = Hashtbl.find closed (key child) in
-      Printf.eprintf "Found additional path to %Lx\n" (eip_of_node child);
-      Printf.eprintf "%s vs %s\n" (node_to_string prev) (node_to_string child);
+(*      Printf.eprintf "Found additional path to %Lx\n" (eip_of_node child);
+	Printf.eprintf "%s vs %s\n" (node_to_string prev) (node_to_string child);
+*)
       replace_child child prev;
+(*      Printf.eprintf "Truncating Child.";*)
       truncate_node prev;
       Hashtbl.replace endpoints (key prev) prev;
-      if (check_cycle child parent)
-      then raise NotDag
-      else accum
+(*      Printf.eprintf "Checking cycles\n";*)
+      if (check_cycle child parent) then
+	raise NotDag
+      else
+	begin
+	    (*Printf.eprintf "returning...\n"; *)
+	    accum
+	end
     with Not_found -> child::accum in
   let expansion node =
     if not (Hashtbl.mem closed (key node)) then
@@ -63,16 +67,17 @@ let detect_diamond ?max_depth:(max_depth = 100) root expansion =
 	if (depth node) < max_depth then
 	  begin
 	    let children = List.fold_left (add_child node) [] (expansion node) in
-	    Printf.eprintf "%Lx generates " (eip_of_node node);
+(*	    Printf.eprintf "%Lx generates " (eip_of_node node);
 	    List.iter (fun c -> Printf.eprintf "%Lx\t" (eip_of_node c)) children;
 	    Printf.eprintf "\n";
+*)
 	    children
 	  end
 	else []
       end 
     else
       begin
-	Printf.eprintf "Truncating %s\n" (node_to_string node);
+(*	Printf.eprintf "Truncating %s\n" (node_to_string node); *)
 	truncate_node node;
 	Hashtbl.replace endpoints (key node) node;
 	[]
@@ -80,7 +85,8 @@ let detect_diamond ?max_depth:(max_depth = 100) root expansion =
   in
   let rec loop saw_branch = function 
     | [] ->
-      (Printf.eprintf "Open list has 0 elements.\n";
+      (
+	(*Printf.eprintf "Open list has 0 elements.\n";*)
        if (Hashtbl.length endpoints) > 0 then
 	 begin
 	   (* Here we establish the shallowest terminal in the search *)
@@ -91,22 +97,22 @@ let detect_diamond ?max_depth:(max_depth = 100) root expansion =
 	       if d' < d 
 	       then d', node
 	       else d, accum_node) endpoints (Pervasives.max_int, root) in
-	   Printf.eprintf "I think %s is the terminal.\n" (node_to_string terminal);
+(*	   Printf.eprintf "I think %s is the terminal.\n" (node_to_string terminal);*)
 	   truncate_node terminal;
-	   print_tree root;
+(*	   print_tree root; *)
 	   Some root
 	 end
        else
-	 (Printf.eprintf "0 endpoints";
-	  print_tree root;
+	 ((*Printf.eprintf "0 endpoints";
+	  print_tree root;*)
 	  None))
-    | head::tail as openlist ->
+    | head::tail (* as openlist *) ->
       begin
-      Printf.eprintf "Open list has %i elements.\n" (List.length openlist);
+(*      Printf.eprintf "Open list has %i elements.\n" (List.length openlist);*)
       let to_add = expansion head in
       loop (saw_branch || (List.length to_add) = 2)
 	(List.rev_append tail to_add) end in
-  Printf.eprintf "Foo\n";
+(*  Printf.eprintf "Foo\n";*)
   loop false [root]
 
 
