@@ -83,8 +83,8 @@ let log_fuzz_restart log str fm =
   and info_filename = Printf.sprintf "%s/info-%i.json" !Pov_xml.out_channel_name !restarts in
   let sexp = Text_logger.LazyString
     (lazy
-       (Printf.sprintf "((:type :new-test-case) (:xml \"%s\") (:info \"%s\"))"
-	  pov_filename info_filename)) in
+       (Printf.sprintf "((:type :new-test-case) (:xml \"%s\") (:info \"%s\") (:provenance %s))"
+	  pov_filename info_filename (if !opt_symbolic_receive then ":fuzzball-symbolic" else ":fuzzball-concolic"))) in
   SEXP.always ~sign:false sexp;
   restarts := !restarts + 1
 
