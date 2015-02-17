@@ -499,8 +499,9 @@ object (self)
     tr_exp e
 
   method assert_exp e =
-    puts "(assert ";
-    puts(self#translate_exp e);
-    puts ")\n"
+    let s = self#translate_exp e in
+      puts "(assert ";
+      puts s;
+      puts ")\n"
 
 end

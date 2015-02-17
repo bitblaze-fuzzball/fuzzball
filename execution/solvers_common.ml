@@ -251,6 +251,7 @@ let parse_mathsat_ce_line s v =
 	  (No_CE_here, None)
       | (")", None) -> (No_CE_here, None)
       | (") )", None) -> (End_of_CE, None)
+      | ("(  )", None) -> (End_of_CE, None)
       | (s, _) ->
 	  Printf.printf "Parse failure on <%s>\n" s;
 	  failwith "Unhandled loop case in parse_mathsat_ce_line"
