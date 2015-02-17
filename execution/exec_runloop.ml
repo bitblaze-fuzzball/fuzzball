@@ -61,13 +61,16 @@ let decode_insns_cached fm gamma eip =
     match (some_none_trans_cache eip veritest_call) with
     | None -> with_trans_cache eip decode_call
     | Some progn -> progn in
-  if false
-  then (Printf.printf "Printing statement list:\n";
-	List.iter (fun s -> V.stmt_to_channel stdout s) stmts;
-	Printf.printf "End statement list: %d\n" (List.length stmts);
-	Printf.printf "Printing decls:\n";
-	List.iter (fun s -> V.decl_to_channel stdout s; Printf.printf "\n") decls;
-	Printf.printf "End decls\n");
+  if false then
+    begin
+      Printf.printf "Printing statement list:\n";
+      List.iter (fun s -> V.stmt_to_channel stdout s) stmts;
+      Printf.printf "End statement list: %d\n" (List.length stmts);
+      Printf.printf "Printing decls:\n";
+      List.iter (fun s -> V.decl_to_channel stdout s; Printf.printf "\n") decls;
+      Printf.printf "End decls\n";
+      flush stdout
+    end;
   return
 
 
