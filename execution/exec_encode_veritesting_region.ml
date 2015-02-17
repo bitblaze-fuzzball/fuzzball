@@ -172,7 +172,8 @@ let build_simplest_equations root =
 
 let encode_region root =
   Printf.eprintf "\n\nEncoding Veritesting Region:\n";
-  if false
+  Search.print_tree_statements root;
+  if true (* set to false to turn on the guards around veritesting *)
   then
     Some (build_simplest_equations root)
   else

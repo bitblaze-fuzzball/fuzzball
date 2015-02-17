@@ -521,18 +521,34 @@ let successor = function
       | Branch b -> None (* this is a lie *)
       | Segment s -> s.p_core.next)
 
-let rec print_tree_opt ?(offset = 0) = function
+let do_offset ch offset =
+  for i = 0 to offset
+  do
+    Printf.fprintf ch "\t";
+  done
+
+let node_to_stderr offset n =
+  do_offset stderr offset;
+  Printf.eprintf "%s\n" (node_to_string n)
+
+let node_and_stmts ch offset n =
+  let indent _ = do_offset ch offset in
+  indent ();
+  Printf.fprintf ch "%s\n" (node_to_string n);
+  match n with
+  | Completed (Segment s) ->
+    List.iter (fun s -> indent(); Vine.stmt_to_channel ch s) s.stmts;
+    List.iter (fun d -> indent(); Vine.decl_to_channel ch d) s.decls
+  | _ -> ()
+
+let rec print_tree_opt ?(print_fn = node_to_stderr) ?(offset = 0) = function
   | None -> ()
   | Some node ->
     begin
-      for i = 0 to offset
-      do
-	Printf.eprintf "\t";
-      done;
-      Printf.eprintf "%Lx\n" (eip_of_node node);
+      print_fn offset node;
       match node with
-      | Undecoded a -> print_tree_opt ~offset:(offset+1) a.next
-      | Raw progn -> print_tree_opt ~offset:(offset+1) progn.p_core.next
+      | Undecoded a -> print_tree_opt ~print_fn ~offset:(offset+1) a.next
+      | Raw progn -> print_tree_opt ~print_fn ~offset:(offset+1) progn.p_core.next
       | Completed c ->
 	(match c with
 	| ExternalLoop _
@@ -545,11 +561,13 @@ let rec print_tree_opt ?(offset = 0) = function
 	| SearchLimit _ -> ()
 	| Branch b ->
 	  begin
-	    print_tree_opt ~offset:(offset+1) (Some b.true_child); 
-	    print_tree_opt ~offset:(offset+1) (Some b.false_child)
+	    print_tree_opt ~print_fn ~offset:(offset+1) (Some b.true_child); 
+	    print_tree_opt ~print_fn ~offset:(offset+1) (Some b.false_child)
 	  end 
-	| Segment s -> print_tree_opt ~offset:(offset+1) s.p_core.next)
+	| Segment s -> print_tree_opt ~print_fn ~offset:(offset+1) s.p_core.next)
     end
 
 let print_tree node = print_tree_opt (Some node)
-  
+
+let print_tree_statements node =
+  print_tree_opt ~print_fn:(node_and_stmts stderr) (Some node)
