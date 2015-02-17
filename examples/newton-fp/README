@@ -6,3 +6,7 @@ printf's "%a", but with its own implementation). For instance you can
 compile an SSE version with:
 
 % gcc -O2 -m32 -g -Wall -mfpmath=sse -march=core2 newton.c -o newton-sse
+
+or an x87 version with:
+
+% gcc -O2 -m32 -g -Wall newton.c -o newton-x87
