@@ -36,7 +36,8 @@ static const char *binopnames_strs[] = {
   "LT",
   "GE",
   "LE",
-  "SDIVIDE"
+  "SDIVIDE",
+  "SMOD",
 };
 static string *binopnames[sizeof(binopnames_strs)/sizeof(char *)];
 
@@ -62,7 +63,8 @@ static const char *strs_strs[] = {
   "<",
   ">=",
   "<=",
-  "/$" 
+  "/$",
+  "%$",
 };
 static string *strs[sizeof(strs_strs)/sizeof(char *)];
 
