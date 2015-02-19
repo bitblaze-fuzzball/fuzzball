@@ -35,6 +35,7 @@ val opt_branch_preference : (int64, int64) Hashtbl.t
 val opt_branch_preference_unchecked : (int64, int64) Hashtbl.t
 val opt_always_prefer : bool option ref
 val opt_iteration_limit : int64 ref
+val opt_insn_limit : int64 ref
 val opt_watch_expr_str : string option ref
 val opt_watch_expr : Vine.exp option ref
 val opt_path_depth_limit : int64 ref

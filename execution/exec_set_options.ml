@@ -253,6 +253,9 @@ let explore_cmdline_opts =
     ("-iteration-limit", Arg.String
        (fun s -> opt_iteration_limit := Int64.of_string s),
      "N Stop path if a loop iterates more than N times");
+    ("-insn-limit", Arg.String
+       (fun s -> opt_insn_limit := Int64.of_string s),
+     "N Stop path after N instructions");
     ("-path-depth-limit", Arg.String
        (fun s -> opt_path_depth_limit := Int64.of_string s),
      "N Stop path after N bits of symbolic branching");
