@@ -941,6 +941,7 @@ struct
 
     val maxval_cache = Hashtbl.create 101
     val maxval_offset_cache = Hashtbl.create 101
+    val used_addr_cache = Hashtbl.create 101
     val dummy_vars_cache = Hashtbl.create 101
     val mutable dummy_counter = 0
 
@@ -1023,7 +1024,7 @@ struct
 	    ((self#region (Some 0))#load_word  addr)
 	| V.REG_64 -> form_man#simplify64
 	    ((self#region (Some 0))#load_long  addr)
-	| _ -> failwith "Unexpected type in maybe_table_load" 
+	| _ -> failwith "Unexpected type in table_load"
       in
       let table = map_n
 	(fun i -> load_ent (Int64.add cloc (Int64.of_int (i * stride))))
@@ -1054,29 +1055,45 @@ struct
 	    Hashtbl.replace dummy_vars_cache (addr, ty) var;
 	    var
       in
+      let load_ent addr = match ty with
+	| V.REG_8  -> form_man#simplify8
+	    ((self#region (Some 0))#load_byte  addr)
+	| V.REG_16 -> form_man#simplify16
+	    ((self#region (Some 0))#load_short addr)
+	| V.REG_32 -> form_man#simplify32
+	    ((self#region (Some 0))#load_word  addr)
+	| V.REG_64 -> form_man#simplify64
+	    ((self#region (Some 0))#load_long  addr)
+	| _ -> failwith "Unexpected type in concretize_once_and_load"
+      in
       let taut = V.BinOp(V.EQ, addr_e, addr_e) in
       let (is_sat, ce) = self#query_with_path_cond taut false in
         assert(is_sat);
         let addr = form_man#eval_expr_from_ce ce addr_e in
         let cond = V.BinOp(V.EQ, addr_e, V.Constant(V.Int(V.REG_32, addr))) in
-	let value = load_sym_ent addr in
+	let value =
+	  if Hashtbl.mem used_addr_cache addr then
+	    load_ent addr
+	  else
+	    load_sym_ent addr
+	in
 	  if !opt_trace_offset_limit then
 	    Printf.printf "Concretized load once to 0x%08Lx\n" addr;
 	  self#add_to_path_cond cond;
 	  Some value
 
-    method private maybe_load_symbol_or_table addr_e ty =
+    method private maybe_table_or_concrete_load addr_e ty =
       let e = D.to_symbolic_32 (self#eval_int_exp_simplify addr_e) in
       let (cbases, coffs, eoffs, ambig, syms) = classify_terms e form_man in
       let cbase = List.fold_left Int64.add 0L cbases in
       let cloc = Int64.add cbase (List.fold_left Int64.add 0L coffs) in
       let off_exp = sum_list (eoffs @ ambig @ syms) in
-      match (self#decide_offset_wd off_exp, !opt_trace_end_jump) with
-        | (None, Some jump_addr) when jump_addr = self#get_eip ->
-	    raise SymbolicJump
-	| (None, _) ->
-	    self#concretize_once_and_load addr_e ty
-	| _ ->
+        match (self#decide_offset_wd off_exp, !opt_trace_end_jump) with
+          | (None, Some jump_addr) when jump_addr = self#get_eip ->
+	      raise SymbolicJump
+	  | (None, _) ->
+	      self#concretize_once_and_load addr_e ty
+	  | _ ->
         if cbase = 0L then
 	  None
 	else 
@@ -1087,11 +1104,9 @@ struct
     method private handle_load addr_e ty =
       if !opt_trace_offset_limit then
 	Printf.printf "Loading from... %s\n" (V.exp_to_string addr_e);
-      match self#maybe_load_symbol_or_table addr_e ty with
-        | Some v ->
-	      (*Printf.printf "Loading symbolic or table value\n";*)
-	      (v, ty)
-	| None -> (*Printf.printf "Not loading symbolic or table value\n";*)
+      match self#maybe_table_or_concrete_load addr_e ty with
+        | Some v -> (v, ty)
+        | None ->
       let (r, addr) = self#eval_addr_exp_region addr_e in
       let v =
 	(match ty with
@@ -1357,6 +1372,7 @@ struct
 	  if !opt_trace_offset_limit then
 	    Printf.printf "Concretized store once to 0x%08Lx\n" addr;
           store_ent addr value;
+	  Hashtbl.replace used_addr_cache addr true;
 	  self#add_to_path_cond cond;
 	  true
 
