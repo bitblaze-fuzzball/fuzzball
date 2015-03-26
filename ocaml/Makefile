@@ -87,9 +87,9 @@ OCAMLDOCFLAGS = -m avlsoper
 
 STATIC=1    # Don't bother building an .so library
 
-all: ncl
+all: dncl
 
-debug: dncl
+nodebug: ncl
 
 bytecode: dcl top
 

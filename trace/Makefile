@@ -53,9 +53,9 @@ export OCAMLFLAGS
 # merge everything but descriptions.
 OCAMLDOCFLAGS = -m avlsoper
 
-all: ncl
+all: dncl
 
-debug: dncl
+nodebug: ncl
 
 bytecode: dcl top
 

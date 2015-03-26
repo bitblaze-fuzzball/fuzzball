@@ -67,13 +67,13 @@ export PROJ_vinegrind
 # suffix for bytecode (which when we make all is debug code)
 export BCSUFFIX = .dbg
 
-all: nc
+all: dnc
 
-debug: dnc
+nodebug: nc
 
 bytecode: dc
 
 %:
-	$(if $(filter-out bytecode,$@),make -f $(OCAMLMAKEFILE) subprojs SUBTARGET=$@,@:)
+	$(if $(filter-out nodebug,$(filter-out bytecode,$@)),make -f $(OCAMLMAKEFILE) subprojs SUBTARGET=$@,@:)
 
 #include $(OCAMLMAKEFILE)

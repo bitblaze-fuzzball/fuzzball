@@ -5,3 +5,6 @@ doc:
 
 bytecode:
 	@# No bytecode, so nothing to do.
+
+nodebug: all
+	@# Not currently supported: we always use -g
