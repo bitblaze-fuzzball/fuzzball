@@ -188,29 +188,6 @@ struct
 		 (V.UnOp(V.NEG,
 			 V.BinOp(V.BITAND, e,
 				 V.UnOp(V.NOT, V.Constant(V.Int(ty, v)))))))
-	(*| V.BinOp(V.BITOR, e1, e2) ->
-	    let (w1, w2) = (narrow_bitwidth e1), (narrow_bitwidth e2) in
-(* 	      Printf.printf "In %s (OR) %s, widths are %d and %d\n" *)
-(* 		(V.exp_to_string e1) (V.exp_to_string e2) w1 w2; *)
-	      if min w1 w2 <= 8 then
-		(* x | y = x - (x & m) + ((x & m) | y)
-		   where m is a bitmask >= y. *)
-		let (e_x, e_y, w) = 
-		  if w1 < w2 then
-		    (e2, e1, w1)
-		  else
-		    (e1, e2, w2)
-		in
-		  assert(w >= 0); (* x & 0 should have been optimized away *)
-		  let mask = Int64.pred (Int64.shift_left 1L w) in
-		  let ty_y = Vine_typecheck.infer_type None e_y in
-		  let masked = V.BinOp(V.BITAND, e_y,
-				       V.Constant(V.Int(ty_y, mask))) in
-		    (loop e_x) @ 
-		      [V.UnOp(V.NEG, masked);
-		       V.BinOp(V.BITOR, masked, e_y)]
-	      else
-		[e] *)
 	| V.Lval(V.Temp(var)) ->
 	    FormMan.if_expr_temp form_man var
 	      (fun e' -> loop e') [e] (fun v -> ())
