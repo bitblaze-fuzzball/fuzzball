@@ -15,7 +15,7 @@ let add _ this_addr =
 
 let flush () =
   match !chan_opt with
-  | None -> failwith "EIP sequence logger: Flushing no channel"
+  | None -> () (* failwith "EIP sequence logger: Flushing no channel" *)
   | Some c ->
     begin
       Printf.fprintf c "\n";
