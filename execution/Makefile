@@ -97,7 +97,7 @@ export LDFLAGS
 export CLIBFLAGS
 export LIBDIRS = $(LIBASMIR)/src # ../appreplay ../stp ../stp/ocaml
 
-OCAMLFLAGS := -warn-error Aelz
+OCAMLFLAGS := -warn-error Aelz-3
 ifdef PROFILE
 OCAMLFLAGS += -p
 endif

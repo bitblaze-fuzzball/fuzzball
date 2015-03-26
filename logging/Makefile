@@ -22,7 +22,7 @@ export LIBS = vine structs
 export INCDIRS = ../ocaml ../structs
 export OCAMLDEP = ocamldep -I ../ocaml ../structs
 
-OCAMLFLAGS := -warn-error Aelz
+OCAMLFLAGS := -warn-error Aelz-3
 ifdef PROFILE
 CFLAGS += -p -pg
 OCAMLFLAGS += -p
