@@ -225,7 +225,7 @@ let load_x87_emulator fm emulator =
     close_in ic;
     eh.entry
 
-let build_startup_state fm eh load_base ldso argv =
+let build_startup_state (fm : Fragment_machine.fragment_machine) eh load_base ldso argv =
   let esp = ref 0xc0000000L in
   let push_cstr s =
     esp := Int64.sub !esp (Int64.of_int ((String.length s) + 1));

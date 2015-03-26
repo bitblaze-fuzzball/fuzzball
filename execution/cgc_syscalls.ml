@@ -51,9 +51,10 @@ class cgcos_special_handler (fm : fragment_machine) =
        Array.init len
          (fun i -> Char.chr (lb (Int64.add addr (Int64.of_int i)))))
   in
-  let store_word base idx v =
+  let store_word ?(prov = Interval_tree.DontKnow) base idx v =
+    (* Printf.eprintf "CGCOS Store Word Prov: %s\n" (Interval_tree.prov_to_string prov); *)
     let addr = Int64.add base (Int64.of_int idx) in
-      fm#store_word_conc addr v
+      fm#store_word_conc ~prov addr v
   in
   let zero_region base len =
     g_assert(len >= 0 && len <= 0x20000000) 100 "cgc_syscalls.zero_region"; (* sanity check *)
@@ -100,7 +101,8 @@ object(self)
     (* file descriptor, array, to send, transmitted byets? *)
     let success num_bytes =
       if tx_bytes <> 0L then
-	store_word tx_bytes 0 num_bytes;
+	(* internal, because the system is saying how many bytes were written. *)
+	store_word ~prov:Interval_tree.Internal tx_bytes 0 num_bytes;
       transmit_pos <- transmit_pos + (Int64.to_int num_bytes);
       (match !opt_max_transmit_bytes with
       | Some max ->
@@ -217,7 +219,7 @@ object(self)
       if !opt_memory_watching then
         pm#add_alloc fresh length;
       zero_region fresh (Int64.to_int length);
-      store_word addr_p 0 fresh;
+      store_word ~prov:Interval_tree.Internal addr_p 0 fresh;
       put_return 0L
 
   method private cgcos_deallocate addr len =
@@ -248,7 +250,8 @@ object(self)
         !l
     in
     let put_sel_fd fd_bm idx fd_w_or =
-      fm#store_word_conc (lea fd_bm idx 4 0) fd_w_or;
+      (* we're storing which fd we're waiting on somewhere, I think this is internal. *)
+      fm#store_word_conc ~prov:Interval_tree.Internal (lea fd_bm idx 4 0) fd_w_or;
     in
     let write_bitmap fd_bm fd_l nfds =
         zero_region fd_bm nfds;
@@ -292,7 +295,8 @@ object(self)
         write_bitmap readfds r_fds nfds;
       if writefds <> 0L then 
         write_bitmap writefds w_fds nfds;
-      store_word ready_cnt_p 0 (Int64.of_int (r_fds_len + w_fds_len));
+      (* how many fds are ready to be read? Looks like it's not transmit or reading from disk at least. *)
+      store_word ~prov:Interval_tree.Internal ready_cnt_p 0 (Int64.of_int (r_fds_len + w_fds_len));
       put_return 0L
     with
       | Unix.Unix_error(err, _, _) -> self#put_errno err
@@ -301,7 +305,7 @@ object(self)
     if !opt_symbolic_random then
       fm#maybe_start_symbolic
 	(fun () -> 
-	   (ignore (fm#populate_symbolic_region "random" random_pos buf count);
+	   (ignore (fm#populate_symbolic_region ~prov:Interval_tree.Random "random" random_pos buf count);
 	    random_pos <- random_pos + count))
     else
       for i = 0 to count - 1 do
@@ -317,7 +321,7 @@ object(self)
 	in
 	  fm#store_byte_idx buf i byte
       done;
-    store_word count_out_p 0 (Int64.of_int count);
+    store_word ~prov:Interval_tree.Random count_out_p 0 (Int64.of_int count);
     put_return 0L
 
   method private read_throw (fd : int) (buf : int64) (count :int) num_bytes_p =
@@ -331,7 +335,7 @@ object(self)
 	  fm#maybe_start_symbolic
 	    (fun () ->
 	      (* you aren't catching symbolic reads. That's the issue. JTT 11/17/14 *)
-	       (let constraints = fm#populate_symbolic_region "input0" receive_pos buf num_read; in
+	       (let constraints = fm#populate_symbolic_region ~prov:Interval_tree.External "input0" receive_pos buf num_read; in
 		Pov_xml.add_symbolic_transmit
 		  (Int64.of_int receive_pos)
 		  (Int64.of_int (receive_pos + num_read))
@@ -343,12 +347,13 @@ object(self)
 	(* at this point, we know the actual data that was read into the buffer. *)
 	Pov_xml.add_transmit_str read_str count;
         if !opt_concolic_receive then
-	  fm#populate_concolic_string "input0" receive_pos buf read_str
+	  fm#populate_concolic_string ~prov:Interval_tree.External "input0" receive_pos buf read_str
 	else
 	  fm#store_str buf 0L read_str; (* base pointer, offset string *)
 	num_read
     in
-      store_word num_bytes_p 0 (Int64.of_int num_read);
+    
+      store_word ~prov:Interval_tree.External num_bytes_p 0 (Int64.of_int num_read);
       receive_pos <- receive_pos + num_read;
       max_input_string_length := max (!max_input_string_length) receive_pos;
       (match !opt_max_receive_bytes with
@@ -382,6 +387,7 @@ object(self)
        | None -> ());
     num_transmits <- num_transmits + 1;
     Pov_xml.add_read_car bytes tx_bytes;
+    (* JTT -- We already need to know the provenance by the time we get here. *)
     self#do_write fd bytes count tx_bytes
 
   method private put_errno err =
@@ -466,13 +472,17 @@ object(self)
                   buf      = arg2 and
                   count    = Int64.to_int arg3 and
 		  tx_bytes = arg4 in
-	      (* povxml -- corresponds to the transmit in povs *)
-		if !opt_trace_syscalls then
-                  Printf.printf "transmit(%d, 0x%08Lx, %d, 0x%08Lx)"
-		    fd buf count tx_bytes;
-		let bytes = read_buf buf count in
-                  self#cgcos_transmit fd bytes count tx_bytes;
-		  Some tx_bytes
+		(* povxml -- corresponds to the transmit in povs *)
+	      if !opt_trace_syscalls then
+                Printf.printf "transmit(%d, 0x%08Lx, %d, 0x%08Lx)"
+		  fd buf count tx_bytes;
+	      let bytes = read_buf buf count in
+(*	      let prov = match fm#get_pointer_management () with
+		| None -> Interval_tree.DontKnow
+		| Some pm -> pm#find_read_prov buf arg3 (* int64 version of count *) in
+	      Printf.eprintf "Transmiting bytes from %s\n" (Interval_tree.prov_to_string prov); *)
+              self#cgcos_transmit fd bytes count tx_bytes;
+	      Some tx_bytes
 	  | 3 -> (* receive, similar to Linux sys_read  *)
               let (arg1, arg2, arg3, arg4) = read_4_regs () in
               let fd       = Int64.to_int arg1 and

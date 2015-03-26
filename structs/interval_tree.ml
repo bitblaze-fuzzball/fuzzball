@@ -2,24 +2,39 @@
     Modified interval tree, taken from CLRS third edition -- pg 348-354
 *)
 
+type provenance =
+| Internal
+| External
+| Random
+| DontKnow
+
+let prov_to_string = function
+  | Internal -> "Internal"
+  | External -> "External"
+  | Random -> "Random"
+  | DontKnow -> "DontKnow"
+
 type interval = {
   low  : int64;
   high : int64;
+  mutable provenance : provenance;
   mutable accessed : int;
 }
 
-let make_interval low high =
+let make_interval ?(prov = DontKnow) low high =
   assert (high >= low);
   assert (low >= 0);
   { low = Int64.of_int low;
     high = Int64.of_int high;
+    provenance = prov;
     accessed = 0;
   }
 
-let make_interval_wcheck low high =
+let make_interval_wcheck ?(prov = DontKnow) low high =
   assert (high >= low);
   { low = low;
     high = high;
+    provenance = prov;
     accessed = 0;}
 
 let intersects i1 i2 =
@@ -228,7 +243,7 @@ let find_all base_imap key =
   List.sort (fun a b -> if a.low <= b.low then ~-1 else 1) (helper (copy base_imap))
 
 
-let attempt_write alloc_map io_map attempted_range =
+let attempt_write ?(prov = DontKnow) alloc_map io_map attempted_range =
     match optional_find alloc_map attempted_range with
   | None -> raise (WriteBeforeAllocated attempted_range)
   | Some interval ->
@@ -240,6 +255,7 @@ let attempt_write alloc_map io_map attempted_range =
        then
 	  (let merge_range = {low = (Int64.sub attempted_range.low Int64.one);
 			      high = (Int64.add attempted_range.high Int64.one);
+			      provenance = prov;
 			      accessed = 1; (* acccessed at least once, by this write *)} in
 	   (match optional_find io_map merge_range with
 	   | None -> (attempted_range.accessed <- 1;

@@ -59,6 +59,7 @@ val comment_is_insn : string -> bool
    functors. *)
 class virtual fragment_machine : object
   method virtual set_pointer_management : Pointer_management.pointer_management -> unit
+  method virtual get_pointer_management : unit -> Pointer_management.pointer_management option
   method virtual init_prog : Vine.program -> unit
   method virtual set_frag : Vine.program -> unit
   method virtual concretize_misc : unit
@@ -84,10 +85,10 @@ class virtual fragment_machine : object
   method virtual load_x86_user_regs : Temu_state.userRegs -> unit
   method virtual print_regs : unit
 
-  method virtual store_byte_conc  : int64 -> int   -> unit
-  method virtual store_short_conc : int64 -> int   -> unit
-  method virtual store_word_conc  : int64 -> int64 -> unit
-  method virtual store_long_conc  : int64 -> int64 -> unit
+  method virtual store_byte_conc  : ?prov:Interval_tree.provenance -> int64 -> int   -> unit
+  method virtual store_short_conc : ?prov:Interval_tree.provenance -> int64 -> int   -> unit
+  method virtual store_word_conc  : ?prov:Interval_tree.provenance -> int64 -> int64 -> unit
+  method virtual store_long_conc  : ?prov:Interval_tree.provenance -> int64 -> int64 -> unit
 
   method virtual store_page_conc  : int64 -> string -> unit
 
@@ -163,13 +164,13 @@ class virtual fragment_machine : object
   method virtual store_str : int64 -> int64 -> string -> unit
 
   method virtual populate_symbolic_region :
-    string -> int -> int64 -> int -> Vine.exp array
+    ?prov:Interval_tree.provenance -> string -> int -> int64 -> int -> Vine.exp array
   method virtual make_symbolic_region : int64 -> int -> unit
 
   method virtual store_symbolic_cstr : int64 -> int -> bool -> bool -> unit
   method virtual store_concolic_cstr : int64 -> string -> bool -> unit
   method virtual populate_concolic_string :
-    string -> int -> int64 -> string -> unit
+      ?prov:Interval_tree.provenance -> string -> int -> int64 -> string -> unit
 
   method virtual store_symbolic_wcstr : int64 -> int -> unit
 
@@ -272,6 +273,7 @@ module FragmentMachineFunctor :
 sig
   class frag_machine : object
     method set_pointer_management : Pointer_management.pointer_management -> unit
+    method get_pointer_management : unit -> Pointer_management.pointer_management option
     method init_prog : Vine.program -> unit
     method set_frag : Vine.program -> unit
     method concretize_misc : unit
@@ -301,15 +303,15 @@ sig
     method load_x86_user_regs : Temu_state.userRegs -> unit
     method print_regs : unit
 
-    method store_byte  : int64 -> D.t -> unit
-    method store_short : int64 -> D.t -> unit
-    method store_word  : int64 -> D.t -> unit
-    method store_long  : int64 -> D.t -> unit
+    method store_byte  : ?prov:Interval_tree.provenance -> int64 -> D.t -> unit
+    method store_short : ?prov:Interval_tree.provenance ->  int64 -> D.t -> unit
+    method store_word  : ?prov:Interval_tree.provenance -> int64 -> D.t -> unit
+    method store_long  : ?prov:Interval_tree.provenance -> int64 -> D.t -> unit
 
-    method store_byte_conc  : int64 -> int   -> unit
-    method store_short_conc : int64 -> int   -> unit
-    method store_word_conc  : int64 -> int64 -> unit
-    method store_long_conc  : int64 -> int64 -> unit
+    method store_byte_conc  : ?prov:Interval_tree.provenance -> int64 -> int   -> unit
+    method store_short_conc : ?prov:Interval_tree.provenance -> int64 -> int   -> unit
+    method store_word_conc  : ?prov:Interval_tree.provenance -> int64 -> int64 -> unit
+    method store_long_conc  : ?prov:Interval_tree.provenance -> int64 -> int64 -> unit
 
     method store_page_conc  : int64 -> string -> unit
 
@@ -420,12 +422,12 @@ sig
 
     method store_str : int64 -> int64 -> string -> unit
 
-    method populate_symbolic_region : string -> int -> int64 -> int -> Vine.exp array
+    method populate_symbolic_region : ?prov:Interval_tree.provenance -> string -> int -> int64 -> int -> Vine.exp array
     method make_symbolic_region : int64 -> int -> unit
 
     method store_symbolic_cstr : int64 -> int -> bool -> bool -> unit
     method store_concolic_cstr : int64 -> string -> bool -> unit
-    method populate_concolic_string : string -> int -> int64 -> string -> unit
+    method populate_concolic_string : ?prov:Interval_tree.provenance -> string -> int -> int64 -> string -> unit
 
     method store_symbolic_wcstr : int64 -> int -> unit
 

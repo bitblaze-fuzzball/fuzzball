@@ -1,6 +1,8 @@
 open Exec_exceptions
 open Exec_assert_minder
 
+module IT = Interval_tree
+
 exception Overlapping_Alloc
 
 let json_addr i64 = `String (Printf.sprintf "0x%08Lx" i64) 
@@ -15,9 +17,9 @@ class pointer_management = object(self)
   val stack_start = 0xbaaab000L
   val mutable stack_end = 0xbaaab000L
     (* allocate / deallocate range table *)
-  val mutable assign_ranges = Interval_tree.IntervalMap.empty
+  val mutable assign_ranges = IT.IntervalMap.empty
     (* read / write range table *)
-  val mutable io_ranges = Interval_tree.IntervalMap.empty
+  val mutable io_ranges = IT.IntervalMap.empty
 
   val stack_table = Hashtbl.create 100
 
@@ -74,8 +76,9 @@ class pointer_management = object(self)
       begin
 	let start_addr = addr
 	and end_addr = Int64.add addr (Int64.sub len Int64.one) in
-	let this_interval = { Interval_tree.low = start_addr;
-			     Interval_tree.high = end_addr;
+	let this_interval = { IT.low = start_addr;
+			     IT.high = end_addr;
+			     IT.provenance = IT.DontKnow;
 			     accessed = 0;} in
 	begin
 	  match !Exec_options.opt_big_alloc with
@@ -87,9 +90,9 @@ class pointer_management = object(self)
 			      ("suspiciously-big-allocate-addr", (json_addr addr))]
 	end;
 	try
-	  assign_ranges <- (Interval_tree.attempt_allocate
+	  assign_ranges <- (IT.attempt_allocate
 			      assign_ranges this_interval)
-	with Interval_tree.AllocatingAllocated _ ->
+	with IT.AllocatingAllocated _ ->
 	  raise Overlapping_Alloc
       end
 	
@@ -119,42 +122,57 @@ class pointer_management = object(self)
     g_assert(len > Int64.zero) 100 "Pointer_management.add_dealloc";
     let start_addr = addr
     and end_addr = Int64.add addr (Int64.sub len Int64.one) in
-    let this_interval = { Interval_tree.low = start_addr; Interval_tree.high = end_addr; Interval_tree.accessed = 0;} in
+    let this_interval = { IT.low = start_addr;
+			  IT.high = end_addr;
+			  IT.provenance = IT.DontKnow;
+			  IT.accessed = 0;} in
     try
       let assign_ranges', io_ranges' =
-	Interval_tree.attempt_deallocate assign_ranges io_ranges this_interval in
+	IT.attempt_deallocate assign_ranges io_ranges this_interval in
       Printf.eprintf "Dealloc Range ";
-      Interval_tree.print_interval this_interval;
+      IT.print_interval this_interval;
       Printf.eprintf "\n";
       flush stderr;
       assign_ranges <- assign_ranges';
       io_ranges <- io_ranges'
     with
-    | Interval_tree.DoubleFree _ ->
+    | IT.DoubleFree _ ->
       (self#report [("tag", (`String ":double-free"));
 		    ("double-freed-addr", (json_addr addr))];
        raise Double_Free)
-    | Interval_tree.DeallocationSizeMismatch _ ->
+    | IT.DeallocationSizeMismatch _ ->
       raise Alloc_Dealloc_Length_Mismatch
-    | Interval_tree.DeallocatingUnallocated _ -> 
+    | IT.DeallocatingUnallocated _ -> 
       raise Dealloc_Not_Alloc
 
-
-  method is_safe_read addr len =
+  method find_read_prov addr len =
+    let start_addr = addr
+    and end_addr = Int64.add addr (Int64.sub len Int64.one) in
+    let this_interval = {IT.low = start_addr;
+			 IT.high = end_addr;
+			 IT.provenance = IT.DontKnow;
+			 IT.accessed = 0;} in
+    match IT.optional_find io_ranges this_interval with
+    | None -> IT.DontKnow
+    | Some i -> i.IT.provenance
+      
+      
+  method is_safe_read ?(prov = IT.DontKnow) addr len =
     g_assert(len > Int64.zero) 100 "Pointer_management.is_safe_read";
     let start_addr = addr
     and end_addr = Int64.add addr (Int64.sub len Int64.one) in
-    let this_interval = {Interval_tree.low = start_addr;
-			 Interval_tree.high = end_addr;
-			 Interval_tree.accessed = 0;}
+    let this_interval = {IT.low = start_addr;
+			 IT.high = end_addr;
+			 IT.provenance = prov;
+			 IT.accessed = 0;}
     and is_safe = ref false in
   (* fully in the heap *)
     if self#is_contained start_addr end_addr heap_start heap_end then (
-      try (Interval_tree.attempt_read assign_ranges io_ranges this_interval;
+      try (IT.attempt_read assign_ranges io_ranges this_interval;
 	   is_safe := true) 
       with
-      | Interval_tree.ReadingUnallocated _ -> is_safe := false
-      | Interval_tree.ReadingUnwritten _ -> raise Uninitialized_Memory
+      | IT.ReadingUnallocated _ -> is_safe := false
+      | IT.ReadingUnwritten _ -> raise Uninitialized_Memory
     ) else (
     (* overlapping unsafe memory between heap and stack *)
       if (self#is_overlapping start_addr end_addr heap_end stack_end)  ||
@@ -184,27 +202,31 @@ class pointer_management = object(self)
     );
     !is_safe
 
-  method is_safe_write addr len =
+  method is_safe_write ?(prov = IT.DontKnow) addr len =
     g_assert(len > Int64.zero) 100 "Pointer_management.is_safe_write";
+    Printf.eprintf "PointerManagement: Checking write from %s\n" (IT.prov_to_string prov);
     let start_addr = addr
     and end_addr = Int64.add addr (Int64.sub len Int64.one)
     and is_safe = ref false in
-    let this_interval = {Interval_tree.low = start_addr; Interval_tree.high = end_addr; Interval_tree.accessed = 0} in
+    let this_interval = {IT.low = start_addr;
+			 IT.high = end_addr;
+			 IT.provenance = prov;
+			 IT.accessed = 0} in
   (* fully in the heap *)
     if self#is_contained start_addr end_addr heap_start heap_end then (
     (* is it in an allocated block *)
       try
 	let new_write, io_ranges' = 
-	  Interval_tree.attempt_write assign_ranges io_ranges this_interval in
+	  IT.attempt_write assign_ranges io_ranges this_interval in
 	io_ranges <- io_ranges';
-	if new_write.Interval_tree.accessed > !Exec_options.opt_read_write_warn_ratio
+	if new_write.IT.accessed > !Exec_options.opt_read_write_warn_ratio
 	then self#report [("tag" , (`String ":suspicious-write"));
 			  ("subtag", (`String ":write-before-read"));
 			  ("write-start", (json_addr start_addr));
 			  ("write-end", (json_addr end_addr));];
 	is_safe := true
       with
-      | Interval_tree.WriteBeforeAllocated _ -> 
+      | IT.WriteBeforeAllocated _ -> 
 	begin
 	  self#report [("tag", (`String ":unsafe-write"));
 		      ("subtag", (`String ":write-before-allocation"));
@@ -212,7 +234,7 @@ class pointer_management = object(self)
 		      ("write-end", (json_addr end_addr));];
 	 is_safe := false
 	end
-      | Interval_tree.WriteAfterDeallocated _ -> 
+      | IT.WriteAfterDeallocated _ -> 
 	begin
 	  self#report [("tag", (`String ":unsafe-write"));
 		      ("subtag", (`String ":write-after-dealloc"));
@@ -220,44 +242,44 @@ class pointer_management = object(self)
 		      ("write-end", (json_addr end_addr));];
 	 is_safe := false
 	end
-      | Interval_tree.WriteAcross conflict -> 
+      | IT.WriteAcross conflict -> 
 	begin
-	  let legal_sub = conflict.Interval_tree.original_interval in
+	  let legal_sub = conflict.IT.original_interval in
 	  self#report [("tag", (`String ":unsafe-write"));
 		       ("subtag", (`String ":write-across-allocated"));
 		       ("write-start", (json_addr start_addr));
 		       ("write-end", (json_addr end_addr));
-		       ("legal-start", (json_addr legal_sub.Interval_tree.low));
-		       ("legal-end", (json_addr legal_sub.Interval_tree.high));
+		       ("legal-start", (json_addr legal_sub.IT.low));
+		       ("legal-end", (json_addr legal_sub.IT.high));
 		      ];
 	is_safe := false
 	end
-      | Interval_tree.WriteBefore conflict -> 
+      | IT.WriteBefore conflict -> 
 	begin
-	  let legal_sub = conflict.Interval_tree.original_interval in
+	  let legal_sub = conflict.IT.original_interval in
 	  self#report [("tag", (`String ":unsafe-write"));
 		       ("subtag", (`String ":write-before-allocated"));
 		       ("write-start", (json_addr start_addr));
 		       ("write-end", (json_addr end_addr));
-		       ("legal-start", (json_addr legal_sub.Interval_tree.low));
-		       ("legal-end", (json_addr legal_sub.Interval_tree.high));
+		       ("legal-start", (json_addr legal_sub.IT.low));
+		       ("legal-end", (json_addr legal_sub.IT.high));
 		      ];
 	is_safe := false
 	end
-      | Interval_tree.WriteAfter conflict -> 
+      | IT.WriteAfter conflict -> 
 	begin
-	  let legal_sub = conflict.Interval_tree.original_interval in
+	  let legal_sub = conflict.IT.original_interval in
 	  self#report [("tag", (`String ":unsafe-write"));
 		       ("subtag", (`String ":write-after-allocated"));
 		       ("write-start", (json_addr start_addr));
 		       ("write-end", (json_addr end_addr));
-		       ("legal-start", (json_addr legal_sub.Interval_tree.low));
-		       ("legal-end", (json_addr legal_sub.Interval_tree.high));
+		       ("legal-start", (json_addr legal_sub.IT.low));
+		       ("legal-end", (json_addr legal_sub.IT.high));
 		      ];
 	is_safe := false
 	end
-      | Interval_tree.MultiWriteConflict conflict ->
-	let existing_regions = conflict.Interval_tree.existing_regions in
+      | IT.MultiWriteConflict conflict ->
+	let existing_regions = conflict.IT.existing_regions in
 	self#report [("tag", (`String ":unsafe-write"));
 		     ("subtag", (`String ":write-across-multiple-allocs"));
 		     ("write-start", (json_addr start_addr));
@@ -268,8 +290,8 @@ class pointer_management = object(self)
 			     (fun i ->
 			    ("segment-touched",
 			     `Assoc
-				[("start_addr", (json_addr i.Interval_tree.low));
-				 ("end_addr", (json_addr i.Interval_tree.high));])) 
+				[("start_addr", (json_addr i.IT.low));
+				 ("end_addr", (json_addr i.IT.high));])) 
 			     existing_regions)));
 		    ];
 	is_safe := false
@@ -299,12 +321,12 @@ class pointer_management = object(self)
      tradeoff. But Hashtbl.reset is a fairly recent
      addition: sticking with clear retains compatibilty
      with 3.x versions of OCaml. *)
-    assign_ranges <- Interval_tree.IntervalMap.empty;
-    io_ranges <- Interval_tree.IntervalMap.empty
+    assign_ranges <- IT.IntervalMap.empty;
+    io_ranges <- IT.IntervalMap.empty
 
   method copy_tables ar ir =
-    assign_ranges <- Interval_tree.copy ar;
-    io_ranges <- Interval_tree.copy ir
+    assign_ranges <- IT.copy ar;
+    io_ranges <- IT.copy ir
 
   method construct_deep_copy =
     let copy = new pointer_management in

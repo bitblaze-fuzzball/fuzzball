@@ -81,10 +81,10 @@ sig
     method load_word  : int64 -> D.t
     method load_long  : int64 -> D.t
 
-    method store_byte  : int64 -> D.t -> unit
-    method store_short : int64 -> D.t -> unit
-    method store_word  : int64 -> D.t -> unit
-    method store_long  : int64 -> D.t -> unit
+    method store_byte  : ?prov:Interval_tree.provenance -> int64 -> D.t -> unit
+    method store_short : ?prov:Interval_tree.provenance -> int64 -> D.t -> unit
+    method store_word  : ?prov:Interval_tree.provenance -> int64 -> D.t -> unit
+    method store_long  : ?prov:Interval_tree.provenance -> int64 -> D.t -> unit
 
     method store_page : int64 -> string -> unit
 	    
@@ -115,10 +115,10 @@ sig
     method load_short : int64 -> D.t
     method load_word  : int64 -> D.t
     method load_long  : int64 -> D.t
-    method store_byte  : int64 -> D.t -> unit
-    method store_short : int64 -> D.t -> unit
-    method store_word  : int64 -> D.t -> unit
-    method store_long  : int64 -> D.t -> unit
+    method store_byte  : ?prov:Interval_tree.provenance -> int64 -> D.t -> unit
+    method store_short : ?prov:Interval_tree.provenance -> int64 -> D.t -> unit
+    method store_word  : ?prov:Interval_tree.provenance -> int64 -> D.t -> unit
+    method store_long  : ?prov:Interval_tree.provenance -> int64 -> D.t -> unit
     method store_page : int64 -> string -> unit
     method clear : unit -> unit
     method measure_size : int * int * int
@@ -144,10 +144,10 @@ sig
     method load_short : int64 -> D.t
     method load_word  : int64 -> D.t
     method load_long  : int64 -> D.t
-    method store_byte  : int64 -> D.t -> unit
-    method store_short : int64 -> D.t -> unit
-    method store_word  : int64 -> D.t -> unit
-    method store_long  : int64 -> D.t -> unit
+    method store_byte  : ?prov:Interval_tree.provenance -> int64 -> D.t -> unit
+    method store_short : ?prov:Interval_tree.provenance -> int64 -> D.t -> unit
+    method store_word  : ?prov:Interval_tree.provenance -> int64 -> D.t -> unit
+    method store_long  : ?prov:Interval_tree.provenance -> int64 -> D.t -> unit
     method store_page : int64 -> string -> unit
     method clear : unit -> unit
     method measure_size : int * int * int
@@ -173,10 +173,10 @@ sig
     method load_short : int64 -> D.t
     method load_word  : int64 -> D.t
     method load_long  : int64 -> D.t
-    method store_byte  : int64 -> D.t -> unit
-    method store_short : int64 -> D.t -> unit
-    method store_word  : int64 -> D.t -> unit
-    method store_long  : int64 -> D.t -> unit
+    method store_byte  : ?prov:Interval_tree.provenance -> int64 -> D.t -> unit
+    method store_short : ?prov:Interval_tree.provenance -> int64 -> D.t -> unit
+    method store_word  : ?prov:Interval_tree.provenance -> int64 -> D.t -> unit
+    method store_long  : ?prov:Interval_tree.provenance -> int64 -> D.t -> unit
     method store_page : int64 -> string -> unit
     method clear : unit -> unit
     method measure_size : int * int * int
@@ -196,10 +196,10 @@ sig
     method load_short : int64 -> D.t
     method load_word  : int64 -> D.t
     method load_long  : int64 -> D.t
-    method store_byte  : int64 -> D.t -> unit
-    method store_short : int64 -> D.t -> unit
-    method store_word  : int64 -> D.t -> unit
-    method store_long  : int64 -> D.t -> unit
+    method store_byte  : ?prov:Interval_tree.provenance -> int64 -> D.t -> unit
+    method store_short : ?prov:Interval_tree.provenance -> int64 -> D.t -> unit
+    method store_word  : ?prov:Interval_tree.provenance -> int64 -> D.t -> unit
+    method store_long  : ?prov:Interval_tree.provenance -> int64 -> D.t -> unit
     method store_page : int64 -> string -> unit
     method clear : unit -> unit
     method measure_size : int * int * int
@@ -227,10 +227,10 @@ sig
     method load_short : int64 -> D.t
     method load_word  : int64 -> D.t
     method load_long  : int64 -> D.t
-    method store_byte  : int64 -> D.t -> unit
-    method store_short : int64 -> D.t -> unit
-    method store_word  : int64 -> D.t -> unit
-    method store_long  : int64 -> D.t -> unit
+    method store_byte  : ?prov:Interval_tree.provenance -> int64 -> D.t -> unit
+    method store_short : ?prov:Interval_tree.provenance -> int64 -> D.t -> unit
+    method store_word  : ?prov:Interval_tree.provenance -> int64 -> D.t -> unit
+    method store_long  : ?prov:Interval_tree.provenance -> int64 -> D.t -> unit
     method store_page : int64 -> string -> unit
     method clear : unit -> unit
     method measure_size : int * int * int
@@ -254,10 +254,10 @@ sig
     method load_short : int64 -> D.t
     method load_word  : int64 -> D.t
     method load_long  : int64 -> D.t
-    method store_byte  : int64 -> D.t -> unit
-    method store_short : int64 -> D.t -> unit
-    method store_word  : int64 -> D.t -> unit
-    method store_long  : int64 -> D.t -> unit
+    method store_byte  : ?prov:Interval_tree.provenance -> int64 -> D.t -> unit
+    method store_short : ?prov:Interval_tree.provenance -> int64 -> D.t -> unit
+    method store_word  : ?prov:Interval_tree.provenance -> int64 -> D.t -> unit
+    method store_long  : ?prov:Interval_tree.provenance -> int64 -> D.t -> unit
     method clear : unit -> unit
     method measure_size : int * int * int
     method update_mem : int64 -> gran64 -> unit
@@ -278,10 +278,10 @@ sig
     method load_short : int64 -> D.t
     method load_word  : int64 -> D.t
     method load_long  : int64 -> D.t
-    method store_byte  : int64 -> D.t -> unit
-    method store_short : int64 -> D.t -> unit
-    method store_word  : int64 -> D.t -> unit
-    method store_long  : int64 -> D.t -> unit
+    method store_byte  : ?prov:Interval_tree.provenance -> int64 -> D.t -> unit
+    method store_short : ?prov:Interval_tree.provenance -> int64 -> D.t -> unit
+    method store_word  : ?prov:Interval_tree.provenance -> int64 -> D.t -> unit
+    method store_long  : ?prov:Interval_tree.provenance -> int64 -> D.t -> unit
     method store_page : int64 -> string -> unit
     method clear : unit -> unit
     method measure_size : int * int * int
