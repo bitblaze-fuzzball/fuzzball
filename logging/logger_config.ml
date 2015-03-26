@@ -227,5 +227,6 @@ let close_wrapped_channel _ = function
    open channels and close them out.  This is supposed to happen as the program
    is tearing down and at no other time. *)
 let close_all_channels () =
+  Eip_sequence_logger.close();
   Hashtbl.iter close_wrapped_channel logger_channels
   

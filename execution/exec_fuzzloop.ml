@@ -70,6 +70,7 @@ let log_fuzz_restart log str ispov fm =
 	      "type", `String "restart";
 	      "restart_reason", `String str;
 	      "restarted_at", `String (Printf.sprintf "0x%08LX" eip);
+	      "restart_at_depth", `String (Printf.sprintf "%i" fm#get_depth);
 	      "extra_details", extra_details;
 	      "special_handlers_state", fm#special_handlers_state_json;
 	     ]

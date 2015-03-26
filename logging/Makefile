@@ -5,6 +5,7 @@ export OCAMLMAKEFILE=../ocaml/OCamlMakefile
 # argument list withhout a lot of fuss, and this definitely
 # accomplishes that.  Refactor later. [JTT 10/28]
 export SOURCES = \
+	eip_sequence_logger.ml eip_sequence_logger.mli \
 	logger_config.ml \
 	text_logger.ml \
 	yojson_logger.ml \

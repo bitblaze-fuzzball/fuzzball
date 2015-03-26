@@ -206,6 +206,7 @@ let regstr_to_reg s = match s with
   | _ -> failwith ("Unrecognized register name " ^ s)
 
 class virtual fragment_machine = object
+  method virtual get_depth : int
   method virtual set_pointer_management : Pointer_management.pointer_management -> unit
   method virtual get_pointer_management : unit -> Pointer_management.pointer_management option
   method virtual init_prog : Vine.program -> unit
@@ -503,7 +504,12 @@ struct
     val mutable snap = (V.VarHash.create 1, V.VarHash.create 1)
 
     val mutable before_first_branch_flag = true
-
+    (* we want to ask for dt depth from other fragment machines in
+       log_fuzz_restart in exec_fuzzloop, but didn't want to expose the
+       decsion tree in any way.  Instead, we just return a nonsense value as
+       frag_machine doesn't know how deep it is, but needs to be
+       non-virtual. JTT *)
+    method get_depth = ~-1
     method note_first_branch = before_first_branch_flag <- false
     method before_first_branch = before_first_branch_flag
 
