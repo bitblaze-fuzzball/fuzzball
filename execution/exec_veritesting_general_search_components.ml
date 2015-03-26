@@ -704,12 +704,13 @@ let rec find_endpoints node =
   | [a;b] -> (find_endpoints a) @ (find_endpoints b)
   | _ -> failwith "Successors should return 0, 1 or 2 children. I saw more!"
 
-let unique_endpoint node = 
-  let rec check = function
+let rec check_uniqueness = function
     | [] -> None
     | [ep] -> Some ep
     | fst::snd::tl ->
       if (equal fst snd) then
-	check (snd::tl)
-      else None in
-  check (find_endpoints node)
+	check_uniqueness (snd::tl) else
+	None
+
+let unique_endpoint node = 
+  check_uniqueness (find_endpoints node)
