@@ -160,6 +160,7 @@ let known_unknowns = (
     Hashtbl.replace h "register type (F64)" ();
     Hashtbl.replace h "register type (I128)" ();
     Hashtbl.replace h "register type (V128)" ();
+    Hashtbl.replace h "Unrecognized binary op" ();
     h)
 
 (* Disable "unknown" statments it seems safe to ignore *)
