@@ -11,7 +11,7 @@ class pointer_management = object(self)
   val heap_start = 0x50000000L
 (* in concrete_memory it appears that the heap is 0x0100001L long (1343225857) *)
   val heap_end = 0x50100001L
-(* Thi is where the stack is supposed to start *)
+(* This is where the stack is supposed to start *)
   val stack_start = 0xbaaab000L
   val mutable stack_end = 0xbaaab000L
     (* allocate / deallocate range table *)
