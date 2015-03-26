@@ -13,6 +13,7 @@ open Stpvc_engine
 open Formula_manager
 open Fragment_machine
 open Sym_path_frag_machine
+open Exec_assert_minder
 
 let collect_let_vars e =
   let rec loop e = match e with
@@ -189,22 +190,22 @@ struct
 	    let sz = Int64.sub b' a' in
 	    let hf_sz = half_rounded sz in
 	    let mid = Int64.add a' hf_sz in
-	      assert(a' <= mid);
-	      assert(mid <= b');
+	      g_assert(a' <= mid) 100 "Exec_influence.find_bound";
+	      g_assert(mid <= b') 100 "Exec_influence.find_bound";
 	      zx ty mid
 	  else
 	    let sz = Int64.sub b a in
 	    let hf_sz = half_rounded sz in
 	    let mid = Int64.add a hf_sz in
-	      assert(Vine_util.int64_ucompare a mid <= 0);
-	      assert(Vine_util.int64_ucompare mid b <= 0);
+	      g_assert(Vine_util.int64_ucompare a mid <= 0) 100 "Exec_influence.find_bound";
+	      g_assert(Vine_util.int64_ucompare mid b <= 0) 100 "Exec_influence.find_bound";
 	      mid
       in
       let rec loop min max =
 	if !opt_influence_details then
 	  Printf.printf "Binary search in [0x%Lx, 0x%Lx]\n"
 	    min max;
-	assert(is_signed || Vine_util.int64_ucompare min max <= 0);
+	g_assert(is_signed || Vine_util.int64_ucompare min max <= 0) 100 "Exec_influence.find_bound";
 	if min = max then
 	  min
 	else
@@ -272,7 +273,7 @@ struct
 	    match self#check_sat target_eq cond with
 	      | None -> ()
 	      | Some v' ->
-		  assert(v = v');
+		  g_assert(v = v') 100 "Exec_influence.random_sample";
 		  num_hits := !num_hits + 1
 	done;
 	!num_hits
@@ -289,7 +290,7 @@ struct
       else
 	let experiment hypo =
 	  let cond = random_xor_constraints ty target_e num_terms hypo in
-	    assert(hypo > 0);
+	    g_assert(hypo > 0) 100 "Exec_influence.xor_walk_simple";
 	    match self#check_sat target_eq cond with
 	      | None    -> false
               | Some(_) -> true
@@ -429,7 +430,7 @@ struct
 	Printf.printf "Conditional expr is %s\n" (V.exp_to_string cond_e);
 	qe#add_condition cond_e;
 	Printf.printf "Target expr is %s\n" (V.exp_to_string target_e);
-	assert(self#check_sat target_eq V.exp_true <> None);
+	g_assert(self#check_sat target_eq V.exp_true <> None) 100 "Exec_influence.measure_influence_common";
 	let i = self#influence_strategies target_eq target_e' ty in
 	  qe#reset;
 	  i
@@ -578,7 +579,7 @@ struct
 	      self#measure_point_influence "deref" e
 
     method measure_influence_rep =
-      assert(!opt_arch = X86);
+      g_assert(!opt_arch = X86) 100 "Exec_influence.measure_influence_rep";
       let count = fm#get_word_var_d R_ECX in
 	try ignore(D.to_concrete_32 count)
 	with NotConcrete _ ->	    

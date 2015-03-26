@@ -1,4 +1,5 @@
 open Exec_exceptions
+open Exec_assert_minder
 
 exception Overlapping_Alloc
 
@@ -115,7 +116,7 @@ class pointer_management = object(self)
 
   method add_dealloc addr len =
   (* Has this pointer already been deallocated? *)
-    assert(len > Int64.zero);
+    g_assert(len > Int64.zero) 100 "Pointer_management.add_dealloc";
     let start_addr = addr
     and end_addr = Int64.add addr (Int64.sub len Int64.one) in
     let this_interval = { Interval_tree.low = start_addr; Interval_tree.high = end_addr; Interval_tree.accessed = 0;} in
@@ -140,7 +141,7 @@ class pointer_management = object(self)
 
 
   method is_safe_read addr len =
-    assert(len > Int64.zero);
+    g_assert(len > Int64.zero) 100 "Pointer_management.is_safe_read";
     let start_addr = addr
     and end_addr = Int64.add addr (Int64.sub len Int64.one) in
     let this_interval = {Interval_tree.low = start_addr;
@@ -184,7 +185,7 @@ class pointer_management = object(self)
     !is_safe
 
   method is_safe_write addr len =
-    assert(len > Int64.zero);
+    g_assert(len > Int64.zero) 100 "Pointer_management.is_safe_write";
     let start_addr = addr
     and end_addr = Int64.add addr (Int64.sub len Int64.one)
     and is_safe = ref false in

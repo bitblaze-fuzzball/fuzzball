@@ -1,5 +1,6 @@
 open Exec_options
 open Fragment_machine
+open Exec_assert_minder
 
 module LL = Linux_loader
 
@@ -35,11 +36,11 @@ let read_cgcef_header ic =
       LL.phnum = phnum; LL.shentsize = shentsize; LL.shnum = shnum;
       LL.shstrndx = shstrndx }
     in
-      assert(eh_type = 2); (* Executable, in future may add core dumps *)
-      assert(machine = 3); (* i386 *)
-      assert(version = 1L);
-      assert(eh_flags = 0L);
-      assert(ehsize = 16 + 36);
+      g_assert(eh_type = 2) 100 "Decree_loader.read_cgcef_header"; (* Executable, in future may add core dumps *)
+      g_assert(machine = 3) 100 "Decree_loader.read_cgcef_header"; (* i386 *)
+      g_assert(version = 1L) 100 "Decree_loader.read_cgcef_header";
+      g_assert(eh_flags = 0L) 100 "Decree_loader.read_cgcef_header";
+      g_assert(ehsize = 16 + 36) 100 "Decree_loader.read_cgcef_header";
       eh
 
 let build_startup_state fm eh load_base =
@@ -77,7 +78,7 @@ let load_cb (fm : fragment_machine) fname load_base data_too do_setup extras =
 	      if base >= phr.LL.vaddr && 
 		base < (Int64.add phr.LL.vaddr phr.LL.memsz)
 	      then
-		(assert(Int64.add base size < Int64.add phr.LL.vaddr phr.LL.memsz);
+		(g_assert(Int64.add base size < Int64.add phr.LL.vaddr phr.LL.memsz) 100 "Decree_loader.load_cb";
 		 LL.load_partial_segment fm ic phr base size))
 	   extras)
       (LL.read_program_headers ic eh);

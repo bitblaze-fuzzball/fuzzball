@@ -16,6 +16,7 @@ open Decision_tree;;
 open Exec_run_common;;
 open Exec_runloop;;
 open Exec_stats;;
+open Exec_assert_minder;;
       
 let loop_w_stats count fn =
   let iter = ref 0L and
@@ -90,7 +91,7 @@ let log_fuzz_restart log str fm =
 
 
 let prefuzz_region start_eip opt_fuzz_start_eip fuzz_start_eip fm asmir_gamma extra_setup =
-  assert (start_eip <> opt_fuzz_start_eip);
+  g_assert (start_eip <> opt_fuzz_start_eip) 100 "Exec_fuzzloop.prefuzz_region";
   let prefuzz a =
     if a = opt_fuzz_start_eip
     then (decr opt_fuzz_start_addr_count;

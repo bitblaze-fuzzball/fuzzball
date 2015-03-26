@@ -6,6 +6,7 @@ open Exec_utils
 open Exec_options
 open Fragment_machine
 open Linux_syscalls
+open Exec_assert_minder
 
 type elf_header = {
   eh_type : int;
@@ -51,8 +52,8 @@ let read_ui32 i =
 let read_elf_header ic =
   let i = IO.input_channel ic in
   let ident = IO.really_nread i 16 in
-    assert(ident = "\x7fELF\001\001\001\000\000\000\000\000\000\000\000\000" ||
-	   ident = "\x7fELF\001\001\001\003\000\000\000\000\000\000\000\000");
+    g_assert(ident = "\x7fELF\001\001\001\000\000\000\000\000\000\000\000\000" ||
+	ident = "\x7fELF\001\001\001\003\000\000\000\000\000\000\000\000") 100 "Linux_loader.read_elf_header";
     (* OCaml structure initialization isn't guaranteed to happen
        left to right, so we need to use a bunch of lets here: *)
     let eh_type = IO.read_ui16 i in
@@ -74,11 +75,11 @@ let read_elf_header ic =
       ehsize = ehsize; phentsize = phentsize; phnum = phnum;
       shentsize = shentsize; shnum = shnum; shstrndx = shstrndx }
     in
-      assert(eh.ehsize = 16 + 36);
+      g_assert(eh.ehsize = 16 + 36) 100 "Linux_loader.read_elf_header";
       eh
 
 let read_program_headers ic eh =
-  assert(eh.phentsize = 32);
+  g_assert(eh.phentsize = 32) 100 "Linux_loader.read_program_headers";
   seek_in ic (Int64.to_int eh.phoff);
   let i = IO.input_channel ic in
     ExtList.List.init eh.phnum
@@ -184,8 +185,8 @@ let load_partial_segment fm ic phr vbase size =
     if !opt_trace_setup then
       Printf.printf "Loading     extra region from %08Lx to %08Lx\n"
 	vbase (Int64.add vbase size);
-    assert(size <= 4096L);
-    assert((Int64.add file_base size) <= phr.filesz);
+    g_assert(size <= 4096L) 100 "Linux_loader.load_partial_segment";
+    g_assert((Int64.add file_base size) <= phr.filesz) 100 "Linux_loader.load_partial_segment";
     seek_in ic (Int64.to_int (Int64.add phr.offset file_base));
     let data = IO.really_nread i (Int64.to_int size) in
       store_page fm vbase data;
@@ -196,7 +197,7 @@ let load_ldso fm dso vaddr =
   let dso_eh = read_elf_header ic in
     if !opt_trace_setup then
       Printf.printf "Loading from dynamic linker %s\n" dso;
-    assert(dso_eh.eh_type = 3);
+    g_assert(dso_eh.eh_type = 3) 100 "Linux_loader.load_ldso";
     let phrs = read_program_headers ic dso_eh in
       (* If the loader already has a non-zero base address, disable
 	 our default offset. This can happen if it's prelinked. *)
@@ -215,7 +216,7 @@ let load_x87_emulator fm emulator =
   let eh = read_elf_header ic in
     if !opt_trace_setup then
       Printf.printf "Loading from x87 emulator %s\n" emulator;
-    assert(eh.eh_type = 2);
+    g_assert(eh.eh_type = 2) 100 "Linux_loader.load_x87_emulator";
     List.iter
       (fun phr ->
 	 if phr.ph_type = 1L || phr.memsz <> 0L then
@@ -359,7 +360,7 @@ let load_dynamic_program (fm : fragment_machine) fname load_base
 	      if base >= phr.vaddr && 
 		base < (Int64.add phr.vaddr phr.memsz)
 	      then
-		(assert(Int64.add base size < Int64.add phr.vaddr phr.memsz);
+		(g_assert(Int64.add base size < Int64.add phr.vaddr phr.memsz) 100 "Linux_loader.load_dynamic_program";
 		 load_partial_segment fm ic phr base size))
 	   extras)
       (read_program_headers ic eh);
@@ -397,7 +398,7 @@ let read_core_note fm ic =
   let namez = IO.really_nread i ((namesz + 3) land (lnot 3)) in
   let name = String.sub namez 0 (namesz - 1) in
   let endpos = pos_in ic + descsz in
-    assert(descsz mod 4 = 0);
+    g_assert(descsz mod 4 = 0) 100 "Linux_loader.read_core_note";
     if name = "CORE" && ntype = 1L then
       (let si_signo = IO.read_i32 i in
        let si_code = IO.read_i32 i in
@@ -452,7 +453,7 @@ let read_core_note fm ic =
 let load_core (fm:fragment_machine) fname =
   let ic = open_in (chroot fname) in
   let eh = read_elf_header ic in
-    assert(eh.eh_type = 4);
+    g_assert(eh.eh_type = 4) 100 "Linux_loader.load_core";
     List.iter
       (fun phr ->
 	 if phr.ph_type = 1L then (* PT_LOAD *)
@@ -469,9 +470,9 @@ let load_core (fm:fragment_machine) fname =
 
 let setup_tls_segment (fm:fragment_machine) gdt tls_base =
   let gs_sel = fm#get_short_var R_GS in
-    assert(gs_sel land 7 = 3); (* global, ring 3 *)
+    g_assert(gs_sel land 7 = 3) 100 "Linux_loader.setup_tls_segment"; (* global, ring 3 *)
     linux_setup_tcb_seg fm (gs_sel asr 3) gdt tls_base 0xfffffL;
     (* If this is set up correctly, the first word in the TLS
        segment will be a pointer to itself. *)
     let read_tls_base = fm#load_word_conc tls_base in
-      assert(tls_base = read_tls_base);
+      g_assert(tls_base = read_tls_base) 100 "Linux_loader.setup_tls_segment";

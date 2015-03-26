@@ -8,6 +8,7 @@ module V = Vine;;
 open Exec_options;;
 open Exec_exceptions;;
 open Fragment_machine;;
+open Exec_assert_minder;;
 
 class linux_special_nonhandler (fm : fragment_machine) =
 object(self)
@@ -74,7 +75,7 @@ object(self)
       | "x87 emulator trap" ->
 	  (* This is like a call, but with the return to the current
 	     address, which is the first FPU instruction *)
-	  assert(!opt_arch = X86);
+	  g_assert(!opt_arch = X86) 100 "Special_handlers.x87_emulator_special_handler";
 	  let this_addr = fm#get_eip and
 	      emu_addr = match !opt_x87_entry_point with
 		| Some addr -> addr

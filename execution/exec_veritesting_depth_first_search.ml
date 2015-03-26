@@ -1,4 +1,5 @@
 open Exec_veritesting_general_search_components
+open Exec_assert_minder
 
 let depth_first_search ?max_depth:(max_depth = max_int) root expansion =
   let closed = Hashtbl.create 100 in
@@ -14,7 +15,7 @@ let depth_first_search ?max_depth:(max_depth = max_int) root expansion =
        child::accum) in
   let expansion node =
     let children = List.fold_left (add_child node) [] (expansion node) in
-    assert (2 >= List.length children);
+    g_assert (2 >= List.length children) 100 "Exec_veritesting_depth_first_search";
     children in
   let rec loop depth node =
     if (depth > max_depth)

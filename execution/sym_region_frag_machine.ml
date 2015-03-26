@@ -16,6 +16,7 @@ open Granular_memory;;
 open Fragment_machine;;
 open Decision_tree;;
 open Sym_path_frag_machine;;
+open Exec_assert_minder;;
 
 module SymRegionFragMachineFunctor =
   functor (D : DOMAIN) ->
@@ -495,7 +496,7 @@ struct
     method private concretize_inner ty e =
       match e with 
 	| V.Cast((V.CAST_UNSIGNED|V.CAST_SIGNED) as ckind, cty, e2) ->
-	    assert(cty = ty);
+	    g_assert(cty = ty) 100 "Sym_region_frag_machine.concretize_inner";
 	    let ty2 = Vine_typecheck.infer_type None e2 in
 	    let bits = self#choose_conc_offset_cached ty2 e2 in
 	    let expand =
@@ -752,7 +753,7 @@ struct
 				      V.Constant(V.Int(V.REG_32, a)))
 		   in
 		   let sat = self#extend_pc_known cond false true in
-		     assert(sat));
+		     g_assert(sat) 100 "Sym_region_frag_machine.eval_addr_exp_region_conc_path");
 		(Some 0, a)
 	  | [V.Lval(V.Temp(var)) as vexp] ->
 	      let sum = sum_list rest in
@@ -767,7 +768,7 @@ struct
 		then
 		  (let cond = V.BinOp(V.EQ, sum, a_const) in
 		   let sat = self#extend_pc_known cond false true in
-		     assert(sat));
+		     g_assert(sat) 100 "Sym_region_frag_machine.eval_addr_exp_region_conc_path");
 		(Some(self#region_for vexp), a)
 	  | [_] -> failwith "known_base invariant failure"
 	  | _ -> failwith "multiple bases"
@@ -974,7 +975,7 @@ struct
 
     method private query_bitwidth e ty =
       let rec loop min max =
-	assert(min <= max);
+	g_assert(min <= max)  100 "Sym_region_frag_machine.query_bitwidth";
 	if min = max then
 	  min
 	else
@@ -1005,7 +1006,7 @@ struct
 	  None
 	else if fast_wd > !opt_table_limit then
 	  let slow_wd = self#query_bitwidth off_exp V.REG_32 in
-	    assert(slow_wd <= fast_wd);
+	    g_assert(slow_wd <= fast_wd) 100 "Sym_region_frag_machine.decide_wd";
 	    if slow_wd > !opt_table_limit then
 	      (if !opt_trace_tables then
 		 Printf.printf
@@ -1039,7 +1040,7 @@ struct
 
     method private query_maxval e ty =
       let rec loop min max =
-	assert(min <= max);
+	g_assert(min <= max) 100 "Sym_region_frag_machine.query_maxval";
 	if min = max then
 	  min
 	else

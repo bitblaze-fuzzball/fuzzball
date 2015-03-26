@@ -4,6 +4,7 @@
 
 open Exec_exceptions;;
 open Exec_options;;
+open Exec_assert_minder;;
 
 class virtual concrete_memory = object(self)
   method virtual store_byte : Int64.t -> int -> unit
@@ -48,8 +49,8 @@ class virtual concrete_memory = object(self)
       (Int64.to_int (Int64.logand 0xFFL (Int64.shift_right l 56)))
 
   method store_page addr pagestr =
-    assert(Int64.logand addr 0xfffL = 0L);
-    assert(String.length pagestr = 4096);
+    g_assert(Int64.logand addr 0xfffL = 0L) 100 "concrete_memory.store_page";
+    g_assert(String.length pagestr = 4096) 100 "concrete_memory.store_page";
     for i = 0 to 4096 do
       self#store_byte (Int64.add addr (Int64.of_int i))
 	(Char.code pagestr.[i])
@@ -120,8 +121,8 @@ class concrete_string_memory = object(self)
       page_str.[idx] <- Char.chr b
 
   method store_page addr newstr =
-    assert(Int64.logand addr 0xfffL = 0L);
-    assert(String.length newstr = 4096);
+    g_assert(Int64.logand addr 0xfffL = 0L) 100 "concrete_memory.store_page";
+    g_assert(String.length newstr = 4096) 100 "concrete_memory.store_page";
     let page = Int64.to_int (Int64.shift_right addr 12) in
       mem.(page) <- Some newstr
 
@@ -310,8 +311,8 @@ class string_maybe_memory = object(self)
 	bitmap.[bidx] <- (Char.chr ((Char.code bitmap.[bidx]) lor bit))
 	
   method store_page addr newstr =
-    assert(Int64.logand addr 0xfffL = 0L);
-    assert(String.length newstr = 4096);
+    g_assert(Int64.logand addr 0xfffL = 0L) 100 "concrete_memory.store_page";
+    g_assert(String.length newstr = 4096) 100 "concrete_memory.store_page";
     let page = Int64.to_int (Int64.shift_right addr 12) in
       mem.(page) <- Some newstr;
       bitmaps.(page) <- Some all_present

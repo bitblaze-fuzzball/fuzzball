@@ -1,6 +1,7 @@
 (*
   Copyright (C) BitBlaze, 2009-2010. All rights reserved.
 *)
+open Exec_assert_minder
 
 let load_mem_ranges fm fname areas =
   let si = Temu_state.open_state fname in
@@ -20,8 +21,8 @@ let load_mem_state (fm : Fragment_machine.fragment_machine) fname =
   let si = Temu_state.open_state fname in
     List.iter
       (fun blk ->
-	 assert(Int64.logand blk#first 0xfffL = 0L);
-	 assert(Int64.sub blk#last blk#first = 0xfffL);
+	 g_assert(Int64.logand blk#first 0xfffL = 0L) 100 "State_loader.load_mem_state";
+	 g_assert(Int64.sub blk#last blk#first = 0xfffL) 100 "State_loader.load_mem_state";
 	 LargeFile.seek_in ic blk#file_pos;
 	 let page = IO.really_nread i 4096 in
 	   fm#store_page_conc blk#first page)

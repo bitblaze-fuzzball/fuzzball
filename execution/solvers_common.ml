@@ -1,8 +1,10 @@
 (*
-  Based on stp_external_engine.ml, which bears the following notice:
+  Based on stp_external_eng52ine.ml, which bears the following notice:
   Copyright (C) BitBlaze, 2009-2011, and copyright (C) 2010 Ensighta
   Security Inc.  All rights reserved.
 *)
+
+open Exec_assert_minder
 
 type external_solver_type =
   | STP_CVC
@@ -40,21 +42,21 @@ type maybe_ce_result =
 
 let parse_stp_ce e_s_t line =
   if line = "sat" then
-    (assert(e_s_t = STP_SMTLIB2);
+    (g_assert(e_s_t = STP_SMTLIB2) 100 "Solvers_common.parse_stp_ce";
      End_of_CE)
   else if line = "Invalid." then
-    (assert(e_s_t = STP_CVC);
+    (g_assert(e_s_t = STP_CVC) 100 "Solvers_common.parse_stp_ce";
      End_of_CE)
   else
-    (assert((String.sub line 0 8) = "ASSERT( ");
-     assert((String.sub line ((String.length line) - 3) 3) = " );");
+    (g_assert((String.sub line 0 8) = "ASSERT( ") 100 "Solvers_common.parse_stp_ce";
+     g_assert((String.sub line ((String.length line) - 3) 3) = " );") 100 "Solvers_common.parse_stp_ce";
      let trimmed = String.sub line 8 ((String.length line) - 11) in
      let eq_loc = String.index trimmed '=' in
      let lhs = String.sub trimmed 0 eq_loc and
 	 rhs = (String.sub trimmed (eq_loc + 1)
 		  ((String.length trimmed) - eq_loc - 1)) in
-       assert((String.sub lhs ((String.length lhs) - 1) 1) = " "
-	   || (String.sub lhs ((String.length lhs) - 1) 1) = "<");
+       g_assert((String.sub lhs ((String.length lhs) - 1) 1) = " "
+	       || (String.sub lhs ((String.length lhs) - 1) 1) = "<") 100 "Solvers_common.parse_stp_ce";
        let lhs_rtrim =
 	 if (String.sub lhs ((String.length lhs) - 2) 1) = " " then
 	   2 else 1
@@ -93,16 +95,16 @@ let parse_cvc4_ce line =
   else if line = "(model" then
     No_CE_here
   else
-    (assert((String.sub line 0 12) = "(define-fun ");
-     assert((String.sub line ((String.length line) - 1) 1) = ")");
+    (g_assert((String.sub line 0 12) = "(define-fun ") 100 "Solvers_common.parse_cvc4_ce";
+     g_assert((String.sub line ((String.length line) - 1) 1) = ")") 100 "Solvers_common.parse_cvc4_ce";
      let trimmed1 = String.sub line 12 ((String.length line) - 13) in
      let var_end = String.index trimmed1 ' ' in
      let varname = String.sub trimmed1 0 var_end in
      let trimmed2 = String.sub trimmed1 (var_end + 4)
        ((String.length trimmed1) - (var_end + 4))
      in
-       assert(((String.sub trimmed2 0 4) = "Bool") ||
-		 ((String.sub trimmed2 0 10) = "(_ BitVec "));
+       g_assert(((String.sub trimmed2 0 4) = "Bool") ||
+		 ((String.sub trimmed2 0 10) = "(_ BitVec ")) 100 "Solvers_common.parse_cvc4_ce";
        let trimmed3 =
 	 if (String.sub trimmed2 0 4) = "Bool" then
 	   String.sub trimmed2 5 ((String.length trimmed2) - 5)
@@ -111,9 +113,9 @@ let parse_cvc4_ce line =
 	     String.sub trimmed2 (type_end + 2)
 	       ((String.length trimmed2) - (type_end + 2))
        in
-         assert(((String.sub trimmed3 0 4) = "true") ||
-		   ((String.sub trimmed3 0 5) = "false") ||
-		   ((String.sub trimmed3 0 5) = "(_ bv"));
+         g_assert(((String.sub trimmed3 0 4) = "true") ||
+		     ((String.sub trimmed3 0 5) = "false") ||
+		     ((String.sub trimmed3 0 5) = "(_ bv")) 100 "Solvers_common.parse_cvc4_ce";
 	 let value = Int64.of_string
 	   (if (String.sub trimmed3 0 4) = "true" then
 	      "1"
@@ -162,8 +164,8 @@ let parse_z3_ce_line s v =
 	     failwith "Unexpected error in parse_z3_ce_lines")
     | (s, Some varname) ->
 	let l = String.length s in
-	  assert(l > 4 && String.sub s 0 4 = "    ");
-	  assert(String.sub s (l - 1) 1 = ")");
+	  g_assert(l > 4 && String.sub s 0 4 = "    ") 100 "Solvers_common.parse_z3_ce_line";
+	  g_assert(String.sub s (l - 1) 1 = ")") 100 "Solvers_common.parse_z3_ce_line";
 	  let trim = String.sub s 4 (l - 5) in
 	  let vo =
 	    match trim with

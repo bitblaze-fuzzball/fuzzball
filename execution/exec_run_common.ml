@@ -9,6 +9,7 @@ module FS = Frag_simplify
 
 open Exec_exceptions
 open Exec_options
+open Exec_assert_minder
 
 
 let match_faked_insn eip insn_bytes =
@@ -23,7 +24,7 @@ let match_faked_insn eip insn_bytes =
     | (X86, true) ->
 	(* Pretend to decode, but just to a no-op or a trap, some
 	   system instructions that a VEX-based LibASMIR doesn't handle. *)
-	(assert((Array.length insn_bytes) >= 1);
+	(g_assert((Array.length insn_bytes) >= 1) 100 "Exec_run_common.match_faked_insn";
 	 let maybe_byte i =
 	   if (Array.length insn_bytes) <= i then
 	     -1

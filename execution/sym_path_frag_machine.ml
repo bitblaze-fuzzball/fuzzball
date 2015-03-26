@@ -17,6 +17,7 @@ open Exec_no_influence;;
 open Granular_memory;;
 open Fragment_machine;;
 open Decision_tree;;
+open Exec_assert_minder;;
 
 let solver_sats = ref 0L
 let solver_unsats = ref 0L
@@ -78,7 +79,7 @@ struct
 	(fun (var_s, value) ->
 	  match self#match_input_var var_s with
 	  | Some n -> 
-	    assert(n < !max_input_string_length);
+	    g_assert(n < !max_input_string_length) 100 "Sym_path_frag_machine.ce_to_input_str";
 	    str.[n] <-
 	      char_of_int_unbounded (Int64.to_int value)
 	  | None -> ())
@@ -346,7 +347,7 @@ struct
     method query_unique_value exp ty =
       let taut = V.BinOp(V.EQ, exp, exp) in
       let (is_sat, ce) = self#query_with_path_cond taut !opt_trace_ivc in
-      assert(is_sat);
+      g_assert(is_sat) 100 "Sym_path_frag_machine.query_unique_value";
       if !opt_trace_ivc then
 	Printf.printf "QUV of %s\n%!" (V.exp_to_string exp);
       let v = form_man#eval_expr_from_ce ce exp in
@@ -359,7 +360,7 @@ struct
       in
       if is_another then
 	let v2 = form_man#eval_expr_from_ce ce2 exp in
-	assert(v2 <> v);
+	g_assert(v2 <> v) 100 "Sym_path_frag_machine.query_unique_value";
 	if !opt_trace_ivc then
 	  Printf.printf "Not unique, another is 0x%Lx\n%!" v2;
 	None
@@ -376,7 +377,7 @@ struct
       if not is_sat then
 	Printf.printf "Concolic value 0x%Lx for %s is infeasible\n"
 	  conc_val (V.exp_to_string exp);
-      assert(is_sat);
+      g_assert(is_sat) 100 "Sym_path_frag_machine.check_concolic_value";
       Printf.printf "Concolic value 0x%Lx for %s is feasible\n"
 	conc_val (V.exp_to_string exp)
 
@@ -501,7 +502,7 @@ struct
       if !opt_solve_path_conditions then
 	(let b' = self#extend_pc_known e true b in
 	 let choices = dt#check_last_choices in
-	 assert(b = b');
+	 g_assert(b = b') 100 "Sym_path_frag_machine.eval_bool_exp_conc_path";
 	 (b, choices))
       else
 	(self#add_to_path_cond
@@ -791,9 +792,9 @@ struct
 	 List.iter (fun e -> Printf.printf "& (%s)\n" (V.exp_to_string e))
 	   (List.rev (self#get_path_cond)));
       if !opt_solve_final_pc then
-	assert(let (b,_) =
+	g_assert(let (b,_) =
 		 self#query_with_path_cond_wcache V.exp_true true false
-	       in b);
+	       in b) 100 "Sym_path_frag_machine.finish_path";
       dt#try_again_p
 
     method print_tree chan = dt#print_tree chan

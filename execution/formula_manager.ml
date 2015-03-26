@@ -10,6 +10,7 @@ open Exec_exceptions
 open Exec_options
 open Frag_simplify
 open Frag_marshal
+open Exec_assert_minder
 
 module VarWeak = Weak.Make(VarByInt)
 
@@ -138,7 +139,7 @@ struct
     val region_base_vars = Hashtbl.create 30
 
     method fresh_region_base s =
-      assert(not (Hashtbl.mem region_base_vars s));
+      g_assert(not (Hashtbl.mem region_base_vars s)) 100 "Formula_manager.fresh_region_base";
       let var = self#fresh_symbolic_var s V.REG_32 in
 	Hashtbl.replace region_base_vars s var;
 	D.from_symbolic (V.Lval(V.Temp(var)))
@@ -203,7 +204,7 @@ struct
     method make_concolic_64_tuple (s,v) = s, self#make_concolic_64 s v
 
     method fresh_region_base_concolic s v =
-      assert(not (Hashtbl.mem region_base_vars s));
+      g_assert(not (Hashtbl.mem region_base_vars s)) 100 "Formula_manager.fresh_region_base_concolic";
       let var = self#fresh_symbolic_var s V.REG_32 in
 	Hashtbl.replace region_base_vars s var;
 	ignore(self#make_concolic_32 s v);
@@ -297,7 +298,7 @@ struct
 	    List.iter
 	      (fun (lhs, rhs) -> V.VarHash.replace mem_axioms lhs rhs)
 	      al;
-	    assert(V.VarHash.mem mem_axioms var);
+	  g_assert(V.VarHash.mem mem_axioms var) 100 "Formula_manager.add_mem_axioms";
 
     method private rewrite_mem_expr e =
       match e with
@@ -363,7 +364,7 @@ struct
 	      if not (Hashtbl.mem valuation d) then
 		Printf.printf "Unexpected symbolic byte %s\n"
 		  (V.lval_to_string lv);
-	      assert(Hashtbl.mem valuation d);
+	      g_assert(Hashtbl.mem valuation d) 100 "Formula_manager.eval_var";
 	      D.from_concrete_8 (Int64.to_int (Hashtbl.find valuation d))
 	  | V.Mem(mem_var, V.Constant(V.Int(_, addr)), V.REG_16) ->
 	      if Hashtbl.mem valuation d then
@@ -403,16 +404,16 @@ struct
 						      (Int64.add 4L addr))),
 			    V.REG_32)))
 	  | V.Temp(_, _, V.REG_8) ->
-	      assert(Hashtbl.mem valuation d);
+	      g_assert(Hashtbl.mem valuation d) 100 "Formula_manager.eval_var";
 	      D.from_concrete_8 (Int64.to_int (Hashtbl.find valuation d))
 	  | V.Temp(_, _, V.REG_16) ->
-	      assert(Hashtbl.mem valuation d);
+	    g_assert(Hashtbl.mem valuation d) 100 "Formula_manager.eval_var";
 	      D.from_concrete_16 (Int64.to_int (Hashtbl.find valuation d))
 	  | V.Temp(_, _, V.REG_32) ->
-	      assert(Hashtbl.mem valuation d);
+	      g_assert(Hashtbl.mem valuation d) 100 "Formula_manager.eval_var";
 	      D.from_concrete_32 (Hashtbl.find valuation d)
 	  | V.Temp(_, _, V.REG_64) ->
-	      assert(Hashtbl.mem valuation d);
+	      g_assert(Hashtbl.mem valuation d) 100 "Formula_manager.eval_var";
 	      D.from_concrete_64 (Hashtbl.find valuation d)
 
 	  | _ -> failwith "unexpected lval expr in eval_var"
@@ -640,7 +641,7 @@ struct
 	     (* We're supposed to simplify expressions as we build
 		them, so something is going wrong if they get way to big
 		at once: *)
-	     (* assert(expr_size e' < 1000); *)
+	     (* g_assert(expr_size e' < 1000) 100 "Formula_manager.simplify"; *)
 	     if expr_size e' < 10 then
 	       e'
 	     else
@@ -701,7 +702,7 @@ struct
 	| (_, []) -> failwith "List too short in nth_tail"
 	| (n, l) -> nth_tail (n-1) (List.tl l)
       in
-	assert((List.length expr_list) >= (1 lsl bits));
+	g_assert((List.length expr_list) >= (1 lsl bits)) 100 "Formula_manager.lookup_tree";
 	if bits = 0 then
 	  List.hd expr_list
 	else
@@ -852,12 +853,12 @@ struct
 	  | _ -> failwith "Unexpected type in table_check_gf2"
       in
 	try
-	  assert(List.length table = (1 lsl idx_wd));
+	  g_assert(List.length table = (1 lsl idx_wd)) 100 "Formula_manager.table_check_gf2";
 	  let table_conc = List.map conc table in
 	  let spine = Vine_util.mapn
 	    (fun i -> List.nth table_conc (1 lsl i)) (idx_wd - 1)
 	  in
-	    assert(List.length spine = idx_wd);
+	    g_assert(List.length spine = idx_wd) 100 "Formula_manager.table_check_gf2";
 	    if check_loop spine table_conc then
 	      (if !opt_trace_tables then
 		 (Printf.printf "Detected GF(2) linear operator with spine:\n";

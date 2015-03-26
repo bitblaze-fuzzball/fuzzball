@@ -4,6 +4,7 @@
 
 open Exec_exceptions;;
 open Exec_domain;;
+open Exec_assert_minder;;
 
 module GranularMemoryFunctor =
   functor (D : DOMAIN) ->
@@ -52,7 +53,8 @@ struct
 	    (l, Byte l)
 
   let gran16_get_byte  g16 missing addr which =
-    assert(which >= 0); assert(which < 2);
+    g_assert(which >= 0) 100 "Granular_memory.gran_16_get_byte";
+    g_assert(which < 2) 100 "Granular_memory.gran_16_get_byte";
     match g16, Absent8, Absent8 with
       | Short(l),_,_ -> (D.extract_8_from_16 l (endian_i 2 which), g16)
       | Gran8s(g1, g2),_,_
@@ -65,7 +67,8 @@ struct
 	      (l, Gran8s(g1, g2'))
 		
   let gran32_get_byte  g32 missing addr which =
-    assert(which >= 0); assert(which < 4);
+    g_assert(which >= 0) 100 "Granular_memory.gran_32_get_byte";
+    g_assert(which < 4) 100 "Granular_memory.gran_32_get_byte";
     match g32, Absent16, Absent16 with
       | Word(l),_,_ -> (D.extract_8_from_32 l (endian_i 4 which), g32)
       | Gran16s(g1, g2),_,_
@@ -79,7 +82,8 @@ struct
 	      (l, Gran16s(g1, g2'))
 
   let gran64_get_byte  g64 missing addr which =
-    assert(which >= 0); assert(which < 8);
+    g_assert(which >= 0) 100 "Granular_memory.gran_64_get_byte";
+    g_assert(which < 8) 100 "Granular_memory.gran_64_get_byte";
     match g64, Absent32, Absent32 with
       | Long(l),_,_ -> (D.extract_8_from_64 l (endian_i 8 which), g64)
       | Gran32s(g1, g2),_,_
@@ -104,7 +108,7 @@ struct
 	    (l, Short l)
 
   let gran32_get_short g32 missing addr which =
-    assert(which = 0 || which = 2);
+    g_assert(which = 0 || which = 2) 100 "Granular_memory.gran32_get_short";
     match g32, Absent16, Absent16 with
       | Word(l),_,_ -> (D.extract_16_from_32 l (endian_i 4 which), g32)
       | Gran16s(g1, g2),_,_
@@ -117,7 +121,7 @@ struct
 	      (l, Gran16s(g1, g2'))
 
   let gran64_get_short g64 missing addr which =
-    assert(which = 0 || which = 2 || which = 4 || which = 6);
+    g_assert(which = 0 || which = 2 || which = 4 || which = 6) 100 "Granular_memory.gran64_get_short";
     match g64, Absent32, Absent32 with
       | Long(l),_,_ -> (D.extract_16_from_64 l (endian_i 8 which), g64)
       | Gran32s(g1, g2),_,_
@@ -142,7 +146,7 @@ struct
 	    (l, Word l)
 	      
   let gran64_get_word  g64 missing addr which =
-    assert(which = 0 || which = 4);
+    g_assert(which = 0 || which = 4) 100 "Granular_memory.gran64_get_word";
     match g64, Absent32, Absent32 with
       | Long(l),_,_ -> (D.extract_32_from_64 l (endian_i 8 which), g64)
       | Gran32s(g1, g2),_,_
@@ -186,7 +190,7 @@ struct
       | Absent16 -> (Absent8, Absent8)
 
   let gran16_put_byte g16 which b =
-    assert(which = 0 || which = 1);
+    g_assert(which = 0 || which = 1) 100 "Granular_memory.gran16_put_byte";
     let (g1, g2) = gran16_split g16 in
       if which < 1 then
 	Gran8s(Byte(b), g2)
@@ -194,7 +198,8 @@ struct
 	Gran8s(g1, Byte(b))
 
   let gran32_put_byte g32 which b =
-    assert(which >= 0); assert(which < 4);
+    g_assert(which >= 0) 100 "Granular_memory.gran32_put_byte";
+    g_assert(which < 4) 100 "Granular_memory.gran32_put_byte";
     let (g1, g2) = gran32_split g32 in
       if which < 2 then
 	Gran16s((gran16_put_byte g1 which b), g2)
@@ -202,7 +207,8 @@ struct
 	Gran16s(g1, (gran16_put_byte g2 (which - 2) b))
 	  
   let gran64_put_byte g64 which b =
-    assert(which >= 0); assert(which < 8);
+    g_assert(which >= 0) 100 "Granular_memory.gran64_put_byte";
+    g_assert(which < 8) 100 "Granular_memory.gran64_put_byte";
     let (g1, g2) = gran64_split g64 in
       if which < 4 then
 	Gran32s((gran32_put_byte g1 which b), g2)
@@ -210,7 +216,7 @@ struct
 	Gran32s(g1, (gran32_put_byte g2 (which - 4) b))
 
   let gran32_put_short g32 which s =
-    assert(which = 0 || which = 2);
+    g_assert(which = 0 || which = 2)  100 "Granular_memory.gran32_put_short";
     let (g1, g2) = gran32_split g32 in
       if which < 2 then
 	Gran16s(Short(s), g2)
@@ -218,7 +224,7 @@ struct
 	Gran16s(g1, Short(s))
 	  
   let gran64_put_short g64 which s =
-    assert(which = 0 || which = 2 || which = 4 || which = 6);
+    g_assert(which = 0 || which = 2 || which = 4 || which = 6) 100 "Granular_memory.gran64_put_short";
     let (g1, g2) = gran64_split g64 in
       if which < 4 then
 	Gran32s((gran32_put_short g1 which s), g2)
@@ -226,7 +232,7 @@ struct
 	Gran32s(g1, (gran32_put_short g2 (which - 4) s))
 
   let gran64_put_word g64 which w =
-    assert(which = 0 || which = 4);
+    g_assert(which = 0 || which = 4) 100 "Granular_memory.gran64_put_word";
     let (g1, g2) = gran64_split g64 in
       if which < 4 then
 	Gran32s(Word(w), g2)

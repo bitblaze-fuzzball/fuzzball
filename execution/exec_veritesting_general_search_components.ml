@@ -4,6 +4,7 @@ open Exec_options
 open Frag_simplify
 open Fragment_machine
 open Exec_run_common
+open Exec_assert_minder
 
 type 'a common = {
   eip : int64;
@@ -221,7 +222,7 @@ let complete_node
     (child : veritesting_node)
     (sl : V.stmt list)
     (dl: V.decl list) =
-  assert(sl != []);
+  g_assert(sl != []) 100 "Exec_veritesting_general_search_components.complete_node";
   (match raw_node with
   | Raw progn -> 
     begin
@@ -245,7 +246,7 @@ let complete_node
 
 
 let add_exit progn next =
-  assert (None = progn.p_core.next);
+  g_assert (None = progn.p_core.next) 100 "Exec_veritesting_general_search_components.add_exit";
   progn.p_core.next <- Some next;
   next
 
@@ -335,7 +336,7 @@ let replace_child current_node replacement =
 	  | Some next ->
 	    begin
 	    (* Printf.eprintf "Old next: %s\n" (node_to_string next);*)
-	      assert(next == current_node);
+	      g_assert(next == current_node) 100 "Exec_veritesting_general_search_components.replace_child";
 	      s.p_core.next <- Some replacement
 	    end
 	end
@@ -562,7 +563,7 @@ let consider_statements (node : veritesting_node) =
 let generate_children fm gamma = function
   | Undecoded a as node->
     begin
-      assert(None = a.next);
+      g_assert(None = a.next) 100 "Exec_veritesting_general_search_components.generate_children";
       let decls, stmts = 
 	(with_trans_cache a.m_core.eip
 	   (fun () -> decode_insns fm gamma a.m_core.eip !opt_bb_size)) in

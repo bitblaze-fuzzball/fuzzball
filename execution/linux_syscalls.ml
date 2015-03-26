@@ -8,6 +8,7 @@ open Exec_utils
 open Exec_exceptions
 open Exec_options
 open Fragment_machine
+open Exec_assert_minder
 
 let linux_initial_break = ref None
 
@@ -142,7 +143,7 @@ class linux_special_handler (fm : fragment_machine) =
       fm#store_short_conc addr v
   in
   let zero_region base len =
-    assert(len >= 0 && len <= 0x20000000); (* sanity check *)
+    g_assert(len >= 0 && len <= 0x20000000) 100 "Linux_syscalls.read_buf"; (* sanity check *)
     for i = 0 to len - 1 do
       fm#store_byte_idx base i 0
     done
@@ -352,7 +353,7 @@ object(self)
 	    else
 	      Unix.ADDR_UNIX(chroot path)
 	| 2 -> 
-	    assert(len = 6 || len = 14);
+	    g_assert(len = 6 || len = 14) 100 "Linux_syscalls.read_sockaddr";
 	    let port_be = load_short buf and
 		addr_h  = load_byte (lea buf 0 0 2) and
 		addr_mh = load_byte (lea buf 0 0 3) and
@@ -1074,7 +1075,7 @@ object(self)
       put_return (Int64.of_int pid)
 
   method sys_getpgid target =
-    assert(target = 0 || target = self#get_pid); (* Only works on ourselves *)
+    g_assert(target = 0 || target = self#get_pid) 100 "Linux_syscalls.sys_getpgid"; (* Only works on ourselves *)
     let pgid = self#get_pgrp in
       put_return (Int64.of_int pgid)
 
@@ -1398,7 +1399,7 @@ object(self)
       let _ = Unix.lseek (self#get_fd fdi) offset Unix.SEEK_SET in
       let _ = self#do_unix_read (self#get_fd fdi) addr len in
       let _ = Unix.lseek (self#get_fd fdi) old_loc Unix.SEEK_SET in
-	(* assert(nr = len); *)
+	(* g_assert(nr = len) 100 "Linux_syscalls.mmap_common"; *)
 	addr
     in
     let ret =
@@ -1531,7 +1532,7 @@ object(self)
     (List.filter (fun (_,e) -> e land flag <> 0) pollfds)
     in
     let timeout_f = (Int64.to_float timeout_ms) /. 1000.0 in
-    let pollfds_a = (assert ((nfds >= 0) && (nfds < Sys.max_array_length));
+    let pollfds_a = (g_assert ((nfds >= 0) && (nfds < Sys.max_array_length)) 100 "Linux_syscalls.sys_poll";
 		     Array.init nfds (get_pollfd fds_buf)) in
     Array.iter (
       fun (fd,_) ->
@@ -1587,7 +1588,7 @@ object(self)
       let str = self#string_create num_bytes in
       let oc_fd = self#get_fd fd in
       let num_read = Unix.read oc_fd str 0 num_bytes in
-	assert(not (Hashtbl.mem symbolic_fds fd)); (* unimplemented *)
+	g_assert(not (Hashtbl.mem symbolic_fds fd)) 100 "Linux_syscalls.sys_readv"; (* unimplemented *)
 	self#scatter_iovec iov cnt str;
 	put_return (Int64.of_int num_read)
     with
@@ -1737,7 +1738,7 @@ object(self)
         let (num_read, sockaddr) =
           Unix.recvfrom (self#get_fd sockfd) str 0 len flags
         in
-        assert(not (Hashtbl.mem symbolic_fds sockfd)); (* unimplemented *)
+        g_assert(not (Hashtbl.mem symbolic_fds sockfd)) 100 "Linux_syscalls.sys_recvmsg"; (* unimplemented *)
         (if addrbuf <> 0L then
            let addrlen_ptr = load_word (lea msg 0 0 4) in
            self#write_sockaddr sockaddr addrbuf addrlen_ptr);
@@ -1760,11 +1761,11 @@ object(self)
     put_return 0L (* success *)
 
   method sys_sched_get_priority_max policy =
-    assert(policy = 0); (* SCHED_OTHER *)
+    g_assert(policy = 0) 100 "Linux_syscalls.sys_sched_get_priority_max"; (* SCHED_OTHER *)
     put_return 0L
 
   method sys_sched_get_priority_min policy =
-    assert(policy = 0); (* SCHED_OTHER *)
+    g_assert(policy = 0) 100 "Linux_syscalls.sys_sched_get_priority_min"; (* SCHED_OTHER *)
     put_return 0L
 
   method sys_nanosleep req rem =
@@ -2435,7 +2436,7 @@ object(self)
     put_return 0L (* success *)
 
   method sys_statfs64 path buf_len struct_buf =
-    assert(buf_len = 84 || buf_len = 88); (* Same layout, different padding *)
+    g_assert(buf_len = 84 || buf_len = 88) 100 "Linux_syscalls.sys_statfs64"; (* Same layout, different padding *)
     self#write_fake_statfs64buf struct_buf;
     put_return 0L (* success *)
 
@@ -2559,10 +2560,10 @@ object(self)
     let actime  = (float 0) +. (float 4)  /. 1000000000.0 and
 	modtime = (float 8) +. (float 12) /. 1000000000.0
     in
-      assert((field  4) <> 0x3fffffffL); (* UTIME_NOW *)
-      assert((field  4) <> 0x3ffffffeL); (* UTIME_OMIT *)
-      assert((field 12) <> 0x3fffffffL); (* UTIME_NOW *)
-      assert((field 12) <> 0x3ffffffeL); (* UTIME_OMIT *)
+      g_assert((field  4) <> 0x3fffffffL) 100 "Linux_syscalls.sys_utimensat - UTIME_NOW"; (* UTIME_NOW *)
+      g_assert((field  4) <> 0x3ffffffeL) 100 "Linux_syscalls.sys_utimensat - UTIME_OMIT"; (* UTIME_OMIT *)
+      g_assert((field 12) <> 0x3fffffffL) 100 "Linux_syscalls.sys_utimensat - UTIME_NOW"; (* UTIME_NOW *)
+      g_assert((field 12) <> 0x3ffffffeL) 100 "Linux_syscalls.sys_utimensat - UTIME_OMIT"; (* UTIME_OMIT *)
       Unix.utimes path actime modtime;
       put_return 0L (* success *)      
 
@@ -2638,7 +2639,7 @@ object(self)
 	   ebp = get_reg arg_regs.(5) in
 	 (ebx, ecx, edx, esi, edi, ebp) in
      let read_7_regs () =
-       assert(!opt_arch <> X86); (* x86 only has 6 available registers *)
+       g_assert(!opt_arch <> X86) 100 "Linux_syscalls.handle_linux_syscall"; (* x86 only has 6 available registers *)
        let (r0, r1, r2, r3, r4, r5) = read_6_regs () and
 	   r6 = get_reg arg_regs.(6) in
 	 (r0, r1, r2, r3, r4, r5, r6)

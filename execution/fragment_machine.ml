@@ -15,6 +15,7 @@ open Stpvc_engine;;
 open Stp_external_engine;;
 open Concrete_memory;;
 open Granular_memory;;
+open Exec_assert_minder;;
 
 let bool64 f a b =
   if (f a b)
@@ -421,7 +422,7 @@ struct
   module FormMan = FormulaManagerFunctor(D)
 
   let change_some_short_bytes form_man d bytes construct =
-    assert(Array.length bytes = 2);
+    g_assert(Array.length bytes = 2) 100 "Fragment_machine.change_some_short_bytes";
     let select old = function
       | None -> old
       | Some x -> construct x
@@ -433,7 +434,7 @@ struct
       form_man#simplify16 (D.reassemble16 b0 b1)
 
   let change_some_word_bytes form_man d bytes construct =
-    assert(Array.length bytes = 4);
+    g_assert(Array.length bytes = 4) 100 "Fragment_machine.change_some_word_bytes";
     let select old = function
       | None -> old
       | Some x -> construct x
@@ -450,7 +451,7 @@ struct
 	(D.reassemble32 (D.reassemble16 b0 b1) (D.reassemble16 b2 b3))
 
   let change_some_long_bytes form_man d bytes construct =
-    assert(Array.length bytes = 8);
+    g_assert(Array.length bytes = 8) 100 "Fragment_machine.change_some_long_bytes";
     let select old = function
       | None -> old
       | Some x -> construct x
@@ -678,19 +679,19 @@ struct
 		   checks, we could use it here. For now, just comment it
 		   out: *)
 		if false then
-		  assert(is_sorted call_stack);
+		  g_assert(is_sorted call_stack) 100 "Fragment_machine.trace_call_stack";
 	  | "return" ->
 	      let esp = self#get_esp in
 		pop_callstack (Int64.sub esp size);
 		if false then
-		  assert(is_sorted call_stack);
+		  g_assert(is_sorted call_stack) 100 "Fragment_machine.trace_call_stack";
 		let depth = List.length call_stack in
 		  for i = 0 to depth - 2 do Printf.printf " " done;
 		  Printf.printf "Return from 0x%08Lx to 0x%08Lx\n"
 		    last_eip eip;
 		  pop_callstack esp;
 		  if false then
-		    assert(is_sorted call_stack);
+		    g_assert(is_sorted call_stack) 100 "Fragment_machine.trace_call_stack";
 	  | _ -> ()
 
     method jump_hook last_insn last_eip eip =
@@ -1668,11 +1669,11 @@ struct
 	   | V.PLUS | V.MINUS | V.TIMES
 	   | V.DIVIDE | V.SDIVIDE | V.MOD | V.SMOD
 	   | V.BITAND | V.BITOR | V.XOR
-	       -> assert(ty1 = ty2); ty1
+	       -> g_assert(ty1 = ty2) 100 "Fragment_machine.eval_binop"; ty1
 	   | V.LSHIFT | V.RSHIFT | V.ARSHIFT
 	       -> ty1
 	   | V.EQ | V.NEQ | V.LT | V.LE | V.SLT | V.SLE
-	       -> assert(ty1 = ty2); V.REG_1) in
+	       -> g_assert(ty1 = ty2) 100 "Fragment_machine.eval_binop"; V.REG_1) in
       let func =
 	(match (op, ty1) with
 	   | (V.PLUS, V.REG_1)  -> D.plus1 
@@ -1779,9 +1780,9 @@ struct
       let ty =
 	(match op with
 	   | V.FPLUS | V.FMINUS | V.FTIMES | V.FDIVIDE
-	       -> assert(ty1 = ty2); ty1
+	       -> g_assert(ty1 = ty2) 100 "Fragment_machine.eval_fbinop"; ty1
 	   | V.FEQ | V.FNEQ | V.FLT | V.FLE
-	       -> assert(ty1 = ty2); V.REG_1) in
+	       -> g_assert(ty1 = ty2) 100 "Fragment_machine.eval_fbinop"; V.REG_1) in
       let func =
 	(match (op, ty1) with
 	   | (V.FPLUS, V.REG_32) -> D.fplus32
@@ -1985,8 +1986,8 @@ struct
 	    let (v_c, ty_c) = self#eval_int_exp_ty cond and
 		(v_t, ty_t) = self#eval_int_exp_ty true_e and
 		(v_f, ty_f) = self#eval_int_exp_ty false_e in
-	      assert(ty_c = V.REG_1);
-	      assert(ty_t = ty_f);
+	      g_assert(ty_c = V.REG_1) 100 "Fragment_machine.eval_int_exp_ty";
+	      g_assert(ty_t = ty_f)100 "Fragment_machine.eval_int_exp_ty";
 	      self#eval_ite v_c v_t v_f ty_t
 	(* XXX move this to something like a special handler: *)
 	| V.Unknown("rdtsc") -> ((D.from_concrete_64 1L), V.REG_64) 
@@ -2130,7 +2131,7 @@ struct
 		 | V.Attr(st, _) -> loop (st :: rest)
 		 | V.Assert(e) ->
 		     let v = self#eval_bool_exp e in
-		       assert(v);
+		       g_assert(v) 100 "Fragment_machine.run_sl";
 		       loop rest
 		 | V.Halt(e) ->
 		     let v = D.to_concrete_32 (self#eval_int_exp e) in
@@ -2390,7 +2391,7 @@ struct
       self#store_byte_idx (Int64.add base idx) (String.length str) 0
 
     method read_buf addr len =
-      assert ((len >= 0) && (len < Sys.max_array_length));
+      g_assert ((len >= 0) && (len < Sys.max_array_length)) 100 "Fragment_machine.read_buf";
       Array.init len (fun i -> Char.chr (self#concretize8 addr i))
 
     method read_cstr addr =

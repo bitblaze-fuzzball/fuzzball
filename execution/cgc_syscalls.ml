@@ -5,6 +5,7 @@ open Exec_utils
 open Exec_exceptions
 open Exec_options
 open Fragment_machine
+open Exec_assert_minder
 
 class cgcos_special_handler (fm : fragment_machine) =
   let printed_random = ref false in
@@ -36,7 +37,7 @@ class cgcos_special_handler (fm : fragment_machine) =
       with
         NotConcrete(_) -> raise SymbolicSyscall
     else
-      (assert ((len >= 0) && (len < Sys.max_array_length));
+      (g_assert ((len >= 0) && (len < Sys.max_array_length)) 100 "cgc_syscalls.read_buf";
        Array.init len
          (fun i -> Char.chr (load_byte (Int64.add addr (Int64.of_int i)))))
   in
@@ -45,7 +46,7 @@ class cgcos_special_handler (fm : fragment_machine) =
       fm#store_word_conc addr v
   in
   let zero_region base len =
-    assert(len >= 0 && len <= 0x20000000); (* sanity check *)
+    g_assert(len >= 0 && len <= 0x20000000) 100 "cgc_syscalls.zero_region"; (* sanity check *)
     for i = 0 to len - 1 do
       fm#store_byte_idx base i 0
     done
@@ -436,7 +437,7 @@ object(self)
         (ebx, ecx, edx, esi, edi, ebp)
     in
       ignore(0, read_6_regs);
-      assert(!opt_arch = X86);
+      g_assert(!opt_arch = X86) 100 "cgc_syscalls.cgc_os_syscall";
       let result_p =
 	match syscall_num with
 	  | 0 -> (* nosys *)
