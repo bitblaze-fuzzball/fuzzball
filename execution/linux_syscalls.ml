@@ -120,11 +120,9 @@ class linux_special_handler (fm : fragment_machine) =
       with
 	NotConcrete(_) -> raise SymbolicSyscall
     else if (len < 0)
-    then (Printf.eprintf "Can't create a negative length array\n";
-	  assert false)
+    then failwith "Can't create a negative length array\n"
     else if (len >= Sys.max_array_length)
-    then (Printf.eprintf "Can't make an array that big.\n";
-	  assert false)
+    then failwith "Can't make an array that big."
     else
       let lb =
 	if !opt_skip_output_concretize then load_byte_or_q else load_byte
