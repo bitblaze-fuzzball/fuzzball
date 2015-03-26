@@ -2091,8 +2091,11 @@ struct
 			| Some sl -> 
 			    loop (sl @ rest)
 			| None ->
-			    Printf.printf "Unhandled special |%s|\n" str;
-			    failwith "Unhandled special")
+			    if !opt_noop_unhandled_special then
+			      loop rest
+			    else  
+			    (Printf.printf "Unhandled special |%s|\n" str;
+			     failwith "Unhandled special"))
 		 | V.Label(l) ->
 		     if ((String.length l > 5) && 
 			   (String.sub l 0 5) = "pc_0x") then

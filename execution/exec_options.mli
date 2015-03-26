@@ -228,3 +228,4 @@ val opt_ignore_div_0 : div_0_notice ref
 val opt_log_random : random_notice ref
 val opt_big_alloc : Int64.t option ref
 val opt_read_write_warn_ratio : int ref
+val opt_noop_unhandled_special : bool ref

@@ -364,6 +364,8 @@ let explore_cmdline_opts =
      " Don't continue execution past a strange symbolic-controlled address");
     ("-finish-on-weird-sym-addr", Arg.Set(opt_finish_on_weird_sym_addr),
      " Finish exploration as with -stop-on-weird-sym-addr");
+    ("-noop-unhandled-special", Arg.Set(opt_noop_unhandled_special),
+     " Treat Unhandled special instructions as no-ops, supresses unhandled special errors.");
   ]
 
 
