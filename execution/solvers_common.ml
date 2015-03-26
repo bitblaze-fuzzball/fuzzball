@@ -38,7 +38,7 @@ let smtlib_rename_var name =
 type maybe_ce_result =
   | No_CE_here
   | End_of_CE
-  | Assignment of string * int64
+  | Assignment of string * int64 * bool
 
 let parse_stp_ce e_s_t line =
   if line = "sat" then
@@ -87,7 +87,7 @@ let parse_stp_ce e_s_t line =
 	       else
 		 failwith "Failed to parse value in counterexample"))
        in
-	 Assignment (varname, value))
+	 Assignment (varname, value, false))
 
 let parse_cvc4_ce line =
   if line = ")" then
@@ -128,7 +128,7 @@ let parse_cvc4_ce line =
 	      let val_end = String.index trimmed4 ' ' in
 	        String.sub trimmed4 0 val_end)
 	 in
-	   Assignment ((smtlib_rename_var varname), value))
+	   Assignment ((smtlib_rename_var varname), value, false))
 
 let parse_btor_ce line =
   let sp = String.index line ' ' in
@@ -136,7 +136,7 @@ let parse_btor_ce line =
       bits = String.sub line (sp + 1) ((String.length line) - sp - 1)
   in
     Assignment ((smtlib_rename_var varname_raw),
-		(Int64.of_string ("0b" ^ bits)))
+		(Int64.of_string ("0b" ^ bits)), false)
 
 (* Z3's models are similar to CVC4's as S-expressions, but they're
    split over lines differently, so we can't use a simple one-ce-per-line
@@ -196,7 +196,7 @@ let parse_z3_ce_line s v =
 	  in
 	    (match vo with
 	       | None -> (No_CE_here, None)
-	       | Some v -> (Assignment (varname, v), None))
+	       | Some v -> (Assignment (varname, v, false), None))
     (* Ignore comments *)
     | (s, _) when String.length s > 4 &&
 	String.sub s 0 4 = "  ;;" ->
@@ -228,35 +228,54 @@ let parse_z3_ce_line s v =
 (* MathSAT's output is multi-line like Z3's, though it's simpler in some
    other ways. *)
 let parse_mathsat_ce_line s v =
-  let len = String.length s in
-    match (s, v) with
-      | (s, None) when len > 4 &&
-	  (String.sub s 0 3 = "  (" || String.sub s 0 3 = "( (") ->
-	let varname = String.sub s 3 (len - 3) in
-	  (No_CE_here, Some (smtlib_rename_var varname))
-      | (s, Some varname) when len > 6 && String.sub s 0 6 = " (_ bv" ->
-	  let s2 = String.sub s 6 (len - 6) in
-	  let num_end = String.index s2 ' ' in
-	  let num_str = String.sub s2 0 num_end in
-	  let v = Vine_util.int64_u_of_string num_str in
-	    (Assignment (varname, v), None)
-      | (" true", Some varname)  -> (Assignment (varname, 1L), None)
-      | (" false", Some varname) -> (Assignment (varname, 0L), None)
-      | (s, Some varname) when len > 9 &&
-	  (String.sub s 0 5 = " (fp " ||
-	      String.sub s 0 8 = " (_ +oo " ||
-	      String.sub s 0 8 = " (_ -oo " ||
-	      String.sub s 0 8 = " (_ NaN " ||
-	      String.sub s 0 9 = " (_ +zero" ||
-	      String.sub s 0 9 = " (_ -zero") ->
-	  (* Skip FP values *)
-	  (No_CE_here, None)
-      | (")", None) -> (No_CE_here, None)
-      | (") )", None) -> (End_of_CE, None)
-      | ("(  )", None) -> (End_of_CE, None)
-      | (s, _) ->
-	  Printf.printf "Parse failure on <%s>\n" s;
-	  failwith "Unhandled loop case in parse_mathsat_ce_line"
+  let final = ref false in
+  let rec loop s v =
+    flush stdout;
+    let len = String.length s in
+      match (s, v) with
+	| (s, None) when len > 4 &&
+	    (String.sub s 0 3 = "  (" || String.sub s 0 3 = "( (") ->
+	    let rest = String.sub s 3 (len - 3) in
+	      if String.contains rest ' ' then
+		(* Sometimes-seen one-line format. Split and treat rest
+		   as if it were a second line. *)
+		let space_pos = String.index rest ' ' in
+		let pre_space = String.sub rest 0 (space_pos) and
+		    from_space = (String.sub rest space_pos
+				    ((String.length rest) - space_pos)) in
+		let from_len = String.length from_space
+		in
+		  final := ((String.sub from_space (from_len - 3) 3) = ") )");
+		  loop from_space (Some (smtlib_rename_var pre_space))
+	      else
+		(No_CE_here, Some (smtlib_rename_var rest))
+	| (s, Some varname) when len > 6 && String.sub s 0 6 = " (_ bv" ->
+	    let s2 = String.sub s 6 (len - 6) in
+	    let num_end = String.index s2 ' ' in
+	    let num_str = String.sub s2 0 num_end in
+	    let v = Vine_util.int64_u_of_string num_str in
+	      (Assignment (varname, v, !final), None)
+	| ((" true"|" true)"|" true) )"), Some varname)
+	  -> (Assignment (varname, 1L, !final), None)
+	| ((" false"|" false)"|" false) )"), Some varname)
+	   -> (Assignment (varname, 0L, !final), None)
+	| (s, Some varname) when len > 9 &&
+	    (String.sub s 0 5 = " (fp " ||
+		String.sub s 0 8 = " (_ +oo " ||
+		String.sub s 0 8 = " (_ -oo " ||
+		String.sub s 0 8 = " (_ NaN " ||
+		String.sub s 0 9 = " (_ +zero" ||
+		String.sub s 0 9 = " (_ -zero") ->
+	    (* Skip FP values *)
+	    (No_CE_here, None)
+	| (")", None) -> (No_CE_here, None)
+	| (") )", None) -> (End_of_CE, None)
+	| ("(  )", None) -> (End_of_CE, None)
+	| (s, _) ->
+	    Printf.printf "Parse failure on <%s>\n" s;
+	    failwith "Unhandled loop case in parse_mathsat_ce_line"
+  in
+    loop s v
 
 let parse_ce e_s_t =
   match e_s_t with

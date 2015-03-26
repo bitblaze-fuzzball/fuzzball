@@ -16,7 +16,7 @@ let parse_counterex e_s_t line =
   match parse_ce e_s_t line with
     | No_CE_here -> None
     | End_of_CE -> None
-    | Assignment(s, i) -> Some (s, i)
+    | Assignment(s, i, _) -> Some (s, i)
 
 let parse_stateful_ce_lines fn lines =
   let rec loop l v =
@@ -29,7 +29,8 @@ let parse_stateful_ce_lines fn lines =
             match mce with
               | No_CE_here -> loop r v'
               | End_of_CE -> []
-              | Assignment (v, i) -> (v, i) :: loop r v'
+              | Assignment (v, i, is_final) ->
+		  (v, i) :: (if is_final then [] else loop r v')
   in
     loop lines None
 
