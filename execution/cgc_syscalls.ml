@@ -476,12 +476,13 @@ object(self)
                 Printf.printf "transmit(%d, 0x%08Lx, %d, 0x%08Lx)"
 		  fd buf count tx_bytes;
 	      let bytes = read_buf buf count in
-	      let prov = match fm#get_pointer_management () with
-		| None -> Interval_tree.Internal
-		| Some pm -> pm#find_read_prov buf arg3 (* int64 version of count *) in
-	      Printf.eprintf "Transmiting bytes from %s\n" (Interval_tree.prov_to_string prov);
-              self#cgcos_transmit fd bytes count tx_bytes;
-	      Some tx_bytes
+	      (* let prov = 
+	      match fm#get_pointer_management () with
+	        | None -> Interval_tree.Internal
+	        | Some pm -> pm#find_read_prov buf arg3 in  (* int64 version of count *) 
+		 Printf.eprintf "Transmiting bytes from %s\n" (Interval_tree.prov_to_string prov); *) (* TODO debug helper. nuke soon. *) 
+		self#cgcos_transmit fd bytes count tx_bytes;
+		Some tx_bytes
 	  | 3 -> (* receive, similar to Linux sys_read  *)
               let (arg1, arg2, arg3, arg4) = read_4_regs () in
               let fd       = Int64.to_int arg1 and
