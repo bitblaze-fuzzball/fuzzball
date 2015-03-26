@@ -413,6 +413,36 @@ static inline Temp *mk_reg( string name, reg_t width )
     return new Temp(width, "R_" + name);
 }
 
+static string xmm_regname(unsigned int offset) {
+    switch (offset) {
+    case OFFB_XMM0: return "XMM0L";
+    case OFFB_XMM1: return "XMM1L";
+    case OFFB_XMM2: return "XMM2L";
+    case OFFB_XMM3: return "XMM3L";
+    case OFFB_XMM4: return "XMM4L";
+    case OFFB_XMM5: return "XMM5L";
+    case OFFB_XMM6: return "XMM6L";
+    case OFFB_XMM7: return "XMM7L";
+    case OFFB_XMM0h: return "XMM0H";
+    case OFFB_XMM1h: return "XMM1H";
+    case OFFB_XMM2h: return "XMM2H";
+    case OFFB_XMM3h: return "XMM3H";
+    case OFFB_XMM4h: return "XMM4H";
+    case OFFB_XMM5h: return "XMM5H";
+    case OFFB_XMM6h: return "XMM6H";
+    case OFFB_XMM7h: return "XMM7H";
+    }
+    assert(0);
+}
+
+#define lo8(x) _ex_l_cast(x, REG_8)
+#define hi8(x) _ex_h_cast(x, REG_8)
+
+#define lo16(x) _ex_l_cast(x, REG_16)
+#define hi16(x) _ex_h_cast(x, REG_16)
+
+#define lo32(x) _ex_l_cast(x, REG_32)
+#define hi32(x) _ex_h_cast(x, REG_32)
 
 
 //======================================================================
@@ -428,8 +458,23 @@ static Exp *translate_get_reg_8( unsigned int offset )
     string name;
 
     if (offset >= OFFB_XMM0 && offset < OFFB_XMM7+16) {
-	// SSE sub-register: not yet supported.
-	return new Unknown("Unhandled 8-bit XMM lane");
+	int which_lane = offset & 7;
+	int reg_offset = offset & ~7;
+	assert((OFFB_XMM0 & 7) == 0);
+	Temp *reg = mk_reg(xmm_regname(reg_offset), REG_64);
+	Exp *e;
+	switch (which_lane) {
+	case 0: e = lo8(reg); break;
+	case 1: e = hi8(lo16(reg)); break;
+	case 2: e = lo8(hi16(lo32(reg))); break;
+	case 3: e = hi8(lo32(reg)); break;
+	case 4: e = lo8(hi32(reg)); break;
+	case 5: e = hi8(lo16(hi32(reg))); break;
+	case 6: e = lo8(hi16(reg)); break;
+	case 7: e = hi8(reg); break;
+	default: assert(0);
+	}
+	return e;
     }
 
     if (offset >= OFFB_FPTAG0 && offset <= OFFB_FPTAG7) {
@@ -485,9 +530,21 @@ static Exp *translate_get_reg_16( unsigned int offset )
     bool sub;
 
     if (offset >= OFFB_XMM0 && offset < OFFB_XMM7+16) {
-	// SSE sub-register: not yet supported.
-	assert(((offset - OFFB_XMM0) & 1) == 0);
-	return new Unknown("Unhandled 16-bit XMM lane");
+	int byte_off = offset & 7;
+	int reg_offset = offset & ~7;
+	assert((OFFB_XMM0 & 7) == 0);
+	assert((byte_off & 1) == 0);
+	int which_lane = byte_off >> 1;
+	Temp *reg = mk_reg(xmm_regname(reg_offset), REG_64);
+	Exp *e;
+	switch (which_lane) {
+	case 0: e = lo16(reg); break;
+	case 1: e = hi16(lo32(reg)); break;
+	case 2: e = lo16(hi32(reg)); break;
+	case 3: e = hi16(reg); break;
+	default: assert(0); /* Can't happen */
+	}
+	return e;
     }
 
     switch ( offset )
@@ -1219,9 +1276,18 @@ static Stmt *translate_put_reg_8( unsigned int offset, Exp *data, IRSB *irbb )
     Temp *reg;
 
     if (offset >= OFFB_XMM0 && offset < OFFB_XMM7+16) {
-	// SSE sub-register: not supported.
-	Exp::destroy(data);
-	return new Special("Unhandled store to 8-bit XMM lane");
+	int which_lane = offset & 7;
+	int reg_offset = offset & ~7;
+	assert((OFFB_XMM0 & 7) == 0);
+	Temp *reg = mk_reg(xmm_regname(reg_offset), REG_64);
+	int shift_amt = which_lane * 8;
+	unsigned long long change_mask = 0xffULL << shift_amt;
+	unsigned long long keep_mask = ~change_mask;
+	Exp *keep = _ex_and(reg, ex_const64(keep_mask));
+	Exp *data_u = _ex_u_cast(data, REG_64);
+	Exp *change = shift_amt ? _ex_shl(data_u, ex_const(shift_amt)) : data_u;
+	Exp *new_e = _ex_or(keep, change);
+	return new Move(ecl(reg), new_e);
     }
 
     if (offset >= OFFB_FPTAG0 && offset <= OFFB_FPTAG7) {
@@ -1296,10 +1362,19 @@ static Stmt *translate_put_reg_16( unsigned int offset, Exp *data, IRSB *irbb )
     Temp *reg;
 
     if (offset >= OFFB_XMM0 && offset < OFFB_XMM7+16) {
-	// SSE sub-register: not supported.
-	assert(((offset - OFFB_XMM0) & 1) == 0);
-	Exp::destroy(data);
-	return new Special("Unhandled store to 16-bit XMM lane");
+	int byte_off = offset & 7;
+	int reg_offset = offset & ~7;
+	assert((OFFB_XMM0 & 7) == 0);
+	assert((byte_off & 1) == 0);
+	int shift_amt = byte_off * 8;
+	Temp *reg = mk_reg(xmm_regname(reg_offset), REG_64);
+	unsigned long long change_mask = 0xffffULL << shift_amt;
+	unsigned long long keep_mask = ~change_mask;
+	Exp *keep = _ex_and(reg, ex_const64(keep_mask));
+	Exp *data_u = _ex_u_cast(data, REG_64);
+	Exp *change = shift_amt ? _ex_shl(data_u, ex_const(shift_amt)) : data_u;
+	Exp *new_e = _ex_or(keep, change);
+	return new Move(ecl(reg), new_e);
     }
 
     switch ( offset )
