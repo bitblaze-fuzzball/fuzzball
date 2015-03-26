@@ -63,7 +63,6 @@ let log_fuzz_restart log str ispov fm =
        (fun k v l -> (k, v) :: l)
        fm#get_event_details [])
   in
-  Pov_xml.write_pov (get_program_name ()) fm;
   log (
     Yojson_list_logger.LazyJson
       (lazy 
@@ -124,6 +123,7 @@ let fuzz_sighandle_setup fm =
 let fuzz_runloop fm fuzz_start_eip asmir_gamma end_eips =
   let module Log = (val !Loggers.cgc_restart_json : Yojson_list_logger.JSONListLog) in
   let stop str =
+    Pov_xml.write_pov (get_program_name ()) fm;
     Log.close_list ();
     if !opt_trace_stopping
     then Printf.printf "Stopping %s at 0x%08Lx\n" str fm#get_eip in
@@ -237,10 +237,11 @@ let fuzz_runloop fm fuzz_start_eip asmir_gamma end_eips =
     log_fuzz_restart Log.always ":not_concrete" false fm;
     stop "Something's symbolic that oughtn't be.";
     failwith "fuzz raised NotConcrete, but it should have been caught before now!"
-  | Simplify_failure(_) ->
+  | Simplify_failure(s) ->
+    let fail_string = Printf.sprintf "Something can't be simplified, but we should have caught it earlier: %s" s in
     log_fuzz_restart Log.always ":simplify_failure" false fm;
-    stop "Something can't be simplified, but we should have caught it earlier.";
-    failwith "fuzz raised Simplify_failure, but it should have been caught before now!"
+    stop fail_string;
+    failwith fail_string
     
 
 (* opt_fuzz_start_eip comes... sometimes... fuzz_start_addr *)

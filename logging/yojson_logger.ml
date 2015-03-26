@@ -72,6 +72,7 @@ let fuzzball_config () =
   failwith "stub"
 
 let log lazy_message =
+  Printf.eprintf "Logging a message...\n";
   let chan = Verb.out_channel () in
   pretty_to_channel
     chan
@@ -85,7 +86,8 @@ let log lazy_message =
   if chan = stderr || chan = stdout
   then (Printf.eprintf "Channel wasn't a file, flushing and not closing\n";
 	flush chan)
-  else (Printf.eprintf "Channel WAS a file, closing.\n"; close_out chan);
+  else (Printf.eprintf "Channel WAS a file, closing.\n";
+	close_out chan);
   flush stderr
 
 let dummy_log _ = ()
