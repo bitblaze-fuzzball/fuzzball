@@ -172,7 +172,7 @@ class pointer_management = object(self)
 	   is_safe := true) 
       with
       | IT.ReadingUnallocated _ -> is_safe := false
-      | IT.ReadingUnwritten _ -> raise Uninitialized_Memory
+      | IT.ReadingUnwritten _ -> raise Uninitialized_Memory (* _ is allocated interval that had not been written that we were trying to read from *)
     ) else (
     (* overlapping unsafe memory between heap and stack *)
       if (self#is_overlapping start_addr end_addr heap_end stack_end)  ||

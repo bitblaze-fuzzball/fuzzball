@@ -99,7 +99,8 @@ let close_logs_and_send_sexp log fm ispov =
 		"t"
 	     else "nil"))) in
   if !opt_emit_pollers || ispov then SEXP.always ~sign:false sexp;
-  restarts := !restarts + 1
+  restarts := !restarts + 1;
+  Eip_sequence_logger.flush ()
 
 let prefuzz_region start_eip opt_fuzz_start_eip fuzz_start_eip fm asmir_gamma extra_setup =
   g_assert (start_eip <> opt_fuzz_start_eip) 100 "Exec_fuzzloop.prefuzz_region";

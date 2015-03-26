@@ -10,7 +10,7 @@ let add _ this_addr =
 	       chan_opt := Some c;
 	       c)
     | Some c -> c in
-  Printf.fprintf c " %#08x" this_addr (* 0x00000000 *)
+  Printf.fprintf c " %#08Lx" this_addr (* 0x00000000 *)
 
 
 let flush () =

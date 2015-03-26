@@ -563,7 +563,11 @@ let cmdline_opts =
      "String Sets how loud to be about calls to cgc_random.  Defaults to never.");
 
     ("-addr-table-outloc", Arg.Set_string(Indirect_target_logger.output_loc),
-     "String Sets output location of jump address association table.  Default ./addr_table.txt")
+     "String Sets output location of jump address association table.  Default ./addr_table.txt");
+    ("-log-eip-outloc", Arg.Set_string(Eip_sequence_logger.output_loc),
+     "String Sets output location of eip sequence logger.  Default ./eip_sequence.txt");
+    ("-log-eip-sequence", Arg.Set(opt_log_eip_sequence),
+     " Log eip coverage")
     ]
 
 let trace_replay_cmdline_opts =

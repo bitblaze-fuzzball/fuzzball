@@ -74,6 +74,7 @@ let main argv =
     (List.find (fun (i, s, t) -> s = "mem") dl) dl
   in
     fm#init_prog (dl, []);
+    if !Exec_options.opt_log_eip_sequence then (fm#add_extra_eip_hook Eip_sequence_logger.add);
     Exec_set_options.default_on_missing := (fun fm -> fm#on_missing_symbol);
     Exec_set_options.apply_cmdline_opts_early fm dl;
     Options_linux.apply_linux_cmdline_opts fm;
