@@ -16,6 +16,8 @@ let opt_use_ids_from_core = ref false
 let opt_symbolic_files = ref []
 let opt_concolic_files = ref []
 
+let opt_extra_programs = ref []
+
 let set_linux_defaults_for_concrete () =
   opt_linux_syscalls := true
 
@@ -102,83 +104,115 @@ let linux_cmdline_opts =
      " Make random(2cgc) deterministic");
     ("-skip-timeouts", Arg.Set(opt_skip_timeouts),
      " Don't wait when fdwait(2cgc) says to");
+    (* This actually works with both Linux and Decree for testing purposes,
+       but the interface wouldn't be right for Linux because there's no
+       place to put the arguments to the other programs. *)
+    ("-extra-program", Arg.String
+       (fun s -> opt_extra_programs := s :: !opt_extra_programs),
+     "BINARY Run another CB at the same time, may be repeated");
   ]
 
 let apply_linux_cmdline_opts (fm : Fragment_machine.fragment_machine) =
+  let load_base = match !opt_load_base with
+    | Some a -> a
+    | None ->
+	(match !opt_arch with
+	   | X86 -> 0x08048000L
+	   | X64 -> 0x00400000L
+	   | ARM -> 0x8000L
+	)
+  in
+  let do_setup = match !opt_setup_initial_proc_state with
+    | Some b -> b
+    | None ->
+	if !opt_start_addr <> None then
+	  false
+	else if !opt_argv <> [] then
+	  true
+	else if !opt_decree then
+	  true (* CBs don't take args anyway, so don't require
+		  users to give -- *)
+	else
+	  failwith ("Can't decide whether to "^
+		      "-setup-initial-proc-state")
+  in
+  let add_special_handlers fm linux_break =
+    if !opt_decree then
+      let csh = new Cgc_syscalls.cgcos_special_handler fm in
+	if !opt_memory_watching then
+	  csh#enablePointerManagementMemoryChecking;
+	fm#add_special_handler (csh :> Fragment_machine.special_handler)      
+    else if !opt_linux_syscalls then
+      let lsh = new Linux_syscalls.linux_special_handler fm in
+	if !opt_use_ids_from_core then
+	  lsh#set_proc_identities !Linux_loader.proc_identities;
+	List.iter (fun f -> lsh#add_symbolic_file f false) !opt_symbolic_files;
+	List.iter (fun f -> lsh#add_symbolic_file f  true) !opt_concolic_files;
+	Linux_syscalls.linux_set_up_arm_kuser_page fm;
+	lsh#set_the_break linux_break;
+	fm#add_special_handler (lsh :> Fragment_machine.special_handler)
+    else
+      fm#add_special_handler
+	((new Special_handlers.linux_special_nonhandler fm)
+	 :> Fragment_machine.special_handler);
+    (match !opt_x87_emulator with
+       | Some emulator_path -> 
+	   opt_x87_entry_point :=
+	     Some (Linux_loader.load_x87_emulator fm emulator_path);
+	   let fpu_sh = new Special_handlers.x87_emulator_special_handler fm in
+	     fm#add_special_handler
+	       (fpu_sh :> Fragment_machine.special_handler)
+       | None -> ());
+    (match !opt_sse_emulator with
+       | Some s ->
+	   (match s with 
+	      | "punt" -> let sse_punter = new Special_handlers.sse_floating_point_punter fm in
+		  fm#add_special_handler (sse_punter :> Fragment_machine.special_handler)
+	      | _ -> failwith (Printf.sprintf "Unrecognized sse handler %s" s ))
+       | None -> ())
+  in
+  let linux_break = ref 0L in
   (match !opt_program_name with
      | Some name ->
-	 let do_setup = match !opt_setup_initial_proc_state with
-	   | Some b -> b
-	   | None ->
-	       if !opt_start_addr <> None then
-		 false
-	       else if !opt_argv <> [] then
-		 true
-	       else if !opt_decree then
-		 true (* CBs don't take args anyway, so don't require
-			 users to give -- *)
-	       else
-		 failwith ("Can't decide whether to "^
-			     "-setup-initial-proc-state")
-	 in
-	 let load_base = match !opt_load_base with
-	   | Some a -> a
-	   | None ->
-	       (match !opt_arch with
-		  | X86 -> 0x08048000L
-		  | X64 -> 0x00400000L
-		  | ARM -> 0x8000L
-	       )
-	 in
 	   if !opt_decree then
 	     state_start_addr := Some
 	       (Decree_loader.load_cb fm name
 		  load_base !opt_load_data do_setup
 		  !opt_load_extra_regions)
 	   else
-	     state_start_addr := Some
+	     let (s_addr, init_break) = 
 	       (Linux_loader.load_dynamic_program fm name
 		  load_base !opt_load_data do_setup
 		  !opt_load_extra_regions !opt_argv)
+	     in
+	       state_start_addr := Some s_addr;
+	       linux_break := init_break
      | _ -> ());
+  List.iter
+    (fun p ->
+       let pid = fm#alloc_proc
+	 (fun () ->
+	    fm#make_regs_zero;
+	    fm#on_missing_zero;
+	    let (start_addr, linux_break) =
+	      if !opt_decree then
+		((Decree_loader.load_cb fm p load_base !opt_load_data true []),
+		 0L)
+	      else
+		Linux_loader.load_dynamic_program fm p load_base
+		  !opt_load_data do_setup [] []
+	    in
+	      fm#set_eip start_addr;
+	      add_special_handlers fm linux_break)
+       in
+	 ignore(pid))
+    !opt_extra_programs;
   (match !opt_core_file_name with
      | Some name -> 
 	 state_start_addr :=
 	   Some (Linux_loader.load_core fm name)
      | None -> ());
-  if !opt_decree then
-    let csh = new Cgc_syscalls.cgcos_special_handler fm in
-      
-     if !opt_memory_watching then
-       csh#enablePointerManagementMemoryChecking;
-
-      fm#add_special_handler (csh :> Fragment_machine.special_handler)      
-  else if !opt_linux_syscalls then
-    let lsh = new Linux_syscalls.linux_special_handler fm in
-      if !opt_use_ids_from_core then
-	lsh#set_proc_identities !Linux_loader.proc_identities;
-      List.iter (fun f -> lsh#add_symbolic_file f false) !opt_symbolic_files;
-      List.iter (fun f -> lsh#add_symbolic_file f  true) !opt_concolic_files;
-      Linux_syscalls.linux_set_up_arm_kuser_page fm;
-      fm#add_special_handler (lsh :> Fragment_machine.special_handler)
-  else
-    fm#add_special_handler
-      ((new Special_handlers.linux_special_nonhandler fm)
-       :> Fragment_machine.special_handler);
-  (match !opt_x87_emulator with
-     | Some emulator_path -> 
-	 opt_x87_entry_point :=
-	   Some (Linux_loader.load_x87_emulator fm emulator_path);
-	 let fpu_sh = new Special_handlers.x87_emulator_special_handler fm in
-	   fm#add_special_handler (fpu_sh :> Fragment_machine.special_handler)
-     | None -> ());
-  (match !opt_sse_emulator with
-  | Some s ->
-    (match s with 
-    | "punt" -> let sse_punter = new Special_handlers.sse_floating_point_punter fm in
-		fm#add_special_handler (sse_punter :> Fragment_machine.special_handler)
-    | _ -> failwith (Printf.sprintf "Unrecognized sse handler %s" s ))
-  | None -> ());
+  add_special_handlers fm !linux_break;
   (match !opt_tls_base with
      | Some base -> Linux_loader.setup_tls_segment fm 0x60000000L base
      | None -> ())

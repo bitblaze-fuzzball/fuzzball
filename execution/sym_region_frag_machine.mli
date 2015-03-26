@@ -149,6 +149,8 @@ sig
     method get_event_details : (string, Yojson.Safe.json) Hashtbl.t
     method make_snap : unit -> unit
     method add_special_handler : Fragment_machine.special_handler -> unit
+    method add_universal_special_handler
+      : Fragment_machine.special_handler -> unit
     method special_handlers_state_json : Yojson.Safe.json
     method handle_special : string -> Vine.stmt list option
     method private get_int_var : Vine.var -> D.t
@@ -245,6 +247,9 @@ sig
     method eval_expr_from_ce : (string * int64) list -> Vine.exp -> int64
     method watchpoint : unit
     method mem_val_as_string : int64 -> Vine.typ -> string
+    method schedule_proc : unit
+    method alloc_proc : (unit -> unit) -> unit
+    method maybe_switch_proc : int64 -> int64 option
     method get_loop_cnt : int64
     val form_man : Formula_manager.FormulaManagerFunctor(D).formula_manager
     method get_form_man :

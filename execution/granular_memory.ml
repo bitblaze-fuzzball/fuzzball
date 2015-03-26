@@ -3,8 +3,11 @@
 *)
 
 open Exec_exceptions;;
+open Exec_options;;
 open Exec_domain;;
 open Exec_assert_minder;;
+
+let mem_unique_id = ref 1
 
 module GranularMemoryFunctor =
   functor (D : DOMAIN) ->
@@ -336,6 +339,11 @@ struct
 	
     val mutable pm = None
 
+    val mutable unique_id =
+      let i = !mem_unique_id in
+	incr mem_unique_id;
+	i
+
     method set_pointer_management (ptrmng : Pointer_management.pointer_management) =
       pm <- Some ptrmng
 
@@ -420,8 +428,14 @@ struct
 	      s
 
     method load_word addr =
+      if !opt_trace_memory then
+	Printf.printf "mem%d GM load word 0x%08Lx\n" unique_id addr;
       match self#maybe_load_word addr with
-	| Some w -> w
+	| Some w ->
+	    if !opt_trace_memory then
+	      Printf.printf "mem%d GM load word present 0x%08Lx = %s\n"
+		unique_id addr (D.to_string_32 w);
+	    w
 	| None ->
 	    let w = missing 32 addr in
 	      self#store_word ~prov:Interval_tree.Internal addr w;
@@ -456,6 +470,9 @@ struct
 
     method store_word ?(prov = Interval_tree.Internal) addr w =
       self#validate_safe_write_addr_range ~prov addr (Int64.of_int 4);
+      if !opt_trace_memory then
+	Printf.printf "mem%d GM store word 0x%08Lx = %s\n"
+	  unique_id addr (D.to_string_32 w);
       if (Int64.logand addr 3L) = 0L then
 	self#store_common_fast addr
 	  (fun chunk which -> gran64_put_word chunk which w)
@@ -677,6 +694,11 @@ struct
   object(self)
     val mutable have_snap = false
 
+    val mutable unique_id =
+      let i = !mem_unique_id in
+	incr mem_unique_id;
+	i
+
     method set_pointer_management (ptrmng : Pointer_management.pointer_management) =
       main#set_pointer_management ptrmng;
       diff#set_pointer_management ptrmng
@@ -763,6 +785,9 @@ struct
 	main#maybe_load_word addr
 
     method load_word addr =
+      if !opt_trace_memory then
+	Printf.printf "mem%d GSM load word 0x%08Lx %b\n"
+	  unique_id addr have_snap;
       if have_snap then
 	match diff#maybe_load_word addr with
 	  | Some w -> w
@@ -867,6 +892,11 @@ struct
     (mem:Concrete_memory.concrete_memory) = object(self)
       val mutable missing : (int -> int64 -> D.t) =
 	(fun _ -> failwith "Must call on_missing")
+
+      val mutable unique_id =
+	let i = !mem_unique_id in
+	  incr mem_unique_id;
+	  i
 
       method set_pointer_management (ptrmng : Pointer_management.pointer_management) = ()
 

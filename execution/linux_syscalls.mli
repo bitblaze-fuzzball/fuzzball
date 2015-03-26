@@ -2,8 +2,6 @@
   Copyright (C) BitBlaze, 2009-2013. All rights reserved.
 *)
 
-val linux_initial_break : int64 option ref
-
 val linux_setup_tcb_seg : Fragment_machine.fragment_machine
     -> int -> int64 -> int64 -> int64 -> unit
 
@@ -42,6 +40,7 @@ object
   method reset : unit
 
   method set_proc_identities : (int * int * int * int) option -> unit
+  method set_the_break : int64 -> unit
 
   method get_pid : int
   method get_ppid : int
@@ -133,6 +132,7 @@ object
   method sys_sched_get_priority_min : int -> unit
   method sys_nanosleep : int64 -> int64 -> unit
   method sys_sched_getscheduler : int -> unit
+  method sys_sched_yield : unit
   method sys_select : int -> int64 -> int64 -> int64 -> int64 -> unit
   method sys_send : int -> int64 -> int -> int -> unit
   method sys_sendto : int -> int64 -> int -> int -> int64 -> int -> unit

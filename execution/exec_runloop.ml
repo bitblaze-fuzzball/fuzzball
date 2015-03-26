@@ -76,6 +76,11 @@ let decode_insns_cached fm gamma eip =
 
 let runloop (fm : fragment_machine) eip asmir_gamma until =
   let rec loop last_eip eip is_final_loop =
+    (match fm#maybe_switch_proc eip with
+       | Some eip' ->
+	   clear_trans_cache (); (* drastic, better to make tagged *)
+	   loop (0L) eip' false
+       | None -> ());
     if fm#before_first_branch && fm#started_symbolic then (
 	fm#make_snap ();
 	fm#set_start_eip eip);

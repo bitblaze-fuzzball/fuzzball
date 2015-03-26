@@ -85,6 +85,7 @@ val opt_trace_binary_paths_delimited : bool ref
 val opt_trace_binary_paths_bracketed : bool ref
 val opt_trace_insns : bool ref
 val opt_trace_loads : bool ref
+val opt_trace_memory : bool ref
 val opt_trace_stores : bool ref
 val opt_trace_callstack : bool ref
 val opt_trace_sym_addrs : bool ref

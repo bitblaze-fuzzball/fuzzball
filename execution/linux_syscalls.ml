@@ -10,8 +10,6 @@ open Exec_options
 open Fragment_machine
 open Exec_assert_minder
 
-let linux_initial_break = ref None
-
 let linux_setup_tcb_seg (fm : fragment_machine) new_ent new_gdt base limit =
   let store_byte base idx v =
     let addr = Int64.add base (Int64.of_int idx) in
@@ -306,7 +304,9 @@ object(self)
 	      Printf.printf "[%s fd %d]: " prefix fd
 	  | _ -> ());
        (match fd with
-	  | (1|2) -> Array.iter print_char bytes;
+	  | (1|2) ->
+	      Array.iter print_char bytes;
+	      flush stdout; (* Linux write(2) is unbuffered *)
 	      put_return (Int64.of_int count)
 	  | _ ->
 	      let str = string_of_char_array bytes and
@@ -698,14 +698,14 @@ object(self)
     with
       | Unix.Unix_error(err, _, _) -> self#put_errno err
 
+  method set_the_break addr =
+    the_break := Some addr
+
   method sys_brk addr =
     let cur_break = match !the_break with
       | Some b -> b
       | None ->
-	  (let first_break = 
-	     (match !linux_initial_break with
-		| Some b -> b
-		| None -> 0x08200000L (* vague guess *) )
+	  (let first_break = 0x08200000L (* vague guess *)
 	   in
 	     the_break := Some first_break;
 	     first_break)
@@ -1767,6 +1767,10 @@ object(self)
   method sys_sched_get_priority_min policy =
     g_assert(policy = 0) 100 "Linux_syscalls.sys_sched_get_priority_min"; (* SCHED_OTHER *)
     put_return 0L
+
+  method sys_sched_yield =
+    put_return 0L;
+    fm#schedule_proc
 
   method sys_nanosleep req rem =
     (* This is closely related to the signal handling..
@@ -3499,7 +3503,9 @@ object(self)
 		 Printf.printf "sched_getscheduler(%d)" pid;
 	       self#sys_sched_getscheduler pid
 	 | (_, 158) -> (* sched_yield *)
-	     uh "Unhandled Linux system call sched_yield (158)"
+	     if !opt_trace_syscalls then
+	       Printf.printf "sched_yield()";
+	     self#sys_sched_yield
 	 | (ARM, 159) -> uh "Check whether ARM sched_get_priority_max matches x86"
 	 | (X86, 159) -> (* sched_get_priority_max *)
 	     let ebx = read_1_reg () in

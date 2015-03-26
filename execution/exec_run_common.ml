@@ -182,14 +182,17 @@ let noop_known_unknowns (dl, sl) =
 let trans_cache = Hashtbl.create 100001
 
 let clear_trans_cache () =
+  Hashtbl.clear trans_cache
+
+let maybe_clear_trans_cache () =
   match !opt_translation_cache_size with
   | Some limit ->
     if Hashtbl.length trans_cache > limit then
-      Hashtbl.clear trans_cache
+      clear_trans_cache ()
   | None -> ()
 
 let with_trans_cache (eip:int64) fn =
-  clear_trans_cache ();
+  maybe_clear_trans_cache ();
   try
     Hashtbl.find trans_cache eip
   with
@@ -200,7 +203,7 @@ let with_trans_cache (eip:int64) fn =
 	to_add
 
 let some_none_trans_cache (eip:int64) fn =
-  clear_trans_cache ();
+  maybe_clear_trans_cache ();
   try
     Some (Hashtbl.find trans_cache eip)
   with

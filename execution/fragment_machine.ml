@@ -265,6 +265,7 @@ class virtual fragment_machine = object
   method virtual reset : unit -> unit
 
   method virtual add_special_handler : special_handler -> unit
+  method virtual add_universal_special_handler : special_handler -> unit
   method virtual special_handlers_state_json : Yojson.Safe.json
 
   method virtual get_bit_var   : register_name -> int
@@ -413,6 +414,9 @@ class virtual fragment_machine = object
   method virtual get_start_eip : int64
   method virtual set_start_eip : int64 -> unit
 
+  method virtual schedule_proc : unit
+  method virtual maybe_switch_proc : int64 -> int64 option
+  method virtual alloc_proc : (unit -> unit) -> unit
 end
 
 module FragmentMachineFunctor =
@@ -478,17 +482,17 @@ struct
 	   (D.reassemble32 (D.reassemble16 b4 b5) (D.reassemble16 b6 b7)))
 
   class frag_machine = object(self)	
-    val mem = (new GM.granular_second_snapshot_memory
-		 (new GM.granular_snapshot_memory
-		    (new GM.concrete_maybe_adaptor_memory
-		       (new string_maybe_memory))
-		    (new GM.granular_hash_memory))
-		 (new GM.granular_hash_memory))
+    val mutable mem = (new GM.granular_second_snapshot_memory
+			 (new GM.granular_snapshot_memory
+			    (new GM.concrete_maybe_adaptor_memory
+			       (new string_maybe_memory))
+			    (new GM.granular_hash_memory))
+			 (new GM.granular_hash_memory))
 
     val form_man = new FormMan.formula_manager
     method get_form_man = form_man
 
-    val reg_store = V.VarHash.create 100
+    val mutable reg_store = V.VarHash.create 100
     val reg_to_var = Hashtbl.create 100
     val temps = V.VarHash.create 100
 				
@@ -508,6 +512,59 @@ struct
 			 (Int64.add base_addr
 			    (Int64.of_int offset)))
 
+    (* Note that this is both mutable and a ref. The mutability comes
+       from it switching when we switch processes. The ref is so that
+       the copy currently in use and the copy saved in the proc_list
+       can be updated in sync.
+    *)
+    val mutable special_handler_list_ref = ref ([] : #special_handler list)
+
+    val mutable proc_list = []
+    initializer proc_list <- [mem, reg_store, special_handler_list_ref]
+    val mutable cur_pid = 0
+
+    method private switch_proc pid =
+      g_assert(pid < List.length proc_list) 50 "FM.switch_proc";
+      cur_pid <- pid;
+      let (mem', reg_store', shlr') = List.nth proc_list pid in
+	mem <- mem';
+	reg_store <- reg_store';
+	special_handler_list_ref <- shlr'
+
+    val mutable next_pid = None
+
+    method schedule_proc =
+      let pid' = (cur_pid + 1) mod (List.length proc_list) in
+	next_pid <- Some pid'
+
+    method maybe_switch_proc old_eip =
+      match next_pid with
+	| Some pid' ->
+	    next_pid <- None;
+	    self#set_eip old_eip;
+	    self#switch_proc pid';
+	    Some self#get_eip
+	| None -> None
+
+    method alloc_proc fn =
+      let mem' = (new GM.granular_second_snapshot_memory
+		    (new GM.granular_snapshot_memory
+		       (new GM.concrete_maybe_adaptor_memory
+			  (new string_maybe_memory))
+		       (new GM.granular_hash_memory))
+		    (new GM.granular_hash_memory)) and
+	  reg_store' = V.VarHash.create 100
+      in
+	V.VarHash.iter
+	  (fun k _ -> V.VarHash.replace reg_store' k (D.uninit))
+	  reg_store;
+	proc_list <- proc_list @ [(mem', reg_store', ref [])];
+	let new_pid = (List.length proc_list) - 1 and
+	    old_pid = cur_pid
+	in
+	  self#switch_proc new_pid;
+	  fn ();
+	  self#switch_proc old_pid
 
     method init_prog (dl, sl) =
       let add_reg ((n,s,t) as v) =
@@ -515,13 +572,14 @@ struct
 	then mem_var <- v
 	else
 	  (V.VarHash.add reg_store v (D.uninit);
-	   Hashtbl.add reg_to_var (regstr_to_reg s) v) in
-      List.iter add_reg dl;
-      self#set_frag (dl, sl);
-      let result = self#run () in
-	match result with
-	  | "fallthrough" -> ()
-	  | _ -> failwith "Initial program should fall through"
+	   Hashtbl.add reg_to_var (regstr_to_reg s) v)
+      in
+	List.iter add_reg dl;
+	self#set_frag (dl, sl);
+	let result = self#run () in
+	  match result with
+	    | "fallthrough" -> ()
+	    | _ -> failwith "Initial program should fall through"
 
     val mutable loop_cnt = 0L
     method get_loop_cnt = loop_cnt
@@ -1415,10 +1473,8 @@ struct
 	setup ()
 
     method start_symbolic =
-      mem#inner_make_snap ();
+      List.iter (fun (m, _, _) -> m#inner_make_snap ()) proc_list;
       started_symbolic <- true
-
-    val mutable special_handler_list = ([] : #special_handler list)
 
     method special_handlers_state_json : Yojson.Safe.json =
       `List
@@ -1426,7 +1482,7 @@ struct
 	   (fun l sh ->
 	      match sh#state_json with
 		| Some j -> j :: l
-		| None -> l) [] special_handler_list )
+		| None -> l) [] !special_handler_list_ref )
 
     val mutable start_eip = 0L
     method get_start_eip = start_eip
@@ -1434,10 +1490,11 @@ struct
 	start_eip <- new_eip
 
     method make_snap () =
-      let snap_handler h = h#make_snap in
-      mem#make_snap ();
+      List.iter (fun (m, _, _) -> m#make_snap ()) proc_list;
+      (* XXX need to save the other reg_stores in proc_list too *)
       snap <- (V.VarHash.copy reg_store, V.VarHash.copy temps);
-      List.iter snap_handler special_handler_list
+      let snap_handler h = h#make_snap in
+	List.iter snap_handler !special_handler_list_ref
 
     val mutable fuzz_finish_reasons = []
     val mutable reason_warned = false
@@ -1482,17 +1539,25 @@ struct
 
     method reset () =
       let reset h = h#reset in
-      mem#reset ();
+      List.iter (fun (m, _, _) -> m#reset ()) proc_list;
+      (* XXX need to restore the other reg_stores in proc_list too *)
       (match snap with (r, t) ->
 	 move_hash r reg_store;
 	 move_hash t temps);
       fuzz_finish_reasons <- [];
       disqualified <- false;
       Hashtbl.clear event_details;
-      List.iter reset special_handler_list
+      List.iter reset !special_handler_list_ref
 
     method add_special_handler (h:special_handler) =
-      special_handler_list <- h :: special_handler_list
+      special_handler_list_ref := h :: !special_handler_list_ref
+
+    (* At the moment we're assuming these are simple ones that don't
+       need to be notified of snapshots or produce JSON output. *)
+    val mutable universal_special_handlers = []
+
+    method add_universal_special_handler (h:special_handler) =
+      universal_special_handlers <- h :: universal_special_handlers
 
     method handle_special str =
       (* We don't care about the return value, but we need the side effect. *)
@@ -1502,7 +1567,7 @@ struct
 	  match hd#handle_special str with
 	  | Some sl -> Some sl
 	  | _ -> find_some_sl tl in
-      find_some_sl special_handler_list
+      find_some_sl (!special_handler_list_ref @ universal_special_handlers)
 
     method private get_int_var ((_,vname,ty) as var) =
       try

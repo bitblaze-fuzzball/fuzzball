@@ -470,6 +470,8 @@ let cmdline_opts =
      " Print each memory load");
     ("-trace-stores", Arg.Set(opt_trace_stores),
      " Print each memory store");
+    ("-trace-memory", Arg.Set(opt_trace_memory),
+     " Print each low-level granular memory op");
     ("-trace-callstack", Arg.Set(opt_trace_callstack),
      " Print calls and returns");
     ("-trace-regions", Arg.Set(opt_trace_regions),
@@ -632,10 +634,10 @@ let apply_cmdline_opts_early (fm : Fragment_machine.fragment_machine) dl =
     fm#make_regs_symbolic
   else
     fm#make_regs_zero;
-  fm#add_special_handler
+  fm#add_universal_special_handler
     ((new Special_handlers.trap_special_nonhandler fm)
      :> Fragment_machine.special_handler);
-  fm#add_special_handler
+  fm#add_universal_special_handler
     ((new Special_handlers.cpuid_special_handler fm)
      :> Fragment_machine.special_handler)
 

@@ -38,7 +38,9 @@ type program_header = {
   ph_flags : int64;
   align : int64
 }
-      
+
+let initial_break = ref None
+
 let seen_pc = ref false
 
 let check_single_start_eip pc =
@@ -170,8 +172,8 @@ let load_segment fm ic phr virt_off is_main_prog =
 	     Printf.printf "        Extra zero filling from %08Lx to %08Lx\n"
 	       !va last_aligned;
 	   (if is_main_prog then
-	      match !linux_initial_break with 
-		| None -> linux_initial_break := Some last_aligned;
+	      match !initial_break with 
+		| None -> initial_break := Some last_aligned;
 		    if !opt_trace_setup then
 		      Printf.printf "Setting initial break to 0x%08Lx\n"
 			last_aligned;
@@ -337,6 +339,7 @@ let load_dynamic_program (fm : fragment_machine) fname load_base
     | 3 -> load_base (* shared object or PIE *)
     | _ -> failwith "Unhandled ELF object type"
   in
+    initial_break := None;
     entry_point := eh.entry;
     List.iter
       (fun phr ->
@@ -367,7 +370,8 @@ let load_dynamic_program (fm : fragment_machine) fname load_base
     close_in ic;
     if do_setup then
       build_startup_state fm eh load_base !ldso_base argv;
-    !entry_point
+    (!entry_point,
+     (match !initial_break with Some a -> a | None -> 0L))
 
 let addr_to_io fname addr =
   let ic = open_in (chroot fname) in

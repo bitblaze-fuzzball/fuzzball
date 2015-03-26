@@ -109,6 +109,7 @@ let opt_trace_binary_paths_bracketed = ref false
 let opt_trace_insns = ref false
 let opt_trace_loads = ref false
 let opt_trace_stores = ref false
+let opt_trace_memory = ref false
 let opt_trace_callstack = ref false
 let opt_trace_sym_addrs = ref false
 let opt_trace_sym_addr_details = ref false

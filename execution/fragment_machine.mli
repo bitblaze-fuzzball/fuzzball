@@ -117,6 +117,7 @@ class virtual fragment_machine : object
   method virtual reset : unit -> unit
 
   method virtual add_special_handler : special_handler -> unit
+  method virtual add_universal_special_handler : special_handler -> unit
   method virtual special_handlers_state_json : Yojson.Safe.json
 
   method virtual get_bit_var   : register_name -> int
@@ -265,6 +266,9 @@ class virtual fragment_machine : object
   method virtual get_start_eip : int64
   method virtual set_start_eip : int64 -> unit
 	
+  method virtual schedule_proc : unit
+  method virtual alloc_proc : (unit -> unit) -> unit
+  method virtual maybe_switch_proc : int64 -> int64 option
 end
 
 module FragmentMachineFunctor :
@@ -344,6 +348,7 @@ sig
     method reset : unit -> unit
 
     method add_special_handler : special_handler -> unit
+    method add_universal_special_handler : special_handler -> unit
     method special_handlers_state_json : Yojson.Safe.json
 
     method handle_special : string -> Vine.stmt list option
@@ -520,5 +525,8 @@ sig
     method get_start_eip : int64
     method set_start_eip : int64 -> unit
 		
+    method schedule_proc : unit
+    method alloc_proc : (unit -> unit) -> unit
+    method maybe_switch_proc : int64 -> int64 option
   end
 end
