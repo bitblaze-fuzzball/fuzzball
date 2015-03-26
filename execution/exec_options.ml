@@ -301,6 +301,7 @@ let state_start_addr = ref None
 let opt_log_random = ref Never
 let opt_big_alloc = ref None
 let opt_read_write_warn_ratio = ref 5
+let opt_emit_pollers = ref true
 
 let opt_noop_unhandled_special = ref false
 

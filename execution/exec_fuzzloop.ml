@@ -82,6 +82,9 @@ let close_logs_and_send_sexp log fm ispov =
   let module SEXP = (val !Loggers.cgc_sexp_logger : Text_logger.TextLog) in
     Pov_xml.write_pov (get_program_name ()) fm;
     Log.close_list ();
+    (* note that we're totally relying on the assertion that the input directory for the info logger
+       is the same as the pov output.  And we're constructing the names here rather than fetching them
+       from the configs.  I should fix this eventually. *)
     let pov_filename = Printf.sprintf "%s/pov-%i.xml" !Pov_xml.out_channel_name !restarts
     and info_filename = Printf.sprintf "%s/info-%i.json" !Pov_xml.out_channel_name !restarts in
     let sexp = Text_logger.LazyString
@@ -94,7 +97,7 @@ let close_logs_and_send_sexp log fm ispov =
 	    (if ispov then
 		"t"
 	     else "nil"))) in
-  SEXP.always ~sign:false sexp;
+  if !opt_emit_pollers || ispov then SEXP.always ~sign:false sexp;
   restarts := !restarts + 1
 
 let prefuzz_region start_eip opt_fuzz_start_eip fuzz_start_eip fm asmir_gamma extra_setup =

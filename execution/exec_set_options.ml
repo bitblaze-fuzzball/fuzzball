@@ -366,6 +366,8 @@ let explore_cmdline_opts =
      " Finish exploration as with -stop-on-weird-sym-addr");
     ("-noop-unhandled-special", Arg.Set(opt_noop_unhandled_special),
      " Treat Unhandled special instructions as no-ops, supresses unhandled special errors.");
+    ("-emit-pollers", Arg.Set(opt_emit_pollers),
+     "bool Emit pollers as well as pov files (defaults to true)");
     ("-max-total-weird", Arg.Set_int(opt_max_weirdness),
      " Set an integer limit on total assert-avoiding weirdness before ending run.");
     ("-single-weird-threshold", Arg.Set_int(opt_max_weirdness),
