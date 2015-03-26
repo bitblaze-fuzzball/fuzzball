@@ -525,6 +525,7 @@ struct
 	    self#eval_bool_exp_conc_path e
 	  else 
 	    (dt#start_new_query_binary;
+	     self#note_first_branch;
 	     let b = match choice with
 	       | None -> self#extend_pc_random e true
 	       | Some bit -> self#extend_pc_known e true bit
@@ -620,12 +621,11 @@ struct
 	  b
 	else
 	  (dt#start_new_query_binary;
-	   let choice = if dt#have_choice then(
-	     if first_branch = true then 
-	       first_branch <- false;
-	     self#cjmp_choose targ1 targ2)		 
-	     else
-	       None
+	   self#note_first_branch;
+	   let choice = if dt#have_choice then
+	     self#cjmp_choose targ1 targ2
+	   else
+	     None
 	   in
 	   let b = match choice with
 	     | None -> self#extend_pc_random e true
@@ -648,6 +648,7 @@ struct
 	      (V.exp_to_string e) eip;
 	  infl_man#maybe_measure_influence_deref e;
 	  dt#start_new_query;
+	  self#note_first_branch;
 	  let bits = ref 0L in
 	  self#restore_path_cond
 	    (fun () ->

@@ -538,6 +538,7 @@ struct
 
     method private concretize ty e =
       dt#start_new_query;
+      self#note_first_branch;
       let v = self#concretize_inner ty e in
 	dt#count_query;
 	v
@@ -627,6 +628,7 @@ struct
 
     method private check_cond cond_e = 
       dt#start_new_query_binary;
+      self#note_first_branch;
       let choices = ref None in 
 	self#restore_path_cond
 	  (fun () ->
@@ -674,6 +676,7 @@ struct
 		 self#finish_fuzz "symbolic dereference can be null"
 	);
       dt#start_new_query;
+      self#note_first_branch;
       let (cbases, coffs, eoffs, ambig, syms) =
 	classify_terms e form_man self#handle_weird_addr_expr
       in
@@ -1215,6 +1218,7 @@ struct
 	  NotConcrete _ ->
 	    let e = D.to_symbolic_1 cond_v in
 	      (dt#start_new_query_binary;
+	       self#note_first_branch;
 	       let b = self#extend_pc_pref e true true in
 	       let choices = dt#check_last_choices in
 		 dt#count_query;

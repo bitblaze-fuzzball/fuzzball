@@ -407,6 +407,7 @@ class virtual fragment_machine = object
 
   method virtual add_extra_store_hook : (int64 -> int -> unit) -> unit
   method virtual run_store_hooks  : int64 -> int -> unit
+  method virtual note_first_branch : unit
   method virtual before_first_branch : bool
   method virtual get_start_eip : int64
   method virtual set_start_eip : int64 -> unit
@@ -495,9 +496,11 @@ struct
     val mutable insns = []
 
     val mutable snap = (V.VarHash.create 1, V.VarHash.create 1)
-    val mutable first_branch = true
 
-    method before_first_branch = first_branch
+    val mutable before_first_branch_flag = true
+
+    method note_first_branch = before_first_branch_flag <- false
+    method before_first_branch = before_first_branch_flag
 
     method private concretize8 base_addr offset =
       D.to_concrete_8 (mem#load_byte

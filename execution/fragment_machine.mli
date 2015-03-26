@@ -260,6 +260,7 @@ class virtual fragment_machine : object
 
   method virtual add_extra_store_hook : (int64 -> int -> unit) -> unit
   method virtual run_store_hooks  : int64 -> int -> unit
+  method virtual note_first_branch : unit
   method virtual before_first_branch : bool
   method virtual get_start_eip : int64
   method virtual set_start_eip : int64 -> unit
@@ -490,7 +491,6 @@ sig
     val reg_to_var : (register_name, Vine.var) Hashtbl.t
     val mem :
       Granular_memory.GranularMemoryFunctor(D).granular_second_snapshot_memory
-    val mutable first_branch : bool
 
     method get_path_cond : Vine.exp list
     method set_query_engine : Query_engine.query_engine -> unit
@@ -514,6 +514,7 @@ sig
 
     method add_extra_store_hook : (int64 -> int -> unit) -> unit
     method run_store_hooks  : int64 -> int -> unit
+    method note_first_branch : unit
     method before_first_branch : bool
     method get_start_eip : int64
     method set_start_eip : int64 -> unit
