@@ -33,3 +33,5 @@ val parse_ce : external_solver_type -> string -> maybe_ce_result
 val create_temp_dir : string -> string
 
 val pick_fresh_fname : string -> string -> int -> string
+
+val extra_opt_options : external_solver_type -> string

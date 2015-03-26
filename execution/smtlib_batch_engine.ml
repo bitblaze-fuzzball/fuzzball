@@ -173,9 +173,10 @@ class smtlib_batch_engine e_s_t fname = object(self)
       | Z3 -> " -smt2 "
       | MATHSAT -> " -model "
     in
+    let extra_opt = extra_opt_options e_s_t in
     let from = if e_s_t = MATHSAT then "<" else "" in
-    let cmd = !opt_solver_path ^ base_opt ^ timeout_opt ^ from ^ curr_fname
-      ^ ".smt2 >" ^ curr_fname ^ ".smt2.out" in
+    let cmd = !opt_solver_path ^ base_opt ^ timeout_opt ^ extra_opt ^
+      from ^ curr_fname ^ ".smt2 >" ^ curr_fname ^ ".smt2.out" in
       if !opt_trace_solver then
 	Printf.printf "Solver command: %s\n" cmd;
       flush stdout;

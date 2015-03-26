@@ -56,12 +56,13 @@ let start_solver solver =
 	     | Z3 -> "-t:" ^ (string_of_int s) ^ "000 "
 	     | MATHSAT -> failwith "No timeout option for mathsat")
   in
+  let extra_opt = extra_opt_options solver in
   let cmd =
     match solver with
-      | CVC4 -> path ^ " --lang smt -im " ^ timeout_opt
-      | STP_SMTLIB2 -> path ^ " --SMTLIB2 -p " ^ timeout_opt
-      | Z3 -> path ^ " -smt2 -in " ^ timeout_opt
-      | MATHSAT -> path ^ timeout_opt
+      | CVC4 -> path ^ " --lang smt -im " ^ timeout_opt ^ extra_opt
+      | STP_SMTLIB2 -> path ^ " --SMTLIB2 -p " ^ timeout_opt ^ extra_opt
+      | Z3 -> path ^ " -smt2 -in " ^ timeout_opt ^ extra_opt
+      | MATHSAT -> path ^ " " ^ timeout_opt ^ extra_opt
       | _ -> failwith "Unsupported solver in smtlib_external_engine"
   in
     Unix.open_process cmd

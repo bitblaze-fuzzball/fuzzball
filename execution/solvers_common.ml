@@ -304,3 +304,26 @@ let pick_fresh_fname dir fname filenum =
     let dir' = make_dirs dir (List.rev rest) in
       ignore(low);
       Printf.sprintf "%s/%s-%d" dir' fname filenum
+
+let extra_opt_options = function
+  | MATHSAT ->
+      ("-preprocessor.toplevel_propagation=true " ^
+	 "-preprocessor.simplification=7 " (* all *) ^
+	 "-dpll.branching_random_frequency=0.01 " ^
+	 "-dpll.branching_random_invalidate_phase_cache=true " ^
+	 "-dpll.restart_strategy=3 " (* dynamic like Glucose *) ^
+	 "-dpll.glucose_var_activity=true " ^
+	 "-dpll.glucose_learnt_minimization=true " ^
+	 "-dpll.preprocessor.mode=1 " (* pre- *) ^
+	 "-theory.bv.eager=true " ^
+	 "-theory.bv.bit_blast_mode=2 " (* AIG + synthesis *) ^
+	 "-theory.bv.delay_propagated_eqs=true " ^
+	 "-theory.arr.mode=1 " (* Boolector-like LoD *) ^
+	 "-theory.la.enabled=false " ^
+	 "-theory.eq_propagation=false " ^
+	 "-theory.fp.mode=1 " (* eager bit-blasting *) ^
+	 "-theory.fp.bit_blast_mode=2 " (* AIG + synthesis *) ^
+	 "-theory.fp.bv_combination_enabled=true " ^
+	 "-theory.euf.enabled=false " ^
+	 "-theory.arr.enabled=false ")
+  | _ -> ""
