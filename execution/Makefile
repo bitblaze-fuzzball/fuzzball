@@ -22,6 +22,7 @@ export SOURCES = \
 	exec_exceptions.mli exec_exceptions.ml \
 	exec_utils.mli exec_utils.ml \
 	exec_options.mli exec_options.ml \
+	exec_assert_minder.mli exec_assert_minder.ml \
 	concrete_domain.mli concrete_domain.ml \
 	frag_simplify.mli frag_simplify.ml \
 	frag_marshal.mli frag_marshal.ml \

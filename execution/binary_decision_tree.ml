@@ -6,6 +6,7 @@ module V = Vine;;
 
 open Exec_exceptions;;
 open Exec_options;;
+open Exec_assert_minder;;
 
 type decision_tree_node = {
   mutable parent : dt_node_ref option;
@@ -60,11 +61,11 @@ let dt_node_to_string n =
     (f_child_int land mask_32bits_int) (t_child_int land mask_32bits_int)
     (n.heur_min land mask_32bits_int) (n.heur_max land mask_32bits_int)
     (query_children_int land 0xffff) (Int64.logand n.eip 0xffffffffL) in
-    assert(String.length s = 53);
+  g_assert (String.length s = 53) 100 "Binary_decision_tree.dt_node_to_string";
     s
 
 let string_to_dt_node ident_arg s =
-  assert(String.length s = 53);
+  g_assert(String.length s = 53) 100 "Binary_decision_tree.string_to_dt_node";
   let parent_str = String.sub s 0 8 and
       flags_char = s.[8] and
       f_child_str = String.sub s 9 8 and
@@ -121,7 +122,7 @@ let ident_to_node_table = Array.make 1024 None
 let nodes_fd_or = ref None
 
 let nodes_fd () =
-  assert(!opt_decision_tree_use_file);
+  g_assert(!opt_decision_tree_use_file) 100 "Binary_decision_tree.nodes_fd";
   match !nodes_fd_or with
     | Some fd -> fd
     | None ->
@@ -134,11 +135,11 @@ let nodes_fd () =
 let ident_to_node i =
   if !opt_decision_tree_use_file then
     ((let off = Unix.lseek (nodes_fd ()) (54 * (i-1)) Unix.SEEK_SET in
-	assert(off = 54 * (i-1)));
+	g_assert(off = 54 * (i-1)) 100 "Binary_decision_tree.ident_to_node");
      let buf = String.create 54 in
      let len = Unix.read (nodes_fd ()) buf 0 54 in
-       assert(len = 54);
-       assert(String.sub buf 45 1 = "\n");
+       g_assert(len = 54) 100 "Binary_decision_tree.ident_to_node";
+       g_assert(String.sub buf 45 1 = "\n") 100 "Binary_decision_tree.ident_to_node";
        string_to_dt_node i (String.sub buf 0 53))
   else
     let i3 = i land 1023 and
@@ -206,9 +207,9 @@ let update_dt_node n =
   if !opt_decision_tree_use_file then
     let i = n.ident in 
       (let off = Unix.lseek (nodes_fd ()) (54 * (i-1)) Unix.SEEK_SET in
-	 assert(off = 54 * (i-1)));
+	 g_assert(off = 54 * (i-1)) 100 "Binary_decision_tree.update_dt_node");
       let len = Unix.write (nodes_fd ()) (dt_node_to_string n ^ "\n") 0 54 in
-	assert(len = 54);
+	g_assert(len = 54) 100 "Binary_decision_tree.update_dt_node";
   else
     let i3 = n.ident land 1023 and
 	i2 = (n.ident asr 10) land 1023 and
@@ -382,7 +383,7 @@ class binary_decision_tree = object(self)
 	    | [] -> (q, h, n)
 	    | first :: rest -> loop (first :: q) (kid n first) rest
       in
-      assert(n.query_children <> None);
+      g_assert(n.query_children <> None) 100 "Binary_decision_tree.get_hist_queries";
 	match h with
 	  | [] -> ([], [], n)
 	  | first :: rest -> 
@@ -418,7 +419,7 @@ class binary_decision_tree = object(self)
   method add_kid b =
     if !opt_trace_decision_tree then
       Printf.printf "DT: Adding %B child to %d\n" b cur.ident;
-    assert(not cur.all_seen);
+    g_assert(not cur.all_seen) 100 "Binary_decision_tree.add_kid";
     let status =
     (match (b, (get_f_child cur), (get_t_child cur)) with
       | (false, Some(Some kid), _)
@@ -463,7 +464,7 @@ class binary_decision_tree = object(self)
     ) 	  
 
   method start_new_query =
-    assert(cur.query_children <> None);
+    g_assert(cur.query_children <> None) 100 "Binary_decision_tree.start_new_query";
     cur_query <- cur
 
   method start_new_query_binary =
@@ -500,7 +501,7 @@ class binary_decision_tree = object(self)
 	    | Some k when not cur.query_counted ->
 		if !opt_trace_decision_tree then	
 		  Printf.printf " -> %d" (k+1);
-		assert(k < !opt_query_branch_limit);
+		g_assert(k < !opt_query_branch_limit) 100 "Binary_decision_tree.count_query";
  		cur_query.query_children <- Some (k + 1);
 		update_dt_node cur_query;
 		cur.query_counted <- true
@@ -627,11 +628,13 @@ class binary_decision_tree = object(self)
 	   else
 	     failwith "Both branches unsat in try_extend")
     in
-      assert(not cur.all_seen);
+      g_assert(not cur.all_seen) 100 "Binary_decision_tree.try_extend";
     (* cur is the node being dealt with.
       if cur.eip <> the eip we're examining, then the tree has become de-synced.
       this is apparently only called from sym_path_frag_machine's query_with_pc_choice and random_case_split.
        In both cases, the eip is self#eip *)
+    (* JTT - TODO -- this needs rolled back into its old assert form
+       and done up with g_assert *)
       if cur.eip <> 0L && cur.eip <> eip then
 	(let estring = Printf.sprintf
 	  "Decision tree inconsistency: node %d was 0x%08Lx and then %08Lx"
@@ -662,10 +665,10 @@ class binary_decision_tree = object(self)
 	       | (true, false) -> known true
 	       | (false, false) -> known (random_bit_gen ()))
 	| (Some(Some f_kid), Some None, _) ->
-	    assert(not f_kid.all_seen);
+	    g_assert(not f_kid.all_seen) 100 "Binary_decision_tree.try_extend";
 	    known false
 	| (Some None, Some(Some t_kid), _) ->
-	    assert(not t_kid.all_seen);
+	    g_assert(not t_kid.all_seen) 100 "Binary_decision_tree.try_extend";
 	    known true
 	| (Some None, Some None, _) -> failwith "Unsat node in try_extend"
 	| (Some(Some f_kid), None, false) ->
@@ -723,7 +726,7 @@ class binary_decision_tree = object(self)
 	       (Printf.printf "all_seen invariant failure: parent %d is all seen, but not true child %d%!\n"
 		  n.ident kid.ident;
 		self#print_tree stdout;
-		assert(kid.all_seen));
+		g_assert(kid.all_seen) 100 "Binary_decision_tree.mark_all_seen_node");
 	 | _ -> ());
       (match get_t_child n with
 	 | Some(Some kid) ->
@@ -731,7 +734,7 @@ class binary_decision_tree = object(self)
 	       (Printf.printf "all_seen invariant failure: parent %d is all seen, but not true child %d%!\n"
 		  n.ident kid.ident;
 		self#print_tree stdout;
-	       assert(kid.all_seen))
+	       g_assert(kid.all_seen) 100 "Binary_decision_tree.mark_all_seen_node")
 	 | _ -> ());
       n.all_seen <- true;
       if !opt_trace_decision_tree then	
@@ -786,7 +789,7 @@ class binary_decision_tree = object(self)
 		    if k > !opt_query_branch_limit then
 		      (Printf.printf "Node %d has excessive count %d\n"
 			 q_parent.ident k;
-		       assert(k = !opt_query_branch_limit)
+		       g_assert(k = !opt_query_branch_limit) 100 "Binary_decision_tree.mark_all_seen_node"
 		      );
 		    if internal_nodes_check q_parent true then
 		      loop q_parent
