@@ -346,15 +346,58 @@ type event_list = action list
 let events = ref ([] : event_list)
 
 
+let compose_read_inputs ri1 ri2 =
+  match (ri1,ri2) with
+  | Length l1, Length l2 -> Length (l1 + l2)
+  | _ -> failwith "Can't compose these read inputs."
+
+
+let compose_reads (a1 : action) (a2 : action) =
+  match (a1,a2) with
+  | ConcreteRead r1, ConcreteRead r2 ->
+    begin
+      assert(r1.echo = r2.echo);
+      assert(r1.assign = r2.assign);
+      assert(r1.mtch = r2.mtch);
+      assert(r2.timeout = r2.timeout);
+      ConcreteRead
+	{echo = r1.echo;
+	 input_marker = compose_read_inputs r1.input_marker r2.input_marker;
+	 assign = r1.assign;
+	 mtch = r1.mtch;
+	 timeout = r1.timeout}
+    end
+  | SymbolicRead r1, SymbolicRead r2 ->
+    begin
+      if r1.start_addr = r2.end_addr
+      then SymbolicRead
+	{start_addr = r2.start_addr;
+	 end_addr = r1.end_addr;
+	 constraints = Array.concat [r1.constraints; r2.constraints];}
+      else if r2.start_addr = r1.end_addr
+      then
+	SymbolicRead
+	  {start_addr = r1.start_addr;
+	   end_addr = r2.end_addr;
+	   constraints = Array.concat [r1.constraints; r2.constraints];}
+      else failwith "Can't compose non-adjacent symbolic reads."
+    end
+  | _,_ -> failwith "Can't compose read on non-reads"
+   
 
 let add_read (read_in : string) (start : int64) (length : int) =
   (* Add a read command to the list of actions to be put into the pov *)
-  let me = { echo = Yes;
-	     input_marker = Length length;
-	     assign = None;
-	     mtch = None;
-	     timeout = None; } in
-  events := (ConcreteRead me) :: !events
+  let me = ConcreteRead { echo = Yes;
+			  input_marker = Length length;
+			  assign = None;
+			  mtch = None;
+			  timeout = None; } in
+  match !events with
+  | [] -> events := [me]
+  | hd::tl ->
+    (match hd with
+    | ConcreteRead p_read -> events := (compose_reads me hd)::tl
+    | _ -> events :=  me :: !events)
 
 let add_read_car (read_in : char array) (start : int64) =
   add_read (str_of_array read_in) start (Array.length read_in)
@@ -380,10 +423,20 @@ and symb_writes = ref 0
 
 let add_symbolic_read start_addr end_addr constraints =
   symb_reads := !symb_reads + 1;
-  let to_add = {start_addr = start_addr;
-		end_addr = end_addr;
-		constraints = constraints; } in
-  events := (SymbolicRead to_add) :: !events
+  let to_add = SymbolicRead {start_addr = start_addr;
+			     end_addr = end_addr;
+			     constraints = constraints; } in
+  match !events with
+  | [] -> events := [to_add]
+  | hd::tl ->
+    (match hd with
+    | SymbolicRead _ ->
+      (* I shouldn't be doing this with try/catch.  I should just return the uncomposed objects in a list, or use
+	 an option JTT *)
+      (try
+	 events := (compose_reads to_add hd)::tl
+       with _ -> events := to_add :: !events)
+    | _ -> events := to_add :: !events)
 
 let add_symbolic_transmit start_addr end_addr constraints =
   symb_writes := !symb_writes + 1;
