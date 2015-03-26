@@ -78,7 +78,7 @@ class pointer_management = object(self)
 	and end_addr = Int64.add addr (Int64.sub len Int64.one) in
 	let this_interval = { IT.low = start_addr;
 			     IT.high = end_addr;
-			     IT.provenance = IT.DontKnow;
+			     IT.provenance = IT.Internal;
 			     accessed = 0;} in
 	begin
 	  match !Exec_options.opt_big_alloc with
@@ -124,7 +124,7 @@ class pointer_management = object(self)
     and end_addr = Int64.add addr (Int64.sub len Int64.one) in
     let this_interval = { IT.low = start_addr;
 			  IT.high = end_addr;
-			  IT.provenance = IT.DontKnow;
+			  IT.provenance = IT.Internal;
 			  IT.accessed = 0;} in
     try
       let assign_ranges', io_ranges' =
@@ -150,14 +150,14 @@ class pointer_management = object(self)
     and end_addr = Int64.add addr (Int64.sub len Int64.one) in
     let this_interval = {IT.low = start_addr;
 			 IT.high = end_addr;
-			 IT.provenance = IT.DontKnow;
+			 IT.provenance = IT.Internal;
 			 IT.accessed = 0;} in
     match IT.optional_find io_ranges this_interval with
-    | None -> IT.DontKnow
+    | None -> IT.Internal
     | Some i -> i.IT.provenance
       
       
-  method is_safe_read ?(prov = IT.DontKnow) addr len =
+  method is_safe_read ?(prov = IT.Internal) addr len =
     g_assert(len > Int64.zero) 100 "Pointer_management.is_safe_read";
     let start_addr = addr
     and end_addr = Int64.add addr (Int64.sub len Int64.one) in
@@ -202,9 +202,8 @@ class pointer_management = object(self)
     );
     !is_safe
 
-  method is_safe_write ?(prov = IT.DontKnow) addr len =
+  method is_safe_write ?(prov = IT.Internal) addr len =
     g_assert(len > Int64.zero) 100 "Pointer_management.is_safe_write";
-    Printf.eprintf "PointerManagement: Checking write from %s\n" (IT.prov_to_string prov);
     let start_addr = addr
     and end_addr = Int64.add addr (Int64.sub len Int64.one)
     and is_safe = ref false in

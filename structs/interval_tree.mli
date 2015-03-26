@@ -1,4 +1,4 @@
-type provenance = Internal | External | Random | DontKnow
+type provenance = Internal | External | Random
 
 type interval = {
   low : int64;

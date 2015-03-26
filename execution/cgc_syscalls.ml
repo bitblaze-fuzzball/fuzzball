@@ -51,8 +51,7 @@ class cgcos_special_handler (fm : fragment_machine) =
        Array.init len
          (fun i -> Char.chr (lb (Int64.add addr (Int64.of_int i)))))
   in
-  let store_word ?(prov = Interval_tree.DontKnow) base idx v =
-    (* Printf.eprintf "CGCOS Store Word Prov: %s\n" (Interval_tree.prov_to_string prov); *)
+  let store_word ?(prov = Interval_tree.Internal) base idx v =
     let addr = Int64.add base (Int64.of_int idx) in
       fm#store_word_conc ~prov addr v
   in
@@ -477,10 +476,10 @@ object(self)
                 Printf.printf "transmit(%d, 0x%08Lx, %d, 0x%08Lx)"
 		  fd buf count tx_bytes;
 	      let bytes = read_buf buf count in
-(*	      let prov = match fm#get_pointer_management () with
-		| None -> Interval_tree.DontKnow
+	      let prov = match fm#get_pointer_management () with
+		| None -> Interval_tree.Internal
 		| Some pm -> pm#find_read_prov buf arg3 (* int64 version of count *) in
-	      Printf.eprintf "Transmiting bytes from %s\n" (Interval_tree.prov_to_string prov); *)
+	      Printf.eprintf "Transmiting bytes from %s\n" (Interval_tree.prov_to_string prov);
               self#cgcos_transmit fd bytes count tx_bytes;
 	      Some tx_bytes
 	  | 3 -> (* receive, similar to Linux sys_read  *)

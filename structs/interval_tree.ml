@@ -6,13 +6,11 @@ type provenance =
 | Internal
 | External
 | Random
-| DontKnow
 
 let prov_to_string = function
   | Internal -> "Internal"
   | External -> "External"
   | Random -> "Random"
-  | DontKnow -> "DontKnow"
 
 type interval = {
   low  : int64;
@@ -21,7 +19,7 @@ type interval = {
   mutable accessed : int;
 }
 
-let make_interval ?(prov = DontKnow) low high =
+let make_interval ?(prov = Internal) low high =
   assert (high >= low);
   assert (low >= 0);
   { low = Int64.of_int low;
@@ -30,7 +28,7 @@ let make_interval ?(prov = DontKnow) low high =
     accessed = 0;
   }
 
-let make_interval_wcheck ?(prov = DontKnow) low high =
+let make_interval_wcheck ?(prov = Internal) low high =
   assert (high >= low);
   { low = low;
     high = high;
@@ -243,7 +241,7 @@ let find_all base_imap key =
   List.sort (fun a b -> if a.low <= b.low then ~-1 else 1) (helper (copy base_imap))
 
 
-let attempt_write ?(prov = DontKnow) alloc_map io_map attempted_range =
+let attempt_write ?(prov = Internal) alloc_map io_map attempted_range =
     match optional_find alloc_map attempted_range with
   | None -> raise (WriteBeforeAllocated attempted_range)
   | Some interval ->

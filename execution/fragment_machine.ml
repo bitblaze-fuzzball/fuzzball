@@ -322,18 +322,17 @@ class virtual fragment_machine = object
 
   method virtual store_symbolic_wcstr : int64 -> int -> unit
 
-  method virtual store_symbolic_byte  : int64 -> string -> unit
-  method virtual store_symbolic_short : int64 -> string -> unit
-  method virtual store_symbolic_word  : int64 -> string -> unit
-  method virtual store_symbolic_long  : int64 -> string -> unit
+  method virtual store_symbolic_byte  : ?prov:Interval_tree.provenance -> int64 -> string -> unit
+  method virtual store_symbolic_short : ?prov:Interval_tree.provenance -> int64 -> string -> unit
+  method virtual store_symbolic_word  : ?prov:Interval_tree.provenance -> int64 -> string -> unit
+  method virtual store_symbolic_long  : ?prov:Interval_tree.provenance -> int64 -> string -> unit
 
-  method virtual store_concolic_mem_byte :
-    int64 -> string -> int64 -> int -> unit
+  method virtual store_concolic_mem_byte : ?prov:Interval_tree.provenance -> int64 -> string -> int64 -> int -> unit
 
-  method virtual store_concolic_byte  : int64 -> string -> int   -> unit
-  method virtual store_concolic_short : int64 -> string -> int   -> unit
-  method virtual store_concolic_word  : int64 -> string -> int64 -> unit
-  method virtual store_concolic_long  : int64 -> string -> int64 -> unit
+  method virtual store_concolic_byte  : ?prov:Interval_tree.provenance -> int64 -> string -> int   -> unit
+  method virtual store_concolic_short : ?prov:Interval_tree.provenance -> int64 -> string -> int   -> unit
+  method virtual store_concolic_word  : ?prov:Interval_tree.provenance -> int64 -> string -> int64 -> unit
+  method virtual store_concolic_long  : ?prov:Interval_tree.provenance -> int64 -> string -> int64 -> unit
 
   method virtual set_reg_conc_bytes : register_name 
     -> (int option array) -> unit
@@ -1350,36 +1349,35 @@ struct
 	| X64 -> self#simplify_x64_regs
 	| ARM -> self#simplify_arm_regs
 
-    method store_byte ?(prov = Interval_tree.DontKnow) addr b = 
+    method store_byte ?(prov = Interval_tree.Internal) addr b = 
 	mem#store_byte ~prov addr b;
 	self#run_store_hooks addr 8
 	
-    method store_short ?(prov = Interval_tree.DontKnow) addr s = 
+    method store_short ?(prov = Interval_tree.Internal) addr s = 
       mem#store_short ~prov addr s;
       self#run_store_hooks addr 16
 	
-    method store_word ?(prov = Interval_tree.DontKnow) addr w =
+    method store_word ?(prov = Interval_tree.Internal) addr w =
 	mem#store_word ~prov addr w;
 	self#run_store_hooks addr 32
 	
-    method store_long ?(prov = Interval_tree.DontKnow) addr l = 
+    method store_long ?(prov = Interval_tree.Internal) addr l = 
 	mem#store_long ~prov addr l;
 	self#run_store_hooks addr 64
 
-    method store_byte_conc ?(prov = Interval_tree.DontKnow) addr b =
+    method store_byte_conc ?(prov = Interval_tree.Internal) addr b =
 	mem#store_byte ~prov addr (D.from_concrete_8 b);
 	self#run_store_hooks addr 8
 	
-    method store_short_conc ?(prov = Interval_tree.DontKnow) addr s =
+    method store_short_conc ?(prov = Interval_tree.Internal) addr s =
 	mem#store_short ~prov addr(D.from_concrete_16 s);
 	self#run_store_hooks addr 16
 	
-    method store_word_conc ?(prov = Interval_tree.DontKnow) addr w =
-(*      Printf.eprintf "FM store_word_conc Prov: %s\n" (Interval_tree.prov_to_string prov);*)
+    method store_word_conc ?(prov = Interval_tree.Internal) addr w =
       mem#store_word ~prov addr (D.from_concrete_32 w);
       self#run_store_hooks addr 32
 	
-    method store_long_conc ?(prov = Interval_tree.DontKnow) addr l =
+    method store_long_conc ?(prov = Interval_tree.Internal) addr l =
 	mem#store_long ~prov addr (D.from_concrete_64 l);
 	self#run_store_hooks addr 64
 
@@ -2191,7 +2189,7 @@ struct
 
     val mutable symbolic_string_id = 0
 
-    method populate_symbolic_region ?(prov = Interval_tree.DontKnow) varname offset base len =
+    method populate_symbolic_region ?(prov = Interval_tree.Internal) varname offset base len =
       let ar = Array.create len (Vine.Name "stub") in
       for i = 0 to len - 1 do
 	let to_add = form_man#fresh_symbolic_mem_8 varname (Int64.of_int (i + offset)) in
@@ -2220,7 +2218,7 @@ struct
 	if terminate then
 	  self#store_byte_idx base len 0
 
-    method populate_concolic_string ?(prov = Interval_tree.DontKnow) varname offset base str =
+    method populate_concolic_string ?(prov = Interval_tree.Internal) varname offset base str =
       let len = String.length str in
 	for i = 0 to len - 1 do
 	  self#store_byte ~prov (Int64.add base (Int64.of_int i))
@@ -2251,32 +2249,32 @@ struct
 	self#store_byte_idx base (2*len) 0;
 	self#store_byte_idx base (2*len + 1) 0
 
-    method store_symbolic_byte addr varname =
-      self#store_byte addr (form_man#fresh_symbolic_8 varname)
+    method store_symbolic_byte ?(prov = Interval_tree.Internal) addr varname =
+      self#store_byte ~prov addr (form_man#fresh_symbolic_8 varname)
 
-    method store_symbolic_short addr varname =
-      self#store_short addr (form_man#fresh_symbolic_16 varname)
+    method store_symbolic_short ?(prov = Interval_tree.Internal) addr varname =
+      self#store_short ~prov addr (form_man#fresh_symbolic_16 varname)
 
-    method store_symbolic_word addr varname =
-      self#store_word addr (form_man#fresh_symbolic_32 varname)
+    method store_symbolic_word ?(prov = Interval_tree.Internal) addr varname =
+      self#store_word ~prov addr (form_man#fresh_symbolic_32 varname)
 
-    method store_symbolic_long addr varname =
-      self#store_long addr (form_man#fresh_symbolic_64 varname)
+    method store_symbolic_long ?(prov = Interval_tree.Internal)  addr varname =
+      self#store_long ~prov addr (form_man#fresh_symbolic_64 varname)
 
-    method store_concolic_mem_byte addr varname idx b =
-      self#store_byte addr (form_man#make_concolic_mem_8 varname idx b)
+    method store_concolic_mem_byte ?(prov = Interval_tree.Internal) addr varname idx b =
+      self#store_byte ~prov addr (form_man#make_concolic_mem_8 varname idx b)
 
-    method store_concolic_byte addr varname i =
-      self#store_byte addr (form_man#make_concolic_8 varname i)
+    method store_concolic_byte ?(prov = Interval_tree.Internal) addr varname i =
+      self#store_byte addr ~prov (form_man#make_concolic_8 varname i)
 
-    method store_concolic_short addr varname i =
-      self#store_short addr (form_man#make_concolic_16 varname i)
+    method store_concolic_short ?(prov = Interval_tree.Internal) addr varname i =
+      self#store_short ~prov addr (form_man#make_concolic_16 varname i)
 
-    method store_concolic_word addr varname i64 =
-      self#store_word addr (form_man#make_concolic_32 varname i64)
+    method store_concolic_word ?(prov = Interval_tree.Internal) addr varname i64 =
+      self#store_word ~prov addr (form_man#make_concolic_32 varname i64)
 
-    method store_concolic_long addr varname i64 =
-      self#store_long addr (form_man#make_concolic_64 varname i64)
+    method store_concolic_long ?(prov = Interval_tree.Internal) addr varname i64 =
+      self#store_long ~prov addr (form_man#make_concolic_64 varname i64)
 
     method set_reg_conc_bytes reg byte_array =
       let change_func = match Array.length byte_array with

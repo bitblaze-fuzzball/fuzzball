@@ -346,7 +346,7 @@ struct
           raise Unsafe_Memory_Access
       | _ -> ()
 
-    method private validate_safe_write_addr_range ?(prov = Interval_tree.DontKnow) addr len =
+    method private validate_safe_write_addr_range ?(prov = Interval_tree.Internal) addr len =
       match pm with
       | Some ptrmng ->
         if not (ptrmng#is_safe_write ~prov addr len) then
@@ -424,7 +424,7 @@ struct
 	| Some w -> w
 	| None ->
 	    let w = missing 32 addr in
-	      self#store_word addr w;
+	      self#store_word ~prov:Interval_tree.Internal addr w;
 	      w
 
     method load_long addr =
@@ -432,20 +432,18 @@ struct
 	| Some l -> l
 	| None ->
 	    let l = missing 64 addr in
-	      self#store_word addr l;
+	      self#store_word ~prov:Interval_tree.Internal addr l;
 	      l
 
     method private virtual store_common_fast : int64 ->
       (gran64 -> int -> gran64) -> unit
 
-    method store_byte ?(prov = Interval_tree.DontKnow) addr b =
-(*      Printf.eprintf "Granualar memory store_byte prov: %s\n" (Interval_tree.prov_to_string prov);*)
+    method store_byte ?(prov = Interval_tree.Internal) addr b =
       self#validate_safe_write_addr_range ~prov addr (Int64.of_int 1);
       self#store_common_fast addr
 	(fun chunk which -> gran64_put_byte chunk which b)
 	
-    method store_short ?(prov = Interval_tree.DontKnow) addr s =
-(*      Printf.eprintf "Granualar memory store_short prov: %s\n" (Interval_tree.prov_to_string prov); *)
+    method store_short ?(prov = Interval_tree.Internal) addr s =
       self#validate_safe_write_addr_range ~prov addr (Int64.of_int 2);
       if (Int64.logand addr 1L) = 0L then
 	self#store_common_fast addr
@@ -456,8 +454,7 @@ struct
 	  self#store_byte ~prov addr b0;
 	  self#store_byte ~prov (Int64.add addr 1L) b1
 
-    method store_word ?(prov = Interval_tree.DontKnow) addr w =
-(*      Printf.eprintf "Granualar memory store_word prov: %s\n" (Interval_tree.prov_to_string prov); *)
+    method store_word ?(prov = Interval_tree.Internal) addr w =
       self#validate_safe_write_addr_range ~prov addr (Int64.of_int 4);
       if (Int64.logand addr 3L) = 0L then
 	self#store_common_fast addr
@@ -468,8 +465,7 @@ struct
 	  self#store_short ~prov addr s0;
 	  self#store_short ~prov (Int64.add addr 2L) s1
 
-    method store_long ?(prov = Interval_tree.DontKnow) addr l =
-(*      Printf.eprintf "Granualar memory store_long prov: %s\n" (Interval_tree.prov_to_string prov); *)
+    method store_long ?(prov = Interval_tree.Internal) addr l =
       self#validate_safe_write_addr_range ~prov addr (Int64.of_int 8);
       if (Int64.logand addr 7L) = 0L then
 	self#store_common_fast addr
@@ -696,25 +692,25 @@ struct
 	     | 64 -> main#load_long addr
 	     | _ -> failwith "Bad size in missing")
 
-    method store_byte ?(prov = Interval_tree.DontKnow) addr b =
+    method store_byte ?(prov = Interval_tree.Internal) addr b =
       if have_snap then
 	diff#store_byte ~prov addr b
       else
 	main#store_byte ~prov addr b
 
-    method store_short ?(prov = Interval_tree.DontKnow) addr s =
+    method store_short ?(prov = Interval_tree.Internal) addr s =
       if have_snap then
 	diff#store_short addr s
       else
 	main#store_short addr s
 
-    method store_word ?(prov = Interval_tree.DontKnow) addr w =
+    method store_word ?(prov = Interval_tree.Internal) addr w =
       if have_snap then
 	diff#store_word ~prov addr w
       else
 	main#store_word ~prov addr w
 
-    method store_long ?(prov = Interval_tree.DontKnow) addr l =
+    method store_long ?(prov = Interval_tree.Internal) addr l =
       if have_snap then
 	diff#store_long addr l
       else
@@ -839,10 +835,11 @@ struct
 
     method on_missing (m:int -> int64 -> D.t) = ()
 
-    method store_byte ?(prov = Interval_tree.DontKnow) addr b = mem#store_byte addr (D.to_concrete_8 b)
-    method store_short ?(prov = Interval_tree.DontKnow) addr s = mem#store_short addr (D.to_concrete_16 s)
-    method store_word  ?(prov = Interval_tree.DontKnow) addr w = mem#store_word addr (D.to_concrete_32 w)
-    method store_long ?(prov = Interval_tree.DontKnow) addr l = mem#store_word addr (D.to_concrete_64 l)
+    method store_byte ?(prov = Interval_tree.Internal) addr b = mem#store_byte addr (D.to_concrete_8 b)
+    method store_short ?(prov = Interval_tree.Internal) addr s = mem#store_short addr (D.to_concrete_16 s)
+    method store_word  ?(prov = Interval_tree.Internal) addr w = Printf.eprintf "Concrete adapter calls store word\n";
+      mem#store_word addr (D.to_concrete_32 w)
+    method store_long ?(prov = Interval_tree.Internal) addr l = mem#store_word addr (D.to_concrete_64 l)
 
     method load_byte  addr = D.from_concrete_8 (mem#load_byte  addr)
     method load_short addr = D.from_concrete_16(mem#load_short addr)
@@ -875,10 +872,10 @@ struct
 
       method on_missing m = missing <- m
 
-      method store_byte  ?(prov = Interval_tree.DontKnow) addr b = mem#store_byte  addr (D.to_concrete_8 b)
-      method store_short ?(prov = Interval_tree.DontKnow) addr s = mem#store_short addr (D.to_concrete_16 s)
-      method store_word  ?(prov = Interval_tree.DontKnow) addr w = mem#store_word  addr (D.to_concrete_32 w)
-      method store_long  ?(prov = Interval_tree.DontKnow) addr l = mem#store_long  addr (D.to_concrete_64 l)
+      method store_byte  ?(prov = Interval_tree.Internal) addr b = mem#store_byte  addr (D.to_concrete_8 b)
+      method store_short ?(prov = Interval_tree.Internal) addr s = mem#store_short addr (D.to_concrete_16 s)
+      method store_word  ?(prov = Interval_tree.Internal) addr w = mem#store_word  addr (D.to_concrete_32 w)
+      method store_long  ?(prov = Interval_tree.Internal) addr l = mem#store_long  addr (D.to_concrete_64 l)
       method store_page  addr p = mem#store_page  addr p
 
       method maybe_load_byte  addr =

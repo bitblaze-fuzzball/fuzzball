@@ -209,15 +209,15 @@ sig
     method store_concolic_cstr : int64 -> string -> bool -> unit
     method populate_concolic_string : ?prov:Interval_tree.provenance -> string -> int -> int64 -> string -> unit
     method store_symbolic_wcstr : int64 -> int -> unit
-    method store_symbolic_byte  : int64 -> string -> unit
-    method store_symbolic_short : int64 -> string -> unit
-    method store_symbolic_word  : int64 -> string -> unit
-    method store_symbolic_long  : int64 -> string -> unit
-    method store_concolic_mem_byte : int64 -> string -> int64 -> int -> unit
-    method store_concolic_byte  : int64 -> string -> int   -> unit
-    method store_concolic_short : int64 -> string -> int   -> unit
-    method store_concolic_word  : int64 -> string -> int64 -> unit
-    method store_concolic_long  : int64 -> string -> int64 -> unit
+    method store_symbolic_byte  : ?prov:Interval_tree.provenance -> int64 -> string -> unit
+    method store_symbolic_short : ?prov:Interval_tree.provenance -> int64 -> string -> unit
+    method store_symbolic_word  : ?prov:Interval_tree.provenance -> int64 -> string -> unit
+    method store_symbolic_long  : ?prov:Interval_tree.provenance -> int64 -> string -> unit
+    method store_concolic_mem_byte : ?prov:Interval_tree.provenance -> int64 -> string -> int64 -> int -> unit
+    method store_concolic_byte  : ?prov:Interval_tree.provenance -> int64 -> string -> int   -> unit
+    method store_concolic_short : ?prov:Interval_tree.provenance -> int64 -> string -> int   -> unit
+    method store_concolic_word  : ?prov:Interval_tree.provenance -> int64 -> string -> int64 -> unit
+    method store_concolic_long  : ?prov:Interval_tree.provenance -> int64 -> string -> int64 -> unit
     method set_reg_conc_bytes : Fragment_machine.register_name 
       -> (int option array) -> unit
     method set_reg_concolic_mem_bytes : Fragment_machine.register_name 
