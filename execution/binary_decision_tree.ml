@@ -292,6 +292,8 @@ let hash_round h x =
 class binary_decision_tree = object(self)
   inherit Decision_tree.decision_tree
 
+  val seen = Hashtbl.create 100
+
   val root_ident = (new_dt_node None).ident
   val mutable cur = new_dt_node None (* garbage *)
   val mutable cur_query = new_dt_node None (* garbage *)
@@ -307,6 +309,7 @@ class binary_decision_tree = object(self)
       root.query_children <- Some 0;
       update_dt_node root;
       cur <- root;
+      Hashtbl.replace seen cur.eip cur;
       cur_query <- root;
       if !opt_trace_decision_tree then
 	Printf.printf "DT: Initialized.\n";
@@ -326,11 +329,13 @@ class binary_decision_tree = object(self)
 
   method reset =
     cur <- get_dt_node root_ident;
+    Hashtbl.replace seen cur.eip cur;
     cur_query <- get_dt_node root_ident;
     cur_heur <- -1;
     depth <- 0;
     path_hash <- Int64.to_int32 0x811c9dc5L;
     iteration_count <- iteration_count + 1;
+    Hashtbl.clear seen;
     if !opt_trace_randomness then
       Printf.printf "Initializing random state as %08x\n" iteration_count;
     randomness <- Random.State.make [|!opt_random_seed; iteration_count|]
@@ -540,7 +545,8 @@ class binary_decision_tree = object(self)
        | (true,  _, None)
        | (false, Some None, _)
        | (true,  _, Some None) ->
-	   failwith "Add_kid failed in extend");
+	 failwith "Add_kid failed in extend");
+    Hashtbl.replace seen cur.eip cur;
     depth <- depth + 1;
     if (Int64.of_int depth) > !opt_path_depth_limit then
       raise DeepPath
@@ -622,11 +628,19 @@ class binary_decision_tree = object(self)
 	     failwith "Both branches unsat in try_extend")
     in
       assert(not cur.all_seen);
+    (* cur is the node being dealt with.
+      if cur.eip <> the eip we're examining, then the tree has become de-synced.
+      this is apparently only called from sym_path_frag_machine's query_with_pc_choice and random_case_split.
+       In both cases, the eip is self#eip *)
       if cur.eip <> 0L && cur.eip <> eip then
-	Printf.printf
-	  "Decision tree inconsistency: node %d was 0x%08Lx and then %08Lx\n"
-	  cur.ident cur.eip eip;
-      assert(cur.eip = 0L || cur.eip = eip);
+	(let estring = Printf.sprintf
+	  "Decision tree inconsistency: node %d was 0x%08Lx and then %08Lx"
+	  cur.ident cur.eip eip in
+	 Printf.eprintf "%s\n" estring;
+	 if Hashtbl.mem seen eip then
+	   Printf.eprintf "However, I have previously seen a node with that eip.\n" else
+	   Printf.eprintf "And I've never seen a node with that eip.\n";
+	 failwith estring);
       put_eip cur eip;
       let limited = match cur_query.query_children with 
 	| Some k when k >= !opt_query_branch_limit -> true
