@@ -415,7 +415,6 @@ struct
 	| Some b -> b
 	| None ->
 	    let b = missing 8 addr in 
-	    Printf.eprintf "Loading Byte\n";
 	      self#store_byte addr b;
 	      b
 
@@ -862,8 +861,7 @@ struct
 
     method store_byte ?(prov = Interval_tree.Internal) addr b = mem#store_byte addr (D.to_concrete_8 b)
     method store_short ?(prov = Interval_tree.Internal) addr s = mem#store_short addr (D.to_concrete_16 s)
-    method store_word  ?(prov = Interval_tree.Internal) addr w = Printf.eprintf "Concrete adapter calls store word\n";
-      mem#store_word addr (D.to_concrete_32 w)
+    method store_word  ?(prov = Interval_tree.Internal) addr w = mem#store_word addr (D.to_concrete_32 w)
     method store_long ?(prov = Interval_tree.Internal) addr l = mem#store_word addr (D.to_concrete_64 l)
 
     method load_byte  addr = D.from_concrete_8 (mem#load_byte  addr)

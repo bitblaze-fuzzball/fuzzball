@@ -129,9 +129,11 @@ class pointer_management = object(self)
     try
       let assign_ranges', io_ranges' =
 	IT.attempt_deallocate assign_ranges io_ranges this_interval in
-      Printf.eprintf "Dealloc Range ";
-      IT.print_interval this_interval;
-      Printf.eprintf "\n";
+      (*
+	Printf.eprintf "Dealloc Range ";
+	IT.print_interval this_interval;
+	Printf.eprintf "\n";
+      *)
       flush stderr;
       assign_ranges <- assign_ranges';
       io_ranges <- io_ranges'
