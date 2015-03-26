@@ -16,11 +16,11 @@ export SOURCES = \
 
 RESULT = logging
 
-export PACKS = unix yojson tyxml
+export PACKS = unix extlib yojson tyxml
 export YFLAGS = -v
-export LIBS = execution ocaml structs
-export INCDIRS = ../execution ../ocaml ../structs
-export OCAMLDEP = ocamldep -I ../execution ../ocaml ../structs
+export LIBS = vine structs
+export INCDIRS = ../ocaml ../structs
+export OCAMLDEP = ocamldep -I ../ocaml ../structs
 
 OCAMLFLAGS := -warn-error Aelz
 ifdef PROFILE

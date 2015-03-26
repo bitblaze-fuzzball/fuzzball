@@ -9,7 +9,7 @@ export LIBASMIR=../libasmir
 include $(LIBASMIR)/makefile.inc
 export INCDIRS += ../stp ../stp/ocaml $(VINE_OCAMLDIR) $(VINE_TRACEDIR) ../structs ../logging
 export EXTLIBDIRS += ../stp ../stp/ocaml
-export LIBS += stpvc ../ocaml/vine ../trace/trace
+export LIBS += stpvc ../ocaml/vine ../trace/trace ../structs/structs ../logging/logging
 
 export OCAMLDEP = ocamldep -I $(VINE_OCAMLDIR) -I $(STP_OCAMLDIR) \
 				-I $(VINE_TRACEDIR) -I ../logging -I ../structs
