@@ -55,7 +55,7 @@ let loop_w_stats count fn =
 
 let restarts = ref 0
 
-let log_fuzz_restart log str fm = 
+let log_fuzz_restart log str ispov fm = 
   let eip = fm#get_eip in
   let module SEXP = (val !Loggers.cgc_sexp_logger : Text_logger.TextLog) in
   let extra_details = `Assoc
@@ -84,8 +84,8 @@ let log_fuzz_restart log str fm =
   and info_filename = Printf.sprintf "%s/info-%i.json" !Pov_xml.out_channel_name !restarts in
   let sexp = Text_logger.LazyString
     (lazy
-       (Printf.sprintf "((:type :new-test-case) (:xml \"%s\") (:info \"%s\") (:provenance %s))"
-	  pov_filename info_filename (if !opt_symbolic_receive then ":fuzzball-symbolic" else ":fuzzball-concolic"))) in
+       (Printf.sprintf "((:type :new-test-case) (:xml \"%s\") (:info \"%s\") (:provenance %s) (:expected-pov %s))"
+	  pov_filename info_filename (if !opt_symbolic_receive then ":fuzzball-symbolic" else ":fuzzball-concolic") (if ispov then "t" else "nil"))) in
   SEXP.always ~sign:false sexp;
   restarts := !restarts + 1
 
@@ -131,20 +131,20 @@ let fuzz_runloop fm fuzz_start_eip asmir_gamma end_eips =
     runloop fm fuzz_start_eip asmir_gamma (fun a -> List.mem a end_eips)
   with
   | SimulatedExit(_) -> 
-    log_fuzz_restart Log.always ":exit()" fm;
+    log_fuzz_restart Log.always ":exit()" false fm;
     stop "when program called exit()"
   | SimulatedAbort -> 
-    log_fuzz_restart Log.always ":abort()"fm;
+    log_fuzz_restart Log.always ":abort()" false fm;
     stop "when program called abort()"
   | KnownPath ->
-    log_fuzz_restart Log.always ":previously_explored_path" fm;
+    log_fuzz_restart Log.always ":previously_explored_path" false fm;
     stop "on previously-explored path"
 		(* KnownPath currently shouldn't happen *)
   | DeepPath ->
-    log_fuzz_restart Log.always ":too_deep_path" fm;
+    log_fuzz_restart Log.always ":too_deep_path" false fm;
     stop "on too-deep path"
   | SymbolicJump ->
-    log_fuzz_restart Log.always ":symbolic_jump" fm;
+    log_fuzz_restart Log.always ":symbolic_jump" false fm;
     stop "at symbolic jump"
   | NullDereference info ->
     Log.always (
@@ -160,85 +160,85 @@ let fuzz_runloop fm fuzz_start_eip asmir_gamma end_eips =
 		"addr_derefed",
 		`String (Printf.sprintf "0x%08LX" info.addr_derefed);])));
     if !opt_finish_on_null_deref then (
-      log_fuzz_restart Log.always ":concrete_null_dereference" fm;
+      log_fuzz_restart Log.always ":concrete_null_dereference" true fm;
       try
 	fm#finish_fuzz "concrete null dereference"
       with FinishNow -> stop "an null deref"
     );
-    log_fuzz_restart Log.always ":null_deref" fm;
+    log_fuzz_restart Log.always ":null_deref" true fm;
     stop "at null deref"
   | JumpToNull -> 
-    log_fuzz_restart Log.always ":jump_to_null"fm;
+    log_fuzz_restart Log.always ":jump_to_null" true fm;
     stop "at jump to null"
   | DivideByZero -> 
-    log_fuzz_restart Log.always ":division_by_zero" fm;
+    log_fuzz_restart Log.always ":division_by_zero" true fm;
     stop "at division by zero"
   | TooManyIterations ->
-    log_fuzz_restart Log.always ":too_many_iterations" fm;
+    log_fuzz_restart Log.always ":too_many_iterations" true fm;
     stop "after too many loop iterations"
   | UnhandledTrap -> 
-    log_fuzz_restart Log.always ":trap" fm;
+    log_fuzz_restart Log.always ":trap" false fm;
     stop "at trap"
   | IllegalInstruction -> 
-    log_fuzz_restart Log.always ":bad_instruction" fm;
+    log_fuzz_restart Log.always ":bad_instruction" false fm;
     stop "at bad instruction"
   | UnhandledSysCall(s) ->
     Printf.printf "[trans_eval WARNING]: %s\n%!" s;
-    log_fuzz_restart Log.always ":unhandled_system_call" fm;
+    log_fuzz_restart Log.always ":unhandled_system_call" false fm;
     stop "at unhandled system call"
   | SymbolicSyscall ->
-    log_fuzz_restart Log.always ":symbolic_system_call" fm;
+    log_fuzz_restart Log.always ":symbolic_system_call" false fm;
     stop "at symbolic system call"
   | ReachedMeasurePoint ->
-    log_fuzz_restart Log.always ":measurement_point" fm;
+    log_fuzz_restart Log.always ":measurement_point" false fm;
     stop "at measurement point"
   | ReachedInfluenceBound -> 
-    log_fuzz_restart Log.always ":influence_bound" fm;
+    log_fuzz_restart Log.always ":influence_bound" false fm;
     stop "at influence bound"
   | DisqualifiedPath ->
-    log_fuzz_restart Log.always ":disqualified_path" fm;
+    log_fuzz_restart Log.always ":disqualified_path" false fm;
     stop "on disqualified path"
   | BranchLimit ->
-    log_fuzz_restart Log.always ":branch_limit" fm;
+    log_fuzz_restart Log.always ":branch_limit" false fm;
     stop "on branch limit"
   | SolverFailure when !opt_nonfatal_solver -> 
-    log_fuzz_restart Log.always ":solver_failure" fm;
+    log_fuzz_restart Log.always ":solver_failure" false fm;
     stop "on solver failure"
   | UnproductivePath ->
-    log_fuzz_restart Log.always ":unproductive_path" fm;
+    log_fuzz_restart Log.always ":unproductive_path" false fm;
     stop "on unproductive path"
   | FinishNow -> (* split into multiple cases *)
     Printf.eprintf "Catching finish now\n";
     flush stderr;
-    log_fuzz_restart Log.always ":-finish-immediately" fm;
+    log_fuzz_restart Log.always ":-finish-immediately" false fm;
     stop "on -finish_immediately";
   | Signal("USR1") -> 
-    log_fuzz_restart Log.always ":SIGUSR1" fm;
+    log_fuzz_restart Log.always ":SIGUSR1" false fm;
     stop "on SIGUSR1"
   | Double_Free ->
-    log_fuzz_restart Log.always ":double_free" fm;
+    log_fuzz_restart Log.always ":double_free" true fm;
     stop "on double free"
   | Dealloc_Not_Alloc ->
-    log_fuzz_restart Log.always ":deallocating_unallocated" fm;
+    log_fuzz_restart Log.always ":deallocating_unallocated" true fm;
     stop "on deallocating something not allocated"
   | Alloc_Dealloc_Length_Mismatch ->
-    log_fuzz_restart Log.always ":partial_dealloc" fm;
+    log_fuzz_restart Log.always ":partial_dealloc" true fm;
     stop "on deallocating a size different than that allocated"
   | Unsafe_Memory_Access ->
-    log_fuzz_restart Log.always ":unsafe_memory_access"  fm;
+    log_fuzz_restart Log.always ":unsafe_memory_access" true fm;
     stop "on unsafe memory access"
   | Uninitialized_Memory ->
-    log_fuzz_restart Log.always ":uninitialized_memory_access" fm;
+    log_fuzz_restart Log.always ":uninitialized_memory_access" true fm;
     stop "use of uninitialized memory"    
   | WeirdSymbolicAddress ->
-    log_fuzz_restart Log.always ":weird-symbolic-address" fm;
+    log_fuzz_restart Log.always ":weird-symbolic-address" false fm;
     stop "use of weird symbolic address"
   | NotConcrete(_) ->
-    log_fuzz_restart Log.always ":not_concrete" fm;
+    log_fuzz_restart Log.always ":not_concrete" false fm;
     stop "Something's symbolic that oughtn't be.";
     failwith "fuzz raised NotConcrete, but it should have been caught before now!"
   | Simplify_failure(_) ->
-    log_fuzz_restart Log.always ":simplify_failure" fm;
+    log_fuzz_restart Log.always ":simplify_failure" false fm;
     stop "Something can't be simplified, but we should have caught it earlier.";
     failwith "fuzz raised Simplify_failure, but it should have been caught before now!"
     
