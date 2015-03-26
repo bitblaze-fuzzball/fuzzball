@@ -229,6 +229,9 @@ let fuzz_runloop fm fuzz_start_eip asmir_gamma end_eips =
   | Uninitialized_Memory ->
     log_fuzz_restart Log.always ":uninitialized_memory_access" fm;
     stop "use of uninitialized memory"    
+  | WeirdSymbolicAddress ->
+    log_fuzz_restart Log.always ":weird-symbolic-address" fm;
+    stop "use of weird symbolic address"
   | NotConcrete(_) ->
     log_fuzz_restart Log.always ":not_concrete" fm;
     stop "Something's symbolic that oughtn't be.";
