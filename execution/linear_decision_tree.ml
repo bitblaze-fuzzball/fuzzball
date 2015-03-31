@@ -53,7 +53,8 @@ class linear_decision_tree = object(self)
   method record_unsat b = ()
 
   method try_extend (trans_func : bool -> V.exp)
-    try_func (non_try_func : bool -> unit) (random_bit_gen : unit -> bool) eip
+    try_func (non_try_func : bool -> unit) (random_bit_gen : unit -> bool)
+    _ eip
     =
     let b = random_bit_gen () in
     let c = trans_func b and

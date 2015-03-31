@@ -4,6 +4,8 @@
 
 module V = Vine;;
 
+let query_extra_counter = ref 0
+
 class virtual query_engine = object(self)
   method virtual start_query : unit
   method virtual add_free_var : V.var -> unit

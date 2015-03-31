@@ -57,8 +57,12 @@ class smtlib_batch_engine e_s_t fname = object(self)
 
   method private get_fresh_fname =
     let dir = self#get_temp_dir in
+    let decorated_fname = fname ^
+      (let c = !Query_engine.query_extra_counter in
+	 if c <> 0 then "-" ^ (string_of_int c) else "")
+    in
       filenum <- filenum + 1;
-      curr_fname <- pick_fresh_fname dir fname filenum;
+      curr_fname <- pick_fresh_fname dir decorated_fname filenum;
       if !opt_trace_solver then
 	Printf.printf "Creating SMTLIB2 file: %s.smt2\n" curr_fname;
       curr_fname
@@ -193,6 +197,8 @@ class smtlib_batch_engine e_s_t fname = object(self)
 	      let result = match result_s with
 		| "unsat" -> Some true
 		| "Timed Out." -> Printf.printf "Solver timeout\n"; None
+		| "unknown" when !opt_solver_timeout <> None ->
+		    Printf.printf "Solver failure, probably timeout\n"; None
 		| "sat" -> Some false
 		| _ when first_assert -> Some false
 		| _ -> failwith "Unexpected first output line"

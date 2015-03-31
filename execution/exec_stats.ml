@@ -72,6 +72,8 @@ let periodic_stats fm at_end force =
     (Printf.printf "Solver returned satisfiable %Ld time(s)\n" !solver_sats;
      Printf.printf "Solver returned unsatisfiable %Ld time(s)\n"
        !solver_unsats;
+     Printf.printf "Solver timed out (treated as unsat) %Ld time(s)\n"
+       !solver_fake_unsats;
      Printf.printf "Solver failed %Ld time(s)\n" !solver_fails)
 
 let add_periodic_hook fm period =

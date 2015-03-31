@@ -2,6 +2,10 @@
   Copyright (C) BitBlaze, 2009-2013. All rights reserved.
 *)
 
+(* An extra numeric counter for debugging purposes like query
+   filenames. *)
+val query_extra_counter : int ref
+
 class virtual query_engine : object
   method virtual start_query : unit
   method virtual add_free_var : Vine.var -> unit

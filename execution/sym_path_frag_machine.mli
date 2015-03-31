@@ -5,6 +5,7 @@
 
 val solver_sats : int64 ref
 val solver_unsats : int64 ref
+val solver_fake_unsats : int64 ref
 val solver_fails : int64 ref
 
 module SymPathFragMachineFunctor :

@@ -27,6 +27,7 @@ val opt_fail_offset_heuristic : bool ref
 val opt_trace_solver : bool ref
 val opt_measure_influence_syscall_args : bool ref
 val opt_solver_timeout : int option ref
+val opt_timeout_as_unsat : bool ref
 val opt_solver_slow_time : float ref
 val opt_save_solver_files : bool ref
 val opt_solver_path : string ref
@@ -134,6 +135,7 @@ val opt_periodic_stats : int64 option ref
 val opt_trace_global_ce_cache : bool ref
 val opt_trace_working_ce_cache : bool ref
 val opt_global_ce_cache_limit : int ref
+val opt_disable_ce_cache : bool ref
 
 val opt_symbolic_memory : bool ref
 val opt_zero_memory : bool ref
