@@ -694,8 +694,15 @@ struct
 	  | Some 0 -> addr
 	  | Some r_num ->
 	      if !opt_trace_stopping then
-		Printf.printf "Unsupported jump into symbolic region %d\n"
-		  r_num;
+		(Printf.printf "Unsupported jump into symbolic region %d\n"
+		   r_num;
+                 if !opt_trace_end_jump = (Some self#get_eip) then
+                   let e = D.to_symbolic_32 (self#eval_int_exp_simplify exp) in
+                   let (cbases, coffs, eoffs, ambig, syms) =
+                     classify_terms e form_man in
+	             if cbases = [] && coffs = [] && eoffs = [] &&
+                       ambig = [] && syms != [] then
+                       Printf.printf "Completely symbolic load\n");
 	      raise SymbolicJump
 	  | None ->
 	      if !opt_trace_stopping then
@@ -1090,6 +1097,9 @@ struct
       let off_exp = sum_list (eoffs @ ambig @ syms) in
         match (self#decide_offset_wd off_exp, !opt_trace_end_jump) with
           | (None, Some jump_addr) when jump_addr = self#get_eip ->
+	      if cbases = [] && coffs = [] && eoffs = [] && ambig = [] &&
+	        syms != [] then
+	        Printf.printf "Completely symbolic load\n";
 	      raise SymbolicJump
 	  | (None, _) ->
 	      self#concretize_once_and_load addr_e ty
