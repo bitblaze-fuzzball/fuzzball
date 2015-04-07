@@ -694,8 +694,15 @@ struct
 	  | Some 0 -> addr
 	  | Some r_num ->
 	      if !opt_trace_stopping then
-		Printf.printf "Unsupported jump into symbolic region %d\n"
-		  r_num;
+		(Printf.printf "Unsupported jump into symbolic region %d\n"
+		   r_num;
+                 if !opt_trace_end_jump = (Some self#get_eip) then
+                   let e = D.to_symbolic_32 (self#eval_int_exp_simplify exp) in
+                   let (cbases, coffs, eoffs, ambig, syms) =
+                     classify_terms e form_man in
+	             if cbases = [] && coffs = [] && eoffs = [] &&
+                       ambig = [] && syms != [] then
+                       Printf.printf "Completely symbolic load\n");
 	      raise SymbolicJump
 	  | None ->
 	      if !opt_trace_stopping then
@@ -826,6 +833,7 @@ struct
 	wd
 
     val bitwidth_cache = Hashtbl.create 101
+    val bitwidth_offset_cache = Hashtbl.create 101
 
     method private decide_wd op_name off_exp cloc = 
       let fast_wd = narrow_bitwidth form_man off_exp in
@@ -866,6 +874,48 @@ struct
 		else
 		  wd
 
+    method private decide_offset_wd off_exp = 
+      let fast_wd = narrow_bitwidth form_man off_exp in
+      let compute_wd off_exp =
+	if !opt_offset_limit = 0 then
+	  (if !opt_trace_offset_limit then
+	     Printf.printf "opt_offset_limit = 0\n";
+	  Some 0)
+	else if fast_wd > !opt_offset_limit then
+	  let slow_wd = self#query_bitwidth off_exp V.REG_32 in
+	    assert(slow_wd <= fast_wd);
+	    if slow_wd > !opt_offset_limit then
+	      (if !opt_trace_offset_limit then
+		 Printf.printf "Bits too large: %d\n" slow_wd;
+	      None)
+	    else
+	      (if !opt_trace_offset_limit then
+		 Printf.printf "Bits small enough: %d\n" slow_wd;
+	      Some slow_wd)
+	else
+	  (if !opt_trace_offset_limit then
+	     Printf.printf "Bits small enough: %d\n" fast_wd;
+	  Some fast_wd)
+      in
+        if fast_wd = 0 then
+	  (if !opt_trace_offset_limit then
+	     Printf.printf "fast_wd = 0\n";
+	  Some 0)
+	else
+	  let key = (off_exp, dt#get_hist_str) in
+	    try
+	      let wd = Hashtbl.find bitwidth_offset_cache key in
+	        if !opt_trace_offset_limit then	
+		  (match wd with
+		    | Some ubxd_wd -> Printf.printf
+		        "Loading small enough width: %d\n" ubxd_wd
+		    | None -> Printf.printf "Loading too large width\n");
+	        wd
+	    with Not_found ->
+	      let wd = compute_wd off_exp in
+		Hashtbl.replace bitwidth_offset_cache key wd;
+		wd
+		    
     method private query_maxval e ty =
       let rec loop min max =
 	assert(min <= max);
@@ -897,6 +947,10 @@ struct
 	limit
 
     val maxval_cache = Hashtbl.create 101
+    val maxval_offset_cache = Hashtbl.create 101
+    val used_addr_cache = Hashtbl.create 101
+    val dummy_vars_cache = Hashtbl.create 101
+    val mutable dummy_counter = 0
 
     method private decide_maxval op_name off_exp cloc =
       let compute_maxval off_exp =
@@ -932,58 +986,137 @@ struct
 		    Hashtbl.replace maxval_cache key limit;
 		    limit
 
-    method private maybe_table_load addr_e ty =
+    method private decide_offset_maxval off_exp =
+      let compute_maxval off_exp =
+	if !opt_offset_limit = 0 then
+	  Some 0L
+	else
+	  let maxval = self#query_maxval off_exp V.REG_32 in
+	    if maxval > Int64.shift_left 1L !opt_offset_limit then
+	      None
+	    else
+	      Some maxval
+      in
+	match off_exp with
+	  | V.Constant(V.Int(_, v)) -> Some v
+	  | _ ->
+	      let key = (off_exp, dt#get_hist_str) in
+		try
+		  let limit = Hashtbl.find maxval_offset_cache key in
+		    limit
+		with Not_found ->
+		  let limit = compute_maxval off_exp in
+		    Hashtbl.replace maxval_offset_cache key limit;
+		    limit
+		      
+    method private table_load cloc off_exp wd ty =
+      let stride = stride form_man off_exp in
+      let shift = floor_log2 (Int64.of_int stride) in
+      let idx_wd = wd - shift in
+      let num_ents = 1 lsl idx_wd in
+      let idx_exp =
+	if stride = (1 lsl shift) then
+	  let shift_amt = V.Constant(V.Int(V.REG_8, (Int64.of_int shift))) in
+	    V.BinOp(V.RSHIFT, off_exp, shift_amt)
+	else
+	  let stride_amt = V.Constant(V.Int(V.REG_32, (Int64.of_int stride))) in
+	    V.BinOp(V.DIVIDE, off_exp, stride_amt)
+      in
+      let load_ent addr = match ty with
+	| V.REG_8  -> form_man#simplify8
+	    ((self#region (Some 0))#load_byte  addr)
+	| V.REG_16 -> form_man#simplify16
+	    ((self#region (Some 0))#load_short addr)
+	| V.REG_32 -> form_man#simplify32
+	    ((self#region (Some 0))#load_word  addr)
+	| V.REG_64 -> form_man#simplify64
+	    ((self#region (Some 0))#load_long  addr)
+	| _ -> failwith "Unexpected type in table_load"
+      in
+      let table = map_n
+	(fun i -> load_ent (Int64.add cloc (Int64.of_int (i * stride))))
+	(num_ents - 1)
+      in
+        if !opt_trace_tables then
+	  Printf.printf "Load with base %08Lx, size 2**%d, stride %d"
+	    cloc idx_wd stride;
+        Some (form_man#make_table_lookup table idx_exp idx_wd ty)
+
+    method private concretize_once_and_load addr_e ty =
+      let load_sym_ent addr =
+	try
+	  Hashtbl.find dummy_vars_cache (addr, ty)
+	with Not_found ->
+	  let var = match ty with
+	    | V.REG_8 -> form_man#fresh_symbolic_8
+	        ("dummy" ^ string_of_int dummy_counter)
+	    | V.REG_16 -> form_man#fresh_symbolic_16
+	        ("dummy" ^ string_of_int dummy_counter)
+	    | V.REG_32 -> form_man#fresh_symbolic_32
+	        ("dummy" ^ string_of_int dummy_counter)
+	    | V.REG_64 -> form_man#fresh_symbolic_64
+	        ("dummy" ^ string_of_int dummy_counter)
+	    | _ -> failwith "Unsupported memory type"
+	  in
+	    dummy_counter <- dummy_counter + 1;
+	    Hashtbl.replace dummy_vars_cache (addr, ty) var;
+	    var
+      in
+      let load_ent addr = match ty with
+	| V.REG_8  -> form_man#simplify8
+	    ((self#region (Some 0))#load_byte  addr)
+	| V.REG_16 -> form_man#simplify16
+	    ((self#region (Some 0))#load_short addr)
+	| V.REG_32 -> form_man#simplify32
+	    ((self#region (Some 0))#load_word  addr)
+	| V.REG_64 -> form_man#simplify64
+	    ((self#region (Some 0))#load_long  addr)
+	| _ -> failwith "Unexpected type in concretize_once_and_load"
+      in
+      let taut = V.BinOp(V.EQ, addr_e, addr_e) in
+      let (is_sat, ce) = self#query_with_path_cond taut false in
+        assert(is_sat);
+        let addr = form_man#eval_expr_from_ce ce addr_e in
+        let cond = V.BinOp(V.EQ, addr_e, V.Constant(V.Int(V.REG_32, addr))) in
+	let value =
+	  if Hashtbl.mem used_addr_cache addr then
+	    load_ent addr
+	  else
+	    load_sym_ent addr
+	in
+	  if !opt_trace_offset_limit then
+	    Printf.printf "Concretized load once to 0x%08Lx\n" addr;
+	  self#add_to_path_cond cond;
+	  Some value
+
+    method private maybe_table_or_concrete_load addr_e ty =
       let e = D.to_symbolic_32 (self#eval_int_exp_simplify addr_e) in
       let (cbases, coffs, eoffs, ambig, syms) = classify_terms e form_man in
-	let cbase = List.fold_left Int64.add 0L cbases in
-	  if cbase = 0L then
-	    None
-	  else
-	    let cloc = Int64.add cbase (List.fold_left Int64.add 0L coffs) in
-	    let off_exp = sum_list (eoffs @ ambig @ syms) in
-	      match self#decide_wd "Load" off_exp cloc
-	      with None -> None | Some wd ->
-		let stride = stride form_man off_exp in
-		let shift = floor_log2 (Int64.of_int stride) in
-		let idx_wd = wd - shift in
-		let num_ents = 1 lsl idx_wd in
-		let idx_exp =
-		  if stride = (1 lsl shift) then
-		    let shift_amt = V.Constant(V.Int(V.REG_8,
-						     (Int64.of_int shift))) in
-		      V.BinOp(V.RSHIFT, off_exp, shift_amt)
-		  else
-		    let stride_amt = V.Constant(V.Int(V.REG_32,
-						      (Int64.of_int stride)))
-		    in
-		      V.BinOp(V.DIVIDE, off_exp, stride_amt)
-		in
-		let load_ent addr = match ty with
-		  | V.REG_8  -> form_man#simplify8
-		      ((self#region (Some 0))#load_byte  addr)
-		  | V.REG_16 -> form_man#simplify16
-		      ((self#region (Some 0))#load_short addr)
-		  | V.REG_32 -> form_man#simplify32
-		      ((self#region (Some 0))#load_word  addr)
-		  | V.REG_64 -> form_man#simplify64
-		      ((self#region (Some 0))#load_long  addr)
-		  | _ -> failwith "Unexpected type in maybe_table_load" 
-		in
-		let table = map_n
-		  (fun i -> load_ent (Int64.add cloc 
-					(Int64.of_int (i * stride))))
-		  (num_ents - 1)
-		in
-		  if !opt_trace_tables then
-		    Printf.printf
-		      "Load with base %08Lx, size 2**%d, stride %d"
-		      cloc idx_wd stride;
-		  Some (form_man#make_table_lookup table idx_exp idx_wd ty)
-
+      let cbase = List.fold_left Int64.add 0L cbases in
+      let cloc = Int64.add cbase (List.fold_left Int64.add 0L coffs) in
+      let off_exp = sum_list (eoffs @ ambig @ syms) in
+        match (self#decide_offset_wd off_exp, !opt_trace_end_jump) with
+          | (None, Some jump_addr) when jump_addr = self#get_eip ->
+	      if cbases = [] && coffs = [] && eoffs = [] && ambig = [] &&
+	        syms != [] then
+	        Printf.printf "Completely symbolic load\n";
+	      raise SymbolicJump
+	  | (None, _) ->
+	      self#concretize_once_and_load addr_e ty
+	  | _ ->
+        if cbase = 0L then
+	  None
+	else 
+	  match self#decide_wd "Load" off_exp cloc with
+	    | None -> None
+	    | Some wd -> self#table_load cloc off_exp wd ty
+	    
     method private handle_load addr_e ty =
-      match self#maybe_table_load addr_e ty with
-	| Some v -> (v, ty)
-	| None ->
+      if !opt_trace_offset_limit then
+	Printf.printf "Loading from... %s\n" (V.exp_to_string addr_e);
+      match self#maybe_table_or_concrete_load addr_e ty with
+        | Some v -> (v, ty)
+        | None ->
       let (r, addr) = self#eval_addr_exp_region addr_e in
       let v =
 	(match ty with
@@ -1180,7 +1313,7 @@ struct
 	    if !opt_finish_on_target_match then
 	      self#finish_fuzz "target full match"
 
-    method private maybe_table_store addr_e ty value =
+    method private table_store cloc off_exp e maxval ty value =
       let load_ent addr = match ty with
 	| V.REG_8  -> form_man#simplify8
 	    ((self#region (Some 0))#load_byte  addr)
@@ -1190,68 +1323,92 @@ struct
 	    ((self#region (Some 0))#load_word  addr)
 	| V.REG_64 -> form_man#simplify64
 	    ((self#region (Some 0))#load_long  addr)
-	| _ -> failwith "Unexpected type in maybe_table_store" 
+	| _ -> failwith "Unexpected type in table_store" 
       in
       let store_ent addr v = match ty with
 	| V.REG_8  -> (self#region (Some 0))#store_byte  addr v
 	| V.REG_16 -> (self#region (Some 0))#store_short addr v
 	| V.REG_32 -> (self#region (Some 0))#store_word  addr v
 	| V.REG_64 -> (self#region (Some 0))#store_long  addr v
-	| _ -> failwith "Unexpected store type in maybe_table_store"
+	| _ -> failwith "Unexpected store type in table_store"
       in
+      let stride = stride form_man off_exp in
+      let stride64 = Int64.of_int stride in
+      let num_ents64 = Int64.div (Int64.succ maxval) stride64 in
+      let num_ents = Int64.to_int num_ents64 in
+      let target_conds = ref [] in
+        for i = 0 to num_ents - 1 do
+	  let addr = Int64.add cloc (Int64.of_int (i * stride)) in
+	  let old_v = load_ent addr in
+	  let cond_e = (V.BinOp(V.EQ, e, V.Constant(V.Int(V.REG_32, addr)))) in
+	  let cond_v = D.from_symbolic cond_e in
+	  let ite_v = form_man#make_ite cond_v ty value old_v in
+	    store_ent addr ite_v;
+	    (match (self#started_symbolic, !opt_target_region_start) with
+	      | (true, Some from) ->			 
+	          (match self#target_store_condition addr from ite_v ty with
+		    | Some (offset, hit_cond, wd) ->
+		        target_conds := (D.to_symbolic_1 hit_cond)
+		          :: !target_conds
+		    | None -> ())
+	      | _ -> ())
+        done;
+        if !opt_trace_tables then
+	  Printf.printf
+	    "Store with base %08Lx, size %d, stride %d %s"
+	    cloc num_ents stride "has symbolic address\n";
+	(if !target_conds <> [] then
+	   let any_match = disjoin !target_conds and
+	     all_match = conjoin !target_conds in
+	   if !opt_trace_target then
+	     Printf.printf "Checking for any match to target: ";
+	   ignore(self#target_solve (D.from_symbolic any_match));
+	   self#table_check_full_match all_match cloc maxval);
+	true
+
+    method private concretize_once_and_store addr_e ty value =
+      let store_ent addr v = match ty with
+	| V.REG_8  -> (self#region (Some 0))#store_byte  addr v
+	| V.REG_16 -> (self#region (Some 0))#store_short addr v
+	| V.REG_32 -> (self#region (Some 0))#store_word  addr v
+	| V.REG_64 -> (self#region (Some 0))#store_long  addr v
+	| _ -> failwith "Unexpected store type in concretize_once_and_store"
+      in
+      let taut = V.BinOp(V.EQ, addr_e, addr_e) in
+      let (is_sat, ce) = self#query_with_path_cond taut false in
+        assert(is_sat);
+        let addr = form_man#eval_expr_from_ce ce addr_e in
+        let cond = V.BinOp(V.EQ, addr_e, V.Constant(V.Int(V.REG_32, addr))) in
+	  if !opt_trace_offset_limit then
+	    Printf.printf "Concretized store once to 0x%08Lx\n" addr;
+          store_ent addr value;
+	  Hashtbl.replace used_addr_cache addr true;
+	  self#add_to_path_cond cond;
+	  true
+
+    method private maybe_table_or_concrete_store addr_e ty value =
       let e = D.to_symbolic_32 (self#eval_int_exp_simplify addr_e) in
       let (cbases, coffs, eoffs, ambig, syms) = classify_terms e form_man in
-	let cbase = List.fold_left Int64.add 0L cbases in
-	  if cbase = 0L then
-	    false
-	  else
-	    let cloc = Int64.add cbase (List.fold_left Int64.add 0L coffs) in
-	    let off_exp = sum_list (eoffs @ ambig @ syms) in
-	      match self#decide_maxval "Store" off_exp cloc
-	      with None -> false | Some maxval ->
-		let stride = stride form_man off_exp in
-		let stride64 = Int64.of_int stride in
-		let num_ents64 = Int64.div (Int64.succ maxval) stride64 in
-		let num_ents = Int64.to_int num_ents64 in
-		let target_conds = ref [] in
-		  for i = 0 to num_ents - 1 do
-		    let addr = Int64.add cloc (Int64.of_int (i * stride)) in
-		    let old_v = load_ent addr in
-		    let cond_e =
-		      (V.BinOp(V.EQ, e, V.Constant(V.Int(V.REG_32, addr))))
-		    in
-		    let cond_v = D.from_symbolic cond_e in
-		    let ite_v = form_man#make_ite cond_v ty value old_v in
-		      store_ent addr ite_v;
-		      (match (self#started_symbolic, !opt_target_region_start)
-		       with
-			 | (true, Some from) ->			 
-			     (match self#target_store_condition
-				addr from ite_v ty
-			      with
-				| Some (offset, hit_cond, wd) ->
-				    target_conds := (D.to_symbolic_1 hit_cond)
-				    :: !target_conds
-				| None -> ())
-			 | _ -> ())
-		  done;
-		  if !opt_trace_tables then
-		    Printf.printf
-		      "Store with base %08Lx, size %d, stride %d %s"
-		      cloc num_ents stride "has symbolic address\n";
-		  (if !target_conds <> [] then
-		     let any_match = disjoin !target_conds and
-			 all_match = conjoin !target_conds in
-		       if !opt_trace_target then
-			 Printf.printf "Checking for any match to target: ";
-		       ignore(self#target_solve (D.from_symbolic any_match));
-		       self#table_check_full_match all_match cloc maxval);
-		  true
-
+      let cbase = List.fold_left Int64.add 0L cbases in
+      let cloc = Int64.add cbase (List.fold_left Int64.add 0L coffs) in
+      let off_exp = sum_list (eoffs @ ambig @ syms) in
+        match self#decide_offset_maxval off_exp with
+          | None -> self#concretize_once_and_store addr_e ty value
+          | Some _ ->
+	if cbase = 0L then
+	  false
+	else
+	  match self#decide_maxval "Store" off_exp cloc with
+	    | None -> false
+	    | Some maxval -> self#table_store cloc off_exp e maxval ty value
+	  
     method private handle_store addr_e ty rhs_e =
+      if !opt_trace_offset_limit then
+	Printf.printf "Storing to... %s\n" (V.exp_to_string addr_e);
       let value = self#eval_int_exp_simplify rhs_e in
       if (!opt_no_table_store) ||
-	not (self#maybe_table_store addr_e ty value) then
+	not (self#maybe_table_or_concrete_store addr_e ty value)
+      then
       let (r, addr) = self#eval_addr_exp_region addr_e in
 	if r = Some 0 && (Int64.abs (fix_s32 addr)) < 4096L then
 	  raise NullDereference;
