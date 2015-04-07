@@ -173,6 +173,12 @@ need to either put it in a directory that's on your $PATH or pass the
 
 You need OCaml itself, plus ocamlfind and ocamlidl.
 
+At the moment we're going to try to maintain compatibility back to
+OCaml 3.12, which means continuing to use some features that are
+deprecated in 4.x. However recent OCaml versions have some advantages
+if you can them conveniently, such as including enough debug
+information in native binaries to let GDB print backtraces.
+
 6. OCaml libraries
 
 You need ExtLib, http://code.google.com/p/ocaml-extlib/

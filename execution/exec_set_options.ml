@@ -354,6 +354,8 @@ let explore_cmdline_opts =
      " Print global and working caches after each query");
     ("-global-ce-cache-limit", Arg.Set_int(opt_global_ce_cache_limit),
      " Set an integer limit on the global cache size");
+    ("-disable-ce-cache", Arg.Set(opt_disable_ce_cache),
+     " Do not use cached satisfying assingments at all");
   ]
 
 

@@ -49,6 +49,7 @@ let opt_fail_offset_heuristic = ref true
 let opt_trace_solver = ref false
 let opt_measure_influence_syscall_args = ref false
 let opt_solver_timeout = ref None
+let opt_timeout_as_unsat = ref false
 let opt_solver_slow_time = ref 1.0
 let opt_save_solver_files = ref false
 let opt_solver_path = ref "stp"
@@ -159,6 +160,7 @@ let opt_periodic_stats = ref None
 let opt_trace_working_ce_cache = ref false
 let opt_trace_global_ce_cache = ref false
 let opt_global_ce_cache_limit = ref 10000
+let opt_disable_ce_cache = ref false
 
 let opt_symbolic_memory = ref false
 let opt_zero_memory = ref false

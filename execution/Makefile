@@ -69,7 +69,7 @@ export LDFLAGS = $(LIBASMIR_LDFLAGS)
 export CLIBFLAGS= $(LDFLAGS)
 export LIBDIRS = $(LIBASMIR)/src # ../appreplay ../stp ../stp/ocaml
 
-OCAMLFLAGS = -warn-error Aelz  #-w A
+OCAMLFLAGS = -warn-error Aelz-3  #-w A
 # merge everything but descriptions.
 OCAMLDOCFLAGS = -m avlsoper
 

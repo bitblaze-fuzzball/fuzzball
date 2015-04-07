@@ -16,7 +16,7 @@ let parse_counterex e_s_t line =
   match parse_ce e_s_t line with
     | No_CE_here -> None
     | End_of_CE -> None
-    | Assignment(s, i) -> Some (s, i)
+    | Assignment(s, i, _) -> Some (s, i)
 
 let parse_stateful_ce_lines fn lines =
   let rec loop l v =
@@ -29,7 +29,8 @@ let parse_stateful_ce_lines fn lines =
             match mce with
               | No_CE_here -> loop r v'
               | End_of_CE -> []
-              | Assignment (v, i) -> (v, i) :: loop r v'
+              | Assignment (v, i, is_final) ->
+		  (v, i) :: (if is_final then [] else loop r v')
   in
     loop lines None
 
@@ -56,8 +57,12 @@ class smtlib_batch_engine e_s_t fname = object(self)
 
   method private get_fresh_fname =
     let dir = self#get_temp_dir in
+    let decorated_fname = fname ^
+      (let c = !Query_engine.query_extra_counter in
+	 if c <> 0 then "-" ^ (string_of_int c) else "")
+    in
       filenum <- filenum + 1;
-      curr_fname <- pick_fresh_fname dir fname filenum;
+      curr_fname <- pick_fresh_fname dir decorated_fname filenum;
       if !opt_trace_solver then
 	Printf.printf "Creating SMTLIB2 file: %s.smt2\n" curr_fname;
       curr_fname
@@ -192,6 +197,8 @@ class smtlib_batch_engine e_s_t fname = object(self)
 	      let result = match result_s with
 		| "unsat" -> Some true
 		| "Timed Out." -> Printf.printf "Solver timeout\n"; None
+		| "unknown" when !opt_solver_timeout <> None ->
+		    Printf.printf "Solver failure, probably timeout\n"; None
 		| "sat" -> Some false
 		| _ when first_assert -> Some false
 		| _ -> failwith "Unexpected first output line"

@@ -14,7 +14,7 @@ let parse_counterex line =
   match parse_ce STP_CVC line with
     | No_CE_here -> None
     | End_of_CE -> None
-    | Assignment(s, i) -> Some (s, i)
+    | Assignment(s, i, _) -> Some (s, i)
 
 class stp_external_engine fname = object(self)
   inherit query_engine

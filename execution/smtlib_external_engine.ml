@@ -21,7 +21,7 @@ let parse_counterex e_s_t line =
   match parse_ce e_s_t line with
     | No_CE_here -> None
     | End_of_CE -> raise End_of_file
-    | Assignment(s, i) -> Some (s, i)
+    | Assignment(s, i, is_final) -> Some (s, i)
 
 let parse_stateful_ce fn chan =
   let results = ref [] and
@@ -32,9 +32,11 @@ let parse_stateful_ce fn chan =
 	 | (End_of_CE, _) -> raise End_of_file
 	 | (No_CE_here, v') ->
 	     var_state := v'
-	 | (Assignment(s, i), v') ->
+	 | (Assignment(s, i, is_final), v') ->
 	     results := (s, i) :: !results;
-	     var_state := v'
+	     var_state := v';
+	     if is_final then
+	       raise End_of_file
      done
      with End_of_file -> ());
     List.rev !results
@@ -147,6 +149,10 @@ class smtlib_external_engine solver = object(self)
     let (solver_in, solver_out) = solver_chans in
       self#visitor#assert_exp qe;
       output_string_log log_file solver_out "(check-sat)\n";
+      if solver = MATHSAT then
+	for i = 1 to 8192 do
+	  output_char solver_out ' '
+	done;
       flush solver_out;
       if !opt_save_solver_files then flush log_file;
       let result_s = input_line solver_in in
@@ -171,6 +177,10 @@ class smtlib_external_engine solver = object(self)
 	  (solver = CVC4 || solver = Z3 || solver = MATHSAT)
 	then
 	  (output_string_log log_file solver_out "(get-model)\n";
+	   if solver = MATHSAT then
+	     for i = 1 to 8192 do
+	       output_char solver_out ' '
+	     done;
 	   flush solver_out;
 	   if !opt_save_solver_files then flush log_file;
 	   if solver = Z3 then

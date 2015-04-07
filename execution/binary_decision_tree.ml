@@ -392,6 +392,11 @@ class binary_decision_tree = object(self)
 
   method get_depth = depth
 
+  method private forget_unsat b =
+    if !opt_trace_decision_tree then
+      Printf.printf "DT: Forgetting unsat of %B child to %d\n" b cur.ident;
+    (if b then put_t_child else put_f_child) cur None
+
   method add_kid b =
     if !opt_trace_decision_tree then
       Printf.printf "DT: Adding %B child to %d\n" b cur.ident;
@@ -510,7 +515,7 @@ class binary_decision_tree = object(self)
 
   method try_extend (trans_func : bool -> V.exp)
     try_func (non_try_func : bool -> unit) (random_bit_gen : unit -> bool)
-    eip =
+    both_fail_func eip =
     let known b = 
       non_try_func b;
       self#extend b;
@@ -549,7 +554,10 @@ class binary_decision_tree = object(self)
 	     (self#extend (not b);
 	      ((not b), c'))
 	   else
-	     failwith "Both branches unsat in try_extend")
+	     let b' = both_fail_func b in
+	       self#forget_unsat b';
+	       self#extend b';
+	       (b', trans_func b'))
     in
       assert(not cur.all_seen);
       if cur.eip <> 0L && cur.eip <> eip then

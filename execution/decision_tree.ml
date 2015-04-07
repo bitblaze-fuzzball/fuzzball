@@ -23,9 +23,9 @@ class virtual decision_tree = object
   method virtual random_float : float
   method virtual record_unsat : bool -> unit
 
-  method virtual try_extend : (bool -> V.exp) ->
-    (bool -> V.exp -> bool) -> (bool -> unit) -> (unit -> bool) -> int64
-    -> (bool * V.exp)
+  method virtual try_extend : (bool -> Vine.exp) ->
+    (bool -> Vine.exp -> bool) -> (bool -> unit) -> (unit -> bool) ->
+    (bool -> bool) -> int64 -> (bool * Vine.exp)
 
   method virtual try_extend_memoryless : (bool -> V.exp) ->
     (bool -> V.exp -> bool) -> (bool -> unit) -> (unit -> bool) 

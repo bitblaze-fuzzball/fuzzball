@@ -20,7 +20,7 @@ val smtlib_rename_var : string -> string
 type maybe_ce_result =
   | No_CE_here
   | End_of_CE
-  | Assignment of string * int64
+  | Assignment of string * int64 * bool
 
 val parse_z3_ce_line : string -> string option
   -> (maybe_ce_result * string option)

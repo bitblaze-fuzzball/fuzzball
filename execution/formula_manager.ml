@@ -272,7 +272,7 @@ struct
       let wvar0 = self#mem_var region_str V.REG_32 addr and
 	  wvar1 = self#mem_var region_str V.REG_32 (Int64.add addr 4L) in
 	[lvar, D.to_symbolic_64
-	   (D.assemble32 (D.from_symbolic (V.Lval(V.Temp(wvar0))))
+	   (D.assemble64 (D.from_symbolic (V.Lval(V.Temp(wvar0))))
 	      (D.from_symbolic (V.Lval(V.Temp(wvar1)))))]
 	@ (self#mem_axioms_word region_str addr wvar0)
 	@ (self#mem_axioms_word region_str (Int64.add addr 4L) wvar1)
