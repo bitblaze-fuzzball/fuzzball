@@ -216,13 +216,17 @@ let attempt_deallocate alloc_map io_map attempted_range =
 let attempt_read alloc_map io_map attempted_range =
   match optional_find alloc_map attempted_range with
   | None -> raise (ReadingUnallocated attempted_range)
-  | Some _ ->
-    (match optional_find io_map attempted_range with
-    | None -> raise (ReadingUnwritten attempted_range)
-    | Some written_range ->
-      if not (is_in written_range attempted_range)
-      then raise (ReadingUnwritten attempted_range)
-      else written_range.accessed <- 0)
+  | Some interval -> 
+	(match interval.at with
+	| Deallocate -> raise (ReadingUnallocated attempted_range)
+	| Allocate -> 
+		(match optional_find io_map attempted_range with
+		| None -> raise (ReadingUnwritten attempted_range)
+		| Some written_range ->
+		if not (is_in written_range attempted_range)
+		then raise (ReadingUnwritten attempted_range)
+		else written_range.accessed <- 0)
+			)
 
 
 let copy imap =

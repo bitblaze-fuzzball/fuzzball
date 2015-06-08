@@ -104,7 +104,7 @@ val attempt_deallocate :
   'a IntervalMap.t ->
   IntervalMap.key -> element IntervalMap.t * 'a IntervalMap.t
 val attempt_read :
-  'a IntervalMap.t -> interval IntervalMap.t -> IntervalMap.key -> unit
+  element IntervalMap.t -> interval IntervalMap.t -> IntervalMap.key -> unit
 val copy : 'a IntervalMap.t -> 'a IntervalMap.t
 val find_all : element IntervalMap.t -> IntervalMap.key -> interval list
 val attempt_write :
