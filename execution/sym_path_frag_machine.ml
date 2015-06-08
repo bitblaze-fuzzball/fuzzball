@@ -636,6 +636,13 @@ struct
 			  Some (not flip)
 		      with
 			| Not_found ->
+			    if !opt_auto_rare_delims then
+			      (Hashtbl.replace opt_varying_rare_delims c ();
+			       if not
+				 (Hashtbl.mem opt_varying_rare_delims c)
+			       then
+				 Printf.printf
+				   "Enabling -rare-delim for 0x%02x\n" c);
 			    (self#call_cjmp_heuristic eip targ1 targ2 None))
 		 | None ->
 		     (self#call_cjmp_heuristic eip targ1 targ2 None))) in
@@ -873,6 +880,23 @@ struct
       infl_man#reset;
       dt#reset;
       working_ce_cache <- [];
+      Hashtbl.iter
+	(fun k _ ->
+	   (match Int64.to_int (Int64.rem (dt#random_word) 10L) with
+	      | 0|1|2|3 ->
+		  Hashtbl.remove opt_rare_delims k
+	      | 4 -> Hashtbl.replace opt_rare_delims k 0.75
+	      | 5 -> Hashtbl.replace opt_rare_delims k 0.1
+	      | 6 -> Hashtbl.replace opt_rare_delims k 0.01
+	      | 7 -> Hashtbl.replace opt_rare_delims k 0.001
+	      | 8 -> Hashtbl.replace opt_rare_delims k 0.0001
+	      | 9 -> Hashtbl.replace opt_rare_delims k 0.0
+	      | _ -> failwith "Can't happen (rem 10)");
+	   Printf.printf
+	     "For this iteration, probability for 0x%02x will be %s\n"
+	     k (try string_of_float (Hashtbl.find opt_rare_delims k)
+		with Not_found -> "disabled"))
+	opt_varying_rare_delims;
       new_path <- true
 
     method after_exploration =

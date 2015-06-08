@@ -307,6 +307,8 @@ let explore_cmdline_opts =
 	  Hashtbl.add opt_rare_delims (int_of_string s1)
 	    (1.0 /. (float_of_string s2))),
      "char:len Choose input bytes to be CHAR only once every LEN comparisons, on average");
+    ("-auto-rare-delims", Arg.Set opt_auto_rare_delims,
+     " Apply -rare-delims in a random automatic way");
     ("-random-seed", Arg.Set_int opt_random_seed,
      "N Use given seed for path choice");
     ("-save-decision-tree-interval",
