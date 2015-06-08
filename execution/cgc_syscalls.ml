@@ -177,7 +177,8 @@ object(self)
          | _ -> ());
 	 (match fd with
          | (1|2) -> Array.iter print_char bytes;
-	   success (Int64.of_int count)
+	     flush stdout;
+	     success (Int64.of_int count)
          | _ ->
 	   let ufd = self#get_fd fd in
            match Unix.write ufd str 0 count
