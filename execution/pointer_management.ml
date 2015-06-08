@@ -232,6 +232,9 @@ class pointer_management = object(self)
 	  done;
 	    is_safe := true
 	)
+	else if start_addr > 0xc1048000L && end_addr < 0xc1148000L then
+	  (* Special memory range for the x87 emulator *)
+	  is_safe := true
 	else if end_addr > stack_start then
 	  (self#report [("tag", (`String ":unsafe-read"));
 			("subtag", (`String ":past-stack"));
@@ -364,6 +367,9 @@ class pointer_management = object(self)
       (* overlapping the heap but not contained *)
 	(self#is_overlapping_not_contained start_addr end_addr heap_start heap_end) then
 	is_safe := false
+      else if start_addr > 0xc1048000L && end_addr < 0xc1148000L then
+	(* Special memory range for the x87 emulator *)
+	is_safe := true
       else if end_addr > stack_start then
 	(self#report [("tag", (`String ":unsafe-write"));
 		      ("subtag", (`String ":past-stack"));
