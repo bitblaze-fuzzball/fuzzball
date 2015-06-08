@@ -43,13 +43,12 @@ let intersects i1 i2 =
 
 let compare i1 i2 =
   if intersects i1 i2 then
-    0
-  else
-    (let l1 = i1.low
+    0 else
+    let l1 = i1.low
     and l2 = i2.low in
-     if l1 < l2
-     then ~-1
-     else 1)
+    if l1 < l2 then
+      ~-1 else
+      1
       
 let abbuts i1 i2 =
   let i1i2_highlow = Int64.sub i2.low i1.high   (* i1 abbuts i2 to the left *)
@@ -297,3 +296,104 @@ let attempt_write ?(prov = Internal) alloc_map io_map attempted_range =
 
 let print_interval i =
   Printf.eprintf "%LX to %LX\n" i.low i.high
+
+(* Test Helper Functions *)
+
+let make_random_interval max_val =
+  let a = Random.int max_val
+  and b = Random.int max_val in
+  if a > b then
+    make_interval b a else
+    make_interval a b
+
+
+let make_random_overlapping_intervals max_val =
+  let a = Random.int max_val
+  and b = Random.int max_val
+  and c = Random.int max_val
+  and d = Random.int max_val in
+  let as_list = List.sort Pervasives.compare [a; b; c; d;] in
+  let nth = List.nth as_list in
+  [make_interval (nth 0) (nth 2);
+   make_interval (nth 1) (nth 3);]
+
+
+let make_random_disjoint_intervals max_val =
+  let a = Random.int max_val
+  and b = Random.int max_val
+  and gap = (Random.int max_val) + 1
+  and c = Random.int max_val
+  and d = Random.int max_val in
+  let as_list = List.sort Pervasives.compare [a; b; c; d;] in
+  let nth = List.nth as_list in
+  [make_interval (nth 0) (nth 1);
+   make_interval ((nth 2) + gap) ((nth 3) + gap);]
+
+
+let random_adjacent ?(max_size = 100) interval =
+  let isize = Int64.of_int ((Random.int max_size) +  1)
+  and flip = Random.bool () in
+  if flip then
+    (* we're before *)
+    let hp = Int64.sub interval.low Int64.one
+    and lp = Int64.sub interval.low isize in
+    {low = lp;
+     high = hp;
+     provenance = Internal;
+     accessed = 0;} else
+    (* we're after *)
+    let lp = Int64.add interval.high Int64.one
+    and hp = Int64.add interval.high isize in
+    {low = lp;
+     high = hp;
+     provenance = Internal;
+     accessed = 0;}
+
+(** Interval testing code **)
+
+let test_intersect num_tests = 
+  (* Generate num_tests guaranteed to overlap sets of intervals,
+     assert they intersect *)
+  for i = 1 to num_tests do
+    begin
+      begin
+	match make_random_overlapping_intervals 10_000 with
+	| [i1; i2] -> assert (intersects i1 i2)
+	| _ -> failwith "Impossible"
+      end;
+      begin
+	match make_random_disjoint_intervals 10_000 with
+	| [i1; i2] -> assert(not (intersects i1 i2))
+	| _ -> failwith "Impossible"
+      end
+    end
+  done
+
+let test_merge num_tests =
+  for i = 1 to num_tests do
+    match make_random_overlapping_intervals 10_000 with
+    (* safe_merge contains assertion tests that i1 and i2 intersect merged region. *)
+    | [i1; i2] -> ignore (safe_merge i1 i2)
+    | _ -> failwith "Impossible"
+  done
+
+let test_abbuts num_tests =
+  for i = 1 to num_tests do
+    let base_interval = make_random_interval 10_000 in
+    let adjacent = random_adjacent base_interval in
+    assert (abbuts base_interval adjacent);
+    assert (abbuts adjacent base_interval);
+    match make_random_disjoint_intervals 10_000 with
+    | [i1; i2] -> assert (not (abbuts i1 i2))
+    | _ -> failwith "impossible"
+  done
+
+let check_intervals num_tests =
+  (* checks intersection, makes sure there aren't false positives *)
+  test_intersect num_tests;
+  (* runs merge code, makes sure merging regions intersect their child regions *)
+  test_merge num_tests;
+  (* makes sure that abbuts is correct *)
+  test_abbuts num_tests
+
+(* Interval Tree tests *)
