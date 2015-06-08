@@ -11,11 +11,13 @@ class pointer_management = object(self)
 
 (* This is where addresses start being handed out from in cgc_syscalls (1342177280)*)
   val heap_start = 0x50000000L
-(* in concrete_memory it appears that the heap is 0x0100001L long (1343225857) *)
-  val heap_end = 0x50100001L
-(* This is where the stack is supposed to start *)
+(* The heap grows dynamically, but here's a reasonable bound: *)
+  val heap_end = 0x60000001L
+(* This is where the stack is supposed to start in Decree
+   (the high address, because it grows down) *)
   val stack_start = 0xbaaab000L
   val mutable stack_end = 0xbaaab000L
+  val max_addr = 0xffffffffL
     (* allocate / deallocate range table *)
   val mutable assign_ranges = IT.IntervalMap.empty
     (* read / write range table *)
@@ -191,7 +193,7 @@ class pointer_management = object(self)
       (* overlapping the heap but not contained *)
 	(self#is_overlapping_not_contained start_addr end_addr heap_start heap_end) then
 	is_safe := false
-      else (
+      else
 	if (self#is_contained start_addr end_addr stack_end stack_start) then (
 	  let start_addr_ref = ref start_addr in
 	  while (Int64.compare !start_addr_ref end_addr) <> 0 do
@@ -206,13 +208,23 @@ class pointer_management = object(self)
 	      raise Uninitialized_Memory
 	    );
 	    start_addr_ref := Int64.add !start_addr_ref (Int64.one)
-	  done
-	);
-      (* otherwise we assume we're safe for now *)
-	is_safe := true
-      );
+	  done;
+	    is_safe := true
+	)
+	else if end_addr > stack_start then
+	  (self#report [("tag", (`String ":unsafe-read"));
+			("subtag", (`String ":past-stack"));
+			("stack-start", (json_addr stack_start));
+			("stack-end", (json_addr stack_end));
+			("read-start", (json_addr start_addr));
+			("read-len", (`Int (Int64.to_int len)));
+		       ];
+	   is_safe := false)
+	else
+	  (* otherwise we assume we're safe for now *)
+	  is_safe := true;
     );
-    !is_safe
+      !is_safe
 
   method is_safe_write ?(prov = IT.Internal) addr len =
     g_assert(len > Int64.zero) 100 "Pointer_management.is_safe_write";
