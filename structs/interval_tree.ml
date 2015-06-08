@@ -215,20 +215,44 @@ let attempt_deallocate alloc_map io_map attempted_range =
   | None -> raise (DeallocatingUnallocated attempted_range)
       
 
-let attempt_read alloc_map io_map attempted_range =
-  match optional_find alloc_map attempted_range with
-  | None -> raise (ReadingUnallocated attempted_range)
-  | Some interval -> 
-	(match interval.at with
-	| Deallocate -> raise (ReadingUnallocated attempted_range)
-	| Allocate -> 
-		(match optional_find io_map attempted_range with
-		| None -> raise (ReadingUnwritten attempted_range)
-		| Some written_range ->
-		if not (is_in written_range attempted_range)
-		then raise (ReadingUnwritten attempted_range)
-		else written_range.accessed <- 0)
-			)
+let rec attempt_read alloc_map io_map attempted_range =
+	(*Printf.printf "Attempt read at (0x%08Lx, 0x%08Lx)\n" attempted_range.low attempted_range.high;*)
+	let page_size = 4096L in
+  let low_page = Int64.div attempted_range.low page_size 
+	and high_page = Int64.div attempted_range.high page_size in
+	if (low_page = high_page) 
+	then (match optional_find alloc_map attempted_range with
+        | None -> raise (ReadingUnallocated attempted_range)
+        | Some interval -> 
+      	(match interval.at with
+      	| Deallocate -> raise (ReadingUnallocated attempted_range)
+      	| Allocate -> 
+      		(match optional_find io_map attempted_range with
+      		| None -> raise (ReadingUnwritten attempted_range)
+      		| Some written_range ->
+      		if not (is_in written_range attempted_range)
+      		then raise (ReadingUnwritten attempted_range)
+      		else written_range.accessed <- 0)
+      			)) 
+	else if (low_page < high_page) 
+	then 
+		((*Printf.printf "Attempt read multi-pages\n";*)
+		let page_start = (Int64.sub attempted_range.high (Int64.rem attempted_range.high page_size)) in
+		let page_end = Int64.pred page_start in
+		let low_range = {
+			low = attempted_range.low;
+			high = page_end;
+			provenance = attempted_range.provenance;
+			accessed = attempted_range.accessed + 1}  
+		and high_range = {
+			low = page_start;
+			high = attempted_range.high;
+			provenance = attempted_range.provenance;
+			accessed = attempted_range.accessed + 1} in
+		attempt_read alloc_map io_map low_range;
+		attempt_read alloc_map io_map high_range;
+		)
+	else failwith "illegal read range"
 
 
 let copy imap =
@@ -246,8 +270,12 @@ let find_all base_imap key =
   List.sort (fun a b -> if a.low <= b.low then ~-1 else 1) (helper (copy base_imap))
 
 
-let attempt_write alloc_map io_map attempted_range =
-  let prov = attempted_range.provenance in
+let rec attempt_write alloc_map io_map attempted_range =
+	let page_size = 4096L in
+  let low_page = Int64.div attempted_range.low page_size 
+	and high_page = Int64.div attempted_range.high page_size in
+	if(low_page = high_page)	  
+	then (let prov = attempted_range.provenance in
     match optional_find alloc_map attempted_range with
   | None -> raise (WriteBeforeAllocated attempted_range)
   | Some interval ->
@@ -305,7 +333,27 @@ let attempt_write alloc_map io_map attempted_range =
 			      proposed = attempted_range; })
 	  end
 
-      ))
+      )))
+		else if (low_page < high_page)
+		then 
+			((*Printf.printf "Attempt write multi-pages\n";*)
+  		let page_start = (Int64.sub attempted_range.high (Int64.rem attempted_range.high page_size)) in
+  		let page_end = Int64.pred page_start in
+  		let low_range = {
+  			low = attempted_range.low;
+  			high = page_end;
+  			provenance = attempted_range.provenance;
+  			accessed = attempted_range.accessed + 1} 
+  		and high_range = {
+  			low = page_start;
+  			high = attempted_range.high;
+  			provenance = attempted_range.provenance;
+  			accessed = attempted_range.accessed + 1} in
+  		let (low_range, low_io_map) = attempt_write alloc_map io_map low_range in
+  		let (high_range, high_io_map) = attempt_write alloc_map low_io_map high_range in
+			((safe_merge low_range high_range), high_io_map)
+  		)
+		else failwith "illegal write range"
 
 
 let print_interval i =
