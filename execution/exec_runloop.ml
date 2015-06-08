@@ -81,7 +81,9 @@ let runloop (fm : fragment_machine) eip asmir_gamma until =
 	   clear_trans_cache (); (* drastic, better to make tagged *)
 	   loop (0L) eip' false
        | None -> ());
-    if fm#before_first_branch && fm#started_symbolic then (
+    (* Currently disabled: advance the reset point if we've got symbolic
+       data but we haven't yet branched on it. *)
+    if false && fm#before_first_branch && fm#started_symbolic then (
 	fm#make_snap ();
 	fm#set_start_eip eip);
     (let old_count =
