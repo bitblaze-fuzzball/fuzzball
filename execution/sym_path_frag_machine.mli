@@ -57,6 +57,8 @@ sig
 
     method eval_bool_exp : Vine.exp -> bool
 
+    method eval_bool_exp_conc_path : Vine.exp -> bool * bool option
+
     method eval_addr_exp : Vine.exp -> int64
 
     method on_missing_random : unit

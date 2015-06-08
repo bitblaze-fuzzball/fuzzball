@@ -515,11 +515,14 @@ struct
 	| _ -> self#choose_conc_offset_cached ty e
 
     method private concretize ty e =
-      dt#start_new_query;
-      self#note_first_branch;
-      let v = self#concretize_inner ty e in
-	dt#count_query;
-	v
+      if !opt_concrete_path then
+	form_man#eval_expr e
+      else
+	(dt#start_new_query;
+	 self#note_first_branch;
+	 let v = self#concretize_inner ty e in
+	   dt#count_query;
+	   v)
 
     val mutable sink_read_count = 0L
 
@@ -605,16 +608,20 @@ struct
 	)
 
     method private check_cond cond_e = 
-      dt#start_new_query_binary;
-      self#note_first_branch;
-      let choices = ref None in 
-	self#restore_path_cond
-	  (fun () ->
-	     let b = self#extend_pc_random cond_e false in
-	       choices := dt#check_last_choices;
-	       dt#count_query;
-	       ignore(b));
-	!choices
+      if !opt_concrete_path then
+	let (_, choices) = self#eval_bool_exp_conc_path cond_e in
+	  choices
+      else
+	(dt#start_new_query_binary;
+	 self#note_first_branch;
+	 let choices = ref None in 
+	   self#restore_path_cond
+	     (fun () ->
+		let b = self#extend_pc_random cond_e true in
+		  choices := dt#check_last_choices;
+		  dt#count_query;
+		  ignore(b));
+	   !choices)
 
     method private handle_weird_addr_expr e =
       if !opt_stop_on_weird_sym_addr || !opt_finish_on_weird_sym_addr then

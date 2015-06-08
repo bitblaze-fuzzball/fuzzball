@@ -467,6 +467,11 @@ struct
       r
 
     method extend_pc_random cond verbose =
+      (* In -concrete-path mode, we should resolve choices before
+	 getting to the point of this method. If we actually choose
+	 randomly, we're likely to choose differently than the concrete
+	 path, leading to trouble. *)
+      g_assert(not !opt_concrete_path) 30 "-concrete-path in extend_pc_random";
       if !opt_concrete_path_simulate ||
 	(match !opt_concolic_prob with
 	| Some p -> (dt#random_float < p)
@@ -515,7 +520,7 @@ struct
 			   self#get_eip) in
       result
 
-    method private eval_bool_exp_conc_path e =
+    method eval_bool_exp_conc_path e =
       let b = (form_man#eval_expr e) <> 0L in
       if !opt_trace_conditions then 
 	Printf.printf "Computed concrete value %b\n" b;
@@ -525,8 +530,8 @@ struct
 	 g_assert(b = b') 100 "Sym_path_frag_machine.eval_bool_exp_conc_path";
 	 (b, choices))
       else
-	(self#add_to_path_cond
-	   (if b then e else V.UnOp(V.NOT, e));
+	(let e' = if b then e else V.UnOp(V.NOT, e) in	   
+	   self#add_to_path_cond e';
 	 (b, Some b))
 
     method private eval_bool_exp_tristate exp choice =
