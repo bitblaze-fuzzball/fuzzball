@@ -7,6 +7,17 @@ open Exec_options
 open Fragment_machine
 open Exec_assert_minder
 
+let strstr big little =
+  let big_len = String.length big and
+      little_len = String.length little and
+      ret = ref None
+  in
+    for i = big_len - little_len downto 0 do
+      if (String.sub big i little_len) = little then
+	ret := Some (String.sub big i (big_len - i))
+    done;
+    !ret
+
 class cgcos_special_handler (fm : fragment_machine) =
   let printed_random = ref false in
   let put_reg = fm#set_word_var in
@@ -91,6 +102,26 @@ object(self)
       | Unix.EUNKNOWNERR(_) -> 3
       | _ -> 3
 
+  val mutable check_buf = ""
+
+  method private check_msgs str =
+    let pats = !opt_stop_on_error_msgs in
+    let check_sz =
+      List.fold_left
+	(fun max s -> let l = String.length s in
+	   if l > max then l else max) 0 pats
+    in
+    let full_str = check_buf ^ str in
+      List.iter
+	(fun pat ->
+	   match strstr full_str pat with
+	     | Some _ -> raise (SentErrorMessage pat)
+	     | None -> ())
+	pats;
+      let full_len = String.length full_str in
+      let trim_sz = if full_len < check_sz then full_len else check_sz in
+	check_buf <- String.sub full_str (full_len - trim_sz) trim_sz
+
   val mutable transmit_pos = 0
 
   (* Right now we always redirect the program's FDs 1 and 2 (stdout
@@ -98,11 +129,14 @@ object(self)
      this more selectively, or controlled by a command-line flag. *)
   method private do_write (fd : int) (bytes : char array) (count : int) (tx_bytes : int64) =
     (* file descriptor, array, to send, transmitted byets? *)
+    let str = string_of_char_array bytes in
     let success num_bytes =
       if tx_bytes <> 0L then
 	(* internal, because the system is saying how many bytes were written. *)
 	store_word ~prov:Interval_tree.Internal tx_bytes 0 num_bytes;
       transmit_pos <- transmit_pos + (Int64.to_int num_bytes);
+      if !opt_stop_on_error_msgs <> [] then
+	self#check_msgs str;
       (match !opt_max_transmit_bytes with
       | Some max ->
 	if transmit_pos > max then
@@ -119,9 +153,7 @@ object(self)
          | (1|2) -> Array.iter print_char bytes;
 	   success (Int64.of_int count)
          | _ ->
-	   let str = string_of_char_array bytes and
-               ufd = self#get_fd fd
-	   in
+	   let ufd = self#get_fd fd in
            match Unix.write ufd str 0 count
            with
            | i when i = count -> success (Int64.of_int count)

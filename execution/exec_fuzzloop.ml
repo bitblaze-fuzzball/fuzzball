@@ -219,6 +219,9 @@ let fuzz_runloop fm fuzz_start_eip asmir_gamma end_eips =
   | UnproductivePath ->
     log_fuzz_restart Log.always ":unproductive_path" false fm;
     stop "on unproductive path" false
+  | SentErrorMessage(s) ->
+      log_fuzz_restart Log.always ":error-message" false fm;
+      stop ("after printing error message " ^ s) false
   | FinishNow -> (* split into multiple cases *)
     Printf.eprintf "Catching finish now\n";
     flush stderr;

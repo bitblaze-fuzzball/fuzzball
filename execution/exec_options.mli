@@ -215,6 +215,7 @@ val add_delimited_num_escstr_pair :
   (int64 * string) list ref -> char -> string -> unit
 val add_delimited_str_num_pair :
   (string * int64) list ref -> char -> string -> unit
+val split_string_list : char -> string -> string list
 
 val opt_program_name : string option ref
 val get_program_name : unit -> string
@@ -236,3 +237,5 @@ val opt_emit_pollers : bool ref
 val opt_noop_unhandled_special : bool ref
 val opt_max_weirdness : int ref
 val opt_single_weirdness_threshold : int ref
+val opt_stop_on_error_msgs : string list ref
+

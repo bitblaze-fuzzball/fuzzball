@@ -291,6 +291,13 @@ let add_delimited_str_num_pair opt char s =
   let (s1, s2) = split_string char s in
     opt := (s1, (Int64.of_string s2)) :: !opt
 
+let rec split_string_list delim s =
+  if String.contains s delim then
+    let (first, rest) = split_string delim s in
+      first :: (split_string_list delim rest)
+  else
+    [s]
+
 let opt_program_name = ref None
 
 let get_program_name () =
@@ -311,3 +318,5 @@ let opt_noop_unhandled_special = ref false
 
 let opt_max_weirdness = ref 100
 and opt_single_weirdness_threshold = ref 100
+
+let opt_stop_on_error_msgs = ref []

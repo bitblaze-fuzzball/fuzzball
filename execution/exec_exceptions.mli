@@ -22,6 +22,7 @@ exception NotConcrete of Vine.exp
 exception NullDereference of null_info
 exception ReachedInfluenceBound
 exception ReachedMeasurePoint
+exception SentErrorMessage of string
 exception Signal of string
 exception Simplify_failure of string
 exception SimulatedAbort

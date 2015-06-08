@@ -110,6 +110,9 @@ let linux_cmdline_opts =
     ("-extra-program", Arg.String
        (fun s -> opt_extra_programs := s :: !opt_extra_programs),
      "BINARY Run another CB at the same time, may be repeated");
+    ("-stop-on-error-msgs", Arg.String
+       (fun s -> opt_stop_on_error_msgs := split_string_list '|' s),
+     "STR1|STR2 Stop if one of the given messages is printed");
   ]
 
 let apply_linux_cmdline_opts (fm : Fragment_machine.fragment_machine) =

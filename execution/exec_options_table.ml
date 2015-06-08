@@ -85,6 +85,7 @@ let  getParameterTable () =
     add_parameter "-max-transmit-bytes" (IntOpt EO.opt_max_transmit_bytes);
     add_parameter "-symbolic-random" (Bool EO.opt_symbolic_random);
     add_parameter "-skip-timeouts" (Bool EO.opt_skip_timeouts);
+    add_parameter "-stop-on-error-msgs" (StringList EO.opt_stop_on_error_msgs);
 
 
     (* State_loader.state_loader_cmdline_opts *)
