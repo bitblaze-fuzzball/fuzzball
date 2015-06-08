@@ -408,7 +408,9 @@ object(self)
        | None -> ());
     num_receives <- num_receives + 1;
     try
-      self#read_throw fd buf count num_bytes_p
+      (* see comment in transmit() on fd swapping *)
+      let fd' = if fd = 1 then 0 else fd in
+	self#read_throw fd' buf count num_bytes_p
     with
       | Unix.Unix_error(err, _, _) -> self#put_errno err
 
@@ -425,7 +427,13 @@ object(self)
     num_transmits <- num_transmits + 1;
     Pov_xml.add_read_car bytes tx_bytes;
     (* JTT -- We already need to know the provenance by the time we get here. *)
-    self#do_write fd bytes count tx_bytes
+    (* If the program tries to transmit on FD 0, assume they meant FD
+       1. This seems conceptually strange, but the real system supports
+       it because the two descriptors are really just open on the same
+       file (e.g., socket). It would however fail in our test environment
+       if FuzzBALL's stdin and stdout are redirected differently. *)
+    let fd' = if fd = 0 then 1 else fd in
+      self#do_write fd' bytes count tx_bytes
 
   method private put_errno err =
     put_return (Int64.of_int (self#errno err))
