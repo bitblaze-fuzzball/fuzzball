@@ -17,6 +17,13 @@ class pointer_management = object(self)
    (the high address, because it grows down) *)
   val stack_start = 0xbaaab000L
   val mutable stack_end = 0xbaaab000L
+
+  (* Conservative bounds on the area of the address space that holds the
+     code and data loaded from the binary. In the future we should probably
+     get this information exactly from decree_loader. *)
+  val static_start = 0x08040000L
+  val static_end   = 0x09000000L
+
   val max_addr = 0xffffffffL
     (* allocate / deallocate range table *)
   val mutable assign_ranges = IT.IntervalMap.empty
@@ -220,6 +227,22 @@ class pointer_management = object(self)
 			("read-len", (`Int (Int64.to_int len)));
 		       ];
 	   is_safe := false)
+	else if start_addr > static_end && end_addr < heap_start then
+	  (self#report [("tag", (`String ":unsafe-read"));
+			("subtag", (`String ":before-heap"));
+			("read-start", (json_addr start_addr));
+			("read-len", (`Int (Int64.to_int len)));
+		       ];
+	   is_safe := false)
+	else if start_addr >= 4096L && end_addr < static_start then
+	  (* Don't include the zero page here, since it should be
+	     checked elsewhere when it's a problem. *)
+	  (self#report [("tag", (`String ":unsafe-read"));
+			("subtag", (`String ":before-program"));
+			("read-start", (json_addr start_addr));
+			("read-len", (`Int (Int64.to_int len)));
+		       ];
+	   is_safe := false)
 	else
 	  (* otherwise we assume we're safe for now *)
 	  is_safe := true;
@@ -320,12 +343,38 @@ class pointer_management = object(self)
 		    ];
 	is_safe := false
     ) else (
+      (* not in the heap cases *)
     (* overlapping unsafe memory between heap and stack *)
       if (self#is_overlapping start_addr end_addr heap_end stack_end)  ||
       (* overlapping the heap but not contained *)
 	(self#is_overlapping_not_contained start_addr end_addr heap_start heap_end) then
 	is_safe := false
-      else (
+      else if end_addr > stack_start then
+	(self#report [("tag", (`String ":unsafe-write"));
+		      ("subtag", (`String ":past-stack"));
+		      ("stack-start", (json_addr stack_start));
+		      ("stack-end", (json_addr stack_end));
+		      ("read-start", (json_addr start_addr));
+		      ("read-len", (`Int (Int64.to_int len)));
+		     ];
+	 is_safe := false)
+      else if start_addr > static_end && end_addr < heap_start then
+	(self#report [("tag", (`String ":unsafe-write"));
+		      ("subtag", (`String ":before-heap"));
+		      ("read-start", (json_addr start_addr));
+		      ("read-len", (`Int (Int64.to_int len)));
+		     ];
+	 is_safe := false)
+      else if start_addr >= 4096L && end_addr < static_start then
+	(* Don't include the zero page here, since it should be
+	   checked elsewhere when it's a problem. *)
+	(self#report [("tag", (`String ":unsafe-write"));
+		      ("subtag", (`String ":before-program"));
+		      ("read-start", (json_addr start_addr));
+		      ("read-len", (`Int (Int64.to_int len)));
+		     ];
+	 is_safe := false)
+      else
 	if (self#is_contained start_addr end_addr stack_end stack_start) then (
 	  for i = 0 to (Int64.to_int len) - 1 do
 	    Hashtbl.replace stack_table (Int64.add start_addr (Int64.of_int i))
@@ -334,7 +383,6 @@ class pointer_management = object(self)
 	);
       (* otherwise we assume we're safe for now *)
 	is_safe := true
-      )
     );
     !is_safe
       
