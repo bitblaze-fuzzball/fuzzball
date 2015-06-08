@@ -217,7 +217,10 @@ class pointer_management = object(self)
 			   ("read-start", (json_addr start_addr));
 			   ("read-len", (`Int (Int64.to_int len)));
 			  ];
-	      raise Uninitialized_Memory
+	      (* Report this, but fall through to consider it safe,
+		 because it's not on its own a vulnerability in the PoV
+		 sense. *)
+	      (* raise Uninitialized_Memory *)
 	    );
 	    start_addr_ref := Int64.add !start_addr_ref (Int64.one)
 	  done;
