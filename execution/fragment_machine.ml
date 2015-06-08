@@ -645,7 +645,16 @@ struct
     val mutable event_history = []
 
     method get_event_history : (string * Yojson.Safe.json) list =
-      List.rev event_history
+      let rec nth_head n l = match (n, l) with
+	| (_, []) -> []
+	| (0, _) -> []
+	| (n, f :: r) -> f :: (nth_head (n - 1) r)
+      in
+      let full_length = List.length event_history in
+	if full_length > 1000 then
+	  Printf.printf "Event history has %d entries, only returning 1000\n"
+	    full_length;
+	List.rev (nth_head 1000 event_history)
 
     method private event_to_history eip =
       let hash_to_assoc h = 
@@ -658,7 +667,12 @@ struct
           let entry = ((Printf.sprintf "%Ld_%d" insn_count event_count),
 		       `Assoc (eeip :: (hash_to_assoc event_details)))
 	  in
-            event_history <- entry :: event_history
+	    if event_count < 100 then
+              event_history <- entry :: event_history
+	    else if event_count = 100 then
+	      Printf.printf
+		"Throttling at 100 events from instruction %Ld (0x%08Lx)\n"
+		insn_count eip
 
     method finalize_event =
       self#event_to_history self#get_eip;
