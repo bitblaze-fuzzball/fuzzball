@@ -93,6 +93,8 @@ struct
 	| V.BinOp((V.EQ|V.NEQ|V.LT|V.LE|V.SLT|V.SLE), _, _) -> 1
 	| V.BinOp(V.LSHIFT, e1, V.Constant(V.Int(_, v))) ->
 	    (loop e1) + (Int64.to_int v)
+	| V.BinOp(V.RSHIFT, e1, V.Constant(V.Int(_, v))) ->
+	    max 0 ((loop e1) - (Int64.to_int v))
 	| V.BinOp(_, _, _) ->
 	    V.bits_of_width (Vine_typecheck.infer_type_fast e)
 	| V.Ite(_, te, fe) -> max (loop te) (loop fe)
