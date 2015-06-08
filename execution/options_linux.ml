@@ -100,6 +100,8 @@ let linux_cmdline_opts =
      "NUM Stop path after too much data transmit(2cgc)ed");
     ("-symbolic-random", Arg.Set(opt_symbolic_random),
      " Make all data read by random(2cgc) symbolic");
+    ("-concolic-random", Arg.Set(opt_concolic_random),
+     " Make all data read by random(2cgc) concolic");
     ("-one-random", Arg.Set(opt_one_random),
      " Make random(2cgc) deterministic");
     ("-skip-timeouts", Arg.Set(opt_skip_timeouts),

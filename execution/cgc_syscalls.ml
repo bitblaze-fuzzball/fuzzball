@@ -83,13 +83,26 @@ class cgcos_special_handler (fm : fragment_machine) =
     Int64.add base (Int64.add (Int64.mul (Int64.of_int i) (Int64.of_int step))
 		      (Int64.of_int off)) in
 object(self)
+  val unix_fds = 
+    let a = Array.make 1024 None in
+      Array.set a 0 (Some Unix.stdin);
+      Array.set a 1 (Some Unix.stdout);
+      a
+
   method private get_fd vt_fd =
-    match vt_fd with 
-      | 0 -> Unix.stdin
-      | 1 -> Unix.stdout
-      | 2 -> Unix.stderr
-      | _ ->
-	if (vt_fd > !opt_num_fd) then raise (Unix.Unix_error(Unix.EBADF, "Bad (virtual) file handle", "")) else Unix.stderr (* stderr as default for now? unsure how to get the _real_ fd for concolic run... *)
+    if vt_fd < 0 || vt_fd >= (Array.length unix_fds) then
+      raise (Unix.Unix_error(Unix.EBADF, "Bad (virtual) file handle", ""))
+    else
+      match unix_fds.(vt_fd) with
+	| Some fd -> fd
+	| None -> 
+	  let descriptor = "/dev/fd/" ^ (string_of_int vt_fd) in
+	  if (vt_fd > !opt_num_fd) then 
+	    raise (Unix.Unix_error(Unix.EBADF, "Bad (virtual) file handle", "")) 
+	  else 
+	    let n_fd = Unix.openfile (if !opt_symbolic_receive then "/dev/null" else descriptor) [ Unix.O_RDWR ] 0o666 in
+	    Array.set unix_fds vt_fd (Some n_fd); 
+	    n_fd
 
   method private errno err =
     match err with
@@ -343,6 +356,13 @@ object(self)
 	(fun () -> 
 	   (ignore (fm#populate_symbolic_region ~prov:Interval_tree.Random "random" random_pos buf count);
 	    random_pos <- random_pos + count))
+    else if !opt_concolic_random then
+      let r_chars = Array.init count (fun _ -> 
+				      Char.chr ((Random.State.bits randomness) land 255)) in  
+      fm#maybe_start_symbolic
+	(fun () -> 
+	  fm#populate_concolic_string ~prov:Interval_tree.Random "random" random_pos buf (string_of_char_array r_chars);
+	    random_pos <- random_pos + count)
     else
       for i = 0 to count - 1 do
 	let byte = 

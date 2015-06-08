@@ -225,6 +225,7 @@ let opt_max_transmits = ref None
 let opt_max_receive_bytes = ref None
 let opt_max_transmit_bytes = ref None
 let opt_symbolic_random = ref false
+let opt_concolic_random = ref false
 let opt_one_random = ref false
 let opt_skip_timeouts = ref false
 
