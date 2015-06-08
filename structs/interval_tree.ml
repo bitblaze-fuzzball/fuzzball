@@ -62,7 +62,7 @@ let is_in i1 i2 =
     i2.high <= i1.high
 
 let safe_merge i1 i2 =
-  let ret = make_interval_wcheck 
+  let ret = make_interval_wcheck ~prov:i1.provenance
     (Pervasives.min i1.low i2.low)
     (Pervasives.max i1.high i2.high) in
   assert (intersects ret i1);
@@ -240,7 +240,8 @@ let find_all base_imap key =
   List.sort (fun a b -> if a.low <= b.low then ~-1 else 1) (helper (copy base_imap))
 
 
-let attempt_write ?(prov = Internal) alloc_map io_map attempted_range =
+let attempt_write alloc_map io_map attempted_range =
+  let prov = attempted_range.provenance in
     match optional_find alloc_map attempted_range with
   | None -> raise (WriteBeforeAllocated attempted_range)
   | Some interval ->
@@ -261,7 +262,8 @@ let attempt_write ?(prov = Internal) alloc_map io_map attempted_range =
 	   (* no collision *)
 	   | Some write ->
 	     (let io_map' = remove_all io_map write
-	     and to_add = (safe_merge write attempted_range) in
+	     and to_add = safe_merge write attempted_range in
+	      to_add.provenance <- prov;
 	      to_add.accessed <- write.accessed + 1;
 	      (* it's a write, set the access as appropriate *)
 	      to_add, IntervalMap.add to_add to_add io_map')))

@@ -108,7 +108,6 @@ val attempt_read :
 val copy : 'a IntervalMap.t -> 'a IntervalMap.t
 val find_all : element IntervalMap.t -> IntervalMap.key -> interval list
 val attempt_write :
-  ?prov:provenance ->
   element IntervalMap.t ->
   IntervalMap.key IntervalMap.t ->
   IntervalMap.key -> IntervalMap.key * IntervalMap.key IntervalMap.t

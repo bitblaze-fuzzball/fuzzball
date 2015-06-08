@@ -346,8 +346,9 @@ object(self)
 	(* at this point, we know the actual data that was read into the buffer. *)
 	Pov_xml.add_transmit_str read_str count;
         if !opt_concolic_receive then
-	  fm#populate_concolic_string ~prov:Interval_tree.External "input0" receive_pos buf read_str
-	else
+	    fm#populate_concolic_string ~prov:Interval_tree.External "input0" receive_pos buf read_str
+	  else
+	  (* JTT -- We probably want the provenance info here. *)
 	  fm#store_str buf 0L read_str; (* base pointer, offset string *)
 	num_read
     in
@@ -466,23 +467,42 @@ object(self)
 		self#cgcos_terminate status;
 		None
 	  | 2 -> (* transmit, similar to Linux sys_write *)
+	    begin
               let (arg1, arg2, arg3, arg4) = read_4_regs () in
               let fd       = Int64.to_int arg1 and
                   buf      = arg2 and
                   count    = Int64.to_int arg3 and
 		  tx_bytes = arg4 in
-		(* povxml -- corresponds to the transmit in povs *)
+	      (* povxml -- corresponds to the transmit in povs *)
 	      if !opt_trace_syscalls then
                 Printf.printf "transmit(%d, 0x%08Lx, %d, 0x%08Lx)"
 		  fd buf count tx_bytes;
 	      let bytes = read_buf buf count in
-	      (* let prov = 
-	      match fm#get_pointer_management () with
+	      let prov = 
+		match fm#get_pointer_management () with
 	        | None -> Interval_tree.Internal
 	        | Some pm -> pm#find_read_prov buf arg3 in  (* int64 version of count *) 
-		 Printf.eprintf "Transmiting bytes from %s\n" (Interval_tree.prov_to_string prov); *) (* TODO debug helper. nuke soon. *) 
-		self#cgcos_transmit fd bytes count tx_bytes;
-		Some tx_bytes
+	      begin
+		match prov with
+		| Interval_tree.External ->
+		  let start = Printf.sprintf "0x%08LX" buf
+		  and endl = Printf.sprintf "0x%08LX" (Int64.add buf arg3) in
+		  fm#add_event_detail "end-addr" (`String endl);
+		  fm#add_event_detail "start-addr" (`String start);
+		  fm#add_event_detail "subtag" (`String ":echoed-external");	
+		  fm#add_event_detail "tag" (`String ":protocol-hint");
+		| Interval_tree.Random ->
+		  let start = Printf.sprintf "0x%08LX" buf
+		  and endl = Printf.sprintf "0x%08LX" (Int64.add buf arg3) in
+		    fm#add_event_detail "end-addr" (`String endl);	
+		    fm#add_event_detail "start-addr" (`String start);	
+		    fm#add_event_detail "subtag" (`String ":sent-random");
+		    fm#add_event_detail "tag" (`String ":protocol-hint");	    
+		| _ -> ()
+	      end;
+	      self#cgcos_transmit fd bytes count tx_bytes;
+		  Some tx_bytes
+	    end
 	  | 3 -> (* receive, similar to Linux sys_read  *)
               let (arg1, arg2, arg3, arg4) = read_4_regs () in
               let fd       = Int64.to_int arg1 and

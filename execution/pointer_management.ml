@@ -154,9 +154,9 @@ class pointer_management = object(self)
 			 IT.high = end_addr;
 			 IT.provenance = IT.Internal;
 			 IT.accessed = 0;} in
-    match IT.optional_find io_ranges this_interval with
-    | None -> IT.Internal
-    | Some i -> i.IT.provenance
+      match IT.optional_find io_ranges this_interval with
+      | None -> IT.Internal
+      | Some i -> i.IT.provenance
       
       
   method is_safe_read ?(prov = IT.Internal) addr len =
@@ -219,6 +219,7 @@ class pointer_management = object(self)
       try
 	let new_write, io_ranges' = 
 	  IT.attempt_write assign_ranges io_ranges this_interval in
+	g_assert(new_write.IT.provenance = prov)  100 "Pointer_management.is_safe_write";
 	io_ranges <- io_ranges';
 	if new_write.IT.accessed > !Exec_options.opt_read_write_warn_ratio
 	then self#report [("tag" , (`String ":suspicious-write"));
