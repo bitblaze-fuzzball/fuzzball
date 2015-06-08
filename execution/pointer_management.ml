@@ -93,7 +93,8 @@ class pointer_management = object(self)
 	  assign_ranges <- (IT.attempt_allocate
 			      assign_ranges this_interval)
 	with IT.AllocatingAllocated _ ->
-	  raise Overlapping_Alloc
+	  Printf.eprintf("Overlapping alloc")
+	 (* raise Overlapping_Alloc *)
       end
 	
   val mutable info_reporter = None
