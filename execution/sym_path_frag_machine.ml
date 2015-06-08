@@ -24,6 +24,29 @@ let solver_unsats = ref 0L
 let solver_fake_unsats = ref 0L
 let solver_fails = ref 0L
 
+let is_input_byte_compare e =
+  let eq flip a b =
+    let a_is_input = match a with
+      | V.Lval(V.Mem((_, "input0", _), _, V.REG_8)) -> true
+      | V.Cast((V.CAST_SIGNED|V.CAST_UNSIGNED), _,
+	       V.Lval(V.Mem((_, "input0", _), _, V.REG_8))) -> true
+      | _ -> false
+    in
+      if a_is_input then
+	match b with
+	  | V.Constant(V.Int(_, x)) -> Some (flip,
+	      (Int64.to_int (Int64.logand x 0xffL)))
+	  | _ -> None
+      else
+	None
+  in
+    match e with
+      | V.UnOp(V.NOT, V.BinOp(V.EQ, a, b)) -> eq true a b
+      | V.UnOp(V.NOT, V.BinOp(V.NEQ, a, b)) -> eq false a b
+      | V.BinOp(V.EQ, a, b) -> eq false a b
+      | V.BinOp(V.NEQ, a, b) -> eq true a b
+      | _ -> None
+
 module SymPathFragMachineFunctor =
   functor (D : DOMAIN) ->
 struct
@@ -573,7 +596,7 @@ struct
       | None -> None
       | Some h -> h eip t1 t2 (dt#random_float) dir
 
-    method private cjmp_choose targ1 targ2 =
+    method private cjmp_choose targ1 targ2 e =
       (*      let module Log = 
 	      (val !Loggers.fuzzball_bdt_json : Yojson_logger.JSONLog) in
       *)
@@ -602,7 +625,20 @@ struct
 		  Printf.printf "On %f, falling to cjmp_heuristic\n"
 		    choice;
 	       self#call_cjmp_heuristic eip targ1 targ2 None)
-	  | None -> (self#call_cjmp_heuristic eip targ1 targ2 None)) in
+	  | None -> 
+	      (match is_input_byte_compare e with
+		 | Some (flip, c) ->
+		     (try let prob = Hashtbl.find opt_rare_delims c in
+		      let choice = dt#random_float in
+			if choice > prob then
+			  Some flip
+			else
+			  Some (not flip)
+		      with
+			| Not_found ->
+			    (self#call_cjmp_heuristic eip targ1 targ2 None))
+		 | None ->
+		     (self#call_cjmp_heuristic eip targ1 targ2 None))) in
       (*
 	Log.trace (Yojson_logger.LazyJson
 	(lazy
@@ -649,7 +685,7 @@ struct
 	  (dt#start_new_query_binary;
 	   self#note_first_branch;
 	   let choice = if dt#have_choice then
-	     self#cjmp_choose targ1 targ2
+	     self#cjmp_choose targ1 targ2 e
 	   else
 	     None
 	   in

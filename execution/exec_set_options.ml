@@ -302,6 +302,11 @@ let explore_cmdline_opts =
     ("-always-prefer", Arg.Bool
        (fun b -> opt_always_prefer := Some b),
      "bool Prefer given branch direction instead of random");
+    ("-rare-delim", Arg.String
+       (fun s -> let (s1, s2) = split_string ':' s in
+	  Hashtbl.add opt_rare_delims (int_of_string s1)
+	    (1.0 /. (float_of_string s2))),
+     "char:len Choose input bytes to be CHAR only once every LEN comparisons, on average");
     ("-random-seed", Arg.Set_int opt_random_seed,
      "N Use given seed for path choice");
     ("-save-decision-tree-interval",
