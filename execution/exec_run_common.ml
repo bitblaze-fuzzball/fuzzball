@@ -119,10 +119,14 @@ let with_mem_bytemap (s_addr:int64) (size:int) (trans_addr:int64) =
 	done	
 	
 let decode_insn asmir_gamma eip insn_bytes =
-  (* It's important to flush buffers here because VEX will also
-     print error messages to stdout, but its buffers are different from
-     OCaml's. *)
-  flush stdout;
+  (* While it's important to flush buffers here because VEX will also
+     print error messages to stdout, for the CGC replay tool, we must
+     expect non-program output to go to stderr. So we hope not to
+     output errors to the wrong output channel.  Further, in CGC, when
+     flushing to stdout, after a poller or PoV is finished testing,
+     the disappearance of the stdout channel causes flushing the
+     buffer to fail (broken pipe). *)
+  (* flush stdout;*) 
   let arch = asmir_arch_of_execution_arch !opt_arch in
   let sl = match match_faked_insn eip insn_bytes with
     | Some sl -> sl
@@ -340,7 +344,7 @@ let decode_insn_at fm gamma eipT =
 	      prog
   with
       NotConcrete(_) ->
-	Printf.printf "Jump to symbolic memory 0x%08Lx\n" eipT;
+	Printf.eprintf "Jump to symbolic memory 0x%08Lx\n" eipT;
 	raise IllegalInstruction
 
 
@@ -384,12 +388,12 @@ let decode_insns fm gamma starting_eip k =
 
 (*Erase trans cache entry indexed by addr and all related entries indicated by invalid_list*)
 let rec erase_trans_cache addr = 
-	(*Printf.printf "Size of invalid_list : %d\n" (Hashtbl.length invalid_list);*)
+	(*Printf.eprintf "Size of invalid_list : %d\n" (Hashtbl.length invalid_list);*)
 	Hashtbl.remove trans_cache addr;
-	(*Printf.printf "Erase Trans_cache 0x%08Lx\n" addr;*)
+	(*Printf.eprintf "Erase Trans_cache 0x%08Lx\n" addr;*)
 	if Hashtbl.mem invalid_list addr then(
 		let prev_addr = Hashtbl.find invalid_list addr in 
-		(*Printf.printf "		0x%08Lx should be erased next\n" prev_addr;*)
+		(*Printf.eprintf "		0x%08Lx should be erased next\n" prev_addr;*)
 		Hashtbl.remove invalid_list addr;
 		erase_trans_cache prev_addr)
 	
