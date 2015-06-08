@@ -61,6 +61,7 @@ val opt_iteration_limit : int64 ref
 val opt_rare_delims : (int, float) Hashtbl.t
 val opt_varying_rare_delims : (int, unit) Hashtbl.t
 val opt_auto_rare_delims : bool ref
+val opt_insn_limit : int64 ref
 val opt_watch_expr_str : string option ref
 val opt_watch_expr : Vine.exp option ref
 val opt_path_depth_limit : int64 ref
@@ -165,6 +166,8 @@ val opt_target_guidance : float ref
 val opt_trace_guidance : bool ref
 val opt_trace_tables : bool ref
 val opt_table_limit : int ref
+val opt_offset_limit : int ref
+val opt_trace_offset_limit : bool ref
 val opt_no_table_store : bool ref
 val opt_implied_value_conc : bool ref
 val opt_trace_ivc : bool ref

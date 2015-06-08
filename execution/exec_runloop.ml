@@ -75,11 +75,11 @@ let decode_insns_cached fm gamma eip =
 
 
 let runloop (fm : fragment_machine) eip asmir_gamma until =
-  let rec loop last_eip eip is_final_loop =
+  let rec loop last_eip eip is_final_loop num_insns_executed =
     (match fm#maybe_switch_proc eip with
        | Some eip' ->
 	   clear_trans_cache (); (* drastic, better to make tagged *)
-	   loop (0L) eip' false
+	   loop (0L) eip' false num_insns_executed
        | None -> ());
     (* Currently disabled: advance the reset point if we've got symbolic
        data but we haven't yet branched on it. *)
@@ -122,14 +122,18 @@ let runloop (fm : fragment_machine) eip asmir_gamma until =
 	  with Failure s -> failwith (Printf.sprintf "Couldn't decode eip in runloop: %s" s) in
 	  if is_final_loop then
 	    Printf.eprintf "End jump to: %Lx\n" new_eip
+	  else if num_insns_executed = !opt_insn_limit then
+	    Printf.eprintf "Stopping after %Ld insns\n" !opt_insn_limit
 	  else
 	    match (new_eip, until, !opt_trace_end_jump) with
-	      | (e1, _, Some e2) when e1 = e2 -> loop eip new_eip true
+	      | (e1, _, Some e2) when e1 = e2 ->
+                  loop eip new_eip true (Int64.succ num_insns_executed)
 		(* halt execution next time if we hit -trace-end-jump *)
 	      | (e1, until_fn, _) when until_fn e1 -> ()
 		(* halt execution when until_fn returns true *)
 	      | (0L, _, _) -> raise JumpToNull (* next eip is 0, stop *)
-	      | _ -> loop eip new_eip false    (* otherwise keep going *)
+	      | _ -> loop eip new_eip false (Int64.succ num_insns_executed)
+                (* otherwise keep going *)
   in
     Hashtbl.clear loop_detect;
-    loop (0L) eip false
+    loop (0L) eip false 1L

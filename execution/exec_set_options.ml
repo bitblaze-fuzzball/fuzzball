@@ -258,6 +258,9 @@ let explore_cmdline_opts =
     ("-iteration-limit", Arg.String
        (fun s -> opt_iteration_limit := Int64.of_string s),
      "N Stop path if a loop iterates more than N times");
+    ("-insn-limit", Arg.String
+       (fun s -> opt_insn_limit := Int64.of_string s),
+     "N Stop path after N instructions");
     ("-path-depth-limit", Arg.String
        (fun s -> opt_path_depth_limit := Int64.of_string s),
      "N Stop path after N bits of symbolic branching");
@@ -353,6 +356,10 @@ let explore_cmdline_opts =
      " Print table lookups");
     ("-table-limit", Arg.Set_int(opt_table_limit),
      "BITS Match tables with at most 2**bits entries");
+    ("-offset-limit", Arg.Set_int(opt_offset_limit),
+     "BITS Concretize offsets with at most 2**bits entries");
+    ("-trace-offset-limit", Arg.Set(opt_trace_offset_limit),
+     " Print offset width information");
     ("-no-table-store", Arg.Set(opt_no_table_store),
      " Disable symbolic treatment of table stores");
     ("-implied-value-conc", Arg.Set(opt_implied_value_conc),

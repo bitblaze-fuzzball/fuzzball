@@ -460,10 +460,11 @@ struct
 	if verbose && !opt_trace_decisions then
 	  Printf.eprintf "Trying %B: " b;
 	match self#quick_check_in_path_cond cond' with
-	| Some b -> b
-	| None -> 
-	  let (is_sat, _) = self#query_with_path_cond cond' verbose in
-	    is_sat
+	  | Some b -> b
+	  | None -> 
+	      let (is_sat, _) =
+		self#query_with_path_cond cond' verbose in
+		is_sat
       in
       let non_try_func b =
 	if verbose && !opt_trace_decisions then
