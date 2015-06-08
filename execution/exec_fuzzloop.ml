@@ -90,7 +90,7 @@ let close_logs_and_send_sexp log fm ispov =
     and info_filename = Printf.sprintf "%s/info-%i.json" !Pov_xml.out_channel_name !restarts in
     let sexp = Text_logger.LazyString
       (lazy
-	 (Printf.sprintf "((:type :new-test-case) (:xml \"%s\") (:info \"%s\") (:provenance %s) (:expected-pov %s))"
+	 (Printf.sprintf "((:type :new-test-case) (:from :fuzzball) (:xml \"%s\") (:info \"%s\") (:provenance %s) (:expected-pov %s))"
 	    pov_filename info_filename 
 	    (if !opt_symbolic_receive then
 		":fuzzball-symbolic" else
