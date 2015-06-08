@@ -197,7 +197,13 @@ class pointer_management = object(self)
       try (IT.attempt_read assign_ranges io_ranges this_interval;
 	   is_safe := true) 
       with
-      | IT.ReadingUnallocated _ -> is_safe := false
+      | IT.ReadingUnallocated _ ->
+	  self#report [("tag", (`String ":unsafe-read"));
+		       ("subtag", (`String ":heap-unallocated"));
+		       ("read-start", (json_addr start_addr));
+		       ("read-len", (`Int (Int64.to_int len)));
+		      ];
+	  is_safe := false
       | IT.ReadingUnwritten _ -> raise Uninitialized_Memory (* _ is allocated interval that had not been written that we were trying to read from *)
     ) else (
     (* overlapping unsafe memory between heap and stack *)
