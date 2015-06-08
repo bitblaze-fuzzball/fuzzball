@@ -261,6 +261,8 @@ class virtual fragment_machine = object
 
   method virtual add_event_detail : string -> Yojson.Safe.json -> unit
   method virtual get_event_details : (string, Yojson.Safe.json) Hashtbl.t
+  method virtual get_event_history : (string * Yojson.Safe.json) list
+  method virtual finalize_event : unit
 
   method virtual make_snap : unit -> unit
   method virtual reset : unit -> unit
@@ -628,6 +630,44 @@ struct
     val mutable deferred_start_symbolic = None
 
     val mutable insn_count = 0L
+    val mutable event_count = 0
+
+    val event_details = Hashtbl.create 11
+
+    (* This replicates the old behavior where information about
+       different events was combined. Ideally we'll remove it later. *)
+    val merged_event_details = Hashtbl.create 21
+
+    method add_event_detail k v =
+      Hashtbl.replace event_details k v;
+      Hashtbl.replace merged_event_details k v
+
+    val mutable event_history = []
+
+    method get_event_history : (string * Yojson.Safe.json) list =
+      List.rev event_history
+
+    method private event_to_history eip =
+      let hash_to_assoc h = 
+	Hashtbl.fold (fun k v l -> (k, v) :: l) h []
+      in
+      let json_addr i64 = `String (Printf.sprintf "0x%08Lx" i64)
+      in
+	if (Hashtbl.length event_details) != 0 then
+	  let eeip = ("event-eip", json_addr eip) in
+          let entry = ((Printf.sprintf "%Ld_%d" insn_count event_count),
+		       `Assoc (eeip :: (hash_to_assoc event_details)))
+	  in
+            event_history <- entry :: event_history
+
+    method finalize_event =
+      self#event_to_history self#get_eip;
+      Hashtbl.clear event_details;
+      event_count <- event_count + 1
+
+    method get_event_details =
+      self#event_to_history self#get_eip;
+      merged_event_details
 
     method eip_hook eip =
       (* Shouldn't be needed; we instead simplify the registers when
@@ -644,6 +684,7 @@ struct
 	 self#print_regs;
        if !opt_trace_eip then
 	 Printf.printf "EIP is 0x%08Lx\n" eip;
+       insn_count <- Int64.succ insn_count;
        (if !opt_trace_unique_eips then
 	   (if not (Hashtbl.mem unique_eips eip) then
 	       (Printf.printf "Saw new EIP 0x%08Lx\n" eip;
@@ -651,7 +692,11 @@ struct
       (* Libasmir.print_disasm_rawbytes Libasmir.Bfd_arch_i386 eip insn_bytes;
 	 print_string "\n"; *)
       List.iter apply_eip_hook extra_eip_hooks;
-      self#watchpoint
+      self#watchpoint;
+      self#event_to_history eip;
+      Hashtbl.clear event_details;
+      event_count <- 0;
+      ()
 
     method get_eip =
       match !opt_arch with
@@ -1534,14 +1579,6 @@ struct
 	[]
       else
 	fuzz_finish_reasons
-
-    val event_details = Hashtbl.create 11
-
-    method add_event_detail k v =
-      Hashtbl.replace event_details k v
-
-    method get_event_details =
-      event_details
 
     method reset () =
       let reset h = h#reset in

@@ -604,7 +604,8 @@ struct
       pm#set_reporter
 	(fun l ->
 	   List.iter (fun (a, b) -> self#add_event_detail a b) l;
-	   self#add_event_detail "call-stack" self#callstack_json
+	   self#add_event_detail "call-stack" self#callstack_json;
+	   self#finalize_event
 	)
 
     val check_cond_cache = Hashtbl.create 101
@@ -653,6 +654,7 @@ struct
 	 self#add_event_detail "addr-expr"
 	   (`String (V.exp_to_string e));
 	 self#add_event_detail "call-stack" self#callstack_json;
+	 self#finalize_event;
 	 if !opt_finish_on_weird_sym_addr then
 	   (self#finish_fuzz "weird symbolic-controlled address";
 	    ExprOffset(e))
@@ -681,6 +683,7 @@ struct
 	       self#add_event_detail "can-be-null-expr"
 		 (`String (V.exp_to_string e));
 	       self#add_event_detail "call-stack" self#callstack_json;
+	       self#finalize_event;
 	       if !opt_finish_on_null_deref then
 		 self#finish_fuzz "symbolic dereference can be null"
 	);
@@ -848,6 +851,7 @@ struct
 		       self#add_event_detail "chosen-value"
 			 (`String (Printf.sprintf "0x%Lx" target));
 		       self#add_event_detail "call-stack" self#callstack_json;
+		       self#finalize_event;
 		       if !opt_finish_on_controlled_jump then
 			 self#finish_fuzz "controlled jump"
 		   | Some false ->
@@ -1493,6 +1497,7 @@ struct
 		     self#add_event_detail "ret-addr-addr"
 		       (`String (Printf.sprintf "0x%08Lx" addr));
 		     self#add_event_detail "call-stack" self#callstack_json;
+		     self#finalize_event;
 		     if !opt_finish_on_ret_addr_overwrite then
 		       self#finish_fuzz "return address overwrite")
 	      done
@@ -1539,6 +1544,7 @@ struct
 			     (`String (Printf.sprintf "0x%08Lx" loc));
 			   self#add_event_detail "call-stack"
 			     self#callstack_json;
+			   self#finalize_event;
 			   if !opt_finish_on_ret_addr_overwrite then
 			     self#finish_fuzz "return address overwrite"
 		       | Some false ->

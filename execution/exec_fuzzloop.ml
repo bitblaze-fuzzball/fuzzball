@@ -62,6 +62,8 @@ let log_fuzz_restart log str ispov fm =
        (fun k v l -> (k, v) :: l)
        fm#get_event_details [])
   in
+  let event_history = `Assoc fm#get_event_history
+  in
   log (
     Yojson_list_logger.LazyJson
       (lazy 
@@ -72,6 +74,7 @@ let log_fuzz_restart log str ispov fm =
 	      "restarted_at", `String (Printf.sprintf "0x%08LX" eip);
 	      "restart_at_depth", `String (Printf.sprintf "%i" fm#get_depth);
 	      "extra_details", extra_details;
+	      "event_history", event_history;
 	      "special_handlers_state", fm#special_handlers_state_json;
 	     ]
 	 )

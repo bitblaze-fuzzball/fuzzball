@@ -147,6 +147,8 @@ sig
     method finish_reasons : string list
     method add_event_detail : string -> Yojson.Safe.json -> unit
     method get_event_details : (string, Yojson.Safe.json) Hashtbl.t
+    method get_event_history : (string * Yojson.Safe.json) list
+    method finalize_event : unit
     method make_snap : unit -> unit
     method add_special_handler : Fragment_machine.special_handler -> unit
     method add_universal_special_handler

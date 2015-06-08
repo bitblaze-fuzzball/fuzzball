@@ -113,6 +113,8 @@ class virtual fragment_machine : object
 
   method virtual add_event_detail : string -> Yojson.Safe.json -> unit
   method virtual get_event_details : (string, Yojson.Safe.json) Hashtbl.t
+  method virtual get_event_history : (string * Yojson.Safe.json) list
+  method virtual finalize_event : unit
 
   method virtual make_snap : unit -> unit
   method virtual reset : unit -> unit
@@ -345,6 +347,8 @@ sig
 
     method add_event_detail : string -> Yojson.Safe.json -> unit
     method get_event_details : (string, Yojson.Safe.json) Hashtbl.t
+    method get_event_history : (string * Yojson.Safe.json) list
+    method finalize_event : unit
 
     method make_snap : unit -> unit
     method reset : unit -> unit
