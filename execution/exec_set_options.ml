@@ -577,7 +577,7 @@ let cmdline_opts =
      "String Sets output location of eip sequence logger.  Default ./eip_sequence.txt");
     ("-log-eip-sequence", Arg.Set(opt_log_eip_sequence),
      "Log eip coverage");
-    ("-num-fd", Arg.Set_int(opt_num_fd), "Number of file descriptors we consider open.")
+    ("-num-fd", Arg.Set_int(opt_num_fd), "N Number of file descriptors we consider open, from 0 to N.")
     ]
 
 let trace_replay_cmdline_opts =
