@@ -305,10 +305,9 @@ class pointer_management = object(self)
 	is_safe := false
       else (
 	if (self#is_contained start_addr end_addr stack_end stack_start) then (
-	  let start_addr_ref = ref start_addr in
-	  while (Int64.compare !start_addr_ref end_addr) <> 0 do
-	    Hashtbl.replace stack_table !start_addr_ref true;
-	    start_addr_ref := Int64.add !start_addr_ref (Int64.one)
+	  for i = 0 to (Int64.to_int len) - 1 do
+	    Hashtbl.replace stack_table (Int64.add start_addr (Int64.of_int i))
+	      true;
 	  done
 	);
       (* otherwise we assume we're safe for now *)
