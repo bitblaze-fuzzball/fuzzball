@@ -47,7 +47,7 @@ type slice = {
 
 type data = {
   data_typ : data_typ;
-  contents : char array; (* maybe I want int64 here *)
+  contents : char array; (* Really a byte array. This is the raw data, before any escaping or encoding implied by data_typ *)
 }
 
 type assign_value =
@@ -220,11 +220,19 @@ let data_type_to_xml = function
   | Hex -> Xml.string_attrib "format" "hex"
   | ascii  -> Xml.string_attrib "format" "asciic"
 
+let data_to_string (a : data ) =
+  match a.data_typ with
+  | Ascii -> (String.concat ""
+		(Array.fold_right
+		   (fun el accum ->  (Printf.sprintf "%c" el) :: accum)
+		   a.contents []))
+  | Hex -> (String.concat ""
+	      (Array.fold_right
+		 (fun el accum -> (Printf.sprintf "%02X" (int_of_char el)) :: accum)
+		 a.contents []))
+
 let data_to_xml (a : data) =
-  let as_string = String.concat ""
-    (Array.fold_right
-       (fun el accum ->  (Printf.sprintf "%c" el) :: accum)
-       a.contents []) in
+  let as_string = data_to_string a in
   Xml.node ~a:[data_type_to_xml a.data_typ] "data"
     [Xml.pcdata as_string]
 
@@ -295,7 +303,6 @@ let concrete_read_to_xml a =
 
 let symbolic_read_to_xml fm r =
   failwith "stub"
-    
 
 let write_target_to_xml = function
   | WData d -> data_to_xml d
@@ -304,20 +311,12 @@ let write_target_to_xml = function
 let symbolic_write_to_xml fm w =
   (* solve the current path constrains, give the correct output *)
   let (_, ce) = fm#query_with_path_cond Vine.exp_true false in
-  let as_int64 = Array.init (Array.length w.constraints) (fun i -> fm#eval_expr_from_ce ce w.constraints.(i)) in
-  let num_chars = ref 0 in
-  let as_string = Array.init (Array.length as_int64)
-    (fun i -> let to_add = Printf.sprintf "%02LX" as_int64.(i) in
-	      num_chars := !num_chars + (String.length to_add);
-	      to_add) in
-  let char_array = Array.create !num_chars ' ' in
-  let i = ref 0 in
-  Array.iter (fun e ->
-    for j = 0 to ((String.length e) - 1)
-    do
-      char_array.(!i) <- e.[j];
-      i := !i + 1
-    done) as_string;
+  let len = Array.length w.constraints in
+  let char_array = Array.init len
+    (fun i -> 
+       let i64 = fm#eval_expr_from_ce ce w.constraints.(i) in
+	 Char.chr (Int64.to_int i64))
+  in
   let dt = {data_typ = Hex;
 	    contents = char_array; } in
   let wt = WData dt in
@@ -405,9 +404,7 @@ let add_read_car (read_in : char array) (start : int64) =
 let add_transmit contents length =
   (* add a write command to the list of actions to be put into the pov *)
   (* cgcos_transmit *)
-(*  let dt = {data_typ = Hex;
-	    contents = contents; } in *)
-  let dt = {data_typ = Ascii;
+  let dt = {data_typ = Hex;
 	    contents = contents; } in
   let wt = WData dt in
   let write = {datas = [wt]} in
