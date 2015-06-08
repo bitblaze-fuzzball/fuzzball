@@ -150,10 +150,6 @@ class smtlib_external_engine solver = object(self)
     let (solver_in, solver_out) = solver_chans in
       self#visitor#assert_exp qe;
       output_string_log log_file solver_out "(check-sat)\n";
-      if solver = MATHSAT then
-	for i = 1 to 8192 do
-	  output_char solver_out ' '
-	done;
       flush solver_out;
       if !opt_save_solver_files then flush log_file;
       let result_s = input_line solver_in in
@@ -178,10 +174,6 @@ class smtlib_external_engine solver = object(self)
 	  (solver = CVC4 || solver = Z3 || solver = MATHSAT)
 	then
 	  (output_string_log log_file solver_out "(get-model)\n";
-	   if solver = MATHSAT then
-	     for i = 1 to 8192 do
-	       output_char solver_out ' '
-	     done;
 	   flush solver_out;
 	   if !opt_save_solver_files then flush log_file;
 	   if solver = Z3 then
