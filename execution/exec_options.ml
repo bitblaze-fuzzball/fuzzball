@@ -324,3 +324,4 @@ let opt_max_weirdness = ref 100
 and opt_single_weirdness_threshold = ref 100
 
 let opt_stop_on_error_msgs = ref []
+let opt_error_msg_threshold = ref None

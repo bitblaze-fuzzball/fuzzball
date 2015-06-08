@@ -115,6 +115,9 @@ let linux_cmdline_opts =
     ("-stop-on-error-msgs", Arg.String
        (fun s -> opt_stop_on_error_msgs := split_string_list '|' s),
      "STR1|STR2 Stop if one of the given messages is printed");
+    ("-error-msg-threshold", Arg.Int
+       (fun i -> opt_error_msg_threshold := Some i),
+     "NUM Stop if transmit(2cgc)->terminate(2cgc) repeats on unspecified messages");
   ]
 
 let apply_linux_cmdline_opts (fm : Fragment_machine.fragment_machine) =

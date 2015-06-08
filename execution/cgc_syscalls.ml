@@ -136,6 +136,17 @@ object(self)
 	check_buf <- String.sub full_str (full_len - trim_sz) trim_sz
 
   val mutable transmit_pos = 0
+  val mutable last_string_written = ""
+  val possible_error_str_table = Hashtbl.create 30
+
+  method private count_repeats () =
+    let count = try (Hashtbl.find possible_error_str_table last_string_written) with Not_found -> 0 in
+      (match !opt_error_msg_threshold with
+      | Some m ->
+           (Hashtbl.replace possible_error_str_table last_string_written (count + 1);
+            if count = m then
+              (opt_stop_on_error_msgs := !opt_stop_on_error_msgs @ [last_string_written];))
+      | None -> ());
 
   (* Right now we always redirect the program's FDs 1 and 2 (stdout
      and stderr) to FuzzBALL's stdout. We might want to consider doing
@@ -149,6 +160,8 @@ object(self)
 	store_word ~prov:Interval_tree.Internal tx_bytes 0 num_bytes;
       transmit_pos <- transmit_pos + (Int64.to_int num_bytes);
       if !opt_stop_on_error_msgs <> [] then
+	last_string_written <- str;
+        (* self#count_repeats (); *)
 	self#check_msgs str;
       (match !opt_max_transmit_bytes with
       | Some max ->
@@ -205,7 +218,7 @@ object(self)
   val mutable num_transmits = 0
   val mutable saved_num_transmits = 0
 
- (* val mutable transmit_pos is defined above for use in do_write *)
+  (* val mutable transmit_pos is defined above for use in do_write *)
   val mutable saved_transmit_pos = 0
 
   val mutable receive_pos = 0
@@ -431,7 +444,8 @@ object(self)
     with
       | Unix.Unix_error(err, _, _) -> self#put_errno err
 
-  method private cgcos_terminate status =
+  method private cgcos_terminate status = 
+    self#count_repeats ();
     raise (SimulatedExit(status))
 
   (* (fd : int) (bytes : char array) (count : int) (tx_bytes : int64) *)
@@ -454,7 +468,7 @@ object(self)
 
   method private put_errno err =
     put_return (Int64.of_int (self#errno err))
-
+      
   method private errno_to_string errno =
     let err = Int64.to_int errno in
       match err with

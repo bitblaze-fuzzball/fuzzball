@@ -242,4 +242,4 @@ val opt_noop_unhandled_special : bool ref
 val opt_max_weirdness : int ref
 val opt_single_weirdness_threshold : int ref
 val opt_stop_on_error_msgs : string list ref
-
+val opt_error_msg_threshold : int option ref
