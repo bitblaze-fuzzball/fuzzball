@@ -358,6 +358,8 @@ let explore_cmdline_opts =
      " Print global and working caches after each query");
     ("-global-ce-cache-limit", Arg.Set_int(opt_global_ce_cache_limit),
      " Set an integer limit on the global cache size");
+    ("-disable-ce-cache", Arg.Set(opt_disable_ce_cache),
+     " Do not use cached satisfying assingments at all");
     ("-ignore-div-0", Arg.String (fun s -> opt_ignore_div_0 := div_0_notice_of_string s),
      "String Raise: Raise Error, Warn: Warn, no error, Ignore: No warning, no error (best in conjunction with -sse-emulator punt)");
     ("-stop-on-weird-sym-addr", Arg.Set(opt_stop_on_weird_sym_addr),

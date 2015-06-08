@@ -40,6 +40,8 @@ let solver_cmdline_opts =
     ("-solver-timeout", Arg.String
        (fun s -> opt_solver_timeout := Some (int_of_string s)),
      "secs Run each query for at most SECS seconds");
+    ("-timeout-as-unsat", Arg.Set(opt_timeout_as_unsat),
+       " Treat solver timeouts the same as \"unsat\" results");
     ("-trace-assigns", Arg.Set(opt_trace_assigns),
      " Print satisfying assignments");
     ("-trace-assigns-string", Arg.Set(opt_trace_assigns_string),

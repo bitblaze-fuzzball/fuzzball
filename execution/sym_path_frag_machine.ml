@@ -21,6 +21,7 @@ open Exec_assert_minder;;
 
 let solver_sats = ref 0L
 let solver_unsats = ref 0L
+let solver_fake_unsats = ref 0L
 let solver_fails = ref 0L
 
 module SymPathFragMachineFunctor =
@@ -254,6 +255,7 @@ struct
     method private query_with_path_cond_wcache cond verbose with_cache =
       let module TIMING = (val !Loggers.fuzzball_timing_json : Yojson_logger.JSONLog) in
       self#ensure_extra_conditions;
+      Query_engine.query_extra_counter := 1 + self#get_depth;
       if new_path then
 	(self#fill_working_cache;
 	 new_path <- false);
@@ -269,7 +271,10 @@ struct
 	  | ce_ref :: rest -> loop rest
 	  | [] -> None
 	in
-	loop working_ce_cache
+	  if !opt_disable_ce_cache then
+	    None
+	  else
+	    loop working_ce_cache
       in
       let (is_sat, ce) = match (ce_opt, with_cache) with
 	| (Some ce', true) ->
@@ -297,9 +302,13 @@ struct
 	      solver_sats := Int64.succ !solver_sats;
 	      true
 	    | None ->
-	      solver_fails := Int64.succ !solver_fails;
-	      query_engine#after_query true;
-	      raise SolverFailure
+	      if !opt_timeout_as_unsat then
+		(solver_fake_unsats := Int64.succ !solver_fake_unsats;
+		 false)
+	      else
+		(solver_fails := Int64.succ !solver_fails;
+		 query_engine#after_query true;
+		 raise SolverFailure)
 	  in
 	  TIMING.trace (Yojson_logger.LazyJson (lazy (`Assoc ["STP", `String "end"])));
 	  let time = (get_time ()) -. time_before in
@@ -430,18 +439,24 @@ struct
 	match self#quick_check_in_path_cond cond' with
 	| Some b -> b
 	| None -> 
-	  let (is_sat, _) =
-	    self#query_with_path_cond cond' verbose in
-	  is_sat
+	  let (is_sat, _) = self#query_with_path_cond cond' verbose in
+	    is_sat
       in
       let non_try_func b =
 	if verbose && !opt_trace_decisions then
 	  Printf.printf "Known %B\n" b
       in
+      let both_fail_func b = 
+	if !opt_timeout_as_unsat && !opt_concolic_prob <> None then
+	  (Printf.printf "Pretending %B was sat after double timeout in concolic mode\n" b;
+	   b)
+	else
+	  failwith "Double unsat in query_with_pc_choice"
+      in
       if !opt_trace_binary_paths then
 	Printf.printf "Current Path String: %s\n" dt#get_hist_str;
       let r = dt#try_extend trans_func try_func non_try_func choice
-	self#get_eip
+	both_fail_func self#get_eip
       in
       if !opt_trace_binary_paths then
 	Printf.printf "Current Path String: %s\n" dt#get_hist_str;
@@ -491,8 +506,13 @@ struct
       let non_try_func b =
 	if verbose then Printf.printf "Known %B\n" b
       in
+      let both_fail_func b =
+	ignore(b);
+	failwith "Unexpected both-failure in random_case_split"
+      in
       let (result, _) = (dt#try_extend trans_func try_func non_try_func
-			   (fun () -> self#follow_or_random) self#get_eip) in
+			   (fun () -> self#follow_or_random) both_fail_func
+			   self#get_eip) in
       result
 
     method private eval_bool_exp_conc_path e =
