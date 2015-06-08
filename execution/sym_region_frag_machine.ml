@@ -1636,6 +1636,7 @@ struct
       let clear gm = gm#clear () in
       spfm#reset ();
       List.iter clear regions;
+      call_stack <- []; (* Todo: save on make_snap, restore here *)
       Hashtbl.clear concrete_cache;
       Hashtbl.clear ret_addrs;
       Hashtbl.clear last_set_null

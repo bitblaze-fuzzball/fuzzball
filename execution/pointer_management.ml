@@ -102,8 +102,13 @@ class pointer_management = object(self)
 	  assign_ranges <- (IT.attempt_allocate
 			      assign_ranges this_interval)
 	with IT.AllocatingAllocated _ ->
-	  Printf.eprintf("Overlapping alloc")
-	 (* raise Overlapping_Alloc *)
+	  (* Our allocate algorithm currently assigns locations
+	     sequentially, so I don't think there's any way this could be
+	     caused by a subject program bug. It is however currently
+	     triggered by the pointer_management data not being properly
+	     cleared/restored between paths. *)
+	  Printf.printf "Overlapping alloc: 0x%08Lx+%Ld\n" addr len
+	    (* raise Overlapping_Alloc *)
       end
 	
   val mutable info_reporter = None

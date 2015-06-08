@@ -1554,10 +1554,13 @@ struct
     method set_start_eip new_eip = 
 	start_eip <- new_eip
 
+    val mutable snap_insn_count = 0L
+
     method make_snap () =
       List.iter (fun (m, _, _) -> m#make_snap ()) proc_list;
       (* XXX need to save the other reg_stores in proc_list too *)
       snap <- (V.VarHash.copy reg_store, V.VarHash.copy temps);
+      snap_insn_count <- insn_count;
       let snap_handler h = h#make_snap in
 	List.iter snap_handler !special_handler_list_ref
 
@@ -1601,9 +1604,11 @@ struct
       (match snap with (r, t) ->
 	 move_hash r reg_store;
 	 move_hash t temps);
+      insn_count <- snap_insn_count;
       fuzz_finish_reasons <- [];
       disqualified <- false;
       Hashtbl.clear event_details;
+      event_history <- [];
       List.iter reset !special_handler_list_ref
 
     method add_special_handler (h:special_handler) =
