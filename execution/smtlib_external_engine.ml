@@ -189,7 +189,10 @@ class smtlib_external_engine solver = object(self)
 
   method after_query save_results =
     if save_results then
-      Printf.printf "Solver queries are in solver_input.smt\n"
+      (if !opt_save_solver_files then
+	 Printf.printf "Solver queries are in solver_input.smt\n"
+       else
+	 Printf.printf "Re-run with -save-solver-files to see query\n")
 
   method private reset_solver_chans =
     solver_chans <- start_solver solver
