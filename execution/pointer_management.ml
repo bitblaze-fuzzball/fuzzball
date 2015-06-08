@@ -30,7 +30,7 @@ class pointer_management = object(self)
     (* read / write range table *)
   val mutable io_ranges = IT.IntervalMap.empty
 
-  val stack_table = Hashtbl.create 100
+  val mutable stack_table = Hashtbl.create 100
 
   method update_stack_end esp =
     if self#greater_than esp stack_end then (
@@ -104,7 +104,7 @@ class pointer_management = object(self)
 	with IT.AllocatingAllocated _ ->
 	  (* Our allocate algorithm currently assigns locations
 	     sequentially, so I don't think there's any way this could be
-	     caused by a subject program bug. It is however currently
+	     caused by a subject program bug. It has previously been
 	     triggered by the pointer_management data not being properly
 	     cleared/restored between paths. *)
 	  Printf.printf "Overlapping alloc: 0x%08Lx+%Ld\n" addr len
@@ -390,23 +390,24 @@ class pointer_management = object(self)
 	is_safe := true
     );
     !is_safe
+
+  val mutable saved_assign_ranges = IT.IntervalMap.empty
+  val mutable saved_io_ranges = IT.IntervalMap.empty
+  val mutable saved_stack_table = Hashtbl.create 1
+  val mutable saved_stack_end = 0L
+
+  method make_snap =
+    saved_assign_ranges <- assign_ranges;
+    saved_io_ranges <- io_ranges;
+    saved_stack_table <- stack_table;
+    saved_stack_end <- stack_end;
+    ()
+
+  method reset =
+    assign_ranges <- saved_assign_ranges;
+    io_ranges <- saved_io_ranges;
+    stack_table <- saved_stack_table;
+    stack_end <- saved_stack_end;
+    ()
       
-  method clear =
-  (* Hashtbl.clear and Hashtbl.reset have the same
-     visible semantics; the difference is just a time/space
-     tradeoff. But Hashtbl.reset is a fairly recent
-     addition: sticking with clear retains compatibilty
-     with 3.x versions of OCaml. *)
-    assign_ranges <- IT.IntervalMap.empty;
-    io_ranges <- IT.IntervalMap.empty
-
-  method copy_tables ar ir =
-    assign_ranges <- IT.copy ar;
-    io_ranges <- IT.copy ir
-
-  method construct_deep_copy =
-    let copy = new pointer_management in
-    copy#copy_tables assign_ranges io_ranges;
-    copy
-
 end

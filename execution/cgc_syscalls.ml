@@ -184,23 +184,20 @@ object(self)
         (Int64.add next_fresh_addr 0x0fffL); (* page align *)
       ret
 
-  val mutable pm = new Pointer_management.pointer_management
+  val pm = new Pointer_management.pointer_management
   
   method enablePointerManagementMemoryChecking =
     fm#set_pointer_management pm
 
   val mutable saved_next_fresh_addr = 0L
-  val mutable saved_pointer_managment = None
 
   method private save_memory_state =
     saved_next_fresh_addr <- next_fresh_addr;
-    saved_pointer_managment <- Some pm#construct_deep_copy;
+    pm#make_snap
 
   method private reset_memory_state =
     next_fresh_addr <- saved_next_fresh_addr;
-    match saved_pointer_managment with
-    | Some ptrmng -> pm <- ptrmng
-    | _ -> failwith "no was pointer management snapshot created!"
+    pm#reset
 
   val mutable num_receives = 0
   val mutable saved_num_receives = 0
