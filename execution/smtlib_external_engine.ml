@@ -124,7 +124,7 @@ class smtlib_external_engine solver = object(self)
       self#visitor#declare_var_value var rhs
     with
       | V.TypeError(err) ->
-	  Printf.printf "Typecheck failure on %s: %s\n"
+	  Printf.eprintf "Typecheck failure on %s: %s\n"
 	    (V.exp_to_string rhs) err;
 	  failwith "Typecheck failure in assert_eq"
 
@@ -156,8 +156,8 @@ class smtlib_external_engine solver = object(self)
       let first_assert = (String.sub result_s 0 3) = "ASS" in
       let result = match result_s with
 	| "unsat" -> Some true
-	| "Timed Out." -> Printf.printf "STP timeout\n"; None
-	| "unknown" -> Printf.printf "Solver timeout\n"; None
+	| "Timed Out." -> Printf.eprintf "STP timeout\n"; None
+	| "unknown" -> Printf.eprintf "Solver timeout\n"; None
 	| "sat" -> Some false
 	| _ when first_assert -> Some false
 	| _ -> failwith ("Unexpected first output line " ^ result_s)
@@ -190,9 +190,9 @@ class smtlib_external_engine solver = object(self)
   method after_query save_results =
     if save_results then
       (if !opt_save_solver_files then
-	 Printf.printf "Solver queries are in solver_input.smt\n"
+	 Printf.eprintf "Solver queries are in solver_input.smt\n"
        else
-	 Printf.printf "Re-run with -save-solver-files to see query\n")
+	 Printf.eprintf "Re-run with -save-solver-files to see query\n")
 
   method private reset_solver_chans =
     solver_chans <- start_solver solver

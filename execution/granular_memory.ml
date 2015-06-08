@@ -428,11 +428,11 @@ struct
 
     method load_word addr =
       if !opt_trace_memory then
-	Printf.printf "mem%d GM load word 0x%08Lx\n" unique_id addr;
+	Printf.eprintf "mem%d GM load word 0x%08Lx\n" unique_id addr;
       match self#maybe_load_word addr with
 	| Some w ->
 	    if !opt_trace_memory then
-	      Printf.printf "mem%d GM load word present 0x%08Lx = %s\n"
+	      Printf.eprintf "mem%d GM load word present 0x%08Lx = %s\n"
 		unique_id addr (D.to_string_32 w);
 	    w
 	| None ->
@@ -470,7 +470,7 @@ struct
     method store_word ?(prov = Interval_tree.Internal) addr w =
       self#validate_safe_write_addr_range ~prov addr (Int64.of_int 4);
       if !opt_trace_memory then
-	Printf.printf "mem%d GM store word 0x%08Lx = %s\n"
+	Printf.eprintf "mem%d GM store word 0x%08Lx = %s\n"
 	  unique_id addr (D.to_string_32 w);
       if (Int64.logand addr 3L) = 0L then
 	self#store_common_fast addr
@@ -785,7 +785,7 @@ struct
 
     method load_word addr =
       if !opt_trace_memory then
-	Printf.printf "mem%d GSM load word 0x%08Lx %b\n"
+	Printf.eprintf "mem%d GSM load word 0x%08Lx %b\n"
 	  unique_id addr have_snap;
       if have_snap then
 	match diff#maybe_load_word addr with
@@ -820,11 +820,11 @@ struct
       main#clear ()
 	
     method make_snap () =
-      (*Printf.printf "Make snap\n";
+      (*Printf.eprintf "Make snap\n";
       let (d1, d2, d3) = diff#measure_size 
 	and (m1, m2, m3) = main#measure_size in
-	Printf.printf "diff (%d, %d, %d)\n" d1 d2 d3;
-	Printf.printf "main (%d, %d, %d)\n" m1 m2 m3;*)
+	Printf.eprintf "diff (%d, %d, %d)\n" d1 d2 d3;
+	Printf.eprintf "main (%d, %d, %d)\n" m1 m2 m3;*)
       let (snap_size, _, _) = diff#measure_size in
       if snap_size > 0 then (
 	diff#copy_to main;

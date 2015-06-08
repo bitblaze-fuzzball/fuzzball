@@ -123,7 +123,7 @@ struct
 	match result with
 	  | Some false ->
 	      if !opt_influence_details then
-		(Printf.printf "Yup, condition is satisfiable, by\n";
+		(Printf.eprintf "Yup, condition is satisfiable, by\n";
 		 print_ce ce);
 	      qe#after_query !opt_influence_details;
 	      qe#pop;
@@ -136,11 +136,11 @@ struct
 		   the variable doesn't appear in the counterexample, since
 		   some of the solvers do that. *)
 		if !opt_influence_details then
-		  Printf.printf "Satisfying value is 0x%Lx\n" !v;
+		  Printf.eprintf "Satisfying value is 0x%Lx\n" !v;
 		Some !v
 	  | Some true ->
 	      if !opt_influence_details then
-		Printf.printf "No, condition is unsat\n";
+		Printf.eprintf "No, condition is unsat\n";
 	      qe#after_query false;
 	      qe#pop;
 	      None
@@ -158,14 +158,14 @@ struct
 	match result with
           | Some false ->
               if !opt_influence_details then
-		(Printf.printf "No, condition is invalid; counterexample:\n";
+		(Printf.eprintf "No, condition is invalid; counterexample:\n";
                  print_ce ce);
               qe#after_query !opt_influence_details;
               qe#pop;
               false
           | Some true ->
               if !opt_influence_details then
-		Printf.printf "Yes, condition is valid\n";
+		Printf.eprintf "Yes, condition is valid\n";
               qe#after_query false;
               qe#pop;
               true
@@ -203,7 +203,7 @@ struct
       in
       let rec loop min max =
 	if !opt_influence_details then
-	  Printf.printf "Binary search in [0x%Lx, 0x%Lx]\n"
+	  Printf.eprintf "Binary search in [0x%Lx, 0x%Lx]\n"
 	    min max;
 	g_assert(is_signed || Vine_util.int64_ucompare min max <= 0) 100 "Exec_influence.find_bound";
 	if min = max then
@@ -304,7 +304,7 @@ struct
 	  | _ -> guess
 	in
 	  if !opt_influence_details then
-	    Printf.printf "XOR iteration %d estimate is %f +- %f\n"
+	    Printf.eprintf "XOR iteration %d estimate is %f +- %f\n"
 	      i new_guess delta;
 	  loop new_guess (i + 1)
       in
@@ -328,7 +328,7 @@ struct
       in
       let rec add_xors_loop k =
 	if !opt_influence_details then
-	  Printf.printf "Trying with %d constraints\n" k;
+	  Printf.eprintf "Trying with %d constraints\n" k;
 	let cond = random_xor_constraints ty target_e num_terms k in
 	  match self#check_sat target_eq cond with
 	    | None    -> k
@@ -339,14 +339,14 @@ struct
 	let vals = self#pointwise_enum target_eq target_e [cond] infty in
 	let n = List.length vals in
 	  if !opt_influence_details then
-	    Printf.printf "With %d constraints got %d solutions\n" k n;
+	    Printf.eprintf "With %d constraints got %d solutions\n" k n;
 	  if n < count then
 	    rm_xors_loop (k - 1)
 	  else
 	    (float k) +. log2_of_int n
       in
       let num_xors = add_xors_loop 1 in
-	Printf.printf "Reached unsat after %d constraints\n" num_xors;
+	Printf.eprintf "Reached unsat after %d constraints\n" num_xors;
 	rm_xors_loop num_xors
 
     method private influence_strategies target_eq target_e ty =
@@ -361,9 +361,9 @@ struct
 			       (Int64.sub (sx ty signed_max)
 				  (sx ty signed_min)))
        in
-	 Printf.printf "Upper bound from unsigned range [0x%Lx, 0x%Lx]: %f\n"
+	 Printf.eprintf "Upper bound from unsigned range [0x%Lx, 0x%Lx]: %f\n"
 	   unsign_min unsign_max unsign_range_i;
-	 Printf.printf "Upper bound from signed range [0x%Lx, 0x%Lx]: %f\n"
+	 Printf.eprintf "Upper bound from signed range [0x%Lx, 0x%Lx]: %f\n"
 	   signed_min signed_max signed_range_i);
       let points_bits = 6 in
       let points_max = (1 lsl points_bits) + 1 in
@@ -371,15 +371,15 @@ struct
       let num_points = List.length points in
       let points_i = log2_of_int num_points in
 	if num_points < points_max then
-	  (Printf.printf "Exact influence from %d points is %f\n"
+	  (Printf.eprintf "Exact influence from %d points is %f\n"
 	     num_points points_i;
 	   points_i)
 	else
-	  (Printf.printf "Lower bound from %d points is %f\n"
+	  (Printf.eprintf "Lower bound from %d points is %f\n"
 	     num_points points_i;
 	   let num_samples = 20 in
 	   let num_hits = self#random_sample target_eq target_e num_samples in
-	     Printf.printf "Random sampling: %d hits out of %d samples\n"
+	     Printf.eprintf "Random sampling: %d hits out of %d samples\n"
 	       num_hits num_samples;
 	     if num_hits > 1 then
 	       let frac =
@@ -388,7 +388,7 @@ struct
 	       let log_frac = (log frac) /. (log 2.0) and
 		   max_bits = float_of_int (V.bits_of_width ty) in
 	       let sampled_i = log_frac +. max_bits in
-		 Printf.printf "Samples influence is %f\n" sampled_i;
+		 Printf.eprintf "Samples influence is %f\n" sampled_i;
 		 sampled_i
 	     else
 	       (* Here's where we need XOR-streamlining *)
@@ -397,7 +397,7 @@ struct
 	  )
 
     method measure_influence_common decls assigns cond_e target_e =
-      Printf.printf "In measure_influence_common\n";
+      Printf.eprintf "In measure_influence_common\n";
       if not qe_ready then
 	(qe <- construct_solver "-influence";
 	 qe_ready <- true);
@@ -413,23 +413,23 @@ struct
       in
       let target_eq = V.BinOp(V.EQ, V.Lval(V.Temp(target_var)), target_e) in
       let target_e' = V.Lval(V.Temp(target_var)) in
-	Printf.printf "Free variables are";
-	List.iter (fun v -> Printf.printf " %s" (V.var_to_string v))
+	Printf.eprintf "Free variables are";
+	List.iter (fun v -> Printf.eprintf " %s" (V.var_to_string v))
 	  free_decls;
-	Printf.printf "\n";
+	Printf.eprintf "\n";
 	List.iter qe#add_free_var free_decls;
-	Printf.printf "Temp assignments are:\n";
+	Printf.eprintf "Temp assignments are:\n";
 	List.iter (fun (v, exp) ->
-		     Printf.printf " %s = %s\n"
+		     Printf.eprintf " %s = %s\n"
 		       (V.var_to_string v) (V.exp_to_string exp))
 	  assigns;
 	List.iter (fun (v, exp) ->
 		     qe#add_temp_var v;
 		     qe#assert_eq v exp)
 	  assigns;
-	Printf.printf "Conditional expr is %s\n" (V.exp_to_string cond_e);
+	Printf.eprintf "Conditional expr is %s\n" (V.exp_to_string cond_e);
 	qe#add_condition cond_e;
-	Printf.printf "Target expr is %s\n" (V.exp_to_string target_e);
+	Printf.eprintf "Target expr is %s\n" (V.exp_to_string target_e);
 	g_assert(self#check_sat target_eq V.exp_true <> None) 100 "Exec_influence.measure_influence_common";
 	let i = self#influence_strategies target_eq target_e' ty in
 	  qe#reset;
@@ -440,9 +440,9 @@ struct
 	form_man#collect_for_solving [] fm#get_path_cond target_expr in
       let i =
 	self#measure_influence_common decls assigns cond_e target_e in
-	Printf.printf "Estimated influence on %s is %f\n"
+	Printf.eprintf "Estimated influence on %s is %f\n"
 	  (V.exp_to_string target_expr) i;
-	Printf.printf "Inputs contributing to this target expression: %s\n" 
+	Printf.eprintf "Inputs contributing to this target expression: %s\n" 
 	  (List.fold_left
 	     (fun a varble ->
 		a ^ ", " ^ (V.var_to_string varble)) "" inputs_influencing);
@@ -484,14 +484,14 @@ struct
       let (free_decls, t_assigns, cond_e, target_e, inputs_influencing) =
 	form_man#collect_for_solving cond_assigns [cond] expr in
 	if measurements = [] then
-	  Printf.printf "No influence measurements at %s\n" loc
+	  Printf.eprintf "No influence measurements at %s\n" loc
 	else
 	  let i = (self#measure_influence_common free_decls t_assigns
 		     cond_e target_e)
 	  in
-	    Printf.printf "Estimated multipath influence at %s is %f\n"
+	    Printf.eprintf "Estimated multipath influence at %s is %f\n"
 	      loc i;
-	    Printf.printf "Inputs contributing to this target expression: %s\n"
+	    Printf.eprintf "Inputs contributing to this target expression: %s\n"
               (List.fold_left
 		 (fun a varble -> a ^ ", " ^ (V.var_to_string varble))
 		 "" inputs_influencing);
@@ -554,13 +554,13 @@ struct
 		(fm#get_hist_str) eip fm#get_loop_cnt in
 	if Hashtbl.mem unique_measurements loc then
 	  (if !opt_trace_sym_addrs then
-	     Printf.printf
+	     Printf.eprintf
 	       "Skipping redundant influence measurement at %s\n" loc)
 	else
 	  (Hashtbl.replace unique_measurements loc ();
 	   self#take_measure_eip e;
 	   if !opt_trace_sym_addrs then
-	     Printf.printf "Took influence measurement at %s\n" loc;
+	     Printf.eprintf "Took influence measurement at %s\n" loc;
 	   if not !opt_multipath_influence_only then
 	     ignore(self#measure_influence e))
 
@@ -570,7 +570,7 @@ struct
 	  | Some addr when addr = eip ->
 	      self#take_measure_eip e;
 	      if !opt_trace_sym_addrs then
-		Printf.printf "Took influence measurement at eip %08Lx\n" eip;
+		Printf.eprintf "Took influence measurement at eip %08Lx\n" eip;
 	      if not !opt_multipath_influence_only then
 		ignore(self#measure_influence e);
 	      if !opt_stop_at_measurement then

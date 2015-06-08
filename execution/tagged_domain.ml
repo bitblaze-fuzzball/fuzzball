@@ -21,7 +21,7 @@ struct
 
   let binary_tag tg tg2 =
     let tg' = fresh_tag () in
-      (* Printf.printf "%Ld + %Ld -> %Ld\n" tg tg2 tg'; *)
+      (* Printf.eprintf "%Ld + %Ld -> %Ld\n" tg tg2 tg'; *)
       tg'
 
   let from_concrete_1  i = (fresh_tag (), D.from_concrete_1  i)

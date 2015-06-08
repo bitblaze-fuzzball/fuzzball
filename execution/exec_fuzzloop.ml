@@ -31,21 +31,21 @@ let loop_w_stats count fn =
 	 let old_wtime = Unix.gettimeofday () and
              old_ctime = Sys.time () in
 	   if !opt_trace_iterations then 
-	     Printf.printf "Iteration %Ld:\n" !iter;
+	     Printf.eprintf "Iteration %Ld:\n" !iter;
 	   fn !iter;
 	   let wtime = Unix.gettimeofday() in
 	     if !opt_time_stats then
 	       ((let ctime = Sys.time() in
-		   Printf.printf "CPU time %f sec, %f total\n"
+		   Printf.eprintf "CPU time %f sec, %f total\n"
 		     (ctime -. old_ctime) (ctime -. start_ctime));
-		(Printf.printf "Wall time %f sec, %f total\n"
+		(Printf.eprintf "Wall time %f sec, %f total\n"
 		   (wtime -. old_wtime) (wtime -. start_wtime)));
 	     flush stdout;
 	     match !opt_total_timeout with
 	       | None -> ()
 	       | Some t ->
 		   if (wtime -. start_wtime) > t then
-		     (Printf.printf "Total exploration time timeout.\n";
+		     (Printf.eprintf "Total exploration time timeout.\n";
 		      raise LastIteration)
        done
      with
@@ -114,7 +114,7 @@ let prefuzz_region start_eip opt_fuzz_start_eip fuzz_start_eip fm asmir_gamma ex
     else false in
   try
     if !opt_trace_setup
-    then Printf.printf "Pre-fuzzing execution...\n";
+    then Printf.eprintf "Pre-fuzzing execution...\n";
     flush stdout;
     runloop fm start_eip asmir_gamma prefuzz
   with
@@ -141,7 +141,7 @@ let fuzz_runloop fm fuzz_start_eip asmir_gamma end_eips =
   let stop str ispov =
     close_logs_and_send_sexp Log.always fm ispov;
     if !opt_trace_stopping
-    then Printf.printf "Stopping %s at 0x%08Lx\n" str fm#get_eip in
+    then Printf.eprintf "Stopping %s at 0x%08Lx\n" str fm#get_eip in
   try
     runloop fm fuzz_start_eip asmir_gamma (fun a -> List.mem a end_eips)
   with
@@ -198,7 +198,7 @@ let fuzz_runloop fm fuzz_start_eip asmir_gamma end_eips =
     log_fuzz_restart Log.always ":bad_instruction" false fm;
     stop "at bad instruction"  false
   | UnhandledSysCall(s) ->
-    Printf.printf "[trans_eval WARNING]: %s\n%!" s;
+    Printf.eprintf "[trans_eval WARNING]: %s\n%!" s;
     log_fuzz_restart Log.always ":unhandled_system_call" false fm;
     stop "at unhandled system call" false
   | SymbolicSyscall ->
@@ -269,8 +269,8 @@ let fuzz_runloop fm fuzz_start_eip asmir_gamma end_eips =
 let fuzz start_eip opt_fuzz_start_eip end_eips
     (fm : fragment_machine) asmir_gamma symbolic_init reset_cb =
   if !opt_trace_setup then
-    (Printf.printf "start:0x%08Lx fuzz-start:0x%08Lx\n" start_eip opt_fuzz_start_eip;
-     Printf.printf "Initial registers:\n";
+    (Printf.eprintf "start:0x%08Lx fuzz-start:0x%08Lx\n" start_eip opt_fuzz_start_eip;
+     Printf.eprintf "Initial registers:\n";
      fm#print_regs);
   add_remove_hook fm;
   (match !opt_periodic_stats with
@@ -281,7 +281,7 @@ let fuzz start_eip opt_fuzz_start_eip end_eips
     at_exit final_check_memory_usage;
   let fuzz_start_eip = ref opt_fuzz_start_eip
   and extra_setup = ref (fun () -> ())
-  and flush_print str = Printf.printf "%s" str; flush stdout
+  and flush_print str = Printf.eprintf "%s" str; flush stdout
   in
   (try
      fuzz_sighandle_setup fm;
@@ -301,7 +301,7 @@ let fuzz start_eip opt_fuzz_start_eip end_eips
 	    fuzz_runloop fm (if fm#get_start_eip = 0L then !fuzz_start_eip else fm#get_start_eip) asmir_gamma end_eips;
 	       if !opt_coverage_stats && 
 		 (Hashtbl.length trans_cache - old_tcs > 0) then
-		   Printf.printf "Coverage increased to %d on %Ld\n"
+		   Printf.eprintf "Coverage increased to %d on %Ld\n"
 		     (Hashtbl.length trans_cache) iter;
 	       periodic_stats fm false false;
 	       if not fm#finish_path then raise LastIteration;
@@ -312,7 +312,7 @@ let fuzz start_eip opt_fuzz_start_eip end_eips
 		      when (List.length l) >= !opt_finish_reasons_needed
 			->
 		      if !opt_trace_stopping then
-			Printf.printf "Finished, %s\n"
+			Printf.eprintf "Finished, %s\n"
 			  (String.concat ", " l);
 		      raise LastIteration
 		  | _ -> ());
@@ -322,14 +322,14 @@ let fuzz start_eip opt_fuzz_start_eip end_eips
 	       fm#reset ();
 	  );
       with
-      | LastIteration -> Printf.printf "Exiting with LastIteration\n"
-      | Signal("QUIT") -> Printf.printf "Caught SIGQUIT\n");
+      | LastIteration -> Printf.eprintf "Exiting with LastIteration\n"
+      | Signal("QUIT") -> Printf.eprintf "Caught SIGQUIT\n");
      fm#after_exploration
    with
-     | LastIteration -> Printf.printf "Exiting with LastIteration\n"
-     | Signal(("INT"|"HUP"|"TERM") as s) -> Printf.printf "Caught SIG%s\n" s);
+     | LastIteration -> Printf.eprintf "Exiting with LastIteration\n"
+     | Signal(("INT"|"HUP"|"TERM") as s) -> Printf.eprintf "Caught SIG%s\n" s);
     
   if !opt_coverage_stats then
-    Printf.printf "Final coverage: %d\n"
+    Printf.eprintf "Final coverage: %d\n"
       (Hashtbl.length trans_cache);
   periodic_stats fm true false

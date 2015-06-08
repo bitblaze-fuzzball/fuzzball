@@ -185,7 +185,7 @@ and simplify_rec_lv lv =
 let rec simplify_fp e =
   let rec loop e n =
     let e' = simplify_rec e in
-      (* Printf.printf "Simplified %s -> %s\n"
+      (* Printf.eprintf "Simplified %s -> %s\n"
 	(V.exp_to_string e) (V.exp_to_string e'); *)
       g_assert(n < 100) 100 "Frag_simplify.simplify_fp";
       if e = e' then

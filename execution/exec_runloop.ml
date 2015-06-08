@@ -63,12 +63,12 @@ let decode_insns_cached fm gamma eip =
     | Some progn -> progn in
   if false then
     begin
-      Printf.printf "Printing statement list:\n";
+      Printf.eprintf "Printing statement list:\n";
       List.iter (fun s -> V.stmt_to_channel stdout s) stmts;
-      Printf.printf "End statement list: %d\n" (List.length stmts);
-      Printf.printf "Printing decls:\n";
-      List.iter (fun s -> V.decl_to_channel stdout s; Printf.printf "\n") decls;
-      Printf.printf "End decls\n";
+      Printf.eprintf "End statement list: %d\n" (List.length stmts);
+      Printf.eprintf "Printing decls:\n";
+      List.iter (fun s -> V.decl_to_channel stdout s; Printf.eprintf "\n") decls;
+      Printf.eprintf "End decls\n";
       flush stdout
     end;
   return
@@ -121,7 +121,7 @@ let runloop (fm : fragment_machine) eip asmir_gamma until =
 	    label_to_eip (new_label)
 	  with Failure s -> failwith (Printf.sprintf "Couldn't decode eip in runloop: %s" s) in
 	  if is_final_loop then
-	    Printf.printf "End jump to: %Lx\n" new_eip
+	    Printf.eprintf "End jump to: %Lx\n" new_eip
 	  else
 	    match (new_eip, until, !opt_trace_end_jump) with
 	      | (e1, _, Some e2) when e1 = e2 -> loop eip new_eip true

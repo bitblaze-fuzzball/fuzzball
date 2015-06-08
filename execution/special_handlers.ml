@@ -14,7 +14,7 @@ class linux_special_nonhandler (fm : fragment_machine) =
 object(self)
   method private unhandle_syscall str =
     if !opt_trace_stopping then
-      (Printf.printf "Not handling system call special %s\n" str;
+      (Printf.eprintf "Not handling system call special %s\n" str;
        fm#print_regs);
     raise (UnhandledSysCall("System calls disabled"))
 
@@ -82,7 +82,7 @@ object(self)
 		| None -> failwith "Missing x87_entry_point in special handler"
 	  in
 	    if !opt_trace_fpu then
-	      Printf.printf "Triggering x87 emulator at 0x%08Lx: %s\n"
+	      Printf.eprintf "Triggering x87 emulator at 0x%08Lx: %s\n"
 		this_addr (fm#disasm_insn_at this_addr);
 	    Some (fm#fake_call_to_from emu_addr this_addr)
       | _ -> None

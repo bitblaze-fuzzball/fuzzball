@@ -202,22 +202,22 @@ class parallel_check_memory
   inherit concrete_memory_w_reset
 
   method store_byte addr b =
-    Printf.printf "mem[%08Lx]:b := %02x\n" addr b;
+    Printf.eprintf "mem[%08Lx]:b := %02x\n" addr b;
     mem1#store_byte addr b;
     mem2#store_byte addr b
 
   method store_short addr s =
-    Printf.printf "mem[%08Lx]:s := %04x\n" addr s;
+    Printf.eprintf "mem[%08Lx]:s := %04x\n" addr s;
     mem1#store_short addr s;
     mem2#store_short addr s
 
   method store_word addr w =
-    Printf.printf "mem[%08Lx]:w := %08Lx\n" addr w;
+    Printf.eprintf "mem[%08Lx]:w := %08Lx\n" addr w;
     mem1#store_word addr w;
     mem2#store_word addr w
 
   method store_long addr l =
-    Printf.printf "mem[%08Lx]:l := %016Lx\n" addr l;
+    Printf.eprintf "mem[%08Lx]:l := %016Lx\n" addr l;
     mem1#store_long addr l;
     mem2#store_long addr l
 
@@ -225,9 +225,9 @@ class parallel_check_memory
     let b1 = mem1#load_byte addr and
 	b2 = mem2#load_byte addr in
       if b1 = b2 then
-	Printf.printf "mem[%08Lx] is %02x\n" addr b1
+	Printf.eprintf "mem[%08Lx] is %02x\n" addr b1
       else
-	(Printf.printf "mem[%08Lx] mismatch %02x vs %02x\n" addr b1 b2;
+	(Printf.eprintf "mem[%08Lx] mismatch %02x vs %02x\n" addr b1 b2;
 	 failwith "Mismatch in load_byte");
       b1
 
@@ -235,9 +235,9 @@ class parallel_check_memory
     let s1 = mem1#load_short addr and
 	s2 = mem2#load_short addr in
       if s1 = s2 then
-	Printf.printf "mem[%08Lx] is %04x\n" addr s1
+	Printf.eprintf "mem[%08Lx] is %04x\n" addr s1
       else
-	(Printf.printf "mem[%08Lx] mismatch %04x vs %04x\n" addr s1 s2;
+	(Printf.eprintf "mem[%08Lx] mismatch %04x vs %04x\n" addr s1 s2;
 	 failwith "Mismatch in load_short");
       s1
 
@@ -245,9 +245,9 @@ class parallel_check_memory
     let w1 = mem1#load_word addr and
 	w2 = mem2#load_word addr in
       if w1 = w2 then
-	Printf.printf "mem[%08Lx] is %08Lx\n" addr w1
+	Printf.eprintf "mem[%08Lx] is %08Lx\n" addr w1
       else
-	(Printf.printf "mem[%08Lx] mismatch %08Lx vs %08Lx\n" addr w1 w2;
+	(Printf.eprintf "mem[%08Lx] mismatch %08Lx vs %08Lx\n" addr w1 w2;
 	 failwith "Mismatch in load_word");
       w1
 
@@ -255,22 +255,22 @@ class parallel_check_memory
     let l1 = mem1#load_long addr and
 	l2 = mem2#load_long addr in
       if l1 = l2 then
-	Printf.printf "mem[%08Lx] is %016Lx\n" addr l1
+	Printf.eprintf "mem[%08Lx] is %016Lx\n" addr l1
       else
-	(Printf.printf "mem[%08Lx] mismatch %016Lx vs %016Lx\n" addr l1 l2;
+	(Printf.eprintf "mem[%08Lx] mismatch %016Lx vs %016Lx\n" addr l1 l2;
 	 failwith "Mismatch in load_long");
       l1
 
   method maybe_load_byte addr = Some (self#load_byte addr)
 
   method clear     () = mem1#clear ();     mem2#clear ();
-    Printf.printf "-------- clear --------\n"
+    Printf.eprintf "-------- clear --------\n"
 
   method make_snap () = mem1#make_snap (); mem2#make_snap ();
-    Printf.printf "-------- make_snap --------\n"
+    Printf.eprintf "-------- make_snap --------\n"
 
   method reset     () = mem1#reset ();     mem2#reset ();
-    Printf.printf "-------- reset --------\n"
+    Printf.eprintf "-------- reset --------\n"
 end
 
 let all_present = String.make 512 '\xff'

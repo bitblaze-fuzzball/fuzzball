@@ -67,7 +67,7 @@ let main argv =
 	let next_eip = 
 	  Exec_run_common.run_one_insn fm asmir_gamma code_addr bytes_a in
 	  if !Exec_options.opt_trace_eip then
-	    Printf.printf "Next instruction would be at 0x%08Lx\n" next_eip
+	    Printf.eprintf "Next instruction would be at 0x%08Lx\n" next_eip
 ;;
 
 main Sys.argv;;

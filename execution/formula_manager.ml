@@ -34,7 +34,7 @@ let cf_eval e =
   match Vine_opt.constant_fold (fun _ -> None) e with
     | V.Constant(V.Int(_, _)) as c -> c
     | e ->
-	Printf.printf "Left with %s\n" (V.exp_to_string e);
+	Printf.eprintf "Left with %s\n" (V.exp_to_string e);
 	failwith "cf_eval failed in eval_expr"
 
 let conjoin l =
@@ -125,7 +125,7 @@ struct
     method private fresh_symbolic str ty =
       let v = D.from_symbolic (self#fresh_symbolic_vexp str ty) in
 	if !opt_use_tags then
-	  Printf.printf "Symbolic %s is %Ld\n" str (D.get_tag v);
+	  Printf.eprintf "Symbolic %s is %Ld\n" str (D.get_tag v);
 	v
 
     method fresh_symbolic_1  s = self#fresh_symbolic s V.REG_1
@@ -179,7 +179,7 @@ struct
 	   let old_val = Hashtbl.find valuation var in
 	     if v <> old_val then
 	       if !opt_trace_unexpected then
-		 Printf.printf
+		 Printf.eprintf
 		   "Value mismatch: %s was 0x%Lx and then later 0x%Lx\n"
 		   str old_val v;
 	     var
@@ -189,7 +189,7 @@ struct
 	      new_var))
       in
 	if !opt_trace_taint then
-	  Printf.printf "Valuation %s = 0x%Lx:%s\n"
+	  Printf.eprintf "Valuation %s = 0x%Lx:%s\n"
 	    str v (V.type_to_string ty);
 	Hashtbl.replace valuation var v;
 	var
@@ -218,7 +218,7 @@ struct
 	   let old_val = Hashtbl.find valuation var in
 	     if v <> old_val then
 	       if !opt_trace_unexpected then
-		 Printf.printf
+		 Printf.eprintf
 		   "Value mismatch: %s:0x%Lx was 0x%Lx and then later 0x%Lx\n"
 		   str addr old_val v;
 	     var
@@ -228,7 +228,7 @@ struct
 	      new_var))
       in
 	if !opt_trace_taint then
-	  Printf.printf "Byte valuation %s:0x%Lx = 0x%Lx\n"
+	  Printf.eprintf "Byte valuation %s:0x%Lx = 0x%Lx\n"
 	    str addr v;
 	Hashtbl.replace valuation var v;
 	(match !input_string_mem_prefix with
@@ -362,7 +362,7 @@ struct
 	match lv with
 	  | V.Mem(mem_var, V.Constant(V.Int(_, addr)), V.REG_8) ->
 	      if not (Hashtbl.mem valuation d) then
-		Printf.printf "Unexpected symbolic byte %s\n"
+		Printf.eprintf "Unexpected symbolic byte %s\n"
 		  (V.lval_to_string lv);
 	      g_assert(Hashtbl.mem valuation d) 100 "Formula_manager.eval_var";
 	      D.from_concrete_8 (Int64.to_int (Hashtbl.find valuation d))
@@ -472,13 +472,13 @@ struct
 	  | V.Name(_)
 	  | V.Constant(V.Str(_))
 	    ->
-	      Printf.printf "Can't evaluate %s\n" (V.exp_to_string e);
+	      Printf.eprintf "Can't evaluate %s\n" (V.exp_to_string e);
 	      failwith "Unexpected expr in eval_expr"
       in
 	match loop e with
 	  | V.Constant(V.Int(_, i64)) -> i64
 	  | e ->
-	      Printf.printf "Left with %s\n" (V.exp_to_string e);
+	      Printf.eprintf "Left with %s\n" (V.exp_to_string e);
 	      failwith "Constant invariant failed in eval_expr"
 
     method concolic_eval_1 d =
@@ -502,13 +502,13 @@ struct
 	    let v = try List.assoc s ce 
 	    with Not_found ->
 	      0L 
-	      (* Printf.printf "Missing var %s in counterexample\n" s;
-	      List.iter (fun (s,v) -> Printf.printf "  %s = 0x%Lx\n" s v) ce;
+	      (* Printf.eprintf "Missing var %s in counterexample\n" s;
+	      List.iter (fun (s,v) -> Printf.eprintf "  %s = 0x%Lx\n" s v) ce;
 	      failwith "eval_var_from_ce failed on missing value" *)
 	    in
 	      V.Constant(V.Int(ty, v))
 	| _ ->
-	    Printf.printf "Bad lvalue: %s\n" (V.lval_to_string lv);
+	    Printf.eprintf "Bad lvalue: %s\n" (V.lval_to_string lv);
 	    failwith "Unhandled lvalue type in eval_var_from_ce"	    
 
     method eval_expr_from_ce ce e =
@@ -545,13 +545,13 @@ struct
 	  | V.Name(_)
 	  | V.Constant(V.Str(_))
 	    ->
-	      Printf.printf "Can't evaluate %s\n" (V.exp_to_string e);
+	      Printf.eprintf "Can't evaluate %s\n" (V.exp_to_string e);
 	      failwith "Unexpected expr in eval_expr_from_ce"
       in
 	match loop e with
 	  | V.Constant(V.Int(_, i64)) -> i64
 	  | e ->
-	      Printf.printf "Left with %s\n" (V.exp_to_string e);
+	      Printf.eprintf "Left with %s\n" (V.exp_to_string e);
 	      failwith "Constant invariant failed in eval_expr"
       
 
@@ -629,9 +629,9 @@ struct
 	      else
 		Hashtbl.add temp_vars_unweak var var;
 	      if !opt_trace_temps_encoded then
-		Printf.printf "%s = %s\n" s (encode_printable_exp e);
+		Printf.eprintf "%s = %s\n" s (encode_printable_exp e);
 	      if !opt_trace_temps then
-		Printf.printf "%s = %s\n" s (V.exp_to_string e);
+		Printf.eprintf "%s = %s\n" s (V.exp_to_string e);
 	      var
 
     method private simplify (v:D.t) ty =
@@ -735,7 +735,7 @@ struct
 	let v' = self#tempify v ty
 	in
 	  if !opt_trace_tables then
-	    (Printf.printf "Select from table %d at %s is %s\n"
+	    (Printf.eprintf "Select from table %d at %s is %s\n"
 	       table_num (V.exp_to_string idx_exp) (D.to_string_64 v');
 	     flush stdout);
 	  if table_num <> -1 then
@@ -748,11 +748,11 @@ struct
 	      remake
 	    else
 	      (let v = Hashtbl.find table_trees_cache (table_num, idx_exp) in
-		 Printf.printf "Hit table cache\n";
+		 Printf.eprintf "Hit table cache\n";
 		 v)
 	  in
 	    if !opt_trace_tables then
-	      (Printf.printf "Select from table %d at %s is %s\n"
+	      (Printf.eprintf "Select from table %d at %s is %s\n"
 		 table_num (V.exp_to_string idx_exp) (D.to_string_64 v);
 	       flush stdout);
 	    v
@@ -781,13 +781,13 @@ struct
 		  (i, true)
 
     method private print_table table ty i =
-      Printf.printf "Table %d is: " i;
+      Printf.eprintf "Table %d is: " i;
       let cnt = ref 0 in
 	List.iter
 	  (fun v ->
 	     incr cnt;
 	     if !cnt < 2048 (* 100 *) then
-	       Printf.printf "%s "
+	       Printf.eprintf "%s "
 		 (match ty with
 		    | V.REG_1  -> D.to_string_1  v
 		    | V.REG_8  -> D.to_string_8  v
@@ -797,8 +797,8 @@ struct
 		    | _ -> failwith "Can't happen"))
 	  table;
 	if !cnt > 2048 then
-	  Printf.printf "...";
-	Printf.printf "\n"
+	  Printf.eprintf "...";
+	Printf.eprintf "\n"
 
     (* Bitvectors can be seen as vectors or polynomials over the field
        GF(2), which consists of 0 and 1 with XOR as addition and AND as
@@ -861,9 +861,9 @@ struct
 	    g_assert(List.length spine = idx_wd) 100 "Formula_manager.table_check_gf2";
 	    if check_loop spine table_conc then
 	      (if !opt_trace_tables then
-		 (Printf.printf "Detected GF(2) linear operator with spine:\n";
-		  List.iter (fun n -> Printf.printf " 0x%Lx" n) spine;
-		  Printf.printf "\n");
+		 (Printf.eprintf "Detected GF(2) linear operator with spine:\n";
+		  List.iter (fun n -> Printf.eprintf " 0x%Lx" n) spine;
+		  Printf.eprintf "\n");
 	       Some spine)
 	    else
 	      None
@@ -902,7 +902,7 @@ struct
       let v = D.from_symbolic e in
       let v' = self#tempify v ty in
 	if !opt_trace_tables then
-	  (Printf.printf "Select from GF(2) table at %s is %s\n"
+	  (Printf.eprintf "Select from GF(2) table at %s is %s\n"
 	     (V.exp_to_string idx_exp) (D.to_string_64 v');
 	   flush stdout);
 	v'
@@ -911,9 +911,9 @@ struct
       let (table_num, is_new) = self#save_table table ty in
 	if !opt_trace_tables then
 	  (if table_num = -1 then
-	     Printf.printf " is uncached\n"
+	     Printf.eprintf " is uncached\n"
 	   else
-	     Printf.printf " is table %d\n" table_num);
+	     Printf.eprintf " is table %d\n" table_num);
 	match self#table_check_gf2 table idx_wd ty with
 	  | Some spine ->
 	      self#make_gf2_operator spine ty idx_exp
@@ -1057,22 +1057,22 @@ struct
 	(fun k _ s ->
 	   s + List.length k) tables 0
       in
-	Printf.printf "input_vars has %d entries\n" input_ents;
-	Printf.printf "region_base_vars has %d entries\n" rb_ents;
-	Printf.printf "region_vars has %d entries\n" rg_ents;
-	Printf.printf "seen_concolic has %d entries\n" sc_ents;
-	Printf.printf "valuation has %d entries\n" bv_ents;
-	Printf.printf "subexpr_to_temp_var has %d entries\n" se2t_ents;
-	Printf.printf "mem_byte_vars has %d entries\n" mbv_ents;
-	Printf.printf "mem_axioms has %d entries and %d nodes\n"
+	Printf.eprintf "input_vars has %d entries\n" input_ents;
+	Printf.eprintf "region_base_vars has %d entries\n" rb_ents;
+	Printf.eprintf "region_vars has %d entries\n" rg_ents;
+	Printf.eprintf "seen_concolic has %d entries\n" sc_ents;
+	Printf.eprintf "valuation has %d entries\n" bv_ents;
+	Printf.eprintf "subexpr_to_temp_var has %d entries\n" se2t_ents;
+	Printf.eprintf "mem_byte_vars has %d entries\n" mbv_ents;
+	Printf.eprintf "mem_axioms has %d entries and %d nodes\n"
 	  ma_ents ma_nodes;
-	Printf.printf "temp_var_num_to_subexpr has %d entries and %d bytes\n"
+	Printf.eprintf "temp_var_num_to_subexpr has %d entries and %d bytes\n"
 	  t2se_ents t2se_bytes;
-	Printf.printf "temp_vars_weak has %d entries\n" tw_ents;
-	Printf.printf "temp_vars_unweak has %d entries\n" tu_ents;
-	Printf.printf "table_trees_cache has %d entries and %d nodes\n"
+	Printf.eprintf "temp_vars_weak has %d entries\n" tw_ents;
+	Printf.eprintf "temp_vars_unweak has %d entries\n" tu_ents;
+	Printf.eprintf "table_trees_cache has %d entries and %d nodes\n"
 	  ttree_ents ttree_nodes;
-	Printf.printf "tables has %d entries and %d nodes\n"
+	Printf.eprintf "tables has %d entries and %d nodes\n"
 	  tables_ents tables_nodes;
 	(input_ents + rb_ents + rg_ents + sc_ents + bv_ents + se2t_ents +
 	   mbv_ents + ma_ents + t2se_ents + te_ents + ttree_ents + tables_ents,

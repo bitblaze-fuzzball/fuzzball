@@ -107,7 +107,7 @@ class pointer_management = object(self)
 	     caused by a subject program bug. It has previously been
 	     triggered by the pointer_management data not being properly
 	     cleared/restored between paths. *)
-	  Printf.printf "Overlapping alloc: 0x%08Lx+%Ld\n" addr len
+	  Printf.eprintf "Overlapping alloc: 0x%08Lx+%Ld\n" addr len
 	    (* raise Overlapping_Alloc *)
       end
 	
@@ -158,7 +158,7 @@ class pointer_management = object(self)
 		    ("double-freed-addr", (json_addr addr))];
        raise Double_Free)
     | IT.DeallocationSizeMismatch _ ->
-	Printf.printf "Ignoring unsupported partial dealloc of 0x%Lx+0x%Lx\n"
+	Printf.eprintf "Ignoring unsupported partial dealloc of 0x%Lx+0x%Lx\n"
 	  addr len;
 	(* We no longer treat this as indicating a program problem,
 	   since it can happen legitimately, including in a specific CGC

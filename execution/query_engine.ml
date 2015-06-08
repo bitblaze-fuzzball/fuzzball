@@ -50,9 +50,9 @@ let print_ce ce =
   List.iter
     (fun (var_s, value) ->
        if value <> 0L then
-	 Printf.printf "%s=0x%Lx " var_s value)
+	 Printf.eprintf "%s=0x%Lx " var_s value)
     ce;
-  Printf.printf "\n";
+  Printf.eprintf "\n";
 
 class parallel_check_engine (e1:query_engine) (e2:query_engine) = object(self)
   inherit query_engine
@@ -98,25 +98,25 @@ class parallel_check_engine (e1:query_engine) (e2:query_engine) = object(self)
     let (r1, ce1) = e1#query e and
 	(r2, ce2) = e2#query e in
       if r1 <> r2 then
-	(Printf.printf "Solver result mismatch:\n";
+	(Printf.eprintf "Solver result mismatch:\n";
 	 List.iter
 	   (fun (var, rhs) ->
-	      Printf.printf "%s := %s\n" (V.var_to_string var)
+	      Printf.eprintf "%s := %s\n" (V.var_to_string var)
 		(V.exp_to_string rhs)) (List.rev eqns);
 	 List.iter
-	   (fun e -> Printf.printf "%s AND\n" (V.exp_to_string e))
+	   (fun e -> Printf.eprintf "%s AND\n" (V.exp_to_string e))
 	   (List.rev conds);
-	 Printf.printf "in query %s\n" (V.exp_to_string e);
-	 Printf.printf "Solver 1 says %s, solver 2 says %s\n"
+	 Printf.eprintf "in query %s\n" (V.exp_to_string e);
+	 Printf.eprintf "Solver 1 says %s, solver 2 says %s\n"
 	   (string_of_result r1) (string_of_result r2);
 	 (match r1 with
 	    | Some false ->
-		Printf.printf "Solver 1's assignment is:\n";
+		Printf.eprintf "Solver 1's assignment is:\n";
 		print_ce ce1;
 	    | _ -> ());
 	 (match r2 with
 	    | Some false ->
-		Printf.printf "Solver 2's assignment is:\n";
+		Printf.eprintf "Solver 2's assignment is:\n";
 		print_ce ce2;
 	    | _ -> ());
 	 (None, []))	  

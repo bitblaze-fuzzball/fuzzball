@@ -108,7 +108,7 @@ let encode_exp_flags e printable =
 	 | V.REG_64 -> 'l'
 	 | V.TMem(V.REG_32, V.Little) -> 'M'
 	 | _ ->
-	     Printf.printf "Bad type: %s\n" (V.type_to_string t);
+	     Printf.eprintf "Bad type: %s\n" (V.type_to_string t);
 	     failwith "Unexpected variable type in encode_exp") in
       push c;
       if printable then
@@ -273,7 +273,7 @@ let encode_exp_flags e printable =
     | V.Unknown(s) -> push 'U'; push_string s
     | V.Let(_, _, _)
       ->
-	Printf.printf "Offending exp: %s\n" (V.exp_to_string e);
+	Printf.eprintf "Offending exp: %s\n" (V.exp_to_string e);
 	failwith "Unexpected expr type in encode_exp"
   in
     loop e;

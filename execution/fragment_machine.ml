@@ -652,7 +652,7 @@ struct
       in
       let full_length = List.length event_history in
 	if full_length > 1000 then
-	  Printf.printf "Event history has %d entries, only returning 1000\n"
+	  Printf.eprintf "Event history has %d entries, only returning 1000\n"
 	    full_length;
 	List.rev (nth_head 1000 event_history)
 
@@ -670,7 +670,7 @@ struct
 	    if event_count < 100 then
               event_history <- entry :: event_history
 	    else if event_count = 100 then
-	      Printf.printf
+	      Printf.eprintf
 		"Throttling at 100 events from instruction %Ld (0x%08Lx)\n"
 		insn_count eip
 
@@ -697,11 +697,11 @@ struct
        if !opt_trace_registers then
 	 self#print_regs;
        if !opt_trace_eip then
-	 Printf.printf "EIP is 0x%08Lx\n" eip;
+	 Printf.eprintf "EIP is 0x%08Lx\n" eip;
        insn_count <- Int64.succ insn_count;
        (if !opt_trace_unique_eips then
 	   (if not (Hashtbl.mem unique_eips eip) then
-	       (Printf.printf "Saw new EIP 0x%08Lx\n" eip;
+	       (Printf.eprintf "Saw new EIP 0x%08Lx\n" eip;
 		Hashtbl.add unique_eips eip ())));
       (* Libasmir.print_disasm_rawbytes Libasmir.Bfd_arch_i386 eip insn_bytes;
 	 print_string "\n"; *)
@@ -796,8 +796,8 @@ struct
 	      let depth = List.length call_stack and
 		  ret_addr = get_retaddr esp
 	      in
-		for i = 0 to depth - 1 do Printf.printf " " done;
-		Printf.printf
+		for i = 0 to depth - 1 do Printf.eprintf " " done;
+		Printf.eprintf
 		  "Call from 0x%08Lx to 0x%08Lx (return to 0x%08Lx)\n"
 		  last_eip eip ret_addr;
 		call_stack <- (esp, last_eip, eip, ret_addr) :: call_stack;
@@ -812,8 +812,8 @@ struct
 		if false then
 		  g_assert(is_sorted call_stack) 100 "Fragment_machine.trace_call_stack";
 		let depth = List.length call_stack in
-		  for i = 0 to depth - 2 do Printf.printf " " done;
-		  Printf.printf "Return from 0x%08Lx to 0x%08Lx\n"
+		  for i = 0 to depth - 2 do Printf.eprintf " " done;
+		  Printf.eprintf "Return from 0x%08Lx to 0x%08Lx\n"
 		    last_eip eip;
 		  pop_callstack esp;
 		  if false then
@@ -1233,20 +1233,20 @@ struct
       self#set_short_var R_SS (Int32.to_int regs.Temu_state.xss)
 
     method private print_reg32 str r = 
-	Printf.printf "%s: " str;
-	Printf.printf "%s\n"
+	Printf.eprintf "%s: " str;
+	Printf.eprintf "%s\n"
 	  (D.to_string_32 
 	     (self#get_int_var (Hashtbl.find reg_to_var r)))
      
     method private print_reg1 str r = 
-	Printf.printf "%s: " str;
-	Printf.printf "%s\n"
+	Printf.eprintf "%s: " str;
+	Printf.eprintf "%s\n"
 	  (D.to_string_1 
 	     (self#get_int_var (Hashtbl.find reg_to_var r)))
 
     method private print_reg64 str r =
-	Printf.printf "%s: " str;
-	Printf.printf "%s\n"
+	Printf.eprintf "%s: " str;
+	Printf.eprintf "%s\n"
 	  (D.to_string_64
 	     (self#get_int_var (Hashtbl.find reg_to_var r)))
 
@@ -1258,14 +1258,14 @@ struct
       with
 	| NotConcrete(_) -> ""
       in
-	(Printf.printf "FP%d[%s]: %s%s\n" idx
+	(Printf.eprintf "FP%d[%s]: %s%s\n" idx
 	   (D.to_string_8
 	      (self#get_int_var (Hashtbl.find reg_to_var tag)))
 	   (D.to_string_64 val_d)) as_float
 
     method private print_reg128 str rh rl =
-      Printf.printf "%s: " str;
-      Printf.printf "%s %s\n"
+      Printf.eprintf "%s: " str;
+      Printf.eprintf "%s %s\n"
 	(D.to_string_64
 	   (self#get_int_var (Hashtbl.find reg_to_var rh)))
 	(D.to_string_64
@@ -1571,25 +1571,25 @@ struct
     method finish_fuzz s =
       if not disqualified then
         (if !opt_finish_immediately then
-	   (Printf.printf "Finishing (immediately), %s\n" s;
+	   (Printf.eprintf "Finishing (immediately), %s\n" s;
 	    fuzz_finish_reasons <- s :: fuzz_finish_reasons;
 	    raise FinishNow);
 	 if !opt_trace_stopping then
-	   Printf.printf "Final iteration (%d previous reasons), %s\n"
+	   Printf.eprintf "Final iteration (%d previous reasons), %s\n"
 	     (List.length fuzz_finish_reasons) s;
 	 if List.length fuzz_finish_reasons < 15 then
 	   fuzz_finish_reasons <- s :: fuzz_finish_reasons
 	 else
 	   if !opt_trace_stopping || reason_warned then (
 	     reason_warned <- true;
-	     Printf.printf ("fuzz_finish_reasons list exceeded 15..."
+	     Printf.eprintf ("fuzz_finish_reasons list exceeded 15..."
 			    ^^" ignoring new reason\n")))
 
     method unfinish_fuzz s =
       fuzz_finish_reasons <- [];
       disqualified <- true;
       if !opt_trace_stopping then
-	Printf.printf "Non-finish condition %s\n" s
+	Printf.eprintf "Non-finish condition %s\n" s
 
     method finish_reasons =
       if disqualified then
@@ -1635,7 +1635,7 @@ struct
       try
 	let v = V.VarHash.find reg_store var in
 	  (* if v = D.uninit then
-	     Printf.printf "Warning: read uninitialized register %s\n"
+	     Printf.eprintf "Warning: read uninitialized register %s\n"
 	     vname; *)
 	  v
       with
@@ -1681,8 +1681,8 @@ struct
       (* rewrite this call -- JTT *)
       (*
       (match typ with
-      | V.REG_16 -> Printf.printf "Storing 16 : %d\n" (D.to_concrete_16 value)
-      | V.REG_32 -> Printf.printf "Storing 32 : %s\n" (Int64.to_string
+      | V.REG_16 -> Printf.eprintf "Storing 16 : %d\n" (D.to_concrete_16 value)
+      | V.REG_32 -> Printf.eprintf "Storing 32 : %s\n" (Int64.to_string
 							 (D.to_concrete_32 value))
       | _ -> ());
       *)
@@ -2228,7 +2228,7 @@ struct
 			    if !opt_noop_unhandled_special then
 			      loop rest
 			    else  
-			    (Printf.printf "Unhandled special |%s|\n" str;
+			    (Printf.eprintf "Unhandled special |%s|\n" str;
 			     failwith "Unhandled special"))
 		 | V.Label(l) ->
 		     if ((String.length l > 5) && 
@@ -2547,7 +2547,7 @@ struct
       let rec loop ebp =
 	let (prev_ebp, prev_ebp_s) = read_addr ebp and
 	    (_, ret_addr_s) = read_addr (Int64.add ebp 4L) in
-	  Printf.printf "0x%08Lx %s %s\n" ebp prev_ebp_s ret_addr_s;
+	  Printf.eprintf "0x%08Lx %s %s\n" ebp prev_ebp_s ret_addr_s;
 	  if (prev_ebp <> 0L) then
 	    loop prev_ebp
       in
@@ -2584,7 +2584,7 @@ struct
 
     method watchpoint =
       match !opt_watch_expr with
-	| Some e -> Printf.printf "Watched expression %s = %s\n"
+	| Some e -> Printf.eprintf "Watched expression %s = %s\n"
 	    (match !opt_watch_expr_str with Some s -> s | None -> "???")
 	      (self#eval_expr_to_string e)
 	| None -> ()

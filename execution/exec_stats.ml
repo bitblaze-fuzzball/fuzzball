@@ -31,27 +31,27 @@ let check_memory_usage (fm:Fragment_machine.fragment_machine) trans_cache =
   let (form_ents, form_nodes) = fm#measure_form_man_size in
   let dt_nodes = fm#measure_dt_size in
   let (reg_nodes, temps_nodes) = fm#measure_size in
-    Printf.printf "Translation cache has %d entries, %d nodes\n"
+    Printf.eprintf "Translation cache has %d entries, %d nodes\n"
       (Hashtbl.length trans_cache) tc_size;
-    Printf.printf "Memory has %d entries, %d nodes, %d concrete bytes\n"
+    Printf.eprintf "Memory has %d entries, %d nodes, %d concrete bytes\n"
       mem_ents mem_nodes mem_conc;
-    Printf.printf
+    Printf.eprintf
       "Frag. machine using %d nodes in registers, %d nodes in temps\n"
       reg_nodes temps_nodes;
-    Printf.printf "Formula manager has %d entries, %d nodes\n"
+    Printf.eprintf "Formula manager has %d entries, %d nodes\n"
       form_ents form_nodes;
-    Printf.printf "Decision tree (on disk) has %d nodes\n" dt_nodes;
-    Printf.printf "Total counted size is %d nodes\n"
+    Printf.eprintf "Decision tree (on disk) has %d nodes\n" dt_nodes;
+    Printf.eprintf "Total counted size is %d nodes\n"
       (mem_nodes + reg_nodes + temps_nodes + tc_size + form_nodes);
-    Printf.printf "/proc size is %s\n" (check_memory_size ());
+    Printf.eprintf "/proc size is %s\n" (check_memory_size ());
     flush stdout;
     Gc.print_stat stdout
 
 let final_check_memory_usage () =
   Gc.full_major ();
   Gc.compact ();
-  Printf.printf "After final collection:\n";
-  Printf.printf "/proc size is %s\n" (check_memory_size ());
+  Printf.eprintf "After final collection:\n";
+  Printf.eprintf "/proc size is %s\n" (check_memory_size ());
   flush stdout;
   Gc.print_stat stdout
 
@@ -75,19 +75,19 @@ let periodic_stats fm at_end force =
   if !opt_gc_stats || force then
     Gc.print_stat stdout;
   if (!opt_solver_stats && at_end) || force then
-    (Printf.printf "Solver returned satisfiable %Ld time(s)\n" !solver_sats;
-     Printf.printf "Solver returned unsatisfiable %Ld time(s)\n"
+    (Printf.eprintf "Solver returned satisfiable %Ld time(s)\n" !solver_sats;
+     Printf.eprintf "Solver returned unsatisfiable %Ld time(s)\n"
        !solver_unsats;
-     Printf.printf "Solver timed out (treated as unsat) %Ld time(s)\n"
+     Printf.eprintf "Solver timed out (treated as unsat) %Ld time(s)\n"
        !solver_fake_unsats;
-     Printf.printf "Solver failed %Ld time(s)\n" !solver_fails)
+     Printf.eprintf "Solver failed %Ld time(s)\n" !solver_fails)
 
 let add_periodic_hook fm period =
   let insn_count = ref 0L in
   let hook fm eip =
     insn_count := Int64.succ !insn_count;
     if Int64.rem !insn_count period = 0L then
-      (Printf.printf "%Ld instructions executed\r" !insn_count;
+      (Printf.eprintf "%Ld instructions executed\r" !insn_count;
        periodic_stats fm false false;
        flush stdout)
   in

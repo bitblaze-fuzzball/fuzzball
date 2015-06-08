@@ -108,7 +108,7 @@ let with_mem_bytemap (s_addr:int64) (size:int) (trans_addr:int64) =
 		Hashtbl.replace mem_bytemap addr trans_addr;
 		if not (Hashtbl.mem invalid_list trans_addr) then(
 			Hashtbl.add invalid_list trans_addr prev;
-			(*Printf.printf "[invalid_list] Add 0x%08Lx 0x%08Lx\n" trans_addr prev*))
+			(*Printf.eprintf "[invalid_list] Add 0x%08Lx 0x%08Lx\n" trans_addr prev*))
 		)
 	else
 		Hashtbl.add mem_bytemap addr trans_addr
@@ -229,17 +229,17 @@ let print_insns start_eip (_, sl) insn_num endl =
   let eip = ref (Some start_eip) in
   let print_eip () = 
     match (insn_num, !eip) with
-      | (Some i, Some pc) -> Printf.printf "%10Ld %08Lx: " i pc; eip := None
-      | (None, Some pc) -> Printf.printf "%08Lx: " pc; eip := None
-      | (Some _, None) -> Printf.printf "                     "
-      | (None, None) -> Printf.printf "          "
+      | (Some i, Some pc) -> Printf.eprintf "%10Ld %08Lx: " i pc; eip := None
+      | (None, Some pc) -> Printf.eprintf "%08Lx: " pc; eip := None
+      | (Some _, None) -> Printf.eprintf "                     "
+      | (None, None) -> Printf.eprintf "          "
   in
     List.iter
       (function
 	 | V.Comment(s) ->
 	     if FM.comment_is_insn s then
 	       (print_eip();
-		Printf.printf "%s%c" s endl)
+		Printf.eprintf "%s%c" s endl)
 	 | V.Label(lab) ->
 	     if (String.length lab > 5) &&
 	       (String.sub lab 0 5) = "pc_0x" then
@@ -253,7 +253,7 @@ let run_one_insn fm gamma eip bytes =
   in
   let prog = (dl, sl) in
     if !opt_trace_eip then
-      Printf.printf "EIP is 0x%08Lx\n" eip;
+      Printf.eprintf "EIP is 0x%08Lx\n" eip;
     fm#set_eip eip;
     if !opt_trace_registers then
       fm#print_regs;

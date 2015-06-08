@@ -127,7 +127,7 @@ let load_segment fm ic phr virt_off is_main_prog =
   let partial = Int64.rem phr.filesz 0x1000L in
   let vbase = Int64.add phr.vaddr virt_off in
     if !opt_trace_setup then
-      Printf.printf "Loading %10s segment from %08Lx to %08Lx\n"
+      Printf.eprintf "Loading %10s segment from %08Lx to %08Lx\n"
 	type_str vbase
 	(Int64.add vbase phr.filesz);
     seek_in ic (Int64.to_int phr.offset);
@@ -145,7 +145,7 @@ let load_segment fm ic phr virt_off is_main_prog =
     if phr.memsz > phr.filesz && type_str = "data" then
       (* E.g., a BSS region. Zero fill to avoid uninit-value errors. *)
       (if !opt_trace_setup then
-	 Printf.printf "              Zero filling from %08Lx to %08Lx\n"
+	 Printf.eprintf "              Zero filling from %08Lx to %08Lx\n"
 	   (Int64.add vbase phr.filesz) (Int64.add vbase phr.memsz);
        let va = ref (Int64.add vbase phr.filesz) in
        let first_full = (Int64.logand (Int64.add !va 4095L)
@@ -169,13 +169,13 @@ let load_segment fm ic phr virt_off is_main_prog =
 	 let last_aligned = (Int64.logand (Int64.add !va 4095L)
 			       (Int64.lognot 4095L)) in
 	   if !opt_trace_setup then
-	     Printf.printf "        Extra zero filling from %08Lx to %08Lx\n"
+	     Printf.eprintf "        Extra zero filling from %08Lx to %08Lx\n"
 	       !va last_aligned;
 	   (if is_main_prog then
 	      match !initial_break with 
 		| None -> initial_break := Some last_aligned;
 		    if !opt_trace_setup then
-		      Printf.printf "Setting initial break to 0x%08Lx\n"
+		      Printf.eprintf "Setting initial break to 0x%08Lx\n"
 			last_aligned;
 		| _ -> ())	;
 	   let last_space = Int64.to_int (Int64.sub last_aligned !va) in
@@ -185,7 +185,7 @@ let load_partial_segment fm ic phr vbase size =
   let i = IO.input_channel ic in
   let file_base = Int64.sub vbase phr.vaddr in
     if !opt_trace_setup then
-      Printf.printf "Loading     extra region from %08Lx to %08Lx\n"
+      Printf.eprintf "Loading     extra region from %08Lx to %08Lx\n"
 	vbase (Int64.add vbase size);
     g_assert(size <= 4096L) 100 "Linux_loader.load_partial_segment";
     g_assert((Int64.add file_base size) <= phr.filesz) 100 "Linux_loader.load_partial_segment";
@@ -198,7 +198,7 @@ let load_ldso fm dso vaddr =
   let ic = open_in (chroot dso) in
   let dso_eh = read_elf_header ic in
     if !opt_trace_setup then
-      Printf.printf "Loading from dynamic linker %s\n" dso;
+      Printf.eprintf "Loading from dynamic linker %s\n" dso;
     g_assert(dso_eh.eh_type = 3) 100 "Linux_loader.load_ldso";
     let phrs = read_program_headers ic dso_eh in
       (* If the loader already has a non-zero base address, disable
@@ -217,7 +217,7 @@ let load_x87_emulator fm emulator =
   let ic = open_in emulator in
   let eh = read_elf_header ic in
     if !opt_trace_setup then
-      Printf.printf "Loading from x87 emulator %s\n" emulator;
+      Printf.eprintf "Loading from x87 emulator %s\n" emulator;
     g_assert(eh.eh_type = 2) 100 "Linux_loader.load_x87_emulator";
     List.iter
       (fun phr ->
@@ -253,20 +253,20 @@ let build_startup_state (fm : Fragment_machine.fragment_machine) eh load_base ld
        (fun key -> 
 	  if Hashtbl.mem opt_extra_env key then
 	    (if !opt_trace_setup then
-	       Printf.printf "From command line, setting env. var %s to %s\n"
+	       Printf.eprintf "From command line, setting env. var %s to %s\n"
 		 key (Hashtbl.find opt_extra_env key);
 	     [key ^ "=" ^ (Hashtbl.find opt_extra_env key)])
 	  else
 	    try
 	      let v = Sys.getenv key in
 		if !opt_trace_setup then
-		  Printf.printf "From real env., setting env. var %s to %s\n"
+		  Printf.eprintf "From real env., setting env. var %s to %s\n"
 		    key v;
 		[key ^ "=" ^ v]
 	    with
 		Not_found -> 
 		  if !opt_trace_setup then
-		    Printf.printf "Skipping missing env. var %s\n" key;
+		    Printf.eprintf "Skipping missing env. var %s\n" key;
 		  [])
        env_keys)
   in
@@ -319,7 +319,7 @@ let build_startup_state (fm : Fragment_machine.fragment_machine) eh load_base ld
       List.iter push_word (List.rev argv_locs);
       push_word (Int64.of_int (List.length argv)); (* argc *)
       if !opt_trace_setup then
-	Printf.printf "Initial ESP is 0x%08Lx\n" !esp;
+	Printf.eprintf "Initial ESP is 0x%08Lx\n" !esp;
       let sp = match !opt_arch with
 	| X86 -> R_ESP
 	| X64 -> R_RSP

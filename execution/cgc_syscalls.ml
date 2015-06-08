@@ -334,7 +334,7 @@ object(self)
     let rl = read_bitmap readfds and
         wl = read_bitmap writefds in
     if !opt_trace_syscalls then
-      Printf.printf "\nfdwait(%d, [%s], [%s], 0x%08Lx, 0x%08Lx)"
+      Printf.eprintf "\nfdwait(%d, [%s], [%s], 0x%08Lx, 0x%08Lx)"
         nfds (format_fds rl) (format_fds wl) timeout ready_cnt_p;
     try
       let map_fd fds =
@@ -540,7 +540,7 @@ object(self)
               let arg1 = read_1_reg () in
               let status = arg1 in
 		if !opt_trace_syscalls then
-                  Printf.printf "terminate(%Ld) (no return)\n" status;
+                  Printf.eprintf "terminate(%Ld) (no return)\n" status;
 		self#cgcos_terminate status;
 		None
 	  | 2 -> (* transmit, similar to Linux sys_write *)
@@ -552,7 +552,7 @@ object(self)
 		  tx_bytes = arg4 in
 	      (* povxml -- corresponds to the transmit in povs *)
 	      if !opt_trace_syscalls then
-                Printf.printf "transmit(%d, 0x%08Lx, %d, 0x%08Lx)"
+                Printf.eprintf "transmit(%d, 0x%08Lx, %d, 0x%08Lx)"
 		  fd buf count tx_bytes;
 	      let bytes = read_buf buf count in
 	      let prov = 
@@ -588,7 +588,7 @@ object(self)
 		  num_bytes_p = arg4 in
 	      (* povxml -- insert a read here *)
 		if !opt_trace_syscalls then
-                  Printf.printf "receive(%d, 0x%08Lx, %d, 0x%08Lx)"
+                  Printf.eprintf "receive(%d, 0x%08Lx, %d, 0x%08Lx)"
 		    fd buf count num_bytes_p;
 		self#cgcos_receive fd buf count num_bytes_p;
 		Some num_bytes_p
@@ -608,7 +608,7 @@ object(self)
 		  is_exec = Int64.to_int arg2 and
 		  addr_p  = arg3 in
 		if !opt_trace_syscalls then
-		  Printf.printf "allocate(%Ld, %d, 0x%08Lx)"
+		  Printf.eprintf "allocate(%Ld, %d, 0x%08Lx)"
 		    len is_exec addr_p;
 		self#cgcos_allocate len is_exec addr_p;
 		Some addr_p
@@ -618,7 +618,7 @@ object(self)
 		  len  = arg2
 	      in
 		if !opt_trace_syscalls then
-		  Printf.printf "deallocate(0x%08Lx, %Ld)" addr len;
+		  Printf.eprintf "deallocate(0x%08Lx, %Ld)" addr len;
 		self#cgcos_deallocate addr len;
 		None
 	  | 7 -> (* random, similar to Linux read from /dev/urandom  *)
@@ -628,7 +628,7 @@ object(self)
 		count_out_p = arg3
 	    in
 	    if !opt_trace_syscalls then
-	      Printf.printf "random(0x%08Lx, %d, 0x%08Lx)"
+	      Printf.eprintf "random(0x%08Lx, %d, 0x%08Lx)"
 		buf count count_out_p;
 	      (match !opt_log_random with
 	      | Never -> ()
@@ -645,13 +645,13 @@ object(self)
       in
 	if !opt_trace_syscalls then
 	  let ret_val = fm#get_word_var ret_reg in
-            Printf.printf " = %s" (self#errno_to_string ret_val);
+            Printf.eprintf " = %s" (self#errno_to_string ret_val);
 	    (match result_p with
 	       | None -> ()
 	       | Some ptr ->
 		   let v = load_word_or_zero ptr in
-		     Printf.printf ", %Ld (0x%08Lx)" (fix_s32 v) v);
-	    Printf.printf "\n";
+		     Printf.eprintf ", %Ld (0x%08Lx)" (fix_s32 v) v);
+	    Printf.eprintf "\n";
 	    flush stdout
 	      
   method handle_special str : V.stmt list option =

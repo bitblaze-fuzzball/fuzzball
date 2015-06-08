@@ -63,7 +63,7 @@ class stpvc_engine = object(self)
 
   method private real_assert_eq (var, rhs) =
     let form = V.BinOp(V.EQ, V.Lval(V.Temp(var)), rhs) in
-    (* Printf.printf "Asserting %s\n" (V.exp_to_string form); *)
+    (* Printf.eprintf "Asserting %s\n" (V.exp_to_string form); *)
     let f = Stpvc.e_bvbitextract vc (Vine_stpvc.vine_to_stp vc self#ctx form) 0
     in
       Stpvc.do_assert vc f;
@@ -83,7 +83,7 @@ class stpvc_engine = object(self)
 		  (Stpvc.e_bvbitextract vc
 		     (Vine_stpvc.vine_to_stp vc self#ctx conj) 0)))
     in
-    (* Printf.printf "STP formula is %s\n" (Stpvc.to_string s);
+    (* Printf.eprintf "STP formula is %s\n" (Stpvc.to_string s);
        flush stdout; *)
     let result = Stpvc.query vc s in
     let ce = if result then [] else
@@ -168,7 +168,7 @@ class stpvc_engine = object(self)
 	   | Some q -> Printf.fprintf oc "QUERY(%s);\n"
 	       (Stpvc.to_string q));
 	 close_out oc;
-	 Printf.printf "Saved STP commands in %s\n%!" fname);
+	 Printf.eprintf "Saved STP commands in %s\n%!" fname);
     asserts <- [];
     the_query <- None;
     Libstp.vc_clearDecls vc;

@@ -11,7 +11,7 @@ let read_cgcef_header ic =
   let i = IO.input_channel ic in
   let ident = IO.really_nread i 9 in
     if ident <> "\x7fCGC\x01\x01\x01\x43\x01" then
-      (Printf.printf "DECREE binary header mismatch: got %s\n" ident;
+      (Printf.eprintf "DECREE binary header mismatch: got %s\n" ident;
        failwith "DECREE binary header mismatch");
     ignore(IO.really_nread i 7); (* 'random values', e.g. "Merino\0" *)
     (* OCaml structure initialization isn't guaranteed to happen
@@ -46,7 +46,7 @@ let read_cgcef_header ic =
 let build_startup_state fm eh load_base =
   let esp = ref 0xbaaab000L in
     if !opt_trace_setup then
-      Printf.printf "Initial ESP is 0x%08Lx\n" !esp;
+      Printf.eprintf "Initial ESP is 0x%08Lx\n" !esp;
     fm#set_word_var R_ESP !esp
 
 let load_cb (fm : fragment_machine) fname load_base data_too do_setup extras =

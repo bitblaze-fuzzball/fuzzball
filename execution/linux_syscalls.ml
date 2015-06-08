@@ -1839,7 +1839,7 @@ object(self)
         wl = read_bitmap writefds and
         el = read_bitmap exceptfds in
     if !opt_trace_syscalls then
-      Printf.printf "\nselect(%d, [%s], [%s], [%s], 0x%08Lx)"
+      Printf.eprintf "\nselect(%d, [%s], [%s], [%s], 0x%08Lx)"
         nfds (format_fds rl) (format_fds wl) (format_fds el) timeout;
     try
       let map_fd fds =
@@ -2242,7 +2242,7 @@ object(self)
 	base  = load_word (lea uinfo 0 0 4) and
 	limit = load_word (lea uinfo 0 0 8) in
       if !opt_trace_syscalls then
-	Printf.printf " set_thread_area({entry: %Ld, base: %Lx, limit: %Ld})\n"
+	Printf.eprintf " set_thread_area({entry: %Ld, base: %Lx, limit: %Ld})\n"
 	  old_ent base limit;
       (match (old_ent, base, limit) with
 	 | (0xffffffffL, _, _) ->
@@ -2467,7 +2467,7 @@ object(self)
 	st = float_to_clocks (pt.Unix.tms_stime) and
 	cut = float_to_clocks (pt.Unix.tms_cutime) and
 	cst = float_to_clocks (pt.Unix.tms_cstime) in
-      (* Printf.printf "times: %Ld %Ld %Ld %Ld\n" ut st cut cst; *)
+      (* Printf.eprintf "times: %Ld %Ld %Ld %Ld\n" ut st cut cst; *)
       store_word addr 0 ut;
       store_word addr 4 st;		 
       store_word addr 8 cut;
@@ -2656,7 +2656,7 @@ object(self)
 	     let arg1 = read_1_reg () in
 	     let status = arg1 in
 	       if !opt_trace_syscalls then
-		 Printf.printf "exit(%Ld) (no return)\n" status;
+		 Printf.eprintf "exit(%Ld) (no return)\n" status;
 	       self#sys_exit status
 	 | (_, 2) -> (* fork *)
 	     uh "Unhandled Linux system call fork (2)"
@@ -2666,7 +2666,7 @@ object(self)
 		 buf   = arg2 and
 		 count = Int64.to_int arg3 in
 	       if !opt_trace_syscalls then
-		 Printf.printf "read(%d, 0x%08Lx, %d)" fd buf count;
+		 Printf.eprintf "read(%d, 0x%08Lx, %d)" fd buf count;
 	       self#sys_read fd buf count;
 	 | (_, 4) -> (* write *)
 	     let (arg1, arg2, arg3) = read_3_regs () in
@@ -2674,7 +2674,7 @@ object(self)
 		 buf   = arg2 and
 		 count = Int64.to_int arg3 in
 	       if !opt_trace_syscalls then
-		 Printf.printf "write(%d, 0x%08Lx, %d)\n" fd buf count;
+		 Printf.eprintf "write(%d, 0x%08Lx, %d)\n" fd buf count;
 	       let bytes = read_buf buf count in
 		 self#sys_write fd bytes count
 	 | (_, 5) -> (* open *)
@@ -2688,13 +2688,13 @@ object(self)
 		 mode     = Int64.to_int arg3 in
 	     let path = fm#read_cstr path_buf in
 	       if !opt_trace_syscalls then
-		 Printf.printf "open(\"%s\", 0x%x, 0o%o)" path flags mode;
+		 Printf.eprintf "open(\"%s\", 0x%x, 0o%o)" path flags mode;
 	       self#sys_open path flags mode
 	 | (_, 6) -> (* close *)
 	     let arg1 = read_1_reg () in
 	     let fd = Int64.to_int arg1 in
 	       if !opt_trace_syscalls then
-		 Printf.printf "close(%d)" fd;
+		 Printf.eprintf "close(%d)" fd;
 	       self#sys_close fd
 	 | (ARM, 7) -> uh "No waitpid (7) syscall in Linux/ARM (E)ABI"
 	 | (X86, 7) -> (* waitpid *)
@@ -2706,14 +2706,14 @@ object(self)
 	     let oldpath = fm#read_cstr arg1 and
 		 newpath = fm#read_cstr arg2 in
 	       if !opt_trace_syscalls then
-		 Printf.printf "link(\"%s\", \"%s\")" oldpath newpath;
+		 Printf.eprintf "link(\"%s\", \"%s\")" oldpath newpath;
 	       self#sys_link oldpath newpath
 	 | (ARM, 10) -> uh "Check whether ARM unlink syscall matches x86"
 	 | (X86, 10) -> (* unlink *)
 	     let ebx = read_1_reg () in
 	     let path = fm#read_cstr ebx in
 	       if !opt_trace_syscalls then
-		 Printf.printf "unlink(\"%s\")" path;
+		 Printf.eprintf "unlink(\"%s\")" path;
 	       self#sys_unlink path
 	 | (_, 11) -> (* execve *)
 	     uh "Unhandled Linux system call execve (11)"
@@ -2722,14 +2722,14 @@ object(self)
 	     let ebx = read_1_reg () in
 	     let path = fm#read_cstr ebx in
 	       if !opt_trace_syscalls then
-		 Printf.printf "chdir(\"%s\")" path;
+		 Printf.eprintf "chdir(\"%s\")" path;
 	       self#sys_chdir path
 	 | (ARM, 13) -> uh "Check whether ARM time syscall matches x86"
 	 | (X86, 13) -> (* time *)
 	     let ebx = read_1_reg () in
 	     let addr = ebx in
 	       if !opt_trace_syscalls then
-		 Printf.printf "time(0x%08Lx)" addr;
+		 Printf.eprintf "time(0x%08Lx)" addr;
 	       self#sys_time addr
 	 | (_, 14) -> (* mknod *)
 	     uh "Unhandled Linux system call mknod (14)"
@@ -2738,7 +2738,7 @@ object(self)
 	     let path = fm#read_cstr arg1 and
 		 mode = Int64.to_int arg2 in
 	       if !opt_trace_syscalls then
-		 Printf.printf "chmod(\"%s\", 0o%o)" path mode;
+		 Printf.eprintf "chmod(\"%s\", 0o%o)" path mode;
 	       self#sys_chmod path mode
 	 | (_, 16) -> (* lchown *)
 	     uh "Unhandled Linux system call lchown (16)"
@@ -2755,11 +2755,11 @@ object(self)
 		 offset = ecx and
 		 whence = (Int64.to_int edx) in
 	       if !opt_trace_syscalls then
-		 Printf.printf "lseek(%d, %Ld, %d)" fd offset whence;
+		 Printf.eprintf "lseek(%d, %Ld, %d)" fd offset whence;
 	       self#sys_lseek fd offset whence
 	 | (_, 20) -> (* getpid *)
 	     if !opt_trace_syscalls then
-	       Printf.printf "getpid()";
+	       Printf.eprintf "getpid()";
 	     self#sys_getpid ()
 	 | (_, 21) -> (* mount *)
 	     uh "Unhandled Linux system call mount (21)"
@@ -2770,7 +2770,7 @@ object(self)
 	 | (ARM, 24) -> uh "Check whether ARM getuid syscall matches x86"
 	 | (X86, 24) -> (* getuid *)
 	     if !opt_trace_syscalls then
-	       Printf.printf "getuid()";
+	       Printf.eprintf "getuid()";
 	     self#sys_getuid ()
 	 | (_, 25) -> (* stime *)
 	     uh "Unhandled Linux system call stime (25)"
@@ -2780,7 +2780,7 @@ object(self)
          let arg = read_1_reg () in
          let sec = Int64.to_int arg in
          if !opt_trace_syscalls then
-           Printf.printf "alarm(%d)" sec;
+           Printf.eprintf "alarm(%d)" sec;
          self#sys_alarm sec
 	 | (ARM, 28) -> uh "No oldfstat (28) syscall in Linux/ARM (E)ABI"
 	 | (X86, 28) -> (* oldfstat *)
@@ -2793,7 +2793,7 @@ object(self)
 	     let path = fm#read_cstr ebx and
 		 times_buf = ecx in
 	       if !opt_trace_syscalls then
-		 Printf.printf "utime(\"%s\", 0x%08Lx)" path times_buf;
+		 Printf.eprintf "utime(\"%s\", 0x%08Lx)" path times_buf;
 	       self#sys_utime path times_buf
 	 | (ARM, 31) -> uh "No stty (31) syscall in Linux/ARM (E)ABI"
 	 | (X86, 31) -> (* stty *)
@@ -2807,7 +2807,7 @@ object(self)
 		 mode     = Int64.to_int arg2 in
 	     let path = fm#read_cstr path_buf in
 	       if !opt_trace_syscalls then
-		 Printf.printf "access(\"%s\", 0x%x)" path mode;
+		 Printf.eprintf "access(\"%s\", 0x%x)" path mode;
 	       self#sys_access path mode
 	 | (_, 34) -> (* nice *)
 	     uh "Unhandled Linux system call nice (34)"
@@ -2823,7 +2823,7 @@ object(self)
 	     let oldpath = fm#read_cstr arg1 and
 		 newpath = fm#read_cstr arg2 in
 	       if !opt_trace_syscalls then
-		 Printf.printf "rename(\"%s\", \"%s\")" oldpath newpath;
+		 Printf.eprintf "rename(\"%s\", \"%s\")" oldpath newpath;
 	       self#sys_rename oldpath newpath
 	 | (ARM, 39) -> uh "Check whether ARM mkdir syscall matches x86"
 	 | (X86, 39) -> (* mkdir *)
@@ -2832,7 +2832,7 @@ object(self)
 		 mode     = Int64.to_int ecx in
 	     let path = fm#read_cstr path_buf in
 	       if !opt_trace_syscalls then
-		 Printf.printf "mkdir(\"%s\", 0x%x)" path mode;
+		 Printf.eprintf "mkdir(\"%s\", 0x%x)" path mode;
 	       self#sys_mkdir path mode
 	 | (_, 40) -> (* rmdir *)
 	     uh "Unhandled Linux system call rmdir (40)"
@@ -2840,21 +2840,21 @@ object(self)
 	     let arg1 = read_1_reg () in
 	     let fd = Int64.to_int arg1 in
 	       if !opt_trace_syscalls then
-		 Printf.printf "dup(%d)" fd;
+		 Printf.eprintf "dup(%d)" fd;
 	       self#sys_dup fd
 	 | (ARM, 42) -> uh "Check whether ARM pipe syscall matches x86"
 	 | (X86, 42) -> (* pipe *)
 	     let ebx = read_1_reg () in
 	     let buf = ebx in
 	       if !opt_trace_syscalls then
-		 Printf.printf "pipe(0x%08Lx)" buf;
+		 Printf.eprintf "pipe(0x%08Lx)" buf;
 	       self#sys_pipe buf
 	 | (ARM, 43) -> uh "Check whether ARM times syscall matches x86"
 	 | (X86, 43) -> (* times *)
 	     let ebx = read_1_reg () in
 	     let addr = ebx in
 	       if !opt_trace_syscalls then
-		 Printf.printf "times(0x%08Lx)" addr;
+		 Printf.eprintf "times(0x%08Lx)" addr;
 	       self#sys_times addr
 	 | (ARM, 44) -> uh "No prof (44) syscall in Linux/ARM (E)ABI"
 	 | (X86, 44) -> (* prof *)
@@ -2863,14 +2863,14 @@ object(self)
 	     let arg1 = read_1_reg () in
 	     let addr = arg1 in
 	       if !opt_trace_syscalls then
-		 Printf.printf "brk(0x%08Lx)" addr;
+		 Printf.eprintf "brk(0x%08Lx)" addr;
 	       self#sys_brk addr
 	 | (_, 46) -> (* setgid *)
 	     uh "Unhandled Linux system call setgid (46)"
 	 | (ARM, 47) -> uh "Check whether ARM getgid syscall matches x86"
 	 | (X86, 47) -> (* getgid *)
 	     if !opt_trace_syscalls then
-	       Printf.printf "getgid()";
+	       Printf.eprintf "getgid()";
 	     self#sys_getgid ()
 	 | (ARM, 48) -> uh "No signal (48) syscall in Linux/ARM (E)ABI"
 	 | (X86, 48) -> (* signal *)
@@ -2878,12 +2878,12 @@ object(self)
 	 | (ARM, 49) -> uh "Check whether ARM geteuid syscall matches x86"
 	 | (X86, 49) -> (* geteuid *)
 	     if !opt_trace_syscalls then
-	       Printf.printf "geteuid()";
+	       Printf.eprintf "geteuid()";
 	     self#sys_geteuid ()
 	 | (ARM, 50) -> uh "Check whether ARM getegid syscall matches x86"
 	 | (X86, 50) -> (* getegid *)
 	     if !opt_trace_syscalls then
-	       Printf.printf "getegid()";
+	       Printf.eprintf "getegid()";
 	     self#sys_getegid ()
 	 | (_, 51) -> (* acct *)
 	     uh "Unhandled Linux system call acct (51)"
@@ -2898,7 +2898,7 @@ object(self)
 		 req  = arg2 and
 		 argp = arg3 in
 	       if !opt_trace_syscalls then
-		 Printf.printf "ioctl(%d, 0x%Lx, 0x%08Lx)" fd req argp;
+		 Printf.eprintf "ioctl(%d, 0x%Lx, 0x%08Lx)" fd req argp;
 	       self#sys_ioctl fd req argp;
 	 | (ARM, 55) -> uh "Check whether ARM fcntl syscall matches x86"
 	 | (X86, 55) -> (* fcntl *)
@@ -2907,7 +2907,7 @@ object(self)
 		 cmd = Int64.to_int ecx and
 		 arg = edx in
 	       if !opt_trace_syscalls then
-		 Printf.printf "fcntl(%d, %d, 0x%08Lx)" fd cmd arg;
+		 Printf.eprintf "fcntl(%d, %d, 0x%08Lx)" fd cmd arg;
 	       self#sys_fcntl fd cmd arg
 	 | (ARM, 56) -> uh "No mpx (56) syscall in Linux/ARM (E)ABI"
 	 | (X86, 56) -> (* mpx *)
@@ -2925,7 +2925,7 @@ object(self)
 	     let ebx = read_1_reg () in
 	     let mask = Int64.to_int ebx in
 	       if !opt_trace_syscalls then
-		 Printf.printf "umask(0o%03o)" mask;
+		 Printf.eprintf "umask(0o%03o)" mask;
 	       self#sys_umask mask;
 	 | (_, 61) -> (* chroot *)
 	     uh "Unhandled Linux system call chroot (61)"
@@ -2936,17 +2936,17 @@ object(self)
          let fd1 = Int64.to_int arg1 and
              fd2 = Int64.to_int arg2 in
          if !opt_trace_syscalls then
-           Printf.printf "dup2(%d,%d)" fd1 fd2;
+           Printf.eprintf "dup2(%d,%d)" fd1 fd2;
          self#sys_dup2 fd1 fd2
 	 | (ARM, 64) -> uh "Check whether ARM getppid syscall matches x86"
 	 | (X86, 64) -> (* getppid *)
 	     if !opt_trace_syscalls then
-	       Printf.printf "getppid()";
+	       Printf.eprintf "getppid()";
 	     self#sys_getppid ()
 	 | (ARM, 65) -> uh "Check whether ARM getpgrp syscall matches x86"
 	 | (X86, 65) -> (* getpgrp *)
 	     if !opt_trace_syscalls then
-	       Printf.printf "getpgrp()";
+	       Printf.eprintf "getpgrp()";
 	     self#sys_getpgrp ()
 	 | (_, 66) -> (* setsid *)
 	     uh "Unhandled Linux system call setsid (66)"
@@ -2964,7 +2964,7 @@ object(self)
 	     let ruid = Int64.to_int ebx and
 		 euid = Int64.to_int ecx in
 	       if !opt_trace_syscalls then
-		 Printf.printf "setreuid(%d, %d)" ruid euid;
+		 Printf.eprintf "setreuid(%d, %d)" ruid euid;
 	       self#sys_setreuid ruid euid
 	 | (_, 71) -> (* setregid *)
 	     uh "Unhandled Linux system call setregid (71)"
@@ -2980,7 +2980,7 @@ object(self)
 	     let resource = Int64.to_int ebx and
 		 rlim = ecx in
 	       if !opt_trace_syscalls then
-		 Printf.printf "setrlimit(%d, 0x%08Lx)" resource rlim;
+		 Printf.eprintf "setrlimit(%d, 0x%08Lx)" resource rlim;
 	       self#sys_setrlimit resource rlim
 	 | (_, 76) -> (* getrlimit *)
 	     uh "Unhandled Linux system call getrlimit (76)"
@@ -2989,14 +2989,14 @@ object(self)
 	     let who = Int64.to_int ebx and
 		 buf = ecx in
 	       if !opt_trace_syscalls then
-		 Printf.printf "getrusage(%d, 0x%08Lx)" who buf;
+		 Printf.eprintf "getrusage(%d, 0x%08Lx)" who buf;
 	       self#sys_getrusage who buf
 	 | (_, 78) -> (* gettimeofday *)
 	     let (arg1, arg2) = read_2_regs () in
 	     let timep = arg1 and
 		 zonep = arg2 in
 	       if !opt_trace_syscalls then
-		 Printf.printf "gettimeofday(0x%08Lx, 0x%08Lx)" timep zonep;
+		 Printf.eprintf "gettimeofday(0x%08Lx, 0x%08Lx)" timep zonep;
 	       self#sys_gettimeofday timep zonep
 	 | (_, 79) -> (* settimeofday *)
 	     uh "Unhandled Linux system call settimeofday (79)"
@@ -3011,7 +3011,7 @@ object(self)
          let target = (fm#read_cstr arg1) and
              linkpath = (fm#read_cstr arg2) in
          if !opt_trace_syscalls then
-           Printf.printf "symlink(%s, %s)" target linkpath;
+           Printf.eprintf "symlink(%s, %s)" target linkpath;
          self#sys_symlink target linkpath
 	 | (ARM, 84) -> uh "No oldlstat (84) syscall in Linux/ARM (E)ABI"
 	 | (X86, 84) -> (* oldlstat *)
@@ -3023,7 +3023,7 @@ object(self)
 		 buflen   = Int64.to_int arg3 in
 	     let path = fm#read_cstr path_buf in
 	       if !opt_trace_syscalls then
-		 Printf.printf "readlink(\"%s\", 0x%08Lx, %d)"
+		 Printf.eprintf "readlink(\"%s\", 0x%08Lx, %d)"
 		   path out_buf buflen;
 	       self#sys_readlink path out_buf buflen
 	 | (_, 86) -> (* uselib *)
@@ -3044,7 +3044,7 @@ object(self)
 		 fd     = load_word (lea ebx 0 0 16) and
 		 offset = Int64.to_int (load_word (lea ebx 0 0 20)) in
 	       if !opt_trace_syscalls then
-		 Printf.printf "mmap(0x%08Lx, %Ld, 0x%Lx, 0x%0Lx, %Ld, %d)"
+		 Printf.eprintf "mmap(0x%08Lx, %Ld, 0x%Lx, 0x%0Lx, %Ld, %d)"
 		   addr length prot flags fd offset;
 	       self#sys_mmap addr length prot flags fd offset
 	 | (_, 91) -> (* munmap *)
@@ -3052,7 +3052,7 @@ object(self)
 	     let addr = arg1 and
 		 len  = arg2 in
 	       if !opt_trace_syscalls then
-		 Printf.printf "munmap(0x%08Lx, %Ld)" addr len;
+		 Printf.eprintf "munmap(0x%08Lx, %Ld)" addr len;
 	       self#sys_munmap addr len
 	 | (_, 92) -> (* truncate *)
 	     uh "Unhandled Linux system call truncate (92)"
@@ -3064,7 +3064,7 @@ object(self)
 	     let fd = Int64.to_int ebx and
 		 mode = Int64.to_int ecx in
 	       if !opt_trace_syscalls then
-		 Printf.printf "fchmod(%d, 0o%03o)" fd mode;
+		 Printf.eprintf "fchmod(%d, 0o%03o)" fd mode;
 	       self#sys_fchmod fd mode
 	 | (_, 95) -> (* fchown *)
 	     uh "Unhandled Linux system call fchown (95)"
@@ -3081,7 +3081,7 @@ object(self)
 	     let path = fm#read_cstr ebx and
 		 buf = ecx in
 	       if !opt_trace_syscalls then
-		 Printf.printf "statfs(\"%s\", 0x%08Lx)" path buf;
+		 Printf.eprintf "statfs(\"%s\", 0x%08Lx)" path buf;
 	       self#sys_statfs path buf
 	 | (ARM, 100) -> uh "Check whether ARM fstatfs syscall matches x86"
 	 | (X86, 100) -> (* fstatfs *)
@@ -3089,7 +3089,7 @@ object(self)
 	     let fd = Int64.to_int ebx and
 		 buf = ecx in
 	       if !opt_trace_syscalls then
-		 Printf.printf "fstatfs(%d, 0x%08Lx)" fd buf;
+		 Printf.eprintf "fstatfs(%d, 0x%08Lx)" fd buf;
 	       self#sys_fstatfs fd buf
 	 | (ARM, 101) -> uh "No ioperm (101) syscall in Linux/ARM (E)ABI"
 	 | (X86, 101) -> (* ioperm *)
@@ -3105,7 +3105,7 @@ object(self)
 			  typ_i = Int64.to_int (load_word (lea args 0 0 4)) and
 			  prot_i = Int64.to_int (load_word (lea args 0 0 8)) in
 			if !opt_trace_syscalls then
-			  Printf.printf "socket(%d, %d, %d)"
+			  Printf.eprintf "socket(%d, %d, %d)"
 			    dom_i typ_i prot_i;
 			self#sys_socket dom_i typ_i prot_i
 		  | 2 ->
@@ -3114,7 +3114,7 @@ object(self)
 			  addrlen = Int64.to_int (load_word (lea args 0 0 8))
 		      in
 			if !opt_trace_syscalls then
-			  Printf.printf "bind(%d, 0x%08Lx, %d)"
+			  Printf.eprintf "bind(%d, 0x%08Lx, %d)"
 			    sockfd addr addrlen;
 			self#sys_bind sockfd addr addrlen
 		  | 3 -> 
@@ -3123,7 +3123,7 @@ object(self)
 			  addrlen = Int64.to_int (load_word (lea args 0 0 8))
 		      in
 			if !opt_trace_syscalls then
-			  Printf.printf "connect(%d, 0x%08Lx, %d)"
+			  Printf.eprintf "connect(%d, 0x%08Lx, %d)"
 			    sockfd addr addrlen;
 			self#sys_connect sockfd addr addrlen
 		  | 4 -> 
@@ -3131,7 +3131,7 @@ object(self)
 			  backlog = Int64.to_int (load_word (lea args 0 0 4))
 		      in
 			if !opt_trace_syscalls then
-			  Printf.printf "listen(%d, %d)" sockfd backlog;
+			  Printf.eprintf "listen(%d, %d)" sockfd backlog;
 			self#sys_listen sockfd backlog
 		  | 5 ->
 		    let sockfd = Int64.to_int (load_word args) and
@@ -3139,7 +3139,7 @@ object(self)
 			addrlen_ptr = load_word (lea args 0 0 8)
 		    in
 		    if !opt_trace_syscalls then
-		      Printf.printf "accept(%d, 0x%08Lx, 0x%08Lx)"
+		      Printf.eprintf "accept(%d, 0x%08Lx, 0x%08Lx)"
 			sockfd addr addrlen_ptr;
 		    self#sys_accept sockfd addr addrlen_ptr
 		  | 6 ->
@@ -3148,7 +3148,7 @@ object(self)
 			  addrlen_ptr = load_word (lea args 0 0 8)
 		      in
 			if !opt_trace_syscalls then
-			  Printf.printf "getsockname(%d, 0x%08Lx, 0x%08Lx)"
+			  Printf.eprintf "getsockname(%d, 0x%08Lx, 0x%08Lx)"
 			    sockfd addr addrlen_ptr;
 			self#sys_getsockname sockfd addr addrlen_ptr
 		  | 7 -> 
@@ -3157,7 +3157,7 @@ object(self)
 			  addrlen_ptr = load_word (lea args 0 0 8)
 		      in
 			if !opt_trace_syscalls then
-			  Printf.printf "getpeername(%d, 0x%08Lx, 0x%08Lx)"
+			  Printf.eprintf "getpeername(%d, 0x%08Lx, 0x%08Lx)"
 			    sockfd addr addrlen_ptr;
 			self#sys_getpeername sockfd addr addrlen_ptr
 		  | 8 -> 
@@ -3166,7 +3166,7 @@ object(self)
                   prot_i = Int64.to_int (load_word (lea args 0 0 8)) and
                   addr = load_word (lea args 0 0 12) in
               if !opt_trace_syscalls then
-                Printf.printf "socketpair(%d, %d, %d, 0x%08Lx)"
+                Printf.eprintf "socketpair(%d, %d, %d, 0x%08Lx)"
                   dom_i typ_i prot_i addr;
               self#sys_socketpair dom_i typ_i prot_i addr
 		  | 9 ->
@@ -3176,7 +3176,7 @@ object(self)
 			  flags = Int64.to_int (load_word (lea args 0 0 12))
 		      in
 			if !opt_trace_syscalls then
-			  Printf.printf "send(%d, 0x%08Lx, %d, %d)"
+			  Printf.eprintf "send(%d, 0x%08Lx, %d, %d)"
 			    sockfd buf len flags;
 			self#sys_send sockfd buf len flags
 		  | 10 ->
@@ -3186,7 +3186,7 @@ object(self)
 			  flags = Int64.to_int (load_word (lea args 0 0 12))
 		      in
 			if !opt_trace_syscalls then
-			  Printf.printf "recv(%d, 0x%08Lx, %d, %d)"
+			  Printf.eprintf "recv(%d, 0x%08Lx, %d, %d)"
 			    sockfd buf len flags;
 			self#sys_recv sockfd buf len flags
 		  | 11 ->
@@ -3199,7 +3199,7 @@ object(self)
 			  addrlen = Int64.to_int (load_word (lea args 0 0 20))
 		      in
 			if !opt_trace_syscalls then
-			  Printf.printf
+			  Printf.eprintf
 			    "sendto(%d, 0x%08Lx, %d, %d, 0x%08Lx, %d)"
 			    sockfd buf len flags addr addrlen;
 			self#sys_sendto sockfd buf len flags addr addrlen
@@ -3213,7 +3213,7 @@ object(self)
 			  addrlen_ptr = load_word (lea args 0 0 20)
 		      in
 			if !opt_trace_syscalls then
-			  Printf.printf
+			  Printf.eprintf
 			    "recvfrom(%d, 0x%08Lx, %d, %d, 0x%08Lx, 0x%08Lx)"
 			    sockfd buf len flags addr addrlen_ptr;
 			self#sys_recvfrom sockfd buf len flags addr addrlen_ptr
@@ -3221,7 +3221,7 @@ object(self)
               let sockfd = Int64.to_int (load_word args) and
                   how = Int64.to_int (load_word(lea args 0 0 4)) in
               if !opt_trace_syscalls then
-                Printf.printf "shutdown(%d, %d)" sockfd how;
+                Printf.eprintf "shutdown(%d, %d)" sockfd how;
               self#sys_shutdown sockfd how 
 		  | 14 ->
 		      let sockfd = Int64.to_int (load_word args) and
@@ -3231,7 +3231,7 @@ object(self)
 			  len = Int64.to_int (load_word (lea args 0 0 16))
 		      in
 			if !opt_trace_syscalls then
-			  Printf.printf
+			  Printf.eprintf
 			    "setsockopt(%d, %d, %d, 0x%08Lx, %d)"
 			    sockfd level name valp len;
 			self#sys_setsockopt sockfd level name valp len
@@ -3243,7 +3243,7 @@ object(self)
 			  lenp = load_word (lea args 0 0 16)
 		      in
 			if !opt_trace_syscalls then
-			  Printf.printf
+			  Printf.eprintf
 			    "getsockopt(%d, %d, %d, 0x%08Lx, 0x%08Lx)"
 			    sockfd level name valp lenp;
 			self#sys_getsockopt sockfd level name valp lenp
@@ -3254,7 +3254,7 @@ object(self)
 			  flags = Int64.to_int (load_word (lea args 0 0 8))
 		      in
 			if !opt_trace_syscalls then
-			  Printf.printf "sendmsg(%d, 0x%08Lx, %d)"
+			  Printf.eprintf "sendmsg(%d, 0x%08Lx, %d)"
 			    sockfd msg flags;
 			self#sys_sendmsg sockfd msg flags
 		  | 17 ->
@@ -3263,7 +3263,7 @@ object(self)
 			  flags = Int64.to_int (load_word (lea args 0 0 8))
 		      in
 			if !opt_trace_syscalls then
-			  Printf.printf "recvmsg(%d, 0x%08Lx, %d)"
+			  Printf.eprintf "recvmsg(%d, 0x%08Lx, %d)"
 			    sockfd msg flags;
 			self#sys_recvmsg sockfd msg flags
 		  | 18 -> uh"Unhandled Linux system call accept4 (102:18)"
@@ -3281,7 +3281,7 @@ object(self)
 		 buf_addr = ecx in
 	     let path = fm#read_cstr path_buf in
 	       if !opt_trace_syscalls then
-		 Printf.printf "stat(\"%s\", 0x%08Lx)" path buf_addr;
+		 Printf.eprintf "stat(\"%s\", 0x%08Lx)" path buf_addr;
 	       self#sys_stat path buf_addr
 	 | (ARM, 107) -> uh "Check whether ARM lstat (107) syscall matches x86"
 	 | (X86, 107) -> (* lstat *)
@@ -3290,7 +3290,7 @@ object(self)
 		 buf_addr = ecx in
 	     let path = fm#read_cstr path_buf in
 	       if !opt_trace_syscalls then
-		 Printf.printf "lstat(\"%s\", 0x%08Lx)" path buf_addr;
+		 Printf.eprintf "lstat(\"%s\", 0x%08Lx)" path buf_addr;
 	       self#sys_lstat path buf_addr
 	 | (ARM, 108) -> uh "Check whether ARM fstat (108) syscall matches x86"
 	 | (X86, 108) -> (* fstat *)
@@ -3298,7 +3298,7 @@ object(self)
 	     let fd = Int64.to_int ebx and
 		 buf_addr = ecx in
 	       if !opt_trace_syscalls then
-		 Printf.printf "fstat(%d, 0x%08Lx)" fd buf_addr;
+		 Printf.eprintf "fstat(%d, 0x%08Lx)" fd buf_addr;
 	       self#sys_fstat fd buf_addr
 	 | (ARM, 109) -> uh "No olduname (109) syscall in Linux/ARM (E)ABI"
 	 | (X86, 109) -> (* olduname *)
@@ -3331,14 +3331,14 @@ object(self)
 		 fifth = arg6
 	     in
 	       if !opt_trace_syscalls then
-		 Printf.printf "ipc(%d, %d, %d, %d, 0x%08Lx, 0x%Lx)"
+		 Printf.eprintf "ipc(%d, %d, %d, %d, 0x%08Lx, 0x%Lx)"
 		   call first second third ptr fifth;
 	       self#put_errno Unix.ENOSYS
 	 | (_, 118) -> (* fsync *)
 	     let arg1 = read_1_reg () in
 	     let fd = Int64.to_int arg1 in
 	       if !opt_trace_syscalls then
-		 Printf.printf "fsync(%d)" fd;
+		 Printf.eprintf "fsync(%d)" fd;
 	       self#sys_fsync fd
 	 | (_, 119) -> (* sigreturn *)
 	     uh "Unhandled Linux system call sigreturn (119)"
@@ -3350,7 +3350,7 @@ object(self)
 	     let arg1 = read_1_reg () in
 	     let buf = arg1 in
 	       if !opt_trace_syscalls then
-		 Printf.printf "uname(0x%08Lx)" buf;
+		 Printf.eprintf "uname(0x%08Lx)" buf;
 	       self#sys_uname buf
 	 | (ARM, 123) -> uh "No modify_ldt (112) syscall in Linux/ARM (E)ABI"
 	 | (X86, 123) -> (* modify_ldt *)
@@ -3363,7 +3363,7 @@ object(self)
 		 len  = arg2 and
 		 prot = arg3 in
 	       if !opt_trace_syscalls then
-		 Printf.printf "mprotect(0x%08Lx, %Ld, %Ld)" addr len prot;
+		 Printf.eprintf "mprotect(0x%08Lx, %Ld, %Ld)" addr len prot;
 	       self#sys_mprotect addr len prot
 	 | (_, 126) -> (* sigprocmask *)
 	     let (arg1, arg2, arg3) = read_3_regs () in
@@ -3371,7 +3371,7 @@ object(self)
 		 newset = arg2 and
 		 oldset = arg3 in
 	       if !opt_trace_syscalls then
-		 Printf.printf "sigprocmask(%d, 0x%08Lx, 0x%08Lx)"
+		 Printf.eprintf "sigprocmask(%d, 0x%08Lx, 0x%08Lx)"
 		   how newset oldset;
 	       self#sys_rt_sigprocmask how newset oldset 4
 	 | (ARM, 127) -> uh "No create_module syscall in Linux/ARM (E)ABI"
@@ -3391,14 +3391,14 @@ object(self)
 	     let ebx = read_1_reg () in
 	     let pid = Int64.to_int ebx in
 	       if !opt_trace_syscalls then
-		 Printf.printf "getpgid()";
+		 Printf.eprintf "getpgid()";
 	       self#sys_getpgid pid
 	 | (ARM, 133) -> uh "Check whether ARM fchdir syscall matches x86"
 	 | (X86, 133) -> (* fchdir *)
 	     let ebx = read_1_reg () in
 	     let fd = Int64.to_int ebx in
 	       if !opt_trace_syscalls then
-		 Printf.printf "fchdir(%d)" fd;
+		 Printf.eprintf "fchdir(%d)" fd;
 	       self#sys_fchdir fd
 	 | (_, 134) -> (* bdflush *)
 	     uh "Unhandled Linux system call bdflush (134)"
@@ -3422,7 +3422,7 @@ object(self)
 		 whence = Int64.to_int arg5 in
 	     let offset = assemble64 off_high off_low in
 	       if !opt_trace_syscalls then
-		 Printf.printf "_llseek(%d, %Ld, 0x%08Lx, %d)"
+		 Printf.eprintf "_llseek(%d, %Ld, 0x%08Lx, %d)"
 		   fd offset resultp whence;
 	       self#sys__llseek fd offset resultp whence
 	 | (ARM, 141) -> uh "Check whether ARM getdents syscall matches x86"
@@ -3432,7 +3432,7 @@ object(self)
 		 dirp = ecx and
 		 count = Int64.to_int edx in
 	       if !opt_trace_syscalls then
-		 Printf.printf "getdents(%d, 0x%08Lx, %d)" fd dirp count;
+		 Printf.eprintf "getdents(%d, 0x%08Lx, %d)" fd dirp count;
 	       self#sys_getdents fd dirp count
 	 | (ARM, 142) -> uh "Check whether ARM _newselect (142) matches x86"
 	 | (X86, 142) -> (* _newselect *)
@@ -3443,7 +3443,7 @@ object(self)
 		 exceptfds = esi and
 		 timeout = edi in
 	       if !opt_trace_syscalls then
-		 Printf.printf "select(%d, 0x%08Lx, 0x%08Lx, 0x%08Lx, 0x%08Lx)"
+		 Printf.eprintf "select(%d, 0x%08Lx, 0x%08Lx, 0x%08Lx, 0x%08Lx)"
 		   nfds readfds writefds exceptfds timeout;
 	       self#sys_select nfds readfds writefds exceptfds timeout
 	 | (_, 143) -> (* flock *)
@@ -3456,7 +3456,7 @@ object(self)
 		 iov = arg2 and
 		 cnt = Int64.to_int arg3 in
 	       if !opt_trace_syscalls then
-		 Printf.printf "readv(%d, 0x%08Lx, %d)" fd iov cnt;
+		 Printf.eprintf "readv(%d, 0x%08Lx, %d)" fd iov cnt;
 	       self#sys_readv fd iov cnt
 	 | (_, 146) -> (* writev *)
 	     let (arg1, arg2, arg3) = read_3_regs () in
@@ -3464,12 +3464,12 @@ object(self)
 		 iov = arg2 and
 		 cnt = Int64.to_int arg3 in
 	       if !opt_trace_syscalls then
-		 Printf.printf "writev(%d, 0x%08Lx, %d)" fd iov cnt;
+		 Printf.eprintf "writev(%d, 0x%08Lx, %d)" fd iov cnt;
 	       self#sys_writev fd iov cnt
 	 | (ARM, 147) -> uh "Check whether ARM getsid syscall matches x86"
 	 | (X86, 147) -> (* getsid *)
 	     if !opt_trace_syscalls then
-	       Printf.printf "getsid()";
+	       Printf.eprintf "getsid()";
 	     self#sys_getsid ()
 	 | (_, 148) -> (* fdatasync *)
 	     uh "Unhandled Linux system call fdatasync (148)"
@@ -3491,7 +3491,7 @@ object(self)
 	     let pid = Int64.to_int ebx and
 		 buf = ecx in
 	       if !opt_trace_syscalls then
-		 Printf.printf "sched_getparam(%d, 0x%08Lx)" pid buf;
+		 Printf.eprintf "sched_getparam(%d, 0x%08Lx)" pid buf;
 	       self#sys_sched_getparam pid buf
 	 | (_, 156) -> (* sched_setscheduler *)
 	     uh "Unhandled Linux system call sched_setscheduler (156)"
@@ -3500,32 +3500,32 @@ object(self)
 	     let ebx = read_1_reg () in
 	     let pid = Int64.to_int ebx in
 	       if !opt_trace_syscalls then
-		 Printf.printf "sched_getscheduler(%d)" pid;
+		 Printf.eprintf "sched_getscheduler(%d)" pid;
 	       self#sys_sched_getscheduler pid
 	 | (_, 158) -> (* sched_yield *)
 	     if !opt_trace_syscalls then
-	       Printf.printf "sched_yield()";
+	       Printf.eprintf "sched_yield()";
 	     self#sys_sched_yield
 	 | (ARM, 159) -> uh "Check whether ARM sched_get_priority_max matches x86"
 	 | (X86, 159) -> (* sched_get_priority_max *)
 	     let ebx = read_1_reg () in
 	     let policy = Int64.to_int ebx in
 	       if !opt_trace_syscalls then
-		 Printf.printf "sched_get_priority_max(%d)" policy;
+		 Printf.eprintf "sched_get_priority_max(%d)" policy;
 	       self#sys_sched_get_priority_max policy
 	 | (ARM, 160) -> uh "Check whether ARM sched_get_priority_min matches x86"
 	 | (X86, 160) -> (* sched_get_priority_min *)
 	     let ebx = read_1_reg () in
 	     let policy = Int64.to_int ebx in
 	       if !opt_trace_syscalls then
-		 Printf.printf "sched_get_priority_min(%d)" policy;
+		 Printf.eprintf "sched_get_priority_min(%d)" policy;
 	       self#sys_sched_get_priority_min policy
 	 | (_, 161) -> (* sched_rr_get_interval *)
 	     uh "Unhandled Linux system call sched_rr_get_interval (161)"
 	 | (_, 162) -> (* nanosleep *)
 	   let (req, rem) = read_2_regs () in
 	   if !opt_trace_syscalls then
-	     Printf.printf "nanosleep(%s, %s)"
+	     Printf.eprintf "nanosleep(%s, %s)"
 	       (Int64.to_string req) (Int64.to_string rem);
 	   self#sys_nanosleep req rem
 	 | (_, 163) -> (* mremap *)
@@ -3546,7 +3546,7 @@ object(self)
 		 nfds = Int64.to_int arg2 and
 		 timeout = arg3 in
 	       if !opt_trace_syscalls then	
-		 Printf.printf "poll(0x%08Lx, %d, %Ld)" fds_buf nfds timeout;
+		 Printf.eprintf "poll(0x%08Lx, %d, %Ld)" fds_buf nfds timeout;
 	       self#sys_poll fds_buf nfds timeout
 	 | (_, 169) -> (* nfsservctl *)
 	     uh "Unhandled Linux system call nfsservctl (169)"
@@ -3565,7 +3565,7 @@ object(self)
 		 oldbuf = arg3 and
 		 setlen = Int64.to_int arg4 in
 	       if !opt_trace_syscalls then
-		 Printf.printf "rt_sigaction(%d, 0x%08Lx, 0x%08Lx, %d)"
+		 Printf.eprintf "rt_sigaction(%d, 0x%08Lx, 0x%08Lx, %d)"
 		   signum newbuf oldbuf setlen;
 	       self#sys_rt_sigaction signum newbuf oldbuf setlen
 	 | (_, 175) -> (* rt_sigprocmask *)
@@ -3575,7 +3575,7 @@ object(self)
 		 oldset = arg3 and
 		 setlen = Int64.to_int arg4 in
 	       if !opt_trace_syscalls then
-		 Printf.printf "rt_sigprocmask(%d, 0x%08Lx, 0x%08Lx, %d)"
+		 Printf.eprintf "rt_sigprocmask(%d, 0x%08Lx, 0x%08Lx, %d)"
 		   how newset oldset setlen;
 	       self#sys_rt_sigprocmask how newset oldset setlen
 	 | (_, 176) -> (* rt_sigpending *)
@@ -3593,7 +3593,7 @@ object(self)
 		 count = Int64.to_int arg3 and
 		 off   = Int64.logor (Int64.shift_left arg5 32) arg4 in
 	       if !opt_trace_syscalls then
-		 Printf.printf "pread64(%d, 0x%08Lx, %d, %Ld)"
+		 Printf.eprintf "pread64(%d, 0x%08Lx, %d, %Ld)"
 		   fd buf count off;
 	       self#sys_pread64 fd buf count off;
 	 | (_, 181) -> (* pwrite64 *)
@@ -3606,7 +3606,7 @@ object(self)
 	     let buf = ebx and
 		 size = Int64.to_int ecx in
 	       if !opt_trace_syscalls then
-		 Printf.printf "getcwd(0x%08Lx, %d)" buf size;
+		 Printf.eprintf "getcwd(0x%08Lx, %d)" buf size;
 	       self#sys_getcwd buf size
 	 | (ARM, 184) -> uh "Check whether ARM capget syscall matches x86"
 	 | (X86, 184) -> (* capget *)
@@ -3614,7 +3614,7 @@ object(self)
 	     let hdrp = ebx and
 		 datap = ecx in
 	       if !opt_trace_syscalls then
-		 Printf.printf "capget(0x%08Lx, 0x%08Lx)" hdrp datap;
+		 Printf.eprintf "capget(0x%08Lx, 0x%08Lx)" hdrp datap;
 	       self#sys_capget hdrp datap
 	 | (_, 185) -> (* capset *)
 	     uh "Unhandled Linux system call capset (185)"
@@ -3623,7 +3623,7 @@ object(self)
 	     let new_stack_t = arg1 and
 		 old_stack_t = arg2 in
 	       if !opt_trace_syscalls then
-		 Printf.printf "sigaltstack(0x%08Lx, 0x%08Lx)"
+		 Printf.eprintf "sigaltstack(0x%08Lx, 0x%08Lx)"
 		   new_stack_t old_stack_t;
 	       self#sys_sigaltstack new_stack_t old_stack_t
 	 | (_, 187) -> (* sendfile *)
@@ -3641,7 +3641,7 @@ object(self)
 	     let rsrc = Int64.to_int arg1 and
 		 buf  = arg2 in
 	       if !opt_trace_syscalls then
-		 Printf.printf "ugetrlimit(%d, 0x%08Lx)" rsrc buf;
+		 Printf.eprintf "ugetrlimit(%d, 0x%08Lx)" rsrc buf;
 	       self#sys_ugetrlimit rsrc buf
 	 | (_, 192) -> (* mmap2 *)
 	     let (arg1, arg2, arg3, arg4, arg5, arg6) = read_6_regs () in
@@ -3652,7 +3652,7 @@ object(self)
 		 fd       = arg5 and
 		 pgoffset = Int64.to_int arg6 in
 	       if !opt_trace_syscalls then
-		 Printf.printf "mmap2(0x%08Lx, %Ld, 0x%Lx, 0x%0Lx, %Ld, %d)"
+		 Printf.eprintf "mmap2(0x%08Lx, %Ld, 0x%Lx, 0x%0Lx, %Ld, %d)"
 		   addr length prot flags fd pgoffset;
 	       self#sys_mmap2 addr length prot flags fd pgoffset
 	 | (_, 193) -> (* truncate64 *)
@@ -3665,7 +3665,7 @@ object(self)
 		 buf_addr = arg2 in
 	     let path = fm#read_cstr path_buf in
 	       if !opt_trace_syscalls then
-		 Printf.printf "stat64(\"%s\", 0x%08Lx)" path buf_addr;
+		 Printf.eprintf "stat64(\"%s\", 0x%08Lx)" path buf_addr;
 	       self#sys_stat64 path buf_addr
 	 | (_, 196) -> (* lstat64 *)
 	     let (arg1, arg2) = read_2_regs () in
@@ -3673,32 +3673,32 @@ object(self)
 		 buf_addr = arg2 in
 	     let path = fm#read_cstr path_buf in
 	       if !opt_trace_syscalls then
-		 Printf.printf "lstat64(\"%s\", 0x%08Lx)" path buf_addr;
+		 Printf.eprintf "lstat64(\"%s\", 0x%08Lx)" path buf_addr;
 	       self#sys_lstat64 path buf_addr
 	 | (_, 197) -> (* fstat64 *)
 	     let (arg1, arg2) = read_2_regs () in
 	     let fd = Int64.to_int arg1 and
 		 buf_addr = arg2 in
 	       if !opt_trace_syscalls then
-		 Printf.printf "fstat64(%d, 0x%08Lx)" fd buf_addr;
+		 Printf.eprintf "fstat64(%d, 0x%08Lx)" fd buf_addr;
 	       self#sys_fstat64 fd buf_addr
 	 | (_, 198) -> (* lchown32 *)
 	     uh "Unhandled Linux system call lchown32 (198)"
 	 | (_, 199) -> (* getuid32 *)
 	     if !opt_trace_syscalls then
-	       Printf.printf "getuid32()";
+	       Printf.eprintf "getuid32()";
 	     self#sys_getuid32 ()
 	 | (_, 200) -> (* getgid32 *)
 	     if !opt_trace_syscalls then
-	       Printf.printf "getgid32()";
+	       Printf.eprintf "getgid32()";
 	     self#sys_getgid32 ()
 	 | (_, 201) -> (* geteuid32 *)
 	     if !opt_trace_syscalls then
-	       Printf.printf "geteuid32()";
+	       Printf.eprintf "geteuid32()";
 	     self#sys_geteuid32 ()
 	 | (_, 202) -> (* getegid32 *)
 	     if !opt_trace_syscalls then
-	       Printf.printf "getegid32()";
+	       Printf.eprintf "getegid32()";
 	     self#sys_getegid32 ()
 	 | (_, 203) -> (* setreuid32 *)
 	     uh "Unhandled Linux system call setreuid32 (203)"
@@ -3710,14 +3710,14 @@ object(self)
 	     let size = Int64.to_int ebx and
 		 list = ecx in
 	       if !opt_trace_syscalls then
-		 Printf.printf "getgroups32(%d, 0x%08Lx)" size list;
+		 Printf.eprintf "getgroups32(%d, 0x%08Lx)" size list;
 	       self#sys_getgroups32 size list
 	 | (_, 206) -> (* setgroups32 *)
          let (ebx, ecx) = read_2_regs () in
          let size = Int64.to_int ebx and
          list = ecx in
          if !opt_trace_syscalls then
-           Printf.printf "setgroups32(%d, 0x%08Lx)" size list;
+           Printf.eprintf "setgroups32(%d, 0x%08Lx)" size list;
          self#sys_setgroups32 size list
 	 | (ARM, 207) -> uh "Check whether ARM fchown32 syscall matches x86"
 	 | (X86, 207) -> (* fchown32 *)
@@ -3726,7 +3726,7 @@ object(self)
 		 user = Int64.to_int ecx and
 		 group = Int64.to_int edx in
 	       if !opt_trace_syscalls then
-		 Printf.printf "fchown32(%d, %d, %d)" fd user group;
+		 Printf.eprintf "fchown32(%d, %d, %d)" fd user group;
 	       self#sys_fchown32 fd user group
 	 | (_, 208) -> (* setresuid32 *)
          let (ebx, ecx, edx) = read_3_regs () in
@@ -3734,7 +3734,7 @@ object(self)
          euid = Int64.to_int ecx and
          suid = Int64.to_int edx in
          if !opt_trace_syscalls then
-           Printf.printf "setresuid32(%d, %d, %d)" ruid euid suid;
+           Printf.eprintf "setresuid32(%d, %d, %d)" ruid euid suid;
          self#sys_setresuid32 ruid euid suid
 	 | (ARM, 209) -> uh "Check whether ARM getresuid32 syscall matches x86"
 	 | (X86, 209) -> (* getresuid32 *)
@@ -3743,7 +3743,7 @@ object(self)
 		 euid_ptr = ecx and
 		 suid_ptr = edx in
 	     if !opt_trace_syscalls then
-	       Printf.printf "getresuid32(0x%08Lx, 0x%08Lx, 0x%08Lx)"
+	       Printf.eprintf "getresuid32(0x%08Lx, 0x%08Lx, 0x%08Lx)"
 		 ruid_ptr euid_ptr suid_ptr;
 	     self#sys_getresuid32 ruid_ptr euid_ptr suid_ptr;
 	 | (_, 210) -> (* setresgid32 *)
@@ -3752,7 +3752,7 @@ object(self)
              euid = Int64.to_int ecx and
              suid = Int64.to_int edx in
          if !opt_trace_syscalls then
-           Printf.printf "setresgid32(0x%d, 0x%d, 0x%d)"
+           Printf.eprintf "setresgid32(0x%d, 0x%d, 0x%d)"
              ruid euid suid;
          self#sys_setresgid32 ruid euid suid;
 	 | (ARM, 211) -> uh "Check whether ARM getresgid32 syscall matches x86"
@@ -3762,7 +3762,7 @@ object(self)
 		 egid_ptr = ecx and
 		 sgid_ptr = edx in
 	     if !opt_trace_syscalls then
-	       Printf.printf "getresgid32(0x%08Lx, 0x%08Lx, 0x%08Lx)"
+	       Printf.eprintf "getresgid32(0x%08Lx, 0x%08Lx, 0x%08Lx)"
 		 rgid_ptr egid_ptr sgid_ptr;
 	     self#sys_getresgid32 rgid_ptr egid_ptr sgid_ptr;
 	 | (_, 212) -> (* chown32 *)
@@ -3771,21 +3771,21 @@ object(self)
 		 uid = Int64.to_int arg2 and
 		 gid = Int64.to_int arg3 in
 	       if !opt_trace_syscalls then
-		 Printf.printf "chown32(\"%s\", %d, %d)" path uid gid;
+		 Printf.eprintf "chown32(\"%s\", %d, %d)" path uid gid;
 	       self#sys_chown path uid gid
 	 | (ARM, 213) -> uh "Check whether ARM setuid32 syscall matches x86"
 	 | (X86, 213) -> (* setuid32 *)
 	     let ebx = read_1_reg () in
 	     let uid = Int64.to_int ebx in
 	       if !opt_trace_syscalls then
-		 Printf.printf "setuid32(%d)" uid;
+		 Printf.eprintf "setuid32(%d)" uid;
 	       self#sys_setuid32 uid
 	 | (ARM, 214) -> uh "Check whether ARM setgid32 syscall matches x86"
 	 | (X86, 214) -> (* setgid32 *)
 	     let ebx = read_1_reg () in
 	     let gid = Int64.to_int ebx in
 	       if !opt_trace_syscalls then
-		 Printf.printf "setgid32(%d)" gid;
+		 Printf.eprintf "setgid32(%d)" gid;
 	       self#sys_setgid32 gid
 	 | (_, 215) -> (* setfsuid32 *)
 	     uh "Unhandled Linux system call setfsuid32 (215)"
@@ -3801,7 +3801,7 @@ object(self)
 		 length = Int64.to_int ecx and
 		 vec = edx in
 	       if !opt_trace_syscalls then
-		 Printf.printf "mincore(0x%08Lx, %d, 0x%08Lx)" addr length vec;
+		 Printf.eprintf "mincore(0x%08Lx, %d, 0x%08Lx)" addr length vec;
 	       self#sys_mincore addr length vec
 	 | (ARM, 220)
 	 | (X86, 219) -> (* madvise *)
@@ -3813,7 +3813,7 @@ object(self)
 		 dirp = arg2 and
 		 count = Int64.to_int arg3 in
 	       if !opt_trace_syscalls then
-		 Printf.printf "getdents64(%d, 0x%08Lx, %d)" fd dirp count;
+		 Printf.eprintf "getdents64(%d, 0x%08Lx, %d)" fd dirp count;
 	       self#sys_getdents64 fd dirp count
 	 | (_, 221) -> (* fcntl64 *)
 	     let (arg1, arg2, arg3) = read_3_regs () in
@@ -3821,14 +3821,14 @@ object(self)
 		 cmd = Int64.to_int arg2 and
 		 arg = arg3 in
 	       if !opt_trace_syscalls then
-		 Printf.printf "fcntl64(%d, %d, 0x%08Lx)" fd cmd arg;
+		 Printf.eprintf "fcntl64(%d, %d, 0x%08Lx)" fd cmd arg;
 	       self#sys_fcntl64 fd cmd arg
 	 | (_, 222) -> uh "No such Linux syscall 222 (was for tux)"
 	 | (_, 223) -> uh "No such Linux syscall 223 (unused)"
 	 | (ARM, 224) -> uh "Check whether ARM gettid syscall matches x86"
 	 | (X86, 224) -> (* gettid *)
 	     if !opt_trace_syscalls then
-	       Printf.printf "gettid()";
+	       Printf.eprintf "gettid()";
 	     self#sys_gettid 
 	 | (_, 225) -> (* readahead *)
 	     uh "Unhandled Linux system call readahead (225)"
@@ -3848,7 +3848,7 @@ object(self)
 	     let path = fm#read_cstr path_ptr and
 		 name = fm#read_cstr name_ptr in
 	       if !opt_trace_syscalls then
-		 Printf.printf "getxattr(\"%s\", \"%s\", 0x%08Lx, %d)"
+		 Printf.eprintf "getxattr(\"%s\", \"%s\", 0x%08Lx, %d)"
 		   path name value_ptr size;
 	       self#sys_getxattr path name value_ptr size
 	 | (_, 230) -> (* lgetxattr *)
@@ -3860,7 +3860,7 @@ object(self)
 	     let path = fm#read_cstr path_ptr and
 		 name = fm#read_cstr name_ptr in
 	       if !opt_trace_syscalls then
-		 Printf.printf "lgetxattr(\"%s\", \"%s\", 0x%08Lx, %d)"
+		 Printf.eprintf "lgetxattr(\"%s\", \"%s\", 0x%08Lx, %d)"
 		   path name value_ptr size;
 	       self#sys_lgetxattr path name value_ptr size
 	 | (_, 231) -> (* fgetxattr *)
@@ -3890,7 +3890,7 @@ object(self)
 		 uaddr2   = arg5 and
 		 val3     = arg6 in
 	       if !opt_trace_syscalls then
-		 Printf.printf "futex(0x%08Lx, %d, %Ld, 0x%08Lx, 0x%08Lx, %Ld)"
+		 Printf.eprintf "futex(0x%08Lx, %d, %Ld, 0x%08Lx, 0x%08Lx, %Ld)"
 		   uaddr op value timebuf uaddr2 val3;
 	       self#sys_futex uaddr op value timebuf uaddr2 val3
 	 | (_, 241) -> (* sched_setaffinity *)
@@ -3903,7 +3903,7 @@ object(self)
 	     let ebx = read_1_reg () in
 	     let uinfo = ebx in
 	       if !opt_trace_syscalls then
-		 Printf.printf "set_thread_area(0x%08Lx)" uinfo;
+		 Printf.eprintf "set_thread_area(0x%08Lx)" uinfo;
 	       self#sys_set_thread_area uinfo
 	 | (X86, 244) -> (* get_thread_area *)
 	     uh "Unhandled Linux/x86 system call get_thread_area (244)"
@@ -3929,7 +3929,7 @@ object(self)
 	     let arg1 = read_1_reg () in
 	     let status = arg1 in
 	       if !opt_trace_syscalls then
-		 Printf.printf "exit_group(%Ld) (no return)\n" status;
+		 Printf.eprintf "exit_group(%Ld) (no return)\n" status;
 	       self#sys_exit_group status
 	 | (ARM, 249)    (* lookup_dcookie *)
 	 | (X86, 253) -> (* lookup_dcookie *)
@@ -3953,7 +3953,7 @@ object(self)
 	     let arg1 = read_1_reg () in
 	     let addr = arg1 in
 	       if !opt_trace_syscalls then
-		 Printf.printf "set_tid_address(0x%08Lx)" addr;
+		 Printf.eprintf "set_tid_address(0x%08Lx)" addr;
 	       self#sys_set_tid_address addr
 	 | (ARM, 257)    (* timer_create *)
 	 | (X86, 259) -> (* timer_create *)
@@ -3979,7 +3979,7 @@ object(self)
 	     let clkid = Int64.to_int arg1 and
 		 timep = arg2 in
 	       if !opt_trace_syscalls then
-		 Printf.printf "clock_gettime(%d, 0x%08Lx)" clkid timep;
+		 Printf.eprintf "clock_gettime(%d, 0x%08Lx)" clkid timep;
 	       self#sys_clock_gettime clkid timep
 	 | (ARM, 264) -> uh "Check whether ARM clock_getres matches x86"
 	 | (X86, 266) -> (* clock_getres *)
@@ -3987,7 +3987,7 @@ object(self)
 	     let clkid = Int64.to_int ebx and
 		 timep = ecx in
 	       if !opt_trace_syscalls then
-		 Printf.printf "clock_getres(%d, 0x%08Lx)" clkid timep;
+		 Printf.eprintf "clock_getres(%d, 0x%08Lx)" clkid timep;
 	       self#sys_clock_getres clkid timep
 	 | (ARM, 265)    (* clock_nanosleep *)
 	 | (X86, 267) -> (* clock_nanosleep *)
@@ -4000,7 +4000,7 @@ object(self)
 		 struct_buf = arg3 in
 	     let path = fm#read_cstr path_buf in
 	       if !opt_trace_syscalls then
-		 Printf.printf "statfs64(\"%s\", %d, 0x%08Lx)"
+		 Printf.eprintf "statfs64(\"%s\", %d, 0x%08Lx)"
 		   path buf_len struct_buf;
 	       self#sys_statfs64 path buf_len struct_buf
 	 | (ARM, 267)    (* fstatfs64 *)
@@ -4013,7 +4013,7 @@ object(self)
 		 tid = Int64.to_int arg2 and
 		 signal = Int64.to_int arg3 in
 	       if !opt_trace_syscalls then
-		 Printf.printf "tgkill(%d, %d, %d)"
+		 Printf.eprintf "tgkill(%d, %d, %d)"
 		   tgid tid signal;
 	       self#sys_tgkill tgid tid signal
 	 | (ARM, 269)    (* utimes *)
@@ -4027,7 +4027,7 @@ object(self)
 		 len = assemble64 arg4 arg5 and
 		 advice = Int64.to_int arg6 in
 	       if !opt_trace_syscalls then
-		 Printf.printf "fadvise64_64(%d, %Ld, %Ld, %d)"
+		 Printf.eprintf "fadvise64_64(%d, %Ld, %Ld, %d)"
 		   fd offset len advice;
 	       self#sys_fadvise64_64 fd offset len advice
 	 | (ARM, 271) -> (* pciconfig_iobase *)
@@ -4078,7 +4078,7 @@ object(self)
 		 typ_i = Int64.to_int arg2 and
 		 prot_i = Int64.to_int arg3 in
 	       if !opt_trace_syscalls then
-		 Printf.printf "socket(%d, %d, %d)"
+		 Printf.eprintf "socket(%d, %d, %d)"
 		   dom_i typ_i prot_i;
 	       self#sys_socket dom_i typ_i prot_i
 	 | (ARM, 282) -> (* bind *)
@@ -4090,7 +4090,7 @@ object(self)
 		 addrlen = Int64.to_int arg3
 	     in
 	       if !opt_trace_syscalls then
-		 Printf.printf "connect(%d, 0x%08Lx, %d)"
+		 Printf.eprintf "connect(%d, 0x%08Lx, %d)"
 		   sockfd addr addrlen;
 	       self#sys_connect sockfd addr addrlen
 	 | (ARM, 284) -> (* listen *)
@@ -4104,7 +4104,7 @@ object(self)
 		 addrlen_ptr = arg3
 	     in
 	       if !opt_trace_syscalls then
-		 Printf.printf "getsockname(%d, 0x%08Lx, 0x%08Lx)"
+		 Printf.eprintf "getsockname(%d, 0x%08Lx, 0x%08Lx)"
 		   sockfd addr addrlen_ptr;
 	       self#sys_getsockname sockfd addr addrlen_ptr
 	 | (ARM, 287) -> (* getpeername *)
@@ -4114,7 +4114,7 @@ object(self)
 		 addrlen_ptr = arg3
 	     in
 	       if !opt_trace_syscalls then
-		 Printf.printf "getpeername(%d, 0x%08Lx, 0x%08Lx)"
+		 Printf.eprintf "getpeername(%d, 0x%08Lx, 0x%08Lx)"
 		   sockfd addr addrlen_ptr;
 	       self#sys_getpeername sockfd addr addrlen_ptr
 	 | (ARM, 288) -> (* socketpair *)
@@ -4200,7 +4200,7 @@ object(self)
              mode     = Int64.to_int arg4 in
          let path = fm#read_cstr path_buf in
          if !opt_trace_syscalls then
-           Printf.printf "openat(%d, \"%s\", 0x%x, 0o%o)" dirfd path flags mode;
+           Printf.eprintf "openat(%d, \"%s\", 0x%x, 0o%o)" dirfd path flags mode;
          self#sys_openat dirfd path flags mode
 
 	 | (ARM, 323)    (* mkdirat *)
@@ -4254,7 +4254,7 @@ object(self)
 	     let addr = arg1 and
 		 len  = arg2 in
 	       if !opt_trace_syscalls then
-		 Printf.printf "set_robust_list(0x%08Lx, %Ld)" addr len;
+		 Printf.eprintf "set_robust_list(0x%08Lx, %Ld)" addr len;
 	       self#sys_set_robust_list addr len
 	 | (ARM, 339)    (* get_robust_list *)
 	 | (X86, 312) -> (* get_robust_list *)
@@ -4288,7 +4288,7 @@ object(self)
 		 times = arg3 and
 		 flags = Int64.to_int arg4 in
 	       if !opt_trace_syscalls then
-		 Printf.printf "utimensat(%d, 0x%08Lx, 0x%08Lx, %d)"
+		 Printf.eprintf "utimensat(%d, 0x%08Lx, 0x%08Lx, %d)"
 		   dirfd path_buf times flags;
 	       self#sys_utimensat dirfd path_buf times flags
 	 | (ARM, 349)    (* signalfd *)
@@ -4318,7 +4318,7 @@ object(self)
 	     let initval = arg1 and
 		 flags = Int64.to_int arg2 in
 	       if !opt_trace_syscalls then
-		 Printf.printf "eventfd2(%Ld, %d)" initval flags;
+		 Printf.eprintf "eventfd2(%Ld, %d)" initval flags;
 	       self#sys_eventfd2 initval flags
 	 | (ARM, 357)    (* epoll_create1 *)
 	 | (X86, 329) -> (* epoll_create1 *)
@@ -4332,7 +4332,7 @@ object(self)
 	     let buf = ebx and
 		 flags = Int64.to_int ecx in
 	       if !opt_trace_syscalls then
-		 Printf.printf "pipe2(0x%08Lx, %d)" buf flags;
+		 Printf.eprintf "pipe2(0x%08Lx, %d)" buf flags;
 	       self#sys_pipe2 buf flags
 	 | (ARM, 360)    (* inotify_init1 *)
 	 | (X86, 332) -> (* inotify_init1 *)
@@ -4377,7 +4377,7 @@ object(self)
                flags = Int64.to_int esi
            in
            if !opt_trace_syscalls then
-             Printf.printf "sendmmsg(%d, 0x%08Lx, %d, %d)"
+             Printf.eprintf "sendmmsg(%d, 0x%08Lx, %d, %d)"
                sockfd msg vlen flags;
            self#sys_sendmmsg sockfd msg vlen flags
 
@@ -4393,20 +4393,20 @@ object(self)
 	     let r0 = read_1_reg () in
 	     let tp_value = r0 in
 	       if !opt_trace_syscalls then
-		 Printf.printf "set_tls(0x%08Lx)" tp_value;
+		 Printf.eprintf "set_tls(0x%08Lx)" tp_value;
 	     self#sys_set_tls tp_value
 
 	 | (X86, _) ->
-	     Printf.printf "Unknown Linux/x86 system call %d\n" syscall_num;
+	     Printf.eprintf "Unknown Linux/x86 system call %d\n" syscall_num;
 	     uh "Unhandled Linux system call"
 	 | (ARM, _) ->
-	     Printf.printf "Unknown Linux/ARM system call %d\n" syscall_num;
+	     Printf.eprintf "Unknown Linux/ARM system call %d\n" syscall_num;
 	     uh "Unhandled Linux system call"
 	 | (X64, _) ->
 	     failwith "64-bit syscalls not supported");
     if !opt_trace_syscalls then
       let ret_val = fm#get_word_var ret_reg in
-	Printf.printf " = %Ld (0x%08Lx)\n" (fix_s32 ret_val) ret_val;
+	Printf.eprintf " = %Ld (0x%08Lx)\n" (fix_s32 ret_val) ret_val;
 	flush stdout
 
   method handle_special str =

@@ -4,7 +4,7 @@
 let main () =
   Arg.parse
     Logger_config.verb_cmdline_opts
-    (fun anon -> Printf.printf "%s" ("Unrecognized argument: " ^ anon ^ "\n"))
+    (fun anon -> Printf.eprintf "%s" ("Unrecognized argument: " ^ anon ^ "\n"))
     Logger_config.usage_msg;
    (* this has to happen after arguments are parsed.  Not Before *)
   let module TestStdout = Text_logger.Logger(Log_configs.StandardTestLogger) in

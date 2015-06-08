@@ -160,7 +160,7 @@ let parse_z3_ce_line s v =
 	  if String.sub s (l - 24) 24 = "model is not available\")" then
 	    (No_CE_here, None)
 	  else
-	    (Printf.printf "Z3 error: %s\n" s;
+	    (Printf.eprintf "Z3 error: %s\n" s;
 	     failwith "Unexpected error in parse_z3_ce_lines")
     | (s, Some varname) ->
 	let l = String.length s in
@@ -191,7 +191,7 @@ let parse_z3_ce_line s v =
 		  ->
 		  None
 	      | _ ->
-		  Printf.printf "Value parse failure on <%s>\n" trim;
+		  Printf.eprintf "Value parse failure on <%s>\n" trim;
 		  failwith "Unhandled value case in parse_z3_ce_lines"
 	  in
 	    (match vo with
@@ -222,7 +222,7 @@ let parse_z3_ce_line s v =
 	String.sub s 0 32 = "              (= x FloatingPoint" ->
 	(No_CE_here, None)
     | (s, _) ->
-	  Printf.printf "Parse failure on <%s>\n" s;
+	  Printf.eprintf "Parse failure on <%s>\n" s;
 	  failwith "Unhandled loop case in parse_z3_ce_line"
 
 (* MathSAT's output is multi-line like Z3's, though it's simpler in some
@@ -272,7 +272,7 @@ let parse_mathsat_ce_line s v =
 	| (") )", None) -> (End_of_CE, None)
 	| ("(  )", None) -> (End_of_CE, None)
 	| (s, _) ->
-	    Printf.printf "Parse failure on <%s>\n" s;
+	    Printf.eprintf "Parse failure on <%s>\n" s;
 	    failwith "Unhandled loop case in parse_mathsat_ce_line"
   in
     loop s v

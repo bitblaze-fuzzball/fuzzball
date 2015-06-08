@@ -202,7 +202,7 @@ let print_node chan n =
 let update_dt_node n =
   (* assert(n = string_to_dt_node n.ident (dt_node_to_string n)); *)
   if !opt_trace_decision_tree then
-    (Printf.printf "DT: Writing back node %d\n" n.ident;
+    (Printf.eprintf "DT: Writing back node %d\n" n.ident;
      print_node stdout n);
   if !opt_decision_tree_use_file then
     let i = n.ident in 
@@ -313,7 +313,7 @@ class binary_decision_tree = object(self)
       Hashtbl.replace seen cur.eip cur;
       cur_query <- root;
       if !opt_trace_decision_tree then
-	Printf.printf "DT: Initialized.\n";
+	Printf.eprintf "DT: Initialized.\n";
 (*
       let module Log = 
 	    (val !Loggers.fuzzball_bdt_json : Yojson_logger.JSONLog) in
@@ -338,7 +338,7 @@ class binary_decision_tree = object(self)
     iteration_count <- iteration_count + 1;
     Hashtbl.clear seen;
     if !opt_trace_randomness then
-      Printf.printf "Initializing random state as %08x\n" iteration_count;
+      Printf.eprintf "Initializing random state as %08x\n" iteration_count;
     randomness <- Random.State.make [|!opt_random_seed; iteration_count|]
 
   method get_hist =
@@ -418,12 +418,12 @@ class binary_decision_tree = object(self)
 
   method private forget_unsat b =
     if !opt_trace_decision_tree then
-      Printf.printf "DT: Forgetting unsat of %B child to %d\n" b cur.ident;
+      Printf.eprintf "DT: Forgetting unsat of %B child to %d\n" b cur.ident;
     (if b then put_t_child else put_f_child) cur None
 
   method add_kid b =
     if !opt_trace_decision_tree then
-      Printf.printf "DT: Adding %B child to %d\n" b cur.ident;
+      Printf.eprintf "DT: Adding %B child to %d\n" b cur.ident;
     g_assert(not cur.all_seen) 100 "Binary_decision_tree.add_kid";
     let status =
     (match (b, (get_f_child cur), (get_t_child cur)) with
@@ -477,14 +477,14 @@ class binary_decision_tree = object(self)
     match cur_query.query_children with
       |	None | Some 0 | Some 1 | Some 2 -> ()
       | Some n ->
-	  Printf.printf "Current query node is %d with %d children\n"
+	  Printf.eprintf "Current query node is %d with %d children\n"
 	    cur_query.ident n;
 	  failwith "Too many children in start_new_query_binary"
 
   method count_query =
     let rec finish_internal_nodes n top =
       if !opt_trace_decision_tree then
-	Printf.printf "DT: Finish internal nodes at %d (%B)\n" n.ident top;
+	Printf.eprintf "DT: Finish internal nodes at %d (%B)\n" n.ident top;
       if n.query_children = None || top then
 	((match get_f_child n with
 	    | Some(Some kid) -> finish_internal_nodes kid false
@@ -497,7 +497,7 @@ class binary_decision_tree = object(self)
 	 self#maybe_mark_all_seen_node n)
     in
       if !opt_trace_decision_tree then
-	Printf.printf "DT: count_query at %d (q %d)" cur.ident cur_query.ident;
+	Printf.eprintf "DT: count_query at %d (q %d)" cur.ident cur_query.ident;
       if cur.ident <> cur_query.ident then 
 	(if cur.query_children = None then
 	   cur.query_children <- Some 0;
@@ -505,7 +505,7 @@ class binary_decision_tree = object(self)
 	    | None -> failwith "Count_query outside a query"
 	    | Some k when not cur.query_counted ->
 		if !opt_trace_decision_tree then	
-		  Printf.printf " -> %d" (k+1);
+		  Printf.eprintf " -> %d" (k+1);
 		g_assert(k < !opt_query_branch_limit) 100 "Binary_decision_tree.count_query";
  		cur_query.query_children <- Some (k + 1);
 		update_dt_node cur_query;
@@ -513,14 +513,14 @@ class binary_decision_tree = object(self)
 	    | Some k -> ());
 	 update_dt_node cur;
 	 if !opt_trace_decision_tree then	
-	   Printf.printf "\n";
+	   Printf.eprintf "\n";
 	 match cur_query.query_children with 
 	   | Some k when k >= !opt_query_branch_limit ->
 	       finish_internal_nodes cur_query true
 	   | _ -> ())
       else
 	if !opt_trace_decision_tree then	
-	  Printf.printf "\n"
+	  Printf.eprintf "\n"
 
   method extend b =
     let module Log = 
@@ -537,12 +537,12 @@ class binary_decision_tree = object(self)
 		 )
     );
     if !opt_trace_decision_tree then
-      Printf.printf "DT: Extending with %B at %d\n" b cur.ident;
+      Printf.eprintf "DT: Extending with %B at %d\n" b cur.ident;
     self#add_kid b;
     path_hash <- hash_round path_hash (if b then 49 else 48);
     (let h = Int32.to_int path_hash in
       (if !opt_trace_randomness then
-	 Printf.printf "Setting random state to %08x\n" h;
+	 Printf.eprintf "Setting random state to %08x\n" h;
        randomness <- Random.State.make [|!opt_random_seed; h|]));
     (match (b, get_f_child cur, get_t_child cur) with
        | (false, Some(Some kid), _) -> cur <- kid
@@ -563,19 +563,19 @@ class binary_decision_tree = object(self)
   method random_bit =
     let b = Random.State.bool randomness in
       if !opt_trace_randomness then
-	Printf.printf "Flipping a coin to get %B\n" b;
+	Printf.eprintf "Flipping a coin to get %B\n" b;
       b
 
   method random_float =
     let f = Random.State.float randomness 1.0 in
       if !opt_trace_randomness then
-	Printf.printf "Flipping a floating coin to get %f\n" f;
+	Printf.eprintf "Flipping a floating coin to get %f\n" f;
       f
 
   method random_word =
     let i = Random.State.int64 randomness 0x100000000L in
       if !opt_trace_randomness then
-	Printf.printf "Flipping a 32-bit coin to get %Ld\n" i;
+	Printf.eprintf "Flipping a 32-bit coin to get %Ld\n" i;
       i
 
   method record_unsat b =
@@ -658,7 +658,7 @@ class binary_decision_tree = object(self)
 	| _ -> false
       in
       if !opt_trace_decision_tree then	
-	Printf.printf "try_extend at %d\n" cur.ident;
+	Printf.eprintf "try_extend at %d\n" cur.ident;
       match (get_f_child cur, get_t_child cur, limited) with
 	| (Some(Some f_kid), Some(Some t_kid), _) ->
 	    (match (f_kid.all_seen, t_kid.all_seen) with
@@ -666,7 +666,7 @@ class binary_decision_tree = object(self)
 		   if cur.all_seen then
 		     known (random_bit_gen ())
 		   else
-		     (Printf.printf "Bug: kids %d and %d are all_seen, but not parent %d\n"
+		     (Printf.eprintf "Bug: kids %d and %d are all_seen, but not parent %d\n"
 			f_kid.ident t_kid.ident cur.ident;
 		      failwith "all_seen invariant failure")
 	       | (false, true) -> known false
@@ -731,7 +731,7 @@ class binary_decision_tree = object(self)
       (match get_f_child n with
 	 | Some(Some kid) ->
 	     if not kid.all_seen then
-	       (Printf.printf "all_seen invariant failure: parent %d is all seen, but not true child %d%!\n"
+	       (Printf.eprintf "all_seen invariant failure: parent %d is all seen, but not true child %d%!\n"
 		  n.ident kid.ident;
 		self#print_tree stdout;
 		g_assert(kid.all_seen) 100 "Binary_decision_tree.mark_all_seen_node");
@@ -739,14 +739,14 @@ class binary_decision_tree = object(self)
       (match get_t_child n with
 	 | Some(Some kid) ->
 	     if not kid.all_seen then
-	       (Printf.printf "all_seen invariant failure: parent %d is all seen, but not true child %d%!\n"
+	       (Printf.eprintf "all_seen invariant failure: parent %d is all seen, but not true child %d%!\n"
 		  n.ident kid.ident;
 		self#print_tree stdout;
 	       g_assert(kid.all_seen) 100 "Binary_decision_tree.mark_all_seen_node")
 	 | _ -> ());
       n.all_seen <- true;
       if !opt_trace_decision_tree then	
-	Printf.printf "Marking node %d as all_seen\n" n.ident;
+	Printf.eprintf "Marking node %d as all_seen\n" n.ident;
       update_dt_node n
     in
     let rec internal_nodes_check n top =
@@ -795,7 +795,7 @@ class binary_decision_tree = object(self)
 	      match q_parent.query_children with
 		| Some k when k >= !opt_query_branch_limit ->
 		    if k > !opt_query_branch_limit then
-		      (Printf.printf "Node %d has excessive count %d\n"
+		      (Printf.eprintf "Node %d has excessive count %d\n"
 			 q_parent.ident k;
 		       g_assert(k = !opt_query_branch_limit) 100 "Binary_decision_tree.mark_all_seen_node"
 		      );
@@ -804,12 +804,12 @@ class binary_decision_tree = object(self)
 		| _ -> ()
     in
       if !opt_trace_decision_tree then	
-	Printf.printf "DT: Mark_all_seen at %d\n" node.ident;
+	Printf.eprintf "DT: Mark_all_seen at %d\n" node.ident;
       loop node
 
   method private maybe_mark_all_seen_node n =
     if !opt_trace_decision_tree then	
-      Printf.printf "DT: maybe_mark_all_seen_node at %d\n" n.ident;
+      Printf.eprintf "DT: maybe_mark_all_seen_node at %d\n" n.ident;
     if (match get_f_child n with
 	  | None -> false
 	  | Some None -> true
@@ -847,7 +847,7 @@ class binary_decision_tree = object(self)
 	 n.heur_max <- max cur_heur n.heur_max;
 	 update_dt_node n;
 	 if !opt_trace_decision_tree then	
-	   Printf.printf "DT: propagate_heur %d (%d %d) at %d\n" cur_heur
+	   Printf.eprintf "DT: propagate_heur %d (%d %d) at %d\n" cur_heur
 	     n.heur_min n.heur_max n.ident;
 	 match get_parent n with
 	   | None -> ()
@@ -877,7 +877,7 @@ class binary_decision_tree = object(self)
 	  tMin := t_min;
 	  tMax := t_max;
 	    if !opt_trace_guidance then
-	      Printf.printf
+	      Printf.eprintf
 		"Heuristic choice between F[%d, %d] and T[%d, %d]\n"
 		f_min f_max t_min t_max;
 	    if f_min > f_max || t_min > t_max then
@@ -897,10 +897,10 @@ class binary_decision_tree = object(self)
 	      else
 		None
 	    else if f_max <> t_max then
-	      ( (*Printf.printf "Preference based on max\n"; *)
+	      ( (*Printf.eprintf "Preference based on max\n"; *)
 	       Some (t_max > f_max))
 	    (* else if f_min <> t_min then
-	      ( (*Printf.printf "Preference based on min\n"; *)
+	      ( (*Printf.eprintf "Preference based on min\n"; *)
 	       Some (t_min > f_min)) *)
 	    else
 	      None
@@ -972,7 +972,7 @@ class binary_decision_tree = object(self)
 	    failwith "Feasibility invariant failure in have_choice"
     in
       if !opt_trace_decision_tree then
-	Printf.printf "DT: at %d, have_choice is %b\n" cur.ident result;
+	Printf.eprintf "DT: at %d, have_choice is %b\n" cur.ident result;
       result
 
   method cur_ident =

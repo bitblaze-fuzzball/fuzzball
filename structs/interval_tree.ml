@@ -216,7 +216,7 @@ let attempt_deallocate alloc_map io_map attempted_range =
       
 
 let rec attempt_read alloc_map io_map attempted_range =
-	(*Printf.printf "Attempt read at (0x%08Lx, 0x%08Lx)\n" attempted_range.low attempted_range.high;*)
+	(*Printf.eprintf "Attempt read at (0x%08Lx, 0x%08Lx)\n" attempted_range.low attempted_range.high;*)
 	let page_size = 4096L in
   let low_page = Int64.div attempted_range.low page_size 
 	and high_page = Int64.div attempted_range.high page_size in
@@ -236,7 +236,7 @@ let rec attempt_read alloc_map io_map attempted_range =
       			)) 
 	else if (low_page < high_page) 
 	then 
-		((*Printf.printf "Attempt read multi-pages\n";*)
+		((*Printf.eprintf "Attempt read multi-pages\n";*)
 		let page_start = (Int64.sub attempted_range.high (Int64.rem attempted_range.high page_size)) in
 		let page_end = Int64.pred page_start in
 		let low_range = {
@@ -336,7 +336,7 @@ let rec attempt_write alloc_map io_map attempted_range =
       )))
 		else if (low_page < high_page)
 		then 
-			((*Printf.printf "Attempt write multi-pages\n";*)
+			((*Printf.eprintf "Attempt write multi-pages\n";*)
   		let page_start = (Int64.sub attempted_range.high (Int64.rem attempted_range.high page_size)) in
   		let page_end = Int64.pred page_start in
   		let low_range = {

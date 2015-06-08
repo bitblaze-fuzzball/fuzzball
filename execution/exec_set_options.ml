@@ -562,7 +562,7 @@ let cmdline_opts =
     ("-svn-version", Arg.Unit
       (fun () -> 
 	opt_svn_version := true;
-	Printf.printf "SVN version %s\n" Svn_version.svn_version),
+	Printf.eprintf "SVN version %s\n" Svn_version.svn_version),
      " Print SVN revision number");
     ("-memory-watching", Arg.Set(opt_memory_watching),
      " Pay attention to memory related issues");
@@ -607,7 +607,7 @@ let set_program_name s =
   match !opt_program_name with 
     | None -> opt_program_name := Some s
     | Some prev ->
-	Printf.printf "Multiple args: %s, %s\n" prev s;
+	Printf.eprintf "Multiple args: %s, %s\n" prev s;
 	failwith "Multiple non-option args not allowed"
 
 let default_on_missing = ref (fun fm -> fm#on_missing_zero)
@@ -786,6 +786,6 @@ let decide_start_addrs () =
       | (Some osa, None,      _       ) -> (osa,  osa)
   in
     if !opt_trace_setup then
-      Printf.printf "%s 0x%08Lx, fuzz start 0x%08Lx\n"
+      Printf.eprintf "%s 0x%08Lx, fuzz start 0x%08Lx\n"
 	"Starting address" start_addr fuzz_start;
     (start_addr, fuzz_start)

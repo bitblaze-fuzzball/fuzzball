@@ -173,8 +173,8 @@ let rec print_region_ft ?offset:(offset = 1) (node : veritesting_node finished_t
 
 
 and print_region ?offset:(offset = 1) (node : veritesting_node) =
-  (for i=1 to offset do Printf.printf "\t" done);
-  Printf.printf "%s\n" (node_to_string node);
+  (for i=1 to offset do Printf.eprintf "\t" done);
+  Printf.eprintf "%s\n" (node_to_string node);
   match node with
   | Undecoded _
   | Raw _ -> ()
