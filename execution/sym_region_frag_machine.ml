@@ -607,21 +607,45 @@ struct
 	   self#add_event_detail "call-stack" self#callstack_json
 	)
 
-    method private check_cond cond_e = 
-      if !opt_concrete_path then
-	let (_, choices) = self#eval_bool_exp_conc_path cond_e in
-	  choices
-      else
-	(dt#start_new_query_binary;
-	 self#note_first_branch;
-	 let choices = ref None in 
-	   self#restore_path_cond
-	     (fun () ->
-		let b = self#extend_pc_random cond_e true in
-		  choices := dt#check_last_choices;
-		  dt#count_query;
-		  ignore(b));
-	   !choices)
+    val check_cond_cache = Hashtbl.create 101
+
+    method private check_cond cond_e =
+      let tristate_str = function
+	| None -> "?"
+	| Some true -> "T"
+	| Some false -> "F"
+      in
+      let try_cond e =
+	if !opt_trace_decisions then
+	  Printf.printf "Checking %s:\n" (V.exp_to_string e);
+	let (is_sat, _) = self#query_with_path_cond e true in
+	  is_sat
+      in
+	if !opt_concrete_path then
+	  let b = (form_man#eval_expr cond_e) <> 0L in
+	    if !opt_trace_conditions then 
+              Printf.printf "Computed concrete value %b\n" b;
+	    Some b
+	else
+	  let key = (cond_e, dt#get_hist_str) in
+	    try
+	      let choices = Hashtbl.find check_cond_cache key in
+		if !opt_trace_decisions then
+		  Printf.printf "Reusing cached condition result %s for %s\n"
+		    (tristate_str choices) (V.exp_to_string cond_e);
+		choices
+	    with Not_found ->
+	      let can_be_true = try_cond cond_e and
+		  can_be_false = try_cond (V.UnOp(V.NOT, cond_e)) in
+	      let choices = match (can_be_true, can_be_false) with
+		| (true, false) -> Some true
+		| (false, true) -> Some false
+		| (true, true) -> None
+		| (false, false) ->
+		    failwith "Double unsat in check_cond"
+	      in
+		Hashtbl.replace check_cond_cache key choices;
+		choices
 
     method private handle_weird_addr_expr e =
       if !opt_stop_on_weird_sym_addr || !opt_finish_on_weird_sym_addr then

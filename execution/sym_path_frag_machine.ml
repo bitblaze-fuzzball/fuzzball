@@ -520,7 +520,7 @@ struct
 			   self#get_eip) in
       result
 
-    method eval_bool_exp_conc_path e =
+    method private eval_bool_exp_conc_path e =
       let b = (form_man#eval_expr e) <> 0L in
       if !opt_trace_conditions then 
 	Printf.printf "Computed concrete value %b\n" b;
