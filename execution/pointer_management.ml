@@ -274,7 +274,8 @@ class pointer_management = object(self)
 	  IT.attempt_write assign_ranges io_ranges this_interval in
 	g_assert(new_write.IT.provenance = prov)  100 "Pointer_management.is_safe_write";
 	io_ranges <- io_ranges';
-	if new_write.IT.accessed > !Exec_options.opt_read_write_warn_ratio
+	if !Exec_options.opt_read_write_warn_ratio <> -1 &&
+	  new_write.IT.accessed > !Exec_options.opt_read_write_warn_ratio
 	then self#report [("tag" , (`String ":suspicious-write"));
 			  ("subtag", (`String ":write-before-read"));
 			  ("write-start", (json_addr start_addr));
