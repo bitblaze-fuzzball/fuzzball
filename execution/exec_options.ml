@@ -228,6 +228,8 @@ let opt_symbolic_random = ref false
 let opt_one_random = ref false
 let opt_skip_timeouts = ref false
 
+let opt_num_fd = ref 2
+
 let opt_memory_watching = ref false
 
 let opt_bb_size = ref 1

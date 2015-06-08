@@ -84,12 +84,12 @@ class cgcos_special_handler (fm : fragment_machine) =
 		      (Int64.of_int off)) in
 object(self)
   method private get_fd vt_fd =
-    match vt_fd with
+    match vt_fd with 
       | 0 -> Unix.stdin
       | 1 -> Unix.stdout
       | 2 -> Unix.stderr
       | _ ->
-	  raise (Unix.Unix_error(Unix.EBADF, "Bad (virtual) file handle", ""))
+	if (vt_fd > !opt_num_fd) then raise (Unix.Unix_error(Unix.EBADF, "Bad (virtual) file handle", "")) else Unix.stderr (* stderr as default for now? unsure how to get the _real_ fd for concolic run... *)
 
   method private errno err =
     match err with
