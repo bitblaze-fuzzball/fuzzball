@@ -143,7 +143,16 @@ class pointer_management = object(self)
 		    ("double-freed-addr", (json_addr addr))];
        raise Double_Free)
     | IT.DeallocationSizeMismatch _ ->
-      raise Alloc_Dealloc_Length_Mismatch
+	Printf.printf "Ignoring unsupported partial dealloc of 0x%Lx+0x%Lx\n"
+	  addr len;
+	(* We no longer treat this as indicating a program problem,
+	   since it can happen legitimately, including in a specific CGC
+	   malloc library with partially unmaps part of a larger allocation
+	   to get an aligned block. Really we should update the interval
+	   tree to support this too, but for now catching the exception
+	   should be similar to treating the partial dealloc as a no-op,
+	   which should be fairly safe. *)
+	(* raise Alloc_Dealloc_Length_Mismatch *)
     | IT.DeallocatingUnallocated _ -> 
       raise Dealloc_Not_Alloc
 

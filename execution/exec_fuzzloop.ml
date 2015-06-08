@@ -234,6 +234,9 @@ let fuzz_runloop fm fuzz_start_eip asmir_gamma end_eips =
     log_fuzz_restart Log.always ":deallocating_unallocated" true fm;
     stop "on deallocating something not allocated" true
   | Alloc_Dealloc_Length_Mismatch ->
+    (* Note at the moment we don't raise this anywhere, since there's
+       nothing matching this description which an error and which we can
+       detect. *) 
     log_fuzz_restart Log.always ":partial_dealloc" true fm;
     stop "on deallocating a size different than that allocated" true
   | Unsafe_Memory_Access ->
