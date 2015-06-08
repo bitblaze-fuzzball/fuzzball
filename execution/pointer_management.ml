@@ -74,7 +74,7 @@ class pointer_management = object(self)
       ((self#less_than v1 r1) && (self#greater_than v2 r2))
 
   method private is_overlapping v1 v2 r1 r2 =
-    self#is_contained v1 v2 r1 r2 &&
+    self#is_contained v1 v2 r1 r2 ||
       self#is_overlapping_not_contained v1 v2 r1 r2
 
   method add_alloc addr len = 
@@ -397,11 +397,15 @@ class pointer_management = object(self)
 	 is_safe := false)
       else
 	if (self#is_contained start_addr end_addr stack_end stack_start) then (
+		(
 	  for i = 0 to (Int64.to_int len) - 1 do
 	    Hashtbl.replace stack_table (Int64.add start_addr (Int64.of_int i))
 	      true;
 	  done
 	);
+		is_safe := true;
+	)
+	else
       (* otherwise we assume we're safe for now *)
 	is_safe := true
     );
