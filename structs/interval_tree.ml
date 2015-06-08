@@ -58,7 +58,7 @@ let abbuts i1 i2 =
 
 let is_in i1 i2 =
     (* is i2 in i1 *)
-  i2.low >= i1.low &&
+	i2.low >= i1.low &&
     i2.high <= i1.high
 
 let safe_merge i1 i2 =
@@ -166,7 +166,9 @@ let optional_find imap key =
 let rec remove_all imap key =
   (* removes all keys that collide with the specified key *)
   let imap' = IntervalMap.remove key imap in
-  if (IntervalMap.cardinal imap') = (IntervalMap.cardinal imap)
+	let card' = IntervalMap.cardinal imap' 
+	and card = IntervalMap.cardinal imap in
+  if (card') = (card)
   then imap (* or imap' -- either is ok *)
   else remove_all imap' key
     
@@ -255,8 +257,14 @@ let attempt_write alloc_map io_map attempted_range =
       (* write range in allocated range *)
       (if is_in interval.key attempted_range
        then
-	  (let merge_range = {low = (Int64.sub attempted_range.low Int64.one);
-			      high = (Int64.add attempted_range.high Int64.one);
+	  (
+			let merge_range = {
+    				low = (match (Int64.rem attempted_range.low 4096L) with
+      			| 0L -> attempted_range.low
+      			| _ -> (Int64.sub attempted_range.low Int64.one));
+			      high = (match (Int64.rem attempted_range.high 4096L) with
+						| 0xfffL -> attempted_range.high
+						| _ -> (Int64.add attempted_range.high Int64.one));
 			      provenance = prov;
 			      accessed = 1; (* acccessed at least once, by this write *)} in
 	   (match optional_find io_map merge_range with
