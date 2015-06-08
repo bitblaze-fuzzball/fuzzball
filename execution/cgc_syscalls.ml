@@ -212,8 +212,13 @@ object(self)
     with Invalid_argument("String.create")
 	-> raise (Unix.Unix_error(Unix.EFAULT, "String.create", ""))
 
-  method private cgcos_allocate length is_exec addr_p =
+  method private cgcos_allocate unpadded_length is_exec addr_p =
     ignore(is_exec); (* We have no page permissions yet *)
+    (* Round up the next multiple of 4096, since Linux/CGC memory
+       management is always page-granularity *)
+    let length = Int64.add unpadded_length
+      (Int64.logand (Int64.neg unpadded_length) 4095L)
+    in
     let fresh = self#fresh_addr length in
       if !opt_memory_watching then
         pm#add_alloc fresh length;
