@@ -952,12 +952,429 @@ Stmt *x64_translate_put( IRStmt *stmt, IRSB *irbb, vector<Stmt *> *irout )
 //
 //======================================================================
 
+/* These enumerated definitions are copied from VEX's
+   priv/guest_amd64_defs.h, but since they matche the architectural
+   encoding, we can hope they're not likely to change. */
+enum {
+  AMD64CondO      = 0,  /* overflow           */
+  AMD64CondNO     = 1,  /* no overflow        */
+
+  AMD64CondB      = 2,  /* below              */
+  AMD64CondNB     = 3,  /* not below          */
+
+  AMD64CondZ      = 4,  /* zero               */
+  AMD64CondNZ     = 5,  /* not zero           */
+
+  AMD64CondBE     = 6,  /* below or equal     */
+  AMD64CondNBE    = 7,  /* not below or equal */
+
+  AMD64CondS      = 8,  /* negative           */
+  AMD64CondNS     = 9,  /* not negative       */
+
+  AMD64CondP      = 10, /* parity even        */
+  AMD64CondNP     = 11, /* not parity even    */
+
+  AMD64CondL      = 12, /* jump less          */
+  AMD64CondNL     = 13, /* not less           */
+
+  AMD64CondLE     = 14, /* less or equal      */
+  AMD64CondNLE    = 15, /* not less or equal  */
+
+  AMD64CondAlways = 16  /* HACK */
+};
+
+#define CC_SHIFT_O   11
+#define CC_SHIFT_S   7
+#define CC_SHIFT_Z   6
+#define CC_SHIFT_A   4
+#define CC_SHIFT_C   0
+#define CC_SHIFT_P   2
+
+#define CC_MASK_O    (1ULL << CC_SHIFT_O)
+#define CC_MASK_S    (1ULL << CC_SHIFT_S)
+#define CC_MASK_Z    (1ULL << CC_SHIFT_Z)
+#define CC_MASK_A    (1ULL << CC_SHIFT_A)
+#define CC_MASK_C    (1ULL << CC_SHIFT_C)
+#define CC_MASK_P    (1ULL << CC_SHIFT_P)
+
+/* This enumerated definition is also copied from the same place; alas
+   there's no specific reason to be sure it won't change in the
+   future, in which case we may need more #ifdefs. It has been pretty
+   stable so far, though. */
+
+enum {
+    CC_OP_COPY=0,  /* DEP1 = current flags, DEP2 = 0, NDEP = unused */
+                          /* just copy DEP1 to output */
+
+    CC_OP_ADDB,    /* 1 */
+    CC_OP_ADDW,    /* 2 DEP1 = argL, DEP2 = argR, NDEP = unused */
+    CC_OP_ADDL,    /* 3 */
+    CC_OP_ADDQ,    /* 4 */
+
+    CC_OP_SUBB,    /* 5 */
+    CC_OP_SUBW,    /* 6 DEP1 = argL, DEP2 = argR, NDEP = unused */
+    CC_OP_SUBL,    /* 7 */
+    CC_OP_SUBQ,    /* 8 */
+
+    CC_OP_ADCB,    /* 9 */
+    CC_OP_ADCW,    /* 10 DEP1 = argL, DEP2 = argR ^ oldCarry, NDEP = oldCarry */
+    CC_OP_ADCL,    /* 11 */
+    CC_OP_ADCQ,    /* 12 */
+
+    CC_OP_SBBB,    /* 13 */
+    CC_OP_SBBW,    /* 14 DEP1 = argL, DEP2 = argR ^ oldCarry, NDEP = oldCarry */
+    CC_OP_SBBL,    /* 15 */
+    CC_OP_SBBQ,    /* 16 */
+
+    CC_OP_LOGICB,  /* 17 */
+    CC_OP_LOGICW,  /* 18 DEP1 = result, DEP2 = 0, NDEP = unused */
+    CC_OP_LOGICL,  /* 19 */
+    CC_OP_LOGICQ,  /* 20 */
+
+    CC_OP_INCB,    /* 21 */
+    CC_OP_INCW,    /* 22 DEP1 = result, DEP2 = 0, NDEP = oldCarry (0 or 1) */
+    CC_OP_INCL,    /* 23 */
+    CC_OP_INCQ,    /* 24 */
+
+    CC_OP_DECB,    /* 25 */
+    CC_OP_DECW,    /* 26 DEP1 = result, DEP2 = 0, NDEP = oldCarry (0 or 1) */
+    CC_OP_DECL,    /* 27 */
+    CC_OP_DECQ,    /* 28 */
+
+    CC_OP_SHLB,    /* 29 DEP1 = res, DEP2 = res', NDEP = unused */
+    CC_OP_SHLW,    /* 30 where res' is like res but shifted one bit less */
+    CC_OP_SHLL,    /* 31 */
+    CC_OP_SHLQ,    /* 32 */
+
+    CC_OP_SHRB,    /* 33 DEP1 = res, DEP2 = res', NDEP = unused */
+    CC_OP_SHRW,    /* 34 where res' is like res but shifted one bit less */
+    CC_OP_SHRL,    /* 35 */
+    CC_OP_SHRQ,    /* 36 */
+
+    CC_OP_ROLB,    /* 37 */
+    CC_OP_ROLW,    /* 38 DEP1 = res, DEP2 = 0, NDEP = old flags */
+    CC_OP_ROLL,    /* 39 */
+    CC_OP_ROLQ,    /* 40 */
+
+    CC_OP_RORB,    /* 41 */
+    CC_OP_RORW,    /* 42 DEP1 = res, DEP2 = 0, NDEP = old flags */
+    CC_OP_RORL,    /* 43 */
+    CC_OP_RORQ,    /* 44 */
+
+    CC_OP_UMULB,   /* 45 */
+    CC_OP_UMULW,   /* 46 DEP1 = argL, DEP2 = argR, NDEP = unused */
+    CC_OP_UMULL,   /* 47 */
+    CC_OP_UMULQ,   /* 48 */
+
+    CC_OP_SMULB,   /* 49 */
+    CC_OP_SMULW,   /* 50 DEP1 = argL, DEP2 = argR, NDEP = unused */
+    CC_OP_SMULL,   /* 51 */
+    CC_OP_SMULQ,   /* 52 */
+
+    CC_OP_ANDN32,  /* 53 */
+    CC_OP_ANDN64,  /* 54 DEP1 = res, DEP2 = 0, NDEP = unused */
+
+    CC_OP_BLSI32,  /* 55 */
+    CC_OP_BLSI64,  /* 56 DEP1 = res, DEP2 = arg, NDEP = unused */
+
+    CC_OP_BLSMSK32,/* 57 */
+    CC_OP_BLSMSK64,/* 58 DEP1 = res, DEP2 = arg, NDEP = unused */
+
+    CC_OP_BLSR32,  /* 59 */
+    CC_OP_BLSR64,  /* 60 DEP1 = res, DEP2 = arg, NDEP = unused */
+
+    CC_OP_NUMBER
+};
+
+
+// Parse our statement vector to see if we can find how VEX is setting
+// the "thunk" that lazily represents flags operations. The thunk consists
+// of 4 pseudo-registers CC_{OP,DEP1,DEP2,NDEP}, so basically we look for
+// assignments to these, and return their statment indexes via the first
+// four int * arguments. (An index of "-1" means "not present".)
+// An additional complication is that the updates to the thunk may be
+// conditional (say for a shift with a non-constant amount), or
+// effectively-NOP'ed (say for a shift by a constant 0), and we have to
+// recognize what this looks like after VEX's simplifications and our
+// translation of VEX's "mux0x" conditionals. These cases are signified by
+// also setting one of the remaining int * arguments.
+// This is a clone of code from irtoir-arm.c, in turn from
+// irtoir-i386.c. It would be good to reunify them.
+static void
+get_thunk_index(vector<Stmt *> *ir,
+		int *op,
+		int *dep1,
+		int *dep2,
+		int *ndep,
+		int *mux0x,
+		int *nop)
+{
+    assert(ir);
+
+    unsigned int i;
+
+    Temp *cc_op_copy = 0;
+
+    *op = -1;
+
+    for ( i = 0; i < ir->size(); i++ )
+    {
+        Stmt *stmt = ir->at(i);
+        if ( stmt->stmt_type != MOVE
+	     || ((Move*)stmt)->lhs->exp_type != TEMP )
+	    continue;
+
+	Move *mv = (Move*)stmt;
+	Temp *temp = (Temp *)mv->lhs;
+	if (temp->name == "R_CC_OP") {
+	    *op = i;
+	    /* The statement offsets -1. -2, -3, and -6 here have to do with
+	       matching the output of emit_ite. */
+#ifdef MUX_AS_CJMP
+	    if (match_ite(ir, i-6, NULL, NULL, NULL, NULL) >= 0)
+		*mux0x = i-6;
+#else
+	    if (match_ite(ir, i-3, NULL, NULL, NULL, NULL) >= 0) {
+		if (i >= 3) {
+		    Stmt *prev_stmt = ir->at(i - 1);
+		    if ( prev_stmt->stmt_type == MOVE ) {
+			Move *prev_mv = (Move*)prev_stmt;
+			if ( prev_mv->lhs->exp_type == TEMP ) {
+			    Temp *prev_temp = (Temp *)prev_mv->lhs;
+			    if ( mv->rhs->exp_type == TEMP ) {
+				Temp *rhs_temp = (Temp *)mv->rhs;
+				if ( prev_temp->name == rhs_temp->name ) {
+				    *op = i-2;
+				    *mux0x = i-3;
+				}
+			    }
+			}
+		    }
+		}
+	    } else if (cc_op_copy && mv->rhs->exp_type == TEMP) {
+		Temp *rhs_temp = (Temp *)mv->rhs;
+		if (rhs_temp->name == cc_op_copy->name) {
+		    // We saw t = CC_OP; ...; CC_OP = t, so the thunk
+		    // is actually a no-op.
+		    *nop = i;
+		}
+	    }
+#endif
+	}
+	else if (temp->name == "R_CC_DEP1")
+	    *dep1 = i;
+	else if (temp->name == "R_CC_DEP2")
+	    *dep2 = i;
+	else if (temp->name == "R_CC_NDEP")
+	    *ndep = i;
+	else if (mv->rhs->exp_type == TEMP) {
+	    Temp *rhs_temp = (Temp *)mv->rhs;
+	    if (rhs_temp->name == "R_CC_OP") {
+		cc_op_copy = temp;
+	    }
+	}
+    }
+}
+
+/* e can be anything from a REG_8 to a REG_64, but only the partity of the
+   low 8 bits is computed, like the x64 PF flag. */
+Exp *parity8(Exp *e) {
+    Exp *shift0 = ecl(e);
+    Exp *shift1 = ex_shr(e, new Constant(REG_32, 1));
+    Exp *shift2 = ex_shr(e, new Constant(REG_32, 2));
+    Exp *shift3 = ex_shr(e, new Constant(REG_32, 3));
+    Exp *shift4 = ex_shr(e, new Constant(REG_32, 4));
+    Exp *shift5 = ex_shr(e, new Constant(REG_32, 5));
+    Exp *shift6 = ex_shr(e, new Constant(REG_32, 6));
+    Exp *shift7 = ex_shr(e, new Constant(REG_32, 7));
+    Exp *xor_e = _ex_xor(shift7, shift6, shift5, shift4,
+			 shift3, shift2, shift1, shift0);
+    return _ex_not(_ex_l_cast(xor_e, REG_1));
+}
 
 void x64_modify_flags( asm_program_t *prog, vine_block_t *block )
 {
-    assert(block);
+    int op_st = -1, dep1_st = -1, dep2_st = -1, ndep_st = -1,
+        mux0x_st = -1, nop_st = -1;
+    vector<Stmt *> *ir = block->vine_ir;
+    get_thunk_index(ir, &op_st, &dep1_st, &dep2_st, &ndep_st,
+                    &mux0x_st, &nop_st);
 
-    /* to implement */
+    if (op_st == -1)
+        // doesn't set flags
+        return;
+
+    Stmt *op_stmt = ir->at(op_st);
+
+    bool got_op;
+    int op = -1;
+    if(!(op_stmt->stmt_type == MOVE)) {
+        got_op = false;
+    } else {
+        Move *op_mov = (Move*)op_stmt;
+        if(op_mov->rhs->exp_type == CONSTANT) {
+            Constant *op_const = (Constant*)op_mov->rhs;
+            op = op_const->val;
+            got_op = true;
+        } else if (op_mov->rhs->exp_type == BINOP) {
+            BinOp *bin_or = (BinOp*)op_mov->rhs;
+            if (bin_or->binop_type == BITOR
+                && bin_or->rhs->exp_type == BINOP) {
+                BinOp *bin_and = (BinOp*)bin_or->rhs;
+                if (bin_and->binop_type == BITAND
+                    && bin_and->lhs->exp_type == CONSTANT) {
+                    Constant *op_const = (Constant*)bin_and->lhs;
+                    op = op_const->val;
+                    got_op = true;
+                } else {
+                    got_op = false;
+                }
+            } else {
+                got_op = false;
+            }
+        } else {
+            got_op = false;
+        }
+    }
+
+    if (0 && op_st != -1) {
+        for (unsigned int i = 0; i < ir->size(); i++) {
+            printf("  %2d: %s\n", i, (*ir)[i]->tostring().c_str());
+        }
+        printf("Found thunk at op:%d dep1:%d dep2:%d ndep:%d mux:%d nop:%d\n",
+               op_st, dep1_st, dep2_st, ndep_st, mux0x_st, nop_st);
+    }
+
+    if (nop_st != -1) {
+        return;
+    }
+
+    assert(got_op);
+
+    Exp *dep1_expr, *dep2_expr;
+    Exp *ndep_expr = 0;
+    assert(dep1_st != -1);
+    assert(dep2_st != -1);
+    if (mux0x_st == -1) {
+        // Unconditional case
+        assert(ir->at(dep1_st)->stmt_type == MOVE);
+        dep1_expr = ((Move *)(ir->at(dep1_st)))->rhs;
+
+        assert(ir->at(dep2_st)->stmt_type == MOVE);
+        dep2_expr = ((Move *)(ir->at(dep2_st)))->rhs;
+
+	if (ndep_st != -1) {
+	    assert(ir->at(ndep_st)->stmt_type == MOVE);
+	    ndep_expr = ((Move *)(ir->at(ndep_st)))->rhs;
+	}
+    } else {
+        // Conditional case
+        Exp *cond, *exp_t, *exp_f, *res;
+        int matched;
+        matched = match_ite(ir, dep1_st - 3, &cond, &exp_t, &exp_f, &res);
+        assert(matched != -1);
+        assert(exp_f);
+        dep1_expr = exp_f;
+
+        matched = match_ite(ir, dep2_st - 3, &cond, &exp_t, &exp_f, &res);
+        assert(matched != -1);
+        assert(exp_f);
+        dep2_expr = exp_f;
+
+	if (ndep_st != -1) {
+	    matched = match_ite(ir, ndep_st - 3, &cond, &exp_t, &exp_f, &res);
+	    assert(matched != -1);
+	    assert(exp_f);
+	    ndep_expr = exp_f;
+	}
+    }
+    /* All the code above here was cloned from arm_modify_flags. */
+
+    Temp *CF = new Temp(REG_1, "R_CF");
+    Temp *PF = new Temp(REG_1, "R_PF");
+    Temp *AF = new Temp(REG_1, "R_AF");
+    Temp *ZF = new Temp(REG_1, "R_ZF");
+    Temp *SF = new Temp(REG_1, "R_SF");
+    Temp *OF = new Temp(REG_1, "R_OF");
+
+    vector<Stmt *> new_ir;
+    Exp *cf, *pf, *af, *zf, *sf, *of;
+
+    switch (op) {
+    case CC_OP_COPY:
+	cf = ex_get_bit(dep1_expr, CC_SHIFT_C);
+	pf = ex_get_bit(dep1_expr, CC_SHIFT_P);
+	af = ex_get_bit(dep1_expr, CC_SHIFT_A);
+	zf = ex_get_bit(dep1_expr, CC_SHIFT_Z);
+	sf = ex_get_bit(dep1_expr, CC_SHIFT_S);
+	of = ex_get_bit(dep1_expr, CC_SHIFT_O);
+	break;
+    case CC_OP_LOGICL:
+	cf = ecl(&Constant::f);
+	of = ecl(&Constant::f);
+	af = 0;
+	zf = _ex_eq(ecl(dep1_expr), ex_const(REG_64, 0));
+	sf = _ex_h_cast(ex_l_cast(dep1_expr, REG_32), REG_1);
+	pf = parity8(dep1_expr);
+	break;
+    default:
+	printf("Unsupported x86-64 CC OP %d\n", op);
+        /* panic("Unsupported x86-64 CC OP in x64_modify_flags"); */
+	return; /* also a memory leak */
+    }
+
+    /* For now, don't try to remove the thunk, just like the x86 code
+       doesn't. */
+    int insert_loc = max(max(op_st, dep1_st), max(dep2_st, ndep_st));
+    if (mux0x_st != -1) {
+	// Looks like a conditional thunk; make new conditional
+	// assignments using the same condition
+	int start = mux0x_st - 2;
+	assert(start >= 0);
+	Exp *cond, *exp_t, *exp_f, *res;
+	int matched = match_ite(ir, mux0x_st, &cond, &exp_t, &exp_f, &res);
+	assert(matched != -1);
+	assert(cond);
+	Exp *ite;
+	if (cf) {
+	    ite = emit_ite(&new_ir, REG_1, ecl(cond), ecl(CF), cf);
+	    new_ir.push_back(new Move(CF, ite));
+	}
+	if (pf) {
+	    ite = emit_ite(&new_ir, REG_1, ecl(cond), ecl(PF), pf);
+	    new_ir.push_back(new Move(PF, ite));
+	}
+	if (af) {
+	    ite = emit_ite(&new_ir, REG_1, ecl(cond), ecl(AF), af);
+	    new_ir.push_back(new Move(AF, ite));
+	}
+	if (zf) {
+	    ite = emit_ite(&new_ir, REG_1, ecl(cond), ecl(ZF), zf);
+	    new_ir.push_back(new Move(ZF, ite));
+	}
+	if (sf) {
+	    ite = emit_ite(&new_ir, REG_1, ecl(cond), ecl(SF), sf);
+	    new_ir.push_back(new Move(SF, ite));
+	}
+	if (of) {
+	    ite = emit_ite(&new_ir, REG_1, ecl(cond), ecl(OF), of);
+	    new_ir.push_back(new Move(OF, ite));
+	}
+    } else {
+	if (cf)
+	    new_ir.push_back(new Move(CF, cf));
+	if (pf)
+	    new_ir.push_back(new Move(PF, pf));
+	if (af)
+	    new_ir.push_back(new Move(AF, af));
+	if (zf)
+	    new_ir.push_back(new Move(ZF, zf));
+	if (sf)
+	    new_ir.push_back(new Move(SF, sf));
+	if (of)
+	    new_ir.push_back(new Move(OF, of));
+    }
+    ir->insert(ir->begin() + insert_loc, new_ir.begin(), new_ir.end());
 }
 
 

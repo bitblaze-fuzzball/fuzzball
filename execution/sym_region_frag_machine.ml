@@ -672,11 +672,15 @@ struct
 	  | _ -> failwith "multiple bases"
 
     method eval_addr_exp_region exp =
+      let (to_concrete, to_symbolic) = match !opt_arch with
+	| (X86|ARM) -> (D.to_concrete_32, D.to_symbolic_32)
+	| X64       -> (D.to_concrete_64, D.to_symbolic_64)
+      in
       let v = self#eval_int_exp_simplify exp in
 	try
-	  (Some 0, D.to_concrete_32 v)
+	  (Some 0, to_concrete v)
 	with NotConcrete _ ->
-	  let e = D.to_symbolic_32 v in
+	  let e = to_symbolic v in
 	  let eip = self#get_eip in
 	    if !opt_trace_sym_addrs then
 	      Printf.printf "Symbolic address %s @ (0x%Lx)\n"
