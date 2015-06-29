@@ -100,27 +100,51 @@ let concrete_state_cmdline_opts =
     ("-initial-eax", Arg.String
        (fun s -> opt_initial_eax := Some(Int64.of_string s)),
      "word Concrete initial value for %eax register");
+    ("-initial-rax", Arg.String
+       (fun s -> opt_initial_eax := Some(Int64.of_string s)),
+     "word Concrete initial value for %rax register");
     ("-initial-ebx", Arg.String
        (fun s -> opt_initial_ebx := Some(Int64.of_string s)),
      "word Concrete initial value for %ebx register");
+    ("-initial-rbx", Arg.String
+       (fun s -> opt_initial_ebx := Some(Int64.of_string s)),
+     "word Concrete initial value for %rbx register");
     ("-initial-ecx", Arg.String
        (fun s -> opt_initial_ecx := Some(Int64.of_string s)),
      "word Concrete initial value for %ecx register");
+    ("-initial-rcx", Arg.String
+       (fun s -> opt_initial_ecx := Some(Int64.of_string s)),
+     "word Concrete initial value for %rcx register");
     ("-initial-edx", Arg.String
        (fun s -> opt_initial_edx := Some(Int64.of_string s)),
      "word Concrete initial value for %edx register");
+    ("-initial-rdx", Arg.String
+       (fun s -> opt_initial_edx := Some(Int64.of_string s)),
+     "word Concrete initial value for %rdx register");
     ("-initial-esi", Arg.String
        (fun s -> opt_initial_esi := Some(Int64.of_string s)),
      "word Concrete initial value for %esi register");
+    ("-initial-rsi", Arg.String
+       (fun s -> opt_initial_esi := Some(Int64.of_string s)),
+     "word Concrete initial value for %rsi register");
     ("-initial-edi", Arg.String
        (fun s -> opt_initial_edi := Some(Int64.of_string s)),
      "word Concrete initial value for %edi register");
+    ("-initial-rdi", Arg.String
+       (fun s -> opt_initial_edi := Some(Int64.of_string s)),
+     "word Concrete initial value for %rdi register");
     ("-initial-esp", Arg.String
        (fun s -> opt_initial_esp := Some(Int64.of_string s)),
      "word Concrete initial value for %esp (stack pointer)");
+    ("-initial-rsp", Arg.String
+       (fun s -> opt_initial_esp := Some(Int64.of_string s)),
+     "word Concrete initial value for %rsp (stack pointer)");
     ("-initial-ebp", Arg.String
        (fun s -> opt_initial_ebp := Some(Int64.of_string s)),
      "word Concrete initial value for %ebp (frame pointer)");
+    ("-initial-rbp", Arg.String
+       (fun s -> opt_initial_ebp := Some(Int64.of_string s)),
+     "word Concrete initial value for %rbp");
     ("-initial-eflagsrest", Arg.String
        (fun s -> opt_initial_eflagsrest := Some(Int64.of_string s)),
      "word Concrete value for %eflags, less [CPAZSO]F");
@@ -592,30 +616,46 @@ let apply_cmdline_opts_late (fm : Fragment_machine.fragment_machine) =
      achieving this. *)
   if !opt_symbolic_regs then
     fm#make_regs_symbolic;
-  (match !opt_initial_eax with
-     | Some v -> fm#set_word_var Fragment_machine.R_EAX v
-	 | None -> ());
-  (match !opt_initial_ebx with
-     | Some v -> fm#set_word_var Fragment_machine.R_EBX v
-     | None -> ());
-  (match !opt_initial_ecx with
-     | Some v -> fm#set_word_var Fragment_machine.R_ECX v
-     | None -> ());
-  (match !opt_initial_edx with
-     | Some v -> fm#set_word_var Fragment_machine.R_EDX v
-     | None -> ());
-  (match !opt_initial_esi with
-     | Some v -> fm#set_word_var Fragment_machine.R_ESI v
-     | None -> ());
-  (match !opt_initial_edi with
-     | Some v -> fm#set_word_var Fragment_machine.R_EDI v
-     | None -> ());
-  (match !opt_initial_esp with
-     | Some v -> fm#set_word_var Fragment_machine.R_ESP v
-     | None -> ());
-  (match !opt_initial_ebp with
-     | Some v -> fm#set_word_var Fragment_machine.R_EBP v
-     | None -> ());
+  (match (!opt_initial_eax, !opt_arch) with
+     | (Some v, X86) -> fm#set_word_var Fragment_machine.R_EAX v
+     | (Some v, X64) -> fm#set_long_var Fragment_machine.R_RAX v
+     | (Some v, ARM) -> failwith "ARM has no %eax or %rax"
+     | (None, _) -> ());
+  (match (!opt_initial_ebx, !opt_arch) with
+     | (Some v, X86) -> fm#set_word_var Fragment_machine.R_EBX v
+     | (Some v, X64) -> fm#set_long_var Fragment_machine.R_RBX v
+     | (Some v, ARM) -> failwith "ARM has no %ebx or %rbx"
+     | (None, _) -> ());
+  (match (!opt_initial_ecx, !opt_arch) with
+     | (Some v, X86) -> fm#set_word_var Fragment_machine.R_ECX v
+     | (Some v, X64) -> fm#set_long_var Fragment_machine.R_RCX v
+     | (Some v, ARM) -> failwith "ARM has no %ecx or %rcx"
+     | (None, _) -> ());
+  (match (!opt_initial_edx, !opt_arch) with
+     | (Some v, X86) -> fm#set_word_var Fragment_machine.R_EDX v
+     | (Some v, X64) -> fm#set_long_var Fragment_machine.R_RDX v
+     | (Some v, ARM) -> failwith "ARM has no %edx or %rdx"
+     | (None, _) -> ());
+  (match (!opt_initial_esi, !opt_arch) with
+     | (Some v, X86) -> fm#set_word_var Fragment_machine.R_ESI v
+     | (Some v, X64) -> fm#set_long_var Fragment_machine.R_RSI v
+     | (Some v, ARM) -> failwith "ARM has no %esi or %rsi"
+     | (None, _) -> ());
+  (match (!opt_initial_edi, !opt_arch) with
+     | (Some v, X86) -> fm#set_word_var Fragment_machine.R_EDI v
+     | (Some v, X64) -> fm#set_long_var Fragment_machine.R_RDI v
+     | (Some v, ARM) -> failwith "ARM has no %edi or %rdi"
+     | (None, _) -> ());
+  (match (!opt_initial_esp, !opt_arch) with
+     | (Some v, X86) -> fm#set_word_var Fragment_machine.R_ESP v
+     | (Some v, X64) -> fm#set_long_var Fragment_machine.R_RSP v
+     | (Some v, ARM) -> fm#set_word_var Fragment_machine.R13 v
+     | (None, _) -> ());
+  (match (!opt_initial_ebp, !opt_arch) with
+     | (Some v, X86) -> fm#set_word_var Fragment_machine.R_EBP v
+     | (Some v, X64) -> fm#set_long_var Fragment_machine.R_RBP v
+     | (Some v, ARM) -> failwith "ARM has no %ebp or %rbp"
+     | (None, _) -> ());
   (match !opt_initial_eflagsrest with
      | Some v -> fm#set_word_var Fragment_machine.EFLAGSREST v
      | None -> ());

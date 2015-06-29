@@ -45,11 +45,11 @@ struct
       | 1L -> 0
       | 2L|3L -> 1
       | 4L|5L|6L|7L -> 2
-      | i when i < 16L -> 2 + loop(Int64.shift_right i 2)
-      | i when i < 256L -> 4 + loop(Int64.shift_right i 4)
-      | i when i < 65536L -> 8 + loop(Int64.shift_right i 8)
-      | i when i < 0x100000000L -> 16 + loop(Int64.shift_right i 16)
-      | _ -> 32 + loop(Int64.shift_right i 32)
+      | i when i < 16L -> 2 + loop(Int64.shift_right_logical i 2)
+      | i when i < 256L -> 4 + loop(Int64.shift_right_logical i 4)
+      | i when i < 65536L -> 8 + loop(Int64.shift_right_logical i 8)
+      | i when i < 0x100000000L -> 16 + loop(Int64.shift_right_logical i 16)
+      | _ -> 32 + loop(Int64.shift_right_logical i 32)
     in
       loop i
 
@@ -229,6 +229,9 @@ struct
       | V.Constant(V.Int(V.REG_32, off))
 	  when (Int64.abs (fix_s32 off)) < 0x4000L
 	    -> ConstantOffset(off)
+      | V.Constant(V.Int(V.REG_64, off))
+	  when (Int64.abs off) < 0x4000L
+	    -> ConstantOffset(off)
       | V.Constant(V.Int(V.REG_32, off)) when (fix_s32 off) > 0x8000000L
 	  -> ConstantBase(off)
       | V.Constant(V.Int(V.REG_32, off))
@@ -260,7 +263,7 @@ struct
 	  when off >= 0x80000000L && off < 0xffffffffL
 	    (* XXX let Windows 7 wander over the whole top half *)
 	  -> ConstantBase(off)
-      | V.Constant(V.Int(V.REG_32, off))
+      | V.Constant(V.Int((V.REG_32|V.REG_64), off))
 	    (* XXX -random-memory can produce any value at all *)
 	  -> ConstantBase(off)
       | V.UnOp(V.NEG, _) -> ExprOffset(e)
