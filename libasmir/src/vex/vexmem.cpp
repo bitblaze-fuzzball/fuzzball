@@ -392,11 +392,14 @@ IRStmt* vx_IRStmt_IMark ( Addr64 addr, Int len, UChar delta ) {
 #endif
    return s;
 }
-IRStmt* vx_IRStmt_AbiHint ( IRExpr* base, Int len ) {
+IRStmt* vx_IRStmt_AbiHint ( IRExpr* base, Int len, IRExpr *nia ) {
    IRStmt* s           = (IRStmt *)vx_Alloc(sizeof(IRStmt));
    s->tag              = Ist_AbiHint;
    s->Ist.AbiHint.base = base;
    s->Ist.AbiHint.len  = len;
+#if VEX_VERSION >= 1832
+   s->Ist.AbiHint.nia  = nia;
+#endif
    return s;
 }
 IRStmt* vx_IRStmt_Put ( Int off, IRExpr* data ) {
@@ -698,7 +701,13 @@ IRStmt* vx_dopyIRStmt ( IRStmt* s )
          return vx_IRStmt_NoOp();
       case Ist_AbiHint:
          return vx_IRStmt_AbiHint(vx_dopyIRExpr(s->Ist.AbiHint.base),
-                               s->Ist.AbiHint.len);
+				  s->Ist.AbiHint.len,
+#if VEX_VERSION >= 1832
+				  s->Ist.AbiHint.nia
+#else
+				  0
+#endif
+				  );
       case Ist_IMark:
          return vx_IRStmt_IMark(s->Ist.IMark.addr, s->Ist.IMark.len,
 #if VEX_VERSION >= 2153

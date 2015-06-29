@@ -273,6 +273,11 @@ void translate_init()
     vta.disp_cp_chain_me_to_fastEP = 0;
     vta.disp_cp_xindir             = 0;
 #endif
+#if VEX_VERSION >= 1689
+    /* At last check the default values are all zero bits, so this is
+       a no-op. But it can't hurt. */
+    LibVEX_default_VexAbiInfo(&vta.abiinfo_both);
+#endif
 
 }
 
@@ -307,6 +312,14 @@ IRSB *translate_insn( VexArch guest,
       vta.guest_bytes++;
       vta.guest_bytes_addr |= 1;
     }
+
+
+#if VEX_VERSION >= 1689
+    if (guest == VexArchAMD64) {
+      // the only supported value
+      vta.abiinfo_both.guest_stack_redzone_size = 128;
+    }
+#endif
 
     // Do the actual translation
     if (!(vex_return_val = setjmp(vex_return))) {

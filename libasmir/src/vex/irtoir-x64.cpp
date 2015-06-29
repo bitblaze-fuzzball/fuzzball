@@ -540,6 +540,11 @@ static Exp *translate_get_reg_32( unsigned int offset )
         case OFFB_R14D: name = "R14";   sub = true; break;
         case OFFB_R15D: name = "R15";   sub = true; break;
 
+        case OFFB_EMNOTE:
+	    name = "EMNOTE";
+	    sub = false;
+	    break;
+
         default:
 	    assert(0);
     }
