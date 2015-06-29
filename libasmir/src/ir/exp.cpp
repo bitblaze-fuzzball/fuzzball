@@ -13,7 +13,6 @@ using namespace std;
 // save a trivial amount of time at startup) by constructing the
 // std::strings lazily. -SMcC
 
-// Do NOT change this. It is used in producing XML output.
 static const char *binopnames_strs[] = {
   "PLUS",
   "MINUS",
@@ -38,6 +37,8 @@ static const char *binopnames_strs[] = {
   "LE",
   "SDIVIDE",
   "SMOD",
+  "SLT",
+  "SLE",
 };
 static string *binopnames[sizeof(binopnames_strs)/sizeof(char *)];
 
@@ -65,6 +66,8 @@ static const char *strs_strs[] = {
   "<=",
   "/$",
   "%$",
+  "<$",
+  "<=$",
 };
 static string *strs[sizeof(strs_strs)/sizeof(char *)];
 
@@ -1217,6 +1220,30 @@ BinOp *ex_le( Exp *arg1, Exp *arg2 )
     arg1 = arg1->clone();
     arg2 = arg2->clone();
     return new BinOp(LE, arg1, arg2);
+}
+
+BinOp *_ex_slt( Exp *arg1, Exp *arg2 )
+{
+    return new BinOp(SLT, arg1, arg2);
+}
+
+BinOp *ex_slt( Exp *arg1, Exp *arg2 )
+{
+    arg1 = arg1->clone();
+    arg2 = arg2->clone();
+    return new BinOp(SLT, arg1, arg2);
+}
+
+BinOp *_ex_sle( Exp *arg1, Exp *arg2 )
+{
+    return new BinOp(SLE, arg1, arg2);
+}
+
+BinOp *ex_sle( Exp *arg1, Exp *arg2 )
+{
+    arg1 = arg1->clone();
+    arg2 = arg2->clone();
+    return new BinOp(SLE, arg1, arg2);
 }
 
 Cast *ex_u_cast( Exp *arg, reg_t width )

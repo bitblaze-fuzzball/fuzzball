@@ -34,7 +34,7 @@ enum binop_type_t {
   LROTATE,  RROTATE,  LOGICAND, LOGICOR,
   BITAND,  BITOR,       XOR,      EQ,
   NEQ,  GT,       LT,       GE,
-  LE, SDIVIDE, SMOD    };
+  LE, SDIVIDE, SMOD, SLT, SLE };
 
 enum fbinop_type_t {
   FPLUS = 0, FMINUS, FTIMES, FDIVIDE,
@@ -427,6 +427,10 @@ BinOp *ex_lt( Exp *arg1, Exp *arg2 );
 BinOp *ex_ge( Exp *arg1, Exp *arg2 );
 BinOp *_ex_le( Exp *arg1, Exp *arg2 );
 BinOp *ex_le( Exp *arg1, Exp *arg2 );
+BinOp *_ex_slt( Exp *arg1, Exp *arg2 );
+BinOp *ex_slt( Exp *arg1, Exp *arg2 );
+BinOp *_ex_sle( Exp *arg1, Exp *arg2 );
+BinOp *ex_sle( Exp *arg1, Exp *arg2 );
 Cast *ex_u_cast( Exp *arg, reg_t r );
 Cast *_ex_u_cast( Exp *arg, reg_t r );
 Cast *ex_s_cast( Exp *arg, reg_t r );

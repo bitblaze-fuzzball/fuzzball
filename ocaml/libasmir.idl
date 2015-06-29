@@ -71,7 +71,7 @@ enum binop_type_t {
   LROTATE,  RROTATE,  LOGICAND, LOGICOR,
   BITAND,  BITOR,       XOR,      EQ,
   NEQ,  GT,       LT,       GE,
-  LE,SDIVIDE, SMOD    };
+  LE,SDIVIDE, SMOD, SLT, SLE    };
 
 enum fbinop_type_t {
   FPLUS = 0, FMINUS, FTIMES, FDIVIDE,

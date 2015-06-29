@@ -1519,8 +1519,8 @@ void x64_modify_flags( asm_program_t *prog, vine_block_t *block )
 	af = ex_get_bit(ex_xor(result_w, dep1_expr, dep2_expr), 4);
 	zf = _ex_eq(ecl(result), ex_const(type, 0));
 	sf = ex_h_cast(result, REG_1);
-	of = sign_bit_of(_ex_and(ex_xor(dep1_expr, dep2_expr),
-				 ex_xor(dep1_expr, result_w)), type);
+	of = _ex_xor(ecl(sf), _ex_slt(narrow64(dep1_expr, type),
+				      narrow64(dep2_expr, type)));
 	break; }
     case CC_OP_LOGICB:
     case CC_OP_LOGICW:

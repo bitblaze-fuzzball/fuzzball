@@ -236,15 +236,10 @@ and tr_binop g b lhs rhs =
     | Libasmir.XOR	-> BinOp(XOR     , lhs, rhs)
     | Libasmir.EQ	-> BinOp(EQ      , lhs, rhs)
     | Libasmir.NEQ	-> BinOp(NEQ     , lhs, rhs)
-	(* VEX has both signed and unsigned comparisons, but asmir
-	   only has unsigned, which is sufficient in our current
-	   translation strategy (if you have a signed comparison in your
-	   original code, the translation via EFLAGS bits is equivalent
-	   to but doesn't syntactically include a signed
-	   comparison). Since Vine has signed comparison it would be
-	   straightforward to add in the future.  *)
     | Libasmir.LT	-> BinOp(LT, lhs, rhs)
     | Libasmir.LE       -> BinOp(LE, lhs, rhs)
+    | Libasmir.SLT	-> BinOp(SLT, lhs, rhs)
+    | Libasmir.SLE      -> BinOp(SLE, lhs, rhs)
 	(* At the moment, we only use < and <= (which is generally
 	   VEX's strategy as well). But > and >= can be easily reduced
 	   if needed: *)
