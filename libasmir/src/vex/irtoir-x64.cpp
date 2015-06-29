@@ -492,7 +492,7 @@ static Exp *translate_get_reg_16( unsigned int offset )
 
     if ( sub )
     {
-        Temp *reg = mk_reg(name, REG_32);
+        Temp *reg = mk_reg(name, REG_64);
 
         value = new Cast(reg, REG_16, CAST_LOW);
     }
@@ -651,23 +651,6 @@ Stmt *x64_translate_dirty( IRStmt *stmt, IRSB *irbb, vector<Stmt *> *irout )
     }
     return result;
 }
-
-Exp *x64_translate_ccall( IRExpr *expr, IRSB *irbb, vector<Stmt *> *irout )
-{
-    assert(expr);
-    assert(irbb);
-    assert(irout);
-
-    Exp *result = NULL;
-    string func = string(expr->Iex.CCall.cee->name);
-
-    {
-        result = new Unknown("CCall: " + func);
-    }
-
-    return result;
-}
-
 
 static Stmt *translate_put_reg_8( unsigned int offset, Exp *data, IRSB *irbb )
 {
@@ -1086,6 +1069,99 @@ enum {
     CC_OP_NUMBER
 };
 
+Exp *x64_translate_ccall( IRExpr *expr, IRSB *irbb, vector<Stmt *> *irout )
+{
+    assert(expr);
+    assert(irbb);
+    assert(irout);
+
+    Exp *result = NULL;
+    string func = string(expr->Iex.CCall.cee->name);
+
+    if (func == "amd64g_calculate_condition") {
+	assert(expr->Iex.CCall.args[0]->tag == Iex_Const);
+	assert(expr->Iex.CCall.args[0]->Iex.Const.con->tag == Ico_U64);
+	int arg = expr->Iex.CCall.args[0]->Iex.Const.con->Ico.U64;
+	Exp *cond;
+	switch (arg) {
+	case AMD64CondO:
+	    cond = mk_reg("OF", REG_1);
+	    break;
+	case AMD64CondNO:
+	    cond = _ex_not(mk_reg("OF", REG_1));
+	    break;
+	case AMD64CondB:
+	    cond = mk_reg("CF", REG_1);
+	    break;
+	case AMD64CondNB:
+	    cond = _ex_not(mk_reg("CF", REG_1));
+	    break;
+	case AMD64CondZ:
+	    cond = mk_reg("ZF", REG_1);
+	    break;
+	case AMD64CondNZ:
+	    cond = _ex_not(mk_reg("ZF", REG_1));
+	    break;
+	case AMD64CondS:
+	    cond = mk_reg("SF", REG_1);
+	    break;
+	case AMD64CondNS:
+	    cond = _ex_not(mk_reg("SF", REG_1));
+	    break;
+	case AMD64CondP:
+	    cond = mk_reg("PF", REG_1);
+	    break;
+	case AMD64CondNP:
+	    cond = _ex_not(mk_reg("PF", REG_1));
+	    break;
+	case AMD64CondBE: {
+	    Temp *CF = mk_reg("CF", REG_1);
+	    Temp *ZF = mk_reg("ZF", REG_1);
+	    cond = _ex_or(CF, ZF);
+	    break;
+	}
+	case AMD64CondNBE: {
+	    Temp *CF = mk_reg("CF", REG_1);
+	    Temp *ZF = mk_reg("ZF", REG_1);
+	    cond = _ex_not(_ex_or(CF, ZF));
+	    break;
+	}
+	case AMD64CondL: {
+	    Temp *SF = mk_reg("SF", REG_1);
+	    Temp *OF = mk_reg("OF", REG_1);
+	    cond = _ex_xor(SF, OF);
+	    break;
+	}
+	case AMD64CondNL: {
+	    Temp *SF = mk_reg("SF", REG_1);
+	    Temp *OF = mk_reg("OF", REG_1);
+	    cond = _ex_not(_ex_xor(SF, OF));
+	    break;
+	}
+	case AMD64CondLE: {
+	    Temp *SF = mk_reg("SF", REG_1);
+	    Temp *ZF = mk_reg("ZF", REG_1);
+	    Temp *OF = mk_reg("OF", REG_1);
+	    cond = _ex_or(_ex_xor(SF, OF), ZF);
+	    break;
+	}
+	case AMD64CondNLE: {
+	    Temp *SF = mk_reg("SF", REG_1);
+	    Temp *ZF = mk_reg("ZF", REG_1);
+	    Temp *OF = mk_reg("OF", REG_1);
+	    cond = _ex_not(_ex_or(_ex_xor(SF, OF), ZF));
+	    break;
+	}
+	default:
+	    panic("Unrecognized condition for amd64g_calculate_condition");
+	}
+	result = _ex_u_cast(cond, REG_64);
+    } else {
+        result = new Unknown("CCall: " + func);
+    }
+
+    return result;
+}
 
 // Parse our statement vector to see if we can find how VEX is setting
 // the "thunk" that lazily represents flags operations. The thunk consists
@@ -1190,6 +1266,24 @@ Exp *parity8(Exp *e) {
     Exp *xor_e = _ex_xor(shift7, shift6, shift5, shift4,
 			 shift3, shift2, shift1, shift0);
     return _ex_not(_ex_l_cast(xor_e, REG_1));
+}
+
+Exp *_narrow64(Exp *e, reg_t type) {
+    if (type == REG_64)
+	return e;
+    else
+	return _ex_l_cast(e, type);
+}
+
+Exp *narrow64(Exp *e, reg_t type) {
+    if (type == REG_64)
+	return ecl(e);
+    else
+	return ex_l_cast(e, type);
+}
+
+Exp *sign_bit_of(Exp *e, reg_t type) {
+    return _ex_h_cast(narrow64(e, type), REG_1);
 }
 
 void x64_modify_flags( asm_program_t *prog, vine_block_t *block )
@@ -1300,6 +1394,91 @@ void x64_modify_flags( asm_program_t *prog, vine_block_t *block )
     vector<Stmt *> new_ir;
     Exp *cf, *pf, *af, *zf, *sf, *of;
 
+    reg_t type;
+    switch (op) {
+    case CC_OP_ADDB:
+    case CC_OP_SUBB:
+    case CC_OP_ADCB:
+    case CC_OP_SBBB:
+    case CC_OP_LOGICB:
+    case CC_OP_INCB:
+    case CC_OP_DECB:
+    case CC_OP_SHLB:
+    case CC_OP_SHRB:
+    case CC_OP_ROLB:
+    case CC_OP_RORB:
+    case CC_OP_UMULB:
+    case CC_OP_SMULB:
+	type = REG_8;
+	break;
+
+    case CC_OP_ADDW:
+    case CC_OP_SUBW:
+    case CC_OP_ADCW:
+    case CC_OP_SBBW:
+    case CC_OP_LOGICW:
+    case CC_OP_INCW:
+    case CC_OP_DECW:
+    case CC_OP_SHLW:
+    case CC_OP_SHRW:
+    case CC_OP_ROLW:
+    case CC_OP_RORW:
+    case CC_OP_UMULW:
+    case CC_OP_SMULW:
+	type = REG_16;
+	break;
+
+    case CC_OP_ADDL:
+    case CC_OP_SUBL:
+    case CC_OP_ADCL:
+    case CC_OP_SBBL:
+    case CC_OP_LOGICL:
+    case CC_OP_INCL:
+    case CC_OP_DECL:
+    case CC_OP_SHLL:
+    case CC_OP_SHRL:
+    case CC_OP_ROLL:
+    case CC_OP_RORL:
+    case CC_OP_UMULL:
+    case CC_OP_SMULL:
+    case CC_OP_ANDN32:
+    case CC_OP_BLSI32:
+    case CC_OP_BLSMSK32:
+    case CC_OP_BLSR32:
+	type = REG_32;
+	break;
+
+    case CC_OP_ADDQ:
+    case CC_OP_SUBQ:
+    case CC_OP_ADCQ:
+    case CC_OP_SBBQ:
+    case CC_OP_LOGICQ:
+    case CC_OP_INCQ:
+    case CC_OP_DECQ:
+    case CC_OP_SHLQ:
+    case CC_OP_SHRQ:
+    case CC_OP_ROLQ:
+    case CC_OP_RORQ:
+    case CC_OP_UMULQ:
+    case CC_OP_SMULQ:
+    case CC_OP_ANDN64:
+    case CC_OP_BLSI64:
+    case CC_OP_BLSMSK64:
+    case CC_OP_BLSR64:
+	type = REG_64;
+	break;
+
+    case CC_OP_COPY:
+	type = REG_8; /* really, no type: should be unused */
+	break;
+
+    case CC_OP_NUMBER:
+	panic("CC_OP_NUMBER is not a real CC_OP code");
+
+    default:
+	panic("Unrecognized CC_OP code");
+    }
+
     switch (op) {
     case CC_OP_COPY:
 	cf = ex_get_bit(dep1_expr, CC_SHIFT_C);
@@ -1309,12 +1488,49 @@ void x64_modify_flags( asm_program_t *prog, vine_block_t *block )
 	sf = ex_get_bit(dep1_expr, CC_SHIFT_S);
 	of = ex_get_bit(dep1_expr, CC_SHIFT_O);
 	break;
+    case CC_OP_ADDB:
+    case CC_OP_ADDW:
+    case CC_OP_ADDL:
+    case CC_OP_ADDQ: {
+	Temp *result_w = mk_temp(REG_64, &new_ir);
+	new_ir.push_back(new Move(result_w, ex_add(dep1_expr, dep2_expr)));
+	Temp *result = mk_temp(type, &new_ir);
+	new_ir.push_back(new Move(result, narrow64(result_w, type)));
+	Temp *sign_bit = mk_temp(REG_1, &new_ir);
+        new_ir.push_back(new Move(sign_bit, ex_h_cast(result, REG_1)));
+	cf = _ex_lt(ecl(result), narrow64(dep1_expr, type));
+	pf = parity8(result);
+	af = ex_get_bit(ex_xor(result_w, dep1_expr, dep2_expr), 4);
+	zf = _ex_eq(ecl(result), ex_const(type, 0));
+	sf = ecl(sign_bit);
+	of = _ex_and(_ex_xor(ecl(sign_bit), sign_bit_of(dep1_expr, type)),
+		     _ex_xor(ecl(sign_bit), sign_bit_of(dep2_expr, type)));
+	break; }
+    case CC_OP_SUBB:
+    case CC_OP_SUBW:
+    case CC_OP_SUBL:
+    case CC_OP_SUBQ: {
+	Temp *result_w = mk_temp(REG_64, &new_ir);
+	new_ir.push_back(new Move(result_w, ex_sub(dep1_expr, dep2_expr)));
+	Temp *result = mk_temp(type, &new_ir);
+	new_ir.push_back(new Move(result, narrow64(result_w, type)));
+	cf = ex_lt(dep1_expr, dep2_expr);
+	pf = parity8(result);
+	af = ex_get_bit(ex_xor(result_w, dep1_expr, dep2_expr), 4);
+	zf = _ex_eq(ecl(result), ex_const(type, 0));
+	sf = ex_h_cast(result, REG_1);
+	of = sign_bit_of(_ex_and(ex_xor(dep1_expr, dep2_expr),
+				 ex_xor(dep1_expr, result_w)), type);
+	break; }
+    case CC_OP_LOGICB:
+    case CC_OP_LOGICW:
     case CC_OP_LOGICL:
+    case CC_OP_LOGICQ:
 	cf = ecl(&Constant::f);
 	of = ecl(&Constant::f);
 	af = 0;
 	zf = _ex_eq(ecl(dep1_expr), ex_const(REG_64, 0));
-	sf = _ex_h_cast(ex_l_cast(dep1_expr, REG_32), REG_1);
+	sf = sign_bit_of(dep1_expr, type);
 	pf = parity8(dep1_expr);
 	break;
     default:

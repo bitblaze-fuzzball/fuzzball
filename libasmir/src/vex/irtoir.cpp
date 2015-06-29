@@ -324,7 +324,10 @@ Exp *mk_u32(UInt val) {
 string addr_to_string( Addr64 dest )
 {
     char buf[80];
-    snprintf(buf, sizeof(buf), "pc_0x%x", (int)dest);
+    if (guest_arch == VexArchAMD64)
+	snprintf(buf, sizeof(buf), "pc_0x%llx", (unsigned long long)dest);
+    else
+	snprintf(buf, sizeof(buf), "pc_0x%x", (int)dest);
     return string(buf);
 }
 
@@ -1257,8 +1260,17 @@ Stmt *translate_exit( IRStmt *stmt, IRSB *irbb, vector<Stmt *> *irout )
     assert(irbb);
     assert(irout);
 
-    // We assume the jump destination is always ever a 32 bit uint
-    assert(stmt->Ist.Exit.dst->tag == Ico_U32);
+    Addr64 dest_addr;
+
+    if (stmt->Ist.Exit.dst->tag == Ico_U32) {
+	// 32 bits, expected on 32-bit archs
+	dest_addr = stmt->Ist.Exit.dst->Ico.U32;
+    } else if (stmt->Ist.Exit.dst->tag == Ico_U64) {
+	// 64 bits, expected on x64
+	dest_addr = stmt->Ist.Exit.dst->Ico.U64;
+    } else {
+	panic("Unexpected destination address constant type");
+    }
 
     Exp *cond = translate_expr( stmt->Ist.Exit.guard, irbb, irout );
 
@@ -1270,7 +1282,7 @@ Stmt *translate_exit( IRStmt *stmt, IRSB *irbb, vector<Stmt *> *irout )
       return new Assert(new UnOp(NOT,cond));
     }
     
-    Name *dest = mk_dest_name( stmt->Ist.Exit.dst->Ico.U32 );
+    Name *dest = mk_dest_name( dest_addr );
     Label *next = mk_label();
 
     irout->push_back( new CJmp( cond, dest, new Name(next->label) ) );

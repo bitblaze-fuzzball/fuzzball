@@ -1188,6 +1188,11 @@ BinOp *ex_gt( Exp *arg1, Exp *arg2 )
     return new BinOp(GT, arg1, arg2);
 }
 
+BinOp *_ex_lt( Exp *arg1, Exp *arg2 )
+{
+    return new BinOp(LT, arg1, arg2);
+}
+
 BinOp *ex_lt( Exp *arg1, Exp *arg2 )
 {   
     arg1 = arg1->clone();
@@ -1200,6 +1205,11 @@ BinOp *ex_ge( Exp *arg1, Exp *arg2 )
     arg1 = arg1->clone();
     arg2 = arg2->clone();
     return new BinOp(GE, arg1, arg2);
+}
+
+BinOp *_ex_le( Exp *arg1, Exp *arg2 )
+{
+    return new BinOp(LE, arg1, arg2);
 }
 
 BinOp *ex_le( Exp *arg1, Exp *arg2 )
