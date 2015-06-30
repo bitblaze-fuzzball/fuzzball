@@ -1083,7 +1083,9 @@ Exp *x64_translate_ccall( IRExpr *expr, IRSB *irbb, vector<Stmt *> *irout )
     Exp *result = NULL;
     string func = string(expr->Iex.CCall.cee->name);
 
-    if (func == "amd64g_calculate_condition") {
+    if (func == "amd64g_calculate_rflags_c") {
+	result = _ex_u_cast(mk_reg("CF", REG_1), REG_64);
+    } else if (func == "amd64g_calculate_condition") {
 	assert(expr->Iex.CCall.args[0]->tag == Iex_Const);
 	assert(expr->Iex.CCall.args[0]->Iex.Const.con->tag == Ico_U64);
 	int arg = expr->Iex.CCall.args[0]->Iex.Const.con->Ico.U64;
@@ -1505,7 +1507,7 @@ void x64_modify_flags( asm_program_t *prog, vine_block_t *block )
         new_ir.push_back(new Move(sign_bit, ex_h_cast(result, REG_1)));
 	cf = _ex_lt(ecl(result), narrow64(dep1_expr, type));
 	pf = parity8(result);
-	af = ex_get_bit(ex_xor(result_w, dep1_expr, dep2_expr), 4);
+	af = _ex_get_bit(ex_xor(result_w, dep1_expr, dep2_expr), 4);
 	zf = _ex_eq(ecl(result), ex_const(type, 0));
 	sf = ecl(sign_bit);
 	of = _ex_and(_ex_xor(ecl(sign_bit), sign_bit_of(dep1_expr, type)),
@@ -1521,11 +1523,65 @@ void x64_modify_flags( asm_program_t *prog, vine_block_t *block )
 	new_ir.push_back(new Move(result, narrow64(result_w, type)));
 	cf = ex_lt(dep1_expr, dep2_expr);
 	pf = parity8(result);
-	af = ex_get_bit(ex_xor(result_w, dep1_expr, dep2_expr), 4);
+	af = _ex_get_bit(ex_xor(result_w, dep1_expr, dep2_expr), 4);
 	zf = _ex_eq(ecl(result), ex_const(type, 0));
 	sf = ex_h_cast(result, REG_1);
 	of = _ex_xor(ecl(sf), _ex_slt(narrow64(dep1_expr, type),
 				      narrow64(dep2_expr, type)));
+	break; }
+    case CC_OP_ADCB:
+    case CC_OP_ADCW:
+    case CC_OP_ADCL:
+    case CC_OP_ADCQ: {
+	Temp *arg2_w = mk_temp(REG_64, &new_ir);
+	new_ir.push_back(new Move(arg2_w, ex_xor(dep2_expr, ndep_expr)));
+	Temp *result_w = mk_temp(REG_64, &new_ir);
+	new_ir.push_back(new Move(result_w, _ex_add(ex_add(dep1_expr, arg2_w),
+						    ecl(ndep_expr))));
+	Temp *result = mk_temp(type, &new_ir);
+	new_ir.push_back(new Move(result, narrow64(result_w, type)));
+	Temp *arg1 = mk_temp(type, &new_ir);
+	new_ir.push_back(new Move(arg1, narrow64(dep1_expr, type)));
+	Temp *arg1_sign = mk_temp(REG_1, &new_ir);
+	new_ir.push_back(new Move(arg1_sign, ex_h_cast(arg1, REG_1)));
+	Temp *res_sign = mk_temp(REG_1, &new_ir);
+        new_ir.push_back(new Move(res_sign, ex_h_cast(result, REG_1)));
+	cf = _ex_ite(ex_l_cast(ndep_expr, REG_1),
+		     ex_le(result, arg1), ex_lt(result, arg1));
+	pf = parity8(result);
+	zf = _ex_eq(ecl(result), ex_const(type, 0));
+	af = _ex_get_bit(ex_xor(result_w, dep1_expr, dep2_expr), 4);
+	sf = ecl(res_sign);
+	of = _ex_and(_ex_eq(ecl(arg1_sign), sign_bit_of(dep2_expr, type)),
+		     ex_neq(arg1_sign, res_sign));
+	break; }
+    case CC_OP_SBBB:
+    case CC_OP_SBBW:
+    case CC_OP_SBBL:
+    case CC_OP_SBBQ: {
+	Temp *arg1 = mk_temp(type, &new_ir);
+	new_ir.push_back(new Move(arg1, narrow64(dep1_expr, type)));
+	Temp *arg2_w = mk_temp(REG_64, &new_ir);
+	new_ir.push_back(new Move(arg2_w, ex_xor(dep2_expr, ndep_expr)));
+	Temp *arg2 = mk_temp(type, &new_ir);
+	new_ir.push_back(new Move(arg2, narrow64(arg2_w, type)));
+	Temp *result_w = mk_temp(REG_64, &new_ir);
+	new_ir.push_back(new Move(result_w, _ex_sub(ex_sub(dep1_expr, arg2_w),
+						    ecl(ndep_expr))));
+	Temp *result = mk_temp(type, &new_ir);
+	new_ir.push_back(new Move(result, narrow64(result_w, type)));
+	Temp *res_sign = mk_temp(REG_1, &new_ir);
+        new_ir.push_back(new Move(res_sign, ex_h_cast(result, REG_1)));
+	Temp *cf_in = mk_temp(REG_1, &new_ir);
+        new_ir.push_back(new Move(cf_in, ex_l_cast(ndep_expr, REG_1)));
+	cf = _ex_ite(ecl(cf_in), ex_le(arg1, arg2), ex_lt(arg1, arg2));
+	pf = parity8(result);
+	zf = _ex_eq(ecl(result), ex_const(type, 0));
+	af = _ex_get_bit(ex_xor(result_w, dep1_expr, dep2_expr), 4);
+	sf = ecl(res_sign);
+	of = _ex_xor(ecl(res_sign),
+		     _ex_ite(ecl(cf_in),
+			     ex_sle(arg1, arg2), ex_slt(arg1, arg2)));
 	break; }
     case CC_OP_LOGICB:
     case CC_OP_LOGICW:
@@ -1533,11 +1589,59 @@ void x64_modify_flags( asm_program_t *prog, vine_block_t *block )
     case CC_OP_LOGICQ:
 	cf = ecl(&Constant::f);
 	of = ecl(&Constant::f);
-	af = 0;
+	af = ecl(&Constant::f); /* spec: undefined */
 	zf = _ex_eq(ecl(dep1_expr), ex_const(REG_64, 0));
 	sf = sign_bit_of(dep1_expr, type);
 	pf = parity8(dep1_expr);
 	break;
+    case CC_OP_INCB:
+    case CC_OP_INCW:
+    case CC_OP_INCL:
+    case CC_OP_INCQ: {
+	Temp *arg = mk_temp(type, &new_ir);
+	new_ir.push_back(new Move(arg, narrow64(dep1_expr, type)));
+	Temp *result = mk_temp(type, &new_ir);
+	new_ir.push_back(new Move(result,
+				  _ex_add(ecl(arg), ex_const(type, 1))));
+	Exp *tmin;
+	switch (type) {
+	case REG_8:  tmin = ex_const(type,               0x80  ); break;
+	case REG_16: tmin = ex_const(type,             0x8000  ); break;
+	case REG_32: tmin = ex_const(type,         0x80000000  ); break;
+	case REG_64: tmin = ex_const(type, 0x8000000000000000LL); break;
+	default: panic("Unexpected type in inc condition codes");
+	}
+	cf = 0;
+	pf = parity8(result);
+	zf = _ex_eq(ecl(result), ex_const(type, 0));
+	af = _ex_get_bit(_ex_xor(ecl(result), ecl(arg)), 4);
+	sf = ex_h_cast(result, REG_1);
+	of = _ex_eq(ecl(result), tmin);
+	break; }
+    case CC_OP_DECB:
+    case CC_OP_DECW:
+    case CC_OP_DECL:
+    case CC_OP_DECQ: {
+	Temp *arg = mk_temp(type, &new_ir);
+	new_ir.push_back(new Move(arg, narrow64(dep1_expr, type)));
+	Temp *result = mk_temp(type, &new_ir);
+	new_ir.push_back(new Move(result,
+				  _ex_sub(ecl(arg), ex_const(type, 1))));
+	Exp *tmax;
+	switch (type) {
+	case REG_8:  tmax = ex_const(type,               0x7f  ); break;
+	case REG_16: tmax = ex_const(type,             0x7fff  ); break;
+	case REG_32: tmax = ex_const(type,         0x7fffffff  ); break;
+	case REG_64: tmax = ex_const(type, 0x7fffffffffffffffLL); break;
+	default: panic("Unexpected type in inc condition codes");
+	}
+	cf = 0;
+	pf = parity8(result);
+	zf = _ex_eq(ecl(result), ex_const(type, 0));
+	af = _ex_get_bit(_ex_xor(ecl(result), ecl(arg)), 4);
+	sf = ex_h_cast(result, REG_1);
+	of = _ex_eq(ecl(result), tmax);
+	break; }
     default:
 	printf("Unsupported x86-64 CC OP %d\n", op);
         /* panic("Unsupported x86-64 CC OP in x64_modify_flags"); */
