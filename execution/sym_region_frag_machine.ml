@@ -24,20 +24,21 @@ struct
   module GM = GranularMemoryFunctor(D)
   module SPFM = SymPathFragMachineFunctor(D)
 
+  (* Sign extend a typed constant to a 64-bit constant *)
+  let fix_s ty v =
+    match ty with
+      | V.REG_1 -> fix_s1 v
+      | V.REG_8 -> fix_s8 v
+      | V.REG_16 -> fix_s16 v
+      | V.REG_32 -> fix_s32 v
+      | V.REG_64 -> v
+      | _ -> failwith "Bad type in fix_s"
+
   let is_high_mask ty v =
     let is_power_of_2_or_zero x =
       Int64.logand x (Int64.pred x) = 0L
     in
-    let mask64 =
-      match ty with
-	| V.REG_1 -> fix_s1 v
-	| V.REG_8 -> fix_s8 v
-	| V.REG_16 -> fix_s16 v
-	| V.REG_32 -> fix_s32 v
-	| V.REG_64 -> v
-	| _ -> failwith "Bad type in is_high_mask"
-    in
-      is_power_of_2_or_zero (Int64.succ (Int64.lognot mask64))
+      is_power_of_2_or_zero (Int64.succ (Int64.lognot (fix_s ty v)))
 
   let floor_log2 i =
     let rec loop = function
@@ -53,6 +54,10 @@ struct
     in
       loop i
 
+  (* Conservatively anayze the smallest number of non-zero
+     least-significant bits into which a value will fit. This is a fairly
+     quick way to tell if an expression could be an index, or to give a
+     bound on the size of a table. *)
   let narrow_bitwidth form_man e =
     let combine wd res = min wd res in
     let f loop e =
@@ -106,6 +111,63 @@ struct
 	    failwith "Unhandled string in narrow_bitwidth"
 	| V.Unknown(_) ->
 	    failwith "Unhandled unknown in narrow_bitwidth"
+    in
+      FormMan.map_expr_temp form_man e f combine
+
+  (* Similar to narrow_bitwidth, but count negative numbers of small
+     absolute value (i.e. with many leading 1s) as narrow as well. I
+     can't decide whether this would work better as a single function
+     with a flag: some of the cases are similar, but others aren't. *)
+  let narrow_bitwidth_signed form_man e =
+    let combine wd res = min wd res in
+    let f loop = function
+      | V.Constant(V.Int(ty, v)) ->
+	  min (1 + floor_log2 v)
+	    (1 + floor_log2 (Int64.neg (fix_s ty v)))
+      | V.BinOp(V.BITAND, e1, e2) -> max (loop e1) (loop e2)
+      | V.BinOp(V.BITOR, e1, e2) -> max (loop e1) (loop e2)
+      | V.BinOp(V.XOR, e1, e2) -> max (loop e1) (loop e2)
+      | V.BinOp(V.PLUS, e1, e2) -> 1 + (max (loop e1) (loop e2))
+      | V.BinOp(V.TIMES, e1, e2) -> (loop e1) + (loop e2)
+      | V.BinOp(V.MOD, e1, e2) -> min (loop e1) (loop e2)
+      | V.BinOp(V.SMOD, e1, e2) -> min (loop e1) (loop e2)
+      | V.Cast((V.CAST_UNSIGNED|V.CAST_LOW|V.CAST_SIGNED), V.REG_32, e1)
+	-> min 32 (loop e1)
+      | V.Cast((V.CAST_UNSIGNED|V.CAST_LOW|V.CAST_SIGNED), V.REG_16, e1)
+	-> min 16 (loop e1)
+      | V.Cast((V.CAST_UNSIGNED|V.CAST_LOW|V.CAST_SIGNED), V.REG_8, e1)
+	-> min 8  (loop e1)
+      | V.Cast((V.CAST_UNSIGNED|V.CAST_LOW|V.CAST_SIGNED), V.REG_1, e1)
+	-> min 1  (loop e1)
+      | V.Cast(_, V.REG_32, _) -> 32
+      | V.Cast(_, V.REG_16, _) -> 16
+      | V.Cast(_, V.REG_8, _) -> 8
+      | V.Cast(_, V.REG_1, _) -> 1
+      | V.Cast(_, _, _) ->
+	  V.bits_of_width (Vine_typecheck.infer_type_fast e)
+      | V.Lval(V.Mem(_, _, V.REG_8))  ->  8
+      | V.Lval(V.Mem(_, _, V.REG_16)) -> 16
+      | V.Lval(V.Mem(_, _, V.REG_32)) -> 32
+      | V.Lval(V.Mem(_, _, _))
+      | V.Lval(V.Temp(_)) ->
+	  V.bits_of_width (Vine_typecheck.infer_type_fast e)
+      | V.BinOp((V.EQ|V.NEQ|V.LT|V.LE|V.SLT|V.SLE), _, _) -> 1
+      | V.BinOp(V.LSHIFT, e1, V.Constant(V.Int(_, v))) ->
+	  (loop e1) + (Int64.to_int v)
+      | V.BinOp(_, _, _) ->
+	  V.bits_of_width (Vine_typecheck.infer_type_fast e)
+      | V.Ite(_, te, fe) -> max (loop te) (loop fe)
+      | V.UnOp(_)
+      | V.Let(_, _, _)
+      | V.Name(_)
+      | V.FBinOp(_, _, _, _)
+      | V.FUnOp(_, _, _)
+      | V.FCast(_, _, _, _) ->
+	  V.bits_of_width (Vine_typecheck.infer_type_fast e)
+      | V.Constant(V.Str(_)) ->
+	  failwith "Unhandled string in narrow_bitwidth_signed"
+      | V.Unknown(_) ->
+	  failwith "Unhandled unknown in narrow_bitwidth_signed"
     in
       FormMan.map_expr_temp form_man e f combine
 
@@ -272,6 +334,8 @@ struct
       | V.BinOp(V.TIMES, _, _)
 	  -> ExprOffset(e)
       | e when (narrow_bitwidth form_man e) < 23
+	  -> ExprOffset(e)
+      | e when (narrow_bitwidth_signed form_man e) < 23
 	  -> ExprOffset(e)
       | V.BinOp(V.ARSHIFT, _, _)
 	  -> ExprOffset(e)
