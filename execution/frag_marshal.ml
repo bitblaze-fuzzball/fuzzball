@@ -44,7 +44,7 @@ let encode_exp_flags e printable =
 	push_printable_str (Printf.sprintf "(0x%x)" s)
       else
 	let lb = s land 0xff and
-	    hb = s asr 8 in
+	    hb = (s lsr 8) land 0xff in
 	  push (Char.chr hb);
 	  push (Char.chr lb)
     in
