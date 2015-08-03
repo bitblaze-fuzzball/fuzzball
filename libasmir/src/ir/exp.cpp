@@ -965,6 +965,18 @@ BinOp *ex_div( Exp *arg1, Exp *arg2 )
   return _ex_div(arg1, arg2);
 }
 
+BinOp *_ex_mod( Exp *arg1, Exp *arg2 )
+{
+    return new BinOp(MOD, arg1, arg2);
+}
+
+BinOp *ex_mod( Exp *arg1, Exp *arg2 )
+{
+  arg1 = arg1->clone();
+  arg2 = arg2->clone();
+  return _ex_mod(arg1, arg2);
+}
+
 BinOp *_ex_and( Exp *arg1, Exp *arg2 )
 {
     return new BinOp(BITAND, arg1, arg2);
@@ -1111,6 +1123,11 @@ BinOp *_ex_shl( Exp *arg1, Exp *arg2 )
     return new BinOp(LSHIFT, arg1, arg2);
 }
 
+BinOp *_ex_shl( Exp *arg1, int arg2 )
+{
+    return new BinOp(LSHIFT, arg1, ex_const(arg2));
+}
+
 BinOp *ex_shl( Exp *arg1, Exp *arg2 )
 {
     arg1 = arg1->clone();
@@ -1127,6 +1144,11 @@ BinOp *ex_shl( Exp *arg1, int arg2 )
 BinOp *_ex_shr( Exp *arg1, Exp *arg2 )
 {
     return new BinOp(RSHIFT, arg1, arg2);
+}
+
+BinOp *_ex_shr( Exp *arg1, int arg2 )
+{
+    return new BinOp(RSHIFT, arg1, ex_const(arg2));
 }
 
 BinOp *ex_shr( Exp *arg1, Exp *arg2 )

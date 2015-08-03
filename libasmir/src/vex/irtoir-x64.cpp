@@ -1085,6 +1085,20 @@ Exp *x64_translate_ccall( IRExpr *expr, IRSB *irbb, vector<Stmt *> *irout )
 
     if (func == "amd64g_calculate_rflags_c") {
 	result = _ex_u_cast(mk_reg("CF", REG_1), REG_64);
+    } else if (func == "amd64g_calculate_rflags_all") {
+	Exp *wCF = _ex_u_cast(mk_reg("CF", REG_1), REG_64);
+	Exp *wPF = _ex_u_cast(mk_reg("PF", REG_1), REG_64);
+	Exp *wAF = _ex_u_cast(mk_reg("AF", REG_1), REG_64);
+	Exp *wZF = _ex_u_cast(mk_reg("ZF", REG_1), REG_64);
+	Exp *wSF = _ex_u_cast(mk_reg("SF", REG_1), REG_64);
+	Exp *wOF = _ex_u_cast(mk_reg("OF", REG_1), REG_64);
+	assert(CC_SHIFT_C == 0);
+	result = _ex_or(wCF,
+			_ex_shl(wPF, CC_SHIFT_P),
+			_ex_shl(wAF, CC_SHIFT_A),
+			_ex_shl(wZF, CC_SHIFT_Z),
+			_ex_shl(wSF, CC_SHIFT_S),
+			_ex_shl(wOF, CC_SHIFT_O));
     } else if (func == "amd64g_calculate_condition") {
 	assert(expr->Iex.CCall.args[0]->tag == Iex_Const);
 	assert(expr->Iex.CCall.args[0]->Iex.Const.con->tag == Ico_U64);
@@ -1163,6 +1177,106 @@ Exp *x64_translate_ccall( IRExpr *expr, IRSB *irbb, vector<Stmt *> *irout )
 	    panic("Unrecognized condition for amd64g_calculate_condition");
 	}
 	result = _ex_u_cast(cond, REG_64);
+    } else if (func == "amd64g_calculate_RCL" ||
+	       func == "amd64g_calculate_RCR") {
+	bool is_left = (func == "amd64g_calculate_RCL");
+	Exp *arg = translate_expr(expr->Iex.CCall.args[0], irbb, irout);
+	Exp *rot_amt = translate_expr(expr->Iex.CCall.args[1], irbb, irout);
+	Exp *flags_in = translate_expr(expr->Iex.CCall.args[2], irbb, irout);
+
+	assert(expr->Iex.CCall.args[3]->tag == Iex_Const);
+	assert(expr->Iex.CCall.args[3]->Iex.Const.con->tag == Ico_U64);
+	int sz = expr->Iex.CCall.args[3]->Iex.Const.con->Ico.U64;
+	int ret_flags = (sz < 0);
+	sz = (ret_flags ? -sz : sz);
+
+	const char *helper_name;
+	BinOp *(*ex_sh)(Exp*, Exp*);  // same direction shift (rcl -> shl)
+	//BinOp *(*_ex_sh)(Exp*, Exp*); // same direction shift (rcl -> shl)
+	//BinOp *(*ex_rsh)(Exp*, Exp*); // reverse direction shift (rcl -> shr)
+	BinOp *(*_ex_rsh)(Exp*, Exp*);// reverse direction shift (rcl -> shr)
+	if (is_left) {
+	    // Note: some comments and variable names below are
+	    // specific to this RCL case.
+	    helper_name = "amd64g_calculate_RCL";
+	    ex_sh = ex_shl;
+	    //_ex_sh = _ex_shl;
+	    //ex_rsh = ex_shr;
+	    _ex_rsh = _ex_shr;
+	} else {
+	    helper_name = "amd64g_calculate_RCR";
+	    ex_sh = ex_shr;
+	    //_ex_sh = _ex_shr;
+	    //ex_rsh = ex_shl;
+	    _ex_rsh = _ex_shl;
+	}
+	irout->push_back(new Comment(helper_name));
+
+	// Having the shift amounts be 32 bits makes all the ex_consts
+	// below simpler. However I think it might trigger an issue
+	// with the later subtraction in which the values is not
+	// properly sign extended.
+	rot_amt = _ex_l_cast(rot_amt, REG_32);
+
+	// normalize rot_amt
+	{
+	    Exp *old_rot_amt = rot_amt;
+	    rot_amt = mk_temp(REG_32, irout);
+	    Exp *masked = _ex_and(old_rot_amt, ex_const(sz == 8 ? 63 : 31));
+	    Exp *modded;
+	    switch (sz) {
+	    case 8: modded = masked; break;
+	    case 4: modded = masked; break;
+	    case 2: modded = _ex_mod(masked, ex_const(17));
+	    case 1: modded = _ex_mod(masked, ex_const(9));
+	    default: panic("Unexpected size in RCL/RCR");
+	    }
+	    irout->push_back(new Move(ecl(rot_amt), modded));
+	}
+
+	// arg >> (sz*8+1 - rot_amt)
+	Exp *new_right_part =
+	    _ex_rsh(arg, _ex_sub(ex_const(sz*8+1), rot_amt));
+
+	Exp *wCF = new Cast(mk_reg("CF", REG_1), REG_64, CAST_UNSIGNED);
+
+	Exp *new_left = ex_sh(arg, rot_amt);
+
+	Exp *carry_in_pos;
+        Exp *carry_out_pos;
+        // Note the symmetry here: RCL and RCR are inverse operations.
+	if (is_left) {
+	    carry_in_pos = _ex_sub(ecl(rot_amt), ex_const(1));
+	    carry_out_pos = _ex_sub(ex_const(sz*8), ecl(rot_amt));
+	} else {
+	    carry_in_pos = _ex_sub(ex_const(sz*8), ecl(rot_amt));
+	    carry_out_pos = _ex_sub(ecl(rot_amt), ex_const(1));
+	}
+	Exp *moved_carry = _ex_shl(wCF, carry_in_pos);
+	// (arg << rot_amt) | (cf << carry_in_pos) | new_right_part
+	Exp *answer_e = _ex_or(new_left, moved_carry, new_right_part);
+
+	Exp *amt_zero = _ex_eq(ecl(rot_amt), ex_const(0));
+
+	if (ret_flags) {
+	    Temp *new_cf = mk_temp(REG_1, irout);
+	    Exp *new_cf_e = _ex_l_cast(_ex_shr(ecl(arg), carry_out_pos),REG_1);
+	    irout->push_back(new Move(new_cf, new_cf_e));
+	    Exp *answer_bit =
+		_ex_l_cast(_ex_shr(answer_e, ex_const(sz*8-1)), REG_1);
+	    Exp *new_of = _ex_xor(answer_bit, ecl(new_cf));
+	    Exp *unch_flags =
+		_ex_and(flags_in, ex_const(REG_64, ~(CC_MASK_C | CC_MASK_O)));
+	    assert(CC_SHIFT_C == 0);
+	    Exp *wnCF = _ex_u_cast(ecl(new_cf), REG_64);
+	    Exp *wnOF = _ex_shl(_ex_u_cast(new_of, REG_64), CC_SHIFT_O);
+	    Exp *new_flags = _ex_or(unch_flags, wnCF, wnOF);
+	    result = emit_ite(irout, REG_64, amt_zero,
+			      ecl(flags_in), new_flags);
+	} else {
+	    Exp::destroy(carry_out_pos); /* slightly wasteful */
+	    result = emit_ite(irout, REG_64, amt_zero, ecl(arg), answer_e);
+	}
     } else {
         result = new Unknown("CCall: " + func);
     }
@@ -1641,6 +1755,67 @@ void x64_modify_flags( asm_program_t *prog, vine_block_t *block )
 	af = _ex_get_bit(_ex_xor(ecl(result), ecl(arg)), 4);
 	sf = ex_h_cast(result, REG_1);
 	of = _ex_eq(ecl(result), tmax);
+	break; }
+    case CC_OP_SHLB:
+    case CC_OP_SHLW:
+    case CC_OP_SHLL:
+    case CC_OP_SHLQ: {
+	Temp *result = mk_temp(type, &new_ir);
+	new_ir.push_back(new Move(result, narrow64(dep1_expr, type)));
+	Temp *subshift = mk_temp(type, &new_ir);
+	new_ir.push_back(new Move(subshift, narrow64(dep2_expr, type)));
+	cf = ex_h_cast(subshift, REG_1);
+	pf = parity8(result);
+	zf = _ex_eq(ecl(result), ex_const(type, 0));
+	af = ecl(&Constant::f); /* spec: undefined */
+	sf = ex_h_cast(result, REG_1);
+	of = _ex_h_cast(ex_xor(result, subshift), REG_1);
+	break; }
+    case CC_OP_SHRB:
+    case CC_OP_SHRW:
+    case CC_OP_SHRL:
+    case CC_OP_SHRQ: {
+	Temp *result = mk_temp(type, &new_ir);
+	new_ir.push_back(new Move(result, narrow64(dep1_expr, type)));
+	Temp *subshift = mk_temp(type, &new_ir);
+	new_ir.push_back(new Move(subshift, narrow64(dep2_expr, type)));
+	cf = ex_l_cast(subshift, REG_1);
+	pf = parity8(result);
+	zf = _ex_eq(ecl(result), ex_const(type, 0));
+	af = ecl(&Constant::f); /* spec: undefined */
+	sf = ex_h_cast(result, REG_1);
+	/* N.B.: OF = 0 if shift amount > 1; spec says it is only
+	   defined if amt == 1 */
+	of = _ex_h_cast(ex_xor(result, subshift), REG_1);
+	break; }
+    case CC_OP_ROLB:
+    case CC_OP_ROLW:
+    case CC_OP_ROLL:
+    case CC_OP_ROLQ: {
+	Temp *result = mk_temp(type, &new_ir);
+	new_ir.push_back(new Move(result, narrow64(dep1_expr, type)));
+	Temp *last_moved_bit = mk_temp(type, &new_ir);
+	new_ir.push_back(new Move(last_moved_bit, ex_l_cast(result, REG_1)));
+	cf = ecl(last_moved_bit);
+	/* spec: OF defined only for amt == 1 */
+	of = _ex_xor(ecl(last_moved_bit), ex_h_cast(result, REG_1));
+	pf = zf = af = sf = 0;
+	break; }
+    case CC_OP_RORB:
+    case CC_OP_RORW:
+    case CC_OP_RORL:
+    case CC_OP_RORQ: {
+	Temp *result = mk_temp(type, &new_ir);
+	new_ir.push_back(new Move(result, narrow64(dep1_expr, type)));
+
+	Temp *last_moved_bit = mk_temp(type, &new_ir);
+	new_ir.push_back(new Move(last_moved_bit, ex_h_cast(result, REG_1)));
+
+	cf = ecl(last_moved_bit);
+	/* spec: OF defined only for amt == 1 */
+	Exp *penult_bit = _ex_h_cast(ex_shl(result, 1), REG_1);
+	of = ex_xor(last_moved_bit, penult_bit);
+	pf = zf = af = sf = 0;
 	break; }
     default:
 	printf("Unsupported x86-64 CC OP %d\n", op);
