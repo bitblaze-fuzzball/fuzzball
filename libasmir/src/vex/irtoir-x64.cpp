@@ -1252,6 +1252,16 @@ Exp *x64_translate_ccall( IRExpr *expr, IRSB *irbb, vector<Stmt *> *irout )
 	    carry_in_pos = _ex_sub(ex_const(sz*8), ecl(rot_amt));
 	    carry_out_pos = _ex_sub(ecl(rot_amt), ex_const(1));
 	}
+
+	// Wrap these shift amounts to be within the legal range for
+	// the data type. They could be out of range when rot_amt is
+	// 0.  In that case the shifted values won't be used, but
+	// because we want to allow a functional ITE for that choice,
+	// the shift should be well-defined anyway.
+	Exp *amt_mask = ex_const(sz*8 - 1);
+	carry_in_pos = _ex_and(carry_in_pos, amt_mask);
+	carry_out_pos = _ex_and(carry_out_pos, ecl(amt_mask));
+
 	Exp *moved_carry = _ex_shl(wCF, carry_in_pos);
 	// (arg << rot_amt) | (cf << carry_in_pos) | new_right_part
 	Exp *answer_e = _ex_or(new_left, moved_carry, new_right_part);
