@@ -282,8 +282,13 @@ let build_startup_state fm eh load_base ldso argv =
     !esp
   in
   let push_word i =
-    esp := Int64.sub !esp 4L;
-    fm#store_word_conc !esp i
+    match !opt_arch with
+      | (X86|ARM) ->
+	  esp := Int64.sub !esp 4L;
+	  fm#store_word_conc !esp i
+      | X64 ->
+	  esp := Int64.sub !esp 8L;
+	  fm#store_long_conc !esp i
   in
   let zero_pad_to new_sp =
     let old_sp = !esp in

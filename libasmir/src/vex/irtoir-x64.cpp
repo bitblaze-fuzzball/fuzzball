@@ -1526,6 +1526,7 @@ void x64_modify_flags( asm_program_t *prog, vine_block_t *block )
     Exp *cf, *pf, *af, *zf, *sf, *of;
 
     reg_t type;
+    reg_t double_type;
     switch (op) {
     case CC_OP_ADDB:
     case CC_OP_SUBB:
@@ -1541,6 +1542,7 @@ void x64_modify_flags( asm_program_t *prog, vine_block_t *block )
     case CC_OP_UMULB:
     case CC_OP_SMULB:
 	type = REG_8;
+	double_type = REG_16;
 	break;
 
     case CC_OP_ADDW:
@@ -1557,6 +1559,7 @@ void x64_modify_flags( asm_program_t *prog, vine_block_t *block )
     case CC_OP_UMULW:
     case CC_OP_SMULW:
 	type = REG_16;
+	double_type = REG_32;
 	break;
 
     case CC_OP_ADDL:
@@ -1577,6 +1580,7 @@ void x64_modify_flags( asm_program_t *prog, vine_block_t *block )
     case CC_OP_BLSMSK32:
     case CC_OP_BLSR32:
 	type = REG_32;
+	double_type = REG_64;
 	break;
 
     case CC_OP_ADDQ:
@@ -1597,6 +1601,7 @@ void x64_modify_flags( asm_program_t *prog, vine_block_t *block )
     case CC_OP_BLSMSK64:
     case CC_OP_BLSR64:
 	type = REG_64;
+	double_type = REG_64; /* XXX no REG_128 yet */
 	break;
 
     case CC_OP_COPY:
@@ -1817,16 +1822,39 @@ void x64_modify_flags( asm_program_t *prog, vine_block_t *block )
     case CC_OP_RORQ: {
 	Temp *result = mk_temp(type, &new_ir);
 	new_ir.push_back(new Move(result, narrow64(dep1_expr, type)));
-
 	Temp *last_moved_bit = mk_temp(type, &new_ir);
 	new_ir.push_back(new Move(last_moved_bit, ex_h_cast(result, REG_1)));
-
 	cf = ecl(last_moved_bit);
 	/* spec: OF defined only for amt == 1 */
 	Exp *penult_bit = _ex_h_cast(ex_shl(result, 1), REG_1);
 	of = ex_xor(last_moved_bit, penult_bit);
 	pf = zf = af = sf = 0;
 	break; }
+    case CC_OP_UMULB:
+    case CC_OP_UMULW:
+    case CC_OP_UMULL:
+    case CC_OP_SMULB:
+    case CC_OP_SMULW:
+    case CC_OP_SMULL:
+	/* These cases can be supported using the same approach as i386 */
+	(void)double_type;
+	cf = ecl(&Constant::f); /* wrong, s/b overflow */
+	of = ecl(&Constant::f); /* wrong, same as CF*/
+	af = ecl(&Constant::f); /* spec: undefined */
+	zf = ecl(&Constant::f); /* spec: undefined */
+	sf = ecl(&Constant::f); /* spec: undefined */
+	pf = ecl(&Constant::f); /* spec: undefined */
+	break;
+    case CC_OP_UMULQ:
+    case CC_OP_SMULQ:
+	/* These will be tricker to do right without a REG_128. */
+	cf = ecl(&Constant::f); /* wrong, s/b overflow */
+	of = ecl(&Constant::f); /* wrong, same as CF*/
+	af = ecl(&Constant::f); /* spec: undefined */
+	zf = ecl(&Constant::f); /* spec: undefined */
+	sf = ecl(&Constant::f); /* spec: undefined */
+	pf = ecl(&Constant::f); /* spec: undefined */
+	break;
     default:
 	printf("Unsupported x86-64 CC OP %d\n", op);
         /* panic("Unsupported x86-64 CC OP in x64_modify_flags"); */

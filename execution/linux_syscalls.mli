@@ -146,6 +146,7 @@ object
   method sys_getsockopt : int -> int -> int -> int64 -> int64 -> unit
   method sys_set_robust_list : int64 -> int64 -> unit
   method sys_set_thread_area : int64 -> unit
+  method sys_arch_prctl : int -> int64 -> unit
   method sys_set_tid_address : int64 -> unit
   method sys_set_tls : int64 -> unit
   method sys_rt_sigaction : int -> int64 -> int64 -> int -> unit
