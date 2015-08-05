@@ -449,6 +449,9 @@ let rec constant_fold ctx e =
     (* x + -x = 0 *)
     | BinOp(PLUS, x, UnOp(NEG, y)) when x = y ->
 	Constant(Int((Vine_typecheck.infer_type None x), 0L))
+    (* -x + x = 0 *)
+    | BinOp(PLUS, UnOp(NEG, x), y) when x = y ->
+	Constant(Int((Vine_typecheck.infer_type None x), 0L))
     (* x + x = x << 1 *)
     | BinOp(PLUS, x, y) when x = y ->
 	BinOp(LSHIFT, x, Constant(Int(REG_8, 1L)))
