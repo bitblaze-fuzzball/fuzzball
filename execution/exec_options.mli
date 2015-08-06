@@ -91,6 +91,7 @@ val opt_skip_call_addr_symbol : (int64 * string) list ref
 val opt_skip_func_addr_symbol : (int64 * string) list ref
 val opt_skip_call_addr_region : (int64 * string) list ref
 val opt_skip_func_addr_region : (int64 * string) list ref
+val opt_skip_call_addr_symbol_once : (int64 * string) list ref
 val opt_trace_eip : bool ref
 val opt_trace_unique_eips : bool ref
 val opt_trace_ir : bool ref

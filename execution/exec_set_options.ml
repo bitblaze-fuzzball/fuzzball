@@ -214,6 +214,9 @@ let symbolic_state_cmdline_opts =
     ("-skip-func-ret-region", Arg.String
        (add_delimited_num_str_pair opt_skip_func_addr_region '='),
      "addr=symname Like -s-f-r-s, but hint the symbol is a mem region");
+    ("-skip-call-ret-symbol-once", Arg.String
+       (add_delimited_num_str_pair opt_skip_call_addr_symbol_once '='),
+     "addr=symname Like -s-c-r-s, but always the same variable");
   ]
 
 let slurp_file fname =
