@@ -126,6 +126,7 @@ void Exp::destroy( Exp *expr )
     case UNKNOWN:   Unknown::destroy((Unknown *)expr);      break;
     case CAST:      Cast::destroy((Cast *)expr);            break;
     case FCAST:     FCast::destroy((FCast *)expr);          break;
+    case VECTOR:    Vector::destroy((Vector *)expr);        break;
     case NAME:      Name::destroy((Name *)expr);            break;
     case LET:       Let::destroy((Let *)expr);              break; 
     case ITE:       Ite::destroy((Ite *)expr);              break;
@@ -831,6 +832,48 @@ string FCast::fcast_type_to_string( const fcast_t ctype )
 }
 
 
+Vector::Vector(Exp *h, Exp *l)
+  : Exp(VECTOR)
+{
+  lanes[1] = h;
+  lanes[0] = l;
+}
+
+Vector::Vector(const Vector &copy)
+  : Exp(VECTOR)
+{
+  lanes[0] = copy.lanes[0]->clone();
+  lanes[1] = copy.lanes[1]->clone();
+}
+
+Vector *
+Vector::clone() const
+{
+  return new Vector(*this);
+}
+
+string
+Vector::tostring() const
+{
+  string ret = "[";
+  ret += lanes[1]->tostring();
+  ret += ", ";
+  ret += lanes[0]->tostring();
+  ret += "]";
+  return ret;
+}
+
+void Vector::destroy( Vector *expr )
+{
+    assert(expr);
+
+    Exp::destroy(expr->lanes[1]);
+    Exp::destroy(expr->lanes[0]);
+
+    delete expr;
+}
+
+
 ///////////////////////////// LET ////////////////////////////////
 Let::Let(Exp *v, Exp *e, Exp *i) : Exp(LET), var(v), exp(e), in(i)
 {
@@ -1334,6 +1377,16 @@ FCast *ex_fu_cast( Exp *arg, reg_t width )
 {
     arg = arg->clone();
     return new FCast(arg, width, CAST_UFLOAT, ROUND_NEAREST);
+}
+
+Vector *ex_vector2x64(Exp *h, Exp *l) {
+    h = h->clone();
+    l = l->clone();
+    return new Vector(h, l);
+}
+
+Vector *_ex_vector2x64(Exp *h, Exp *l) {
+    return new Vector(h, l);
 }
 
 Ite *_ex_ite( Exp *c, Exp *t, Exp *f) {

@@ -59,6 +59,10 @@ type register_name =
   | R_FPREG4 | R_FPREG5 | R_FPREG6 | R_FPREG7
   | R_FPTAG0 | R_FPTAG1 | R_FPTAG2 | R_FPTAG3
   | R_FPTAG4 | R_FPTAG5 | R_FPTAG6 | R_FPTAG7
+  (* SSE, currently only supported on x86: *)
+  | R_XMM0L | R_XMM0H | R_XMM1L | R_XMM1H | R_XMM2L | R_XMM2H
+  | R_XMM3L | R_XMM3H | R_XMM4L | R_XMM4H | R_XMM5L | R_XMM5H
+  | R_XMM6L | R_XMM6H | R_XMM7L | R_XMM7H
   (* x86 *)
   | R_EBP | R_ESP | R_ESI | R_EDI | R_EIP | R_EAX | R_EBX | R_ECX | R_EDX
   | EFLAGSREST | R_LDT | R_GDT 
@@ -106,6 +110,14 @@ let reg_to_regstr reg = match reg with
   | R_FPTAG4 -> "R_FPTAG4" | R_FPTAG5 -> "R_FPTAG5"
   | R_FPTAG6 -> "R_FPTAG6" | R_FPTAG7 -> "R_FPTAG7"
   | R_SSEROUND -> "R_SSEROUND" | R_IP_AT_SYSCALL -> "R_IP_AT_SYSCALL"
+  | R_XMM0L -> "R_XMM0L" | R_XMM0H -> "R_XMM0H"
+  | R_XMM1L -> "R_XMM1L" | R_XMM1H -> "R_XMM1H"
+  | R_XMM2L -> "R_XMM2L" | R_XMM2H -> "R_XMM2H"
+  | R_XMM3L -> "R_XMM3L" | R_XMM3H -> "R_XMM3H"
+  | R_XMM4L -> "R_XMM4L" | R_XMM4H -> "R_XMM4H"
+  | R_XMM5L -> "R_XMM5L" | R_XMM5H -> "R_XMM5H"
+  | R_XMM6L -> "R_XMM6L" | R_XMM6H -> "R_XMM6H"
+  | R_XMM7L -> "R_XMM7L" | R_XMM7H -> "R_XMM7H"
   | R0  ->  "R0" | R1  ->  "R1" |  R2 ->  "R2" | R3  -> "R3"
   | R4  ->  "R4" | R5  ->  "R5" |  R6 ->  "R6" | R7  -> "R7"
   | R8  ->  "R8" | R9  ->  "R9" | R10 -> "R10" | R11 -> "R11"
@@ -155,6 +167,14 @@ let regstr_to_reg s = match s with
   | "R_FPTAG4" -> R_FPTAG4 | "R_FPTAG5" -> R_FPTAG5
   | "R_FPTAG6" -> R_FPTAG6 | "R_FPTAG7" -> R_FPTAG7
   | "R_SSEROUND" -> R_SSEROUND | "R_IP_AT_SYSCALL" -> R_IP_AT_SYSCALL
+  | "R_XMM0L" -> R_XMM0L | "R_XMM0H" -> R_XMM0H
+  | "R_XMM1L" -> R_XMM1L | "R_XMM1H" -> R_XMM1H
+  | "R_XMM2L" -> R_XMM2L | "R_XMM2H" -> R_XMM2H
+  | "R_XMM3L" -> R_XMM3L | "R_XMM3H" -> R_XMM3H
+  | "R_XMM4L" -> R_XMM4L | "R_XMM4H" -> R_XMM4H
+  | "R_XMM5L" -> R_XMM5L | "R_XMM5H" -> R_XMM5H
+  | "R_XMM6L" -> R_XMM6L | "R_XMM6H" -> R_XMM6H
+  | "R_XMM7L" -> R_XMM7L | "R_XMM7H" -> R_XMM7H
   | "R0"  ->  R0 | "R1"  ->  R1 |  "R2" ->  R2 | "R3"  -> R3
   | "R4"  ->  R4 | "R5"  ->  R5 |  "R6" ->  R6 | "R7"  -> R7
   | "R8"  ->  R8 | "R9"  ->  R9 | "R10" -> R10 | "R11" -> R11
@@ -679,6 +699,22 @@ struct
 	reg R_CC_DEP2 (D.from_concrete_32 0L);
 	reg R_CC_NDEP (D.from_concrete_32 0L);
 	reg R_SSEROUND (D.from_concrete_32 0L);
+	reg R_XMM0L (D.from_concrete_64 0L);
+	reg R_XMM0H (D.from_concrete_64 0L);
+	reg R_XMM1L (D.from_concrete_64 0L);
+	reg R_XMM1H (D.from_concrete_64 0L);
+	reg R_XMM2L (D.from_concrete_64 0L);
+	reg R_XMM2H (D.from_concrete_64 0L);
+	reg R_XMM3L (D.from_concrete_64 0L);
+	reg R_XMM3H (D.from_concrete_64 0L);
+	reg R_XMM4L (D.from_concrete_64 0L);
+	reg R_XMM4H (D.from_concrete_64 0L);
+	reg R_XMM5L (D.from_concrete_64 0L);
+	reg R_XMM5H (D.from_concrete_64 0L);
+	reg R_XMM6L (D.from_concrete_64 0L);
+	reg R_XMM6H (D.from_concrete_64 0L);
+	reg R_XMM7L (D.from_concrete_64 0L);
+	reg R_XMM7H (D.from_concrete_64 0L);
 	()
 
     method private make_x64_regs_zero =
@@ -784,6 +820,22 @@ struct
 	reg R_SF (D.from_concrete_1 0);
 	reg R_OF (D.from_concrete_1 0);
 	reg R_ZF (D.from_concrete_1 0);
+	reg R_XMM0L (D.from_concrete_64 0L);
+	reg R_XMM0H (D.from_concrete_64 0L);
+	reg R_XMM1L (D.from_concrete_64 0L);
+	reg R_XMM1H (D.from_concrete_64 0L);
+	reg R_XMM2L (D.from_concrete_64 0L);
+	reg R_XMM2H (D.from_concrete_64 0L);
+	reg R_XMM3L (D.from_concrete_64 0L);
+	reg R_XMM3H (D.from_concrete_64 0L);
+	reg R_XMM4L (D.from_concrete_64 0L);
+	reg R_XMM4H (D.from_concrete_64 0L);
+	reg R_XMM5L (D.from_concrete_64 0L);
+	reg R_XMM5H (D.from_concrete_64 0L);
+	reg R_XMM6L (D.from_concrete_64 0L);
+	reg R_XMM6H (D.from_concrete_64 0L);
+	reg R_XMM7L (D.from_concrete_64 0L);
+	reg R_XMM7H (D.from_concrete_64 0L);
 	(* reg EFLAGSREST (form_man#fresh_symbolic_32 "initial_eflagsrest");*)
 	reg R_FTOP (D.from_concrete_32 0L);
 	reg R_FC3210 (D.from_concrete_32 0L);
@@ -1001,6 +1053,10 @@ struct
     method private print_reg128 str rh rl =
       Printf.printf "%s: " str;
       Printf.printf "%s %s\n"
+	(D.to_string_64
+	   (self#get_int_var (Hashtbl.find reg_to_var rh)))
+	(D.to_string_64
+	   (self#get_int_var (Hashtbl.find reg_to_var rl)));
 
     method private print_x86_regs =
       self#print_reg32 "%eax" R_EAX;
@@ -1017,6 +1073,14 @@ struct
       self#print_reg1 "ZF" R_ZF;
       self#print_reg1 "SF" R_SF;
       self#print_reg1 "OF" R_OF;
+      self#print_reg128 "XMM0" R_XMM0H R_XMM0L;
+      self#print_reg128 "XMM1" R_XMM1H R_XMM1L;
+      self#print_reg128 "XMM2" R_XMM2H R_XMM2L;
+      self#print_reg128 "XMM3" R_XMM3H R_XMM3L;
+      self#print_reg128 "XMM4" R_XMM4H R_XMM4L;
+      self#print_reg128 "XMM5" R_XMM5H R_XMM5L;
+      self#print_reg128 "XMM6" R_XMM6H R_XMM6L;
+      self#print_reg128 "XMM7" R_XMM7H R_XMM7L;
       self#print_reg32 "FTOP" R_FTOP;
       self#print_reg32 "FC3210" R_FC3210;
       self#print_x87_fpreg 0 R_FPREG0 R_FPTAG0;
@@ -1114,6 +1178,14 @@ struct
       self#simplify_reg1 R_ZF;
       self#simplify_reg1 R_SF;
       self#simplify_reg1 R_OF;
+      self#simplify_reg64 R_XMM0L; self#simplify_reg64 R_XMM0H;
+      self#simplify_reg64 R_XMM1L; self#simplify_reg64 R_XMM1H;
+      self#simplify_reg64 R_XMM2L; self#simplify_reg64 R_XMM2H;
+      self#simplify_reg64 R_XMM3L; self#simplify_reg64 R_XMM3H;
+      self#simplify_reg64 R_XMM4L; self#simplify_reg64 R_XMM4H;
+      self#simplify_reg64 R_XMM5L; self#simplify_reg64 R_XMM5H;
+      self#simplify_reg64 R_XMM6L; self#simplify_reg64 R_XMM6H;
+      self#simplify_reg64 R_XMM7L; self#simplify_reg64 R_XMM7H;
       self#simplify_reg64 R_FPREG0;
       self#simplify_reg64 R_FPREG1;
       self#simplify_reg64 R_FPREG2;

@@ -25,6 +25,10 @@ type register_name =
   | R_FPREG4 | R_FPREG5 | R_FPREG6 | R_FPREG7
   | R_FPTAG0 | R_FPTAG1 | R_FPTAG2 | R_FPTAG3
   | R_FPTAG4 | R_FPTAG5 | R_FPTAG6 | R_FPTAG7
+  (* SSE, currently only supported on x86: *)
+  | R_XMM0L | R_XMM0H | R_XMM1L | R_XMM1H | R_XMM2L | R_XMM2H
+  | R_XMM3L | R_XMM3H | R_XMM4L | R_XMM4H | R_XMM5L | R_XMM5H
+  | R_XMM6L | R_XMM6H | R_XMM7L | R_XMM7H
   (* x86 *)
   | R_EBP | R_ESP | R_ESI | R_EDI | R_EIP | R_EAX | R_EBX | R_ECX | R_EDX
   | EFLAGSREST | R_LDT | R_GDT 

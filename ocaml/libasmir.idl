@@ -60,7 +60,7 @@ typedef [abstract] void* vine_symbols_t;
 enum exp_type_t {
   BINOP, UNOP, CONSTANT, MEM, TEMP, PHI, CAST,
   NAME, UNKNOWN, LET, ITE,
-  FBINOP, FUNOP, FCAST,
+  FBINOP, FUNOP, FCAST, VECTOR,
   EXTENSION };
 
 enum reg_t { REG_1, REG_8, REG_16, REG_32, REG_64 };

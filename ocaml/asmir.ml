@@ -182,6 +182,7 @@ let rec tr_exp g e =
 	  Ite(cond_e, true_e, false_e)
     | EXTENSION ->
         failwith "Unknown extension type."
+    | VECTOR -> failwith "LibASMIR Vector should not escape to OCaml"
     | _ -> failwith "Unsupported stmt type"
   in
   if !exp_cache_enabled then
@@ -504,6 +505,24 @@ let x86_regs : decl list =
   (* more recent VEX quirks *)
   ("R_EMWARN", REG_32);
   ("R_IP_AT_SYSCALL", REG_32);
+
+  (* SSE registers, each divided in half since REG_64 is our biggest *)
+  ("R_XMM0L", REG_64);
+  ("R_XMM0H", REG_64);
+  ("R_XMM1L", REG_64);
+  ("R_XMM1H", REG_64);
+  ("R_XMM2L", REG_64);
+  ("R_XMM2H", REG_64);
+  ("R_XMM3L", REG_64);
+  ("R_XMM3H", REG_64);
+  ("R_XMM4L", REG_64);
+  ("R_XMM4H", REG_64);
+  ("R_XMM5L", REG_64);
+  ("R_XMM5H", REG_64);
+  ("R_XMM6L", REG_64);
+  ("R_XMM6H", REG_64);
+  ("R_XMM7L", REG_64);
+  ("R_XMM7H", REG_64);
 ]
 
 

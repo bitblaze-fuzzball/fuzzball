@@ -92,6 +92,9 @@ fcast_t fcast_casttype(Exp *e) {
 Exp* fcast_subexp(Exp *e) {
   return ((FCast*)e)->exp;
 }
+Exp* vector_select(Exp *e, int lane_num) {
+  return ((Vector*)e)->lanes[lane_num];
+}
 const char* name_string(Exp *e) {
   return ((Name*)e)->name.c_str();
 }
