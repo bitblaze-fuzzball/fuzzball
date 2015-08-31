@@ -397,6 +397,8 @@ Constant *ex_const(reg_t t, const_val_t value );
 Name *ex_name( string name );
 UnOp *_ex_not( Exp *arg );
 UnOp *ex_not( Exp *arg );
+UnOp *_ex_neg( Exp *arg );
+UnOp *ex_neg( Exp *arg );
 BinOp *_ex_add( Exp *arg1, Exp *arg2 );
 BinOp *ex_add( Exp *arg1, Exp *arg2 );
 BinOp *_ex_sub( Exp *arg1, Exp *arg2 );

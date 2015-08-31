@@ -325,6 +325,12 @@ Temp *mk_temp( IRType ty, vector<Stmt *> *stmts )
     return mk_temp(typ, stmts);
 }
 
+Temp *mk_temp_def(reg_t type, Exp *val, vector<Stmt *> *stmts) {
+    Temp *t = mk_temp(type, stmts);
+    stmts->push_back(new Move(t, val));
+    return t;
+}
+
 Exp *mk_u32(UInt val) {
     return new Constant(REG_32, val);
 }
@@ -509,6 +515,118 @@ Exp *translate_MullS32( Exp *arg1, Exp *arg2 )
     return new BinOp( TIMES, wide1, wide2 );
 }
 
+/* This is complicated because we want to implement it using only
+   32-to-64-bit multiplication, so we have to do four different
+   partial products and add them together being careful of carries. */
+Exp *translate_MullU64( Exp *arg1, Exp *arg2, vector<Stmt *> *irout )
+{
+    assert(arg1);
+    assert(arg2);
+
+    Exp *x1 = _ex_u_cast(_ex_h_cast(arg1, REG_32), REG_64);
+    Exp *x0 = _ex_u_cast( ex_l_cast(arg1, REG_32), REG_64);
+    Exp *y1 = _ex_u_cast(_ex_h_cast(arg2, REG_32), REG_64);
+    Exp *y0 = _ex_u_cast( ex_l_cast(arg2, REG_32), REG_64);
+
+    x1 = mk_temp_def(REG_64, x1, irout);
+    x0 = mk_temp_def(REG_64, x0, irout);
+    y1 = mk_temp_def(REG_64, y1, irout);
+    y0 = mk_temp_def(REG_64, y0, irout);
+
+    Exp *p11 = ex_mul(x1, y1);
+    Exp *p10 = ex_mul(x1, y0);
+    Exp *p01 = ex_mul(x0, y1);
+    Exp *p00 = ex_mul(x0, y0);
+
+    p11 = mk_temp_def(REG_64, p11, irout);
+    p10 = mk_temp_def(REG_64, p10, irout);
+    p01 = mk_temp_def(REG_64, p01, irout);
+    p00 = mk_temp_def(REG_64, p00, irout);
+
+    Exp *s0_a = mk_temp_def(REG_64, _ex_add(ecl(p00), ex_shl(p01, 32)), irout);
+    Exp *c0_a = _ex_u_cast(ex_lt(s0_a, p00), REG_64);
+    Exp *s0_b = mk_temp_def(REG_64, _ex_add(ecl(s0_a), ex_shl(p10, 32)),irout);
+    Exp *c0_b = _ex_u_cast(ex_lt(s0_b, s0_a), REG_64);
+
+    Exp *s1 = _ex_add(_ex_add(ecl(p11), _ex_add(c0_a, c0_b)),
+		      _ex_add(ex_shr(p01, 32), ex_shr(p10, 32)));
+
+    return translate_64HLto128(s1, ecl(s0_b));
+}
+
+void split_vector(Exp *exp_v, Exp **high, Exp **low) {
+    if (exp_v->exp_type == VECTOR) {
+	// Expected case
+	Vector *v = (Vector *)exp_v;
+	*high = v->lanes[1];
+	*low = v->lanes[0];
+	delete v; // Shallow delete, since we reuse high and low
+    } else if (exp_v->exp_type == UNKNOWN) {
+	// An error or unhandled case. Propagate times two.
+	*high = exp_v;
+	*low = ecl(exp_v);
+    } else {
+	assert(exp_v->exp_type == VECTOR);
+    }
+}
+
+Exp *mk_temps128_def(Exp *val, vector<Stmt *> *stmts) {
+    Temp *t_high = mk_temp(REG_64, stmts);
+    Temp *t_low = mk_temp(REG_64, stmts);
+    Exp *v_high, *v_low;
+    split_vector(val, &v_high, &v_low);
+    stmts->push_back(new Move(t_high, v_high));
+    stmts->push_back(new Move(t_low, v_low));
+    return new Vector(ecl(t_high), ecl(t_low));
+}
+
+Exp *translate_Neg128(Exp *arg, vector<Stmt *> *irout) {
+    Exp *arg_high, *arg_low;
+    split_vector(arg, &arg_high, &arg_low);
+
+    Exp *not_high = _ex_not(arg_high);
+    Exp *not_low = _ex_not(arg_low);
+
+    Exp *inc_low = mk_temp_def(REG_64, _ex_add(not_low, mk_u64(1)), irout);
+    Exp *inc_high =
+	_ex_add(not_high, _ex_u_cast(_ex_eq(ecl(inc_low), mk_u64(0)), REG_64));
+
+    return translate_64HLto128(inc_high, ecl(inc_low));
+}
+
+Exp *vec_ite(Exp *cond, Exp *exp_t, Exp *exp_f) {
+    Exp *t_high, *t_low;
+    split_vector(exp_t, &t_high, &t_low);
+
+    Exp *f_high, *f_low;
+    split_vector(exp_f, &f_high, &f_low);
+
+    return new Vector(_ex_ite(ecl(cond), t_high, f_high),
+		      _ex_ite(ecl(cond), t_low, f_low));
+}
+
+/* Again this can't be translated directly without REG_128s. Implement
+   by splitting on cases for the signs and then using the unsigned
+   version. */
+Exp *translate_MullS64( Exp *arg1, Exp *arg2, vector<Stmt *> *irout )
+{
+    assert(arg1);
+    assert(arg2);
+
+    Exp *neg1 = mk_temp_def(REG_1, _ex_lt(arg1, mk_u64(0)), irout);
+    Exp *neg2 = mk_temp_def(REG_1, _ex_lt(arg2, mk_u64(0)), irout);
+
+    Exp *abs1 = ex_ite(neg1, ex_neg(arg1), arg1);
+    Exp *abs2 = ex_ite(neg2, ex_neg(arg2), arg2);
+
+    Exp *absprod =
+	mk_temps128_def(translate_MullU64(abs1, abs2, irout), irout);
+
+    Exp *negprod = mk_temp_def(REG_1, ex_xor(neg1, neg2), irout);
+
+    return vec_ite(negprod, translate_Neg128(absprod, irout), ecl(absprod));
+}
+
 Exp *translate_Clz32( IRExpr *expr, IRSB *irbb, vector<Stmt *> *irout )
 {
     assert(expr);
@@ -606,22 +724,6 @@ Exp *translate_CmpF(Exp *arg1, Exp *arg2, reg_t sz) {
     return _ex_ite(cmp_eq, ex_const(0x40),
 		   _ex_ite(cmp_lt, ex_const(0x01),
 			   _ex_ite(cmp_gt, ex_const(0), ex_const(0x45))));
-}
-
-void split_vector(Exp *exp_v, Exp **high, Exp **low) {
-    if (exp_v->exp_type == VECTOR) {
-	// Expected case
-	Vector *v = (Vector *)exp_v;
-	*high = v->lanes[1];
-	*low = v->lanes[0];
-	delete v; // Shallow delete, since we reuse high and low
-    } else if (exp_v->exp_type == UNKNOWN) {
-	// An error or unhandled case. Propagate times two.
-	*high = exp_v;
-	*low = ecl(exp_v);
-    } else {
-	assert(exp_v->exp_type == VECTOR);
-    }
 }
 
 // Low-lane single-precision FP, as in the x86 SSE addss, for instance.
@@ -840,14 +942,16 @@ Exp *translate_simple_unop( IRExpr *expr, IRSB *irbb, vector<Stmt *> *irout )
 	    return new Cast(arg_low, REG_32, CAST_LOW);
 	}
 
-        case Iop_V128to64: {
+        case Iop_V128to64:
+        case Iop_128to64: {
 	    Exp *arg_high, *arg_low;
 	    split_vector(arg, &arg_high, &arg_low);
 	    Exp::destroy(arg_high);
 	    return arg_low;
 	}
 
-        case Iop_V128HIto64: {
+        case Iop_V128HIto64:
+        case Iop_128HIto64: {
 	    Exp *arg_high, *arg_low;
 	    split_vector(arg, &arg_high, &arg_low);
 	    Exp::destroy(arg_low);
@@ -1163,6 +1267,18 @@ Exp *translate_binop( IRExpr *expr, IRSB *irbb, vector<Stmt *> *irout )
 
     switch ( expr->Iex.Binop.op ) 
     {
+        case Iop_MullU64: {
+	    Exp *arg1 = translate_expr(expr->Iex.Binop.arg1, irbb, irout);
+	    Exp *arg2 = translate_expr(expr->Iex.Binop.arg2, irbb, irout);
+	    return translate_MullU64(arg1, arg2, irout);
+	}
+
+        case Iop_MullS64: {
+	    Exp *arg1 = translate_expr(expr->Iex.Binop.arg1, irbb, irout);
+	    Exp *arg2 = translate_expr(expr->Iex.Binop.arg2, irbb, irout);
+	    return translate_MullS64(arg1, arg2, irout);
+	}
+
         // arg1 in this case, specifies rounding mode, and so is ignored
         case Iop_RoundF64toInt:
         case Iop_2xm1F64:

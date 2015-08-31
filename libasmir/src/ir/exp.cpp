@@ -956,8 +956,19 @@ UnOp *_ex_not( Exp *arg )
 
 UnOp *ex_not( Exp *arg )
 {
-  arg = arg->clone();
+    arg = arg->clone();
     return _ex_not(arg);
+}
+
+UnOp *_ex_neg( Exp *arg )
+{
+    return new UnOp(NEG, arg);
+}
+
+UnOp *ex_neg( Exp *arg )
+{
+    arg = arg->clone();
+    return _ex_neg(arg);
 }
 
 BinOp *_ex_add( Exp *arg1, Exp *arg2 )

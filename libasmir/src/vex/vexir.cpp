@@ -53,8 +53,8 @@ Int                 tmpbuf_used;
 // within the callback (instrument1)
 IRSB *irbb_current = NULL;
 
-// These choices are somewhat arbitrary. Our translation doesn't yet
-// support any level of SSE, but it's helpful in debugging for VEX to
+// These choices are somewhat arbitrary. Our translation of SSE is
+// far from complete, but it's helpful in debugging for VEX to
 // give its semantics for an instruction, even if we can't translate
 // them, rather than claiming that the instruction is illegal.
 #ifndef VEX_HWCAPS_X86_MMXEXT /* Added in r2745 */

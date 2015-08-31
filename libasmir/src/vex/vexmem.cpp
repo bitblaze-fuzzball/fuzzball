@@ -793,6 +793,9 @@ IRSB* vx_dopyIRSB ( IRSB* bb )
    bb2->stmts    = sts2;
    bb2->next     = vx_dopyIRExpr(bb->next);
    bb2->jumpkind = bb->jumpkind;
+#if VEX_VERSION >= 2296
+   bb2->offsIP   = bb->offsIP;
+#endif
    return bb2;
 }
 
