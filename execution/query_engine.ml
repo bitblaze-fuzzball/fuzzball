@@ -47,9 +47,23 @@ class dummy_query_engine = object(self)
 end
 
 let print_ce ce =
+  let rec is_all_digits s pos len =
+    if pos = len then true
+    else
+      match s.[pos] with
+	| '0'|'1'|'2'|'3'|'4'|'5'|'6'|'7'|'8'|'9' ->
+	    is_all_digits s (pos + 1) len
+	| _ -> false
+  in
   List.iter
     (fun (var_s, value) ->
-       if value <> 0L then
+       let is_tmp =
+	 if String.sub var_s 0 1 = "t" then
+	   is_all_digits var_s 1 (String.length var_s)
+	 else
+	   false
+       in
+       if value <> 0L && not is_tmp then
 	 Printf.printf "%s=0x%Lx " var_s value)
     ce;
   Printf.printf "\n";
