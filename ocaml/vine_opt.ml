@@ -401,6 +401,7 @@ let rec constant_fold ctx e =
     | Ite(((Constant(Int(_,_))) as cond), e1, e2) ->
 	if (bool_of_const cond) then e1 else e2
     | Ite(cond, e1, e1') when e1 = e1' -> e1
+    | Ite(UnOp(NOT, c), x, y) -> Ite(c, y, x)
     (* AND / OR with itself *)
     | BinOp(BITOR, x, y)
     | BinOp(BITAND, x, y)
