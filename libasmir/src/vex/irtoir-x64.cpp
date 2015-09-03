@@ -1387,13 +1387,13 @@ get_thunk_index(vector<Stmt *> *ir,
    low 8 bits is computed, like the x64 PF flag. */
 Exp *parity8(Exp *e) {
     Exp *shift0 = ecl(e);
-    Exp *shift1 = ex_shr(e, new Constant(REG_32, 1));
-    Exp *shift2 = ex_shr(e, new Constant(REG_32, 2));
-    Exp *shift3 = ex_shr(e, new Constant(REG_32, 3));
-    Exp *shift4 = ex_shr(e, new Constant(REG_32, 4));
-    Exp *shift5 = ex_shr(e, new Constant(REG_32, 5));
-    Exp *shift6 = ex_shr(e, new Constant(REG_32, 6));
-    Exp *shift7 = ex_shr(e, new Constant(REG_32, 7));
+    Exp *shift1 = _ex_shr(ecl(e), new Constant(REG_32, 1));
+    Exp *shift2 = _ex_shr(ecl(e), new Constant(REG_32, 2));
+    Exp *shift3 = _ex_shr(ecl(e), new Constant(REG_32, 3));
+    Exp *shift4 = _ex_shr(ecl(e), new Constant(REG_32, 4));
+    Exp *shift5 = _ex_shr(ecl(e), new Constant(REG_32, 5));
+    Exp *shift6 = _ex_shr(ecl(e), new Constant(REG_32, 6));
+    Exp *shift7 = _ex_shr(ecl(e), new Constant(REG_32, 7));
     Exp *xor_e = _ex_xor(shift7, shift6, shift5, shift4,
 			 shift3, shift2, shift1, shift0);
     return _ex_not(_ex_l_cast(xor_e, REG_1));
@@ -1832,29 +1832,85 @@ void x64_modify_flags( asm_program_t *prog, vine_block_t *block )
 	break; }
     case CC_OP_UMULB:
     case CC_OP_UMULW:
-    case CC_OP_UMULL:
+    case CC_OP_UMULL: {
+	Temp *result = mk_temp(double_type, &new_ir);
+	Exp *result_e = _ex_mul(narrow64(dep1_expr, double_type),
+				narrow64(dep2_expr, double_type));
+	new_ir.push_back(new Move(result, result_e));
+	Temp *oflow = mk_temp(REG_1, &new_ir);
+	Exp *oflow_e = _ex_neq(ex_h_cast(result, type), ex_const(type, 0));
+	new_ir.push_back(new Move(oflow, oflow_e));
+	Temp *low = mk_temp(type, &new_ir);
+	new_ir.push_back(new Move(low, ex_l_cast(result, type)));
+	cf = ecl(oflow);
+	of = ecl(oflow);
+	af = ecl(&Constant::f); /* spec: undefined */
+	zf = _ex_eq(ecl(low), ex_const(type, 0)); /* spec: undefined */
+	sf = ex_h_cast(low, REG_1); /* spec: undefined */
+	pf = parity8(low); /* spec: undefined */
+	break; }
+    case CC_OP_UMULQ: {
+	/* It's noticeably inefficient that in this approach we do the
+	   whole mulitplication twice, once for the real result
+	   (elsewhere) and once for the flags. */
+	Exp *result = translate_MullU64(ecl(dep1_expr),
+					ecl(dep2_expr), &new_ir);
+	Exp *high_e, *low_e;
+	split_vector(result, &high_e, &low_e);
+	Temp *high = mk_temp(REG_64, &new_ir);
+	Temp *low = mk_temp(REG_64, &new_ir);
+	new_ir.push_back(new Move(high, high_e));
+	new_ir.push_back(new Move(low, low_e));
+	Temp *oflow = mk_temp(REG_1, &new_ir);
+	Exp *oflow_e = _ex_neq(ecl(high), ex_const(REG_64, 0));
+	new_ir.push_back(new Move(oflow, oflow_e));
+	cf = ecl(oflow);
+	of = ecl(oflow);
+	af = ecl(&Constant::f); /* spec: undefined */
+	zf = _ex_eq(ecl(low), ex_const(type, 0)); /* spec: undefined */
+	sf = ex_h_cast(low, REG_1); /* spec: undefined */
+	pf = parity8(low); /* spec: undefined */
+	break; }
     case CC_OP_SMULB:
     case CC_OP_SMULW:
-    case CC_OP_SMULL:
-	/* These cases can be supported using the same approach as i386 */
-	(void)double_type;
-	cf = ecl(&Constant::f); /* wrong, s/b overflow */
-	of = ecl(&Constant::f); /* wrong, same as CF*/
+    case CC_OP_SMULL: {
+	Temp *result = mk_temp(double_type, &new_ir);
+	Exp *arg1 = _ex_s_cast(narrow64(dep1_expr, type), double_type);
+	Exp *arg2 = _ex_s_cast(narrow64(dep2_expr, type), double_type);
+	new_ir.push_back(new Move(result, _ex_mul(arg1, arg2)));
+	Temp *low = mk_temp(type, &new_ir);
+	new_ir.push_back(new Move(low, ex_l_cast(result, type)));
+	Exp *sx = _ex_s_cast(ex_h_cast(low, REG_1), type);
+	Temp *oflow = mk_temp(REG_1, &new_ir);
+	Exp *oflow_e = _ex_neq(ex_h_cast(result, type), sx);
+	new_ir.push_back(new Move(oflow, oflow_e));
+	cf = ecl(oflow);
+	of = ecl(oflow);
 	af = ecl(&Constant::f); /* spec: undefined */
-	zf = ecl(&Constant::f); /* spec: undefined */
-	sf = ecl(&Constant::f); /* spec: undefined */
-	pf = ecl(&Constant::f); /* spec: undefined */
-	break;
-    case CC_OP_UMULQ:
-    case CC_OP_SMULQ:
-	/* These will be tricker to do right without a REG_128. */
-	cf = ecl(&Constant::f); /* wrong, s/b overflow */
-	of = ecl(&Constant::f); /* wrong, same as CF*/
+	zf = _ex_eq(ecl(low), ex_const(type, 0)); /* spec: undefined */
+	sf = ex_h_cast(low, REG_1); /* spec: undefined */
+	pf = parity8(low); /* spec: undefined */
+	break; }
+    case CC_OP_SMULQ: {
+	Exp *result = translate_MullS64(ecl(dep1_expr),
+					ecl(dep2_expr), &new_ir);
+	Exp *high_e, *low_e;
+	split_vector(result, &high_e, &low_e);
+	Temp *high = mk_temp(REG_64, &new_ir);
+	Temp *low = mk_temp(REG_64, &new_ir);
+	new_ir.push_back(new Move(high, high_e));
+	new_ir.push_back(new Move(low, low_e));
+	Exp *sx = _ex_s_cast(ex_h_cast(low, REG_1), REG_64);
+	Temp *oflow = mk_temp(REG_1, &new_ir);
+	Exp *oflow_e = _ex_neq(ecl(high), sx);
+	new_ir.push_back(new Move(oflow, oflow_e));
+	cf = ecl(oflow);
+	of = ecl(oflow);
 	af = ecl(&Constant::f); /* spec: undefined */
-	zf = ecl(&Constant::f); /* spec: undefined */
-	sf = ecl(&Constant::f); /* spec: undefined */
-	pf = ecl(&Constant::f); /* spec: undefined */
-	break;
+	zf = _ex_eq(ecl(low), ex_const(type, 0)); /* spec: undefined */
+	sf = ex_h_cast(low, REG_1); /* spec: undefined */
+	pf = parity8(low); /* spec: undefined */
+	break; }
     default:
 	printf("Unsupported x86-64 CC OP %d\n", op);
         /* panic("Unsupported x86-64 CC OP in x64_modify_flags"); */

@@ -616,8 +616,8 @@ Exp *translate_MullS64( Exp *arg1, Exp *arg2, vector<Stmt *> *irout )
     Exp *neg1 = mk_temp_def(REG_1, _ex_lt(arg1, mk_u64(0)), irout);
     Exp *neg2 = mk_temp_def(REG_1, _ex_lt(arg2, mk_u64(0)), irout);
 
-    Exp *abs1 = ex_ite(neg1, ex_neg(arg1), arg1);
-    Exp *abs2 = ex_ite(neg2, ex_neg(arg2), arg2);
+    Exp *abs1 = _ex_ite(ecl(neg1), ex_neg(arg1), ecl(arg1));
+    Exp *abs2 = _ex_ite(ecl(neg2), ex_neg(arg2), ecl(arg2));
 
     Exp *absprod =
 	mk_temps128_def(translate_MullU64(abs1, abs2, irout), irout);

@@ -11,7 +11,7 @@ using namespace std;
 // in the string constructor. I couldn't tell whether that was a
 // real error or not, but I was able to make it go away (and presumably
 // save a trivial amount of time at startup) by constructing the
-// std::strings lazily. -SMcC
+// std::strings only on request. -SMcC
 
 static const char *binopnames_strs[] = {
   "PLUS",
@@ -40,7 +40,6 @@ static const char *binopnames_strs[] = {
   "SLT",
   "SLE",
 };
-static string *binopnames[sizeof(binopnames_strs)/sizeof(char *)];
 
 static const char *strs_strs[] = {
   "+",
@@ -69,7 +68,6 @@ static const char *strs_strs[] = {
   "<$",
   "<=$",
 };
-static string *strs[sizeof(strs_strs)/sizeof(char *)];
 
 uint64_t
 Exp::cast_value(reg_t t, uint64_t v)
@@ -185,23 +183,19 @@ BinOp::tostring() const
 string
 BinOp::optype_to_string(const binop_type_t binop_type)
 {
-  if (!strs[binop_type])
-    strs[binop_type] = new string(strs_strs[binop_type]);
-  return *(strs[binop_type]);
+  return string(strs_strs[binop_type]);
 }
 
 string
 BinOp::optype_to_name(const binop_type_t binop_type)
 {
-  if (!binopnames[binop_type])
-    binopnames[binop_type] = new string(binopnames_strs[binop_type]);
-  return *(binopnames[binop_type]);
+  return string(binopnames_strs[binop_type]);
 }
 
 binop_type_t
 BinOp::string_to_optype(const string s)
 {
-  for(unsigned i = 0; i < sizeof(strs); i++){
+  for(unsigned i = 0; i < sizeof(strs_strs); i++){
     if(optype_to_string((binop_type_t)i) == s)
       return (binop_type_t) i;
   }
