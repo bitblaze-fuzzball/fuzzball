@@ -3330,7 +3330,8 @@ object(self)
 	     uh "Unhandled Linux system call clone (120)"
 	 | ((X86|ARM), 121) -> (* setdomainname *)
 	     uh "Unhandled Linux system call setdomainname (121)"
-	 | ((X86|ARM), 122) -> (* uname *)
+	 | ((X86|ARM), 122) (* uname *)
+	 | (X64, 63) ->
 	     let arg1 = read_1_reg () in
 	     let buf = arg1 in
 	       if !opt_trace_syscalls then

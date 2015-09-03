@@ -450,6 +450,7 @@ IRStmt* vx_IRStmt_Dirty ( IRDirty* d )
    s->Ist.Dirty.details = d;
    return s;
 }
+#if LIBASMIR_VEX_VERSION < 1793
 IRStmt* vx_IRStmt_MFence ( void )
 {
    /* Just use a single static closure. */
@@ -457,6 +458,15 @@ IRStmt* vx_IRStmt_MFence ( void )
    static_closure.tag = Ist_MFence;
    return &static_closure;
 }
+#else
+IRStmt* vx_IRStmt_MBE ( IRMBusEvent event )
+{
+  IRStmt* s            = (IRStmt *)vx_Alloc(sizeof(IRStmt));
+  s->tag               = Ist_MBE;
+  s->Ist.MBE.event     = event;
+  return s;
+}
+#endif
 IRStmt* vx_IRStmt_Exit ( IRExpr* guard, IRJumpKind jk, IRConst* dst ) {
    IRStmt* s         = (IRStmt *)vx_Alloc(sizeof(IRStmt));
    s->tag            = Ist_Exit;
@@ -740,8 +750,13 @@ IRStmt* vx_dopyIRStmt ( IRStmt* s )
                              vx_dopyIRExpr(s->Ist.Store.data));
       case Ist_Dirty: 
          return vx_IRStmt_Dirty(vx_dopyIRDirty(s->Ist.Dirty.details));
-      case Ist_MFence: /* AKA Ist_MBE */
+#if LIBASMIR_VEX_VERSION < 1793
+      case Ist_MFence:
          return vx_IRStmt_MFence();
+#else
+      case Ist_MBE:
+         return vx_IRStmt_MBE(s->Ist.MBE.event);
+#endif
       case Ist_Exit: 
          return vx_IRStmt_Exit(vx_dopyIRExpr(s->Ist.Exit.guard),
                             s->Ist.Exit.jk,

@@ -1345,17 +1345,15 @@ struct
       special_handler_list <- h :: special_handler_list
 
     method handle_special str =
-      try
-	let sl_r = ref [] in
-	  ignore(List.find
-		   (fun h ->
-		      match h#handle_special str with
-			| None -> false
-			| Some sl -> sl_r := sl; true)
-		   special_handler_list);
-	  Some !sl_r
-      with
-	  Not_found -> None
+      let rec loop =
+	function
+	  | h :: rest ->
+	      (match h#handle_special str with
+		 | (Some sl) as slr -> slr
+		 | None -> loop rest)
+	  | [] -> None
+      in
+	loop special_handler_list
 
     method private get_int_var ((_,vname,ty) as var) =
       try

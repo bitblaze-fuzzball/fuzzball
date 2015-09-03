@@ -651,6 +651,13 @@ Stmt *x64_translate_dirty( IRStmt *stmt, IRSB *irbb, vector<Stmt *> *irout )
 
     string func = string(dirty->cee->name);
 
+    if (func == "amd64g_dirtyhelper_CPUID_baseline" ||
+	func == "amd64g_dirtyhelper_CPUID_sse3_and_cx16" ||
+	func == "amd64g_dirtyhelper_CPUID_sse42_and_cx16" ||
+	func == "amd64g_dirtyhelper_CPUID_avx_and_cx16") {
+	result = new Special("cpuid");
+    }
+    else
     {
         result = new ExpStmt(new Unknown("Unknown: Dirty"));
     }
