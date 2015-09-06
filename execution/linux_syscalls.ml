@@ -91,7 +91,7 @@ class linux_special_handler (fm : fragment_machine) =
   let put_return =
     (match !opt_arch with
        | X86 -> put_reg R_EAX
-       | X64 -> put_reg R_RAX
+       | X64 -> fm#set_long_var R_RAX
        | ARM -> put_reg R0)
   in
   let load_word addr =
@@ -136,6 +136,10 @@ class linux_special_handler (fm : fragment_machine) =
   let store_short base idx v =
     let addr = Int64.add base (Int64.of_int idx) in
       fm#store_short_conc addr v
+  in
+  let store_long base idx v =
+    let addr = Int64.add base (Int64.of_int idx) in
+      fm#store_long_conc addr v
   in
   let zero_region base len =
     assert(len >= 0 && len <= 0x20000000); (* sanity check *)
@@ -480,11 +484,46 @@ object(self)
       store_word addr 64 atime;
       store_word addr 68 0L;      (* atime nanosecs *)
       store_word addr 72 mtime;
-      store_word addr 76 0L;      (* mtime naonsecs *)
+      store_word addr 76 0L;      (* mtime nanosecs *)
       store_word addr 80 ctime;
       store_word addr 84 0L;      (* ctime nanosecs *)
       store_word addr 88 ino;     (* low bits of 64-bit inode *)
       store_word addr 92 0L;      (* high bits of 64-bit inode *)
+
+  method private write_oc_statbuf_as_x64_stat addr oc_buf =
+    let dev = Int64.of_int oc_buf.Unix.st_dev and
+	ino = Int64.of_int oc_buf.Unix.st_ino and
+	mode = Int64.of_int (oc_buf.Unix.st_perm lor
+			       (self#oc_kind_to_mode oc_buf.Unix.st_kind)) and
+	nlink = Int64.of_int oc_buf.Unix.st_nlink and
+	uid = Int64.of_int oc_buf.Unix.st_uid and
+	gid = Int64.of_int oc_buf.Unix.st_gid and
+	rdev = Int64.of_int oc_buf.Unix.st_rdev and
+	size = Int64.of_int oc_buf.Unix.st_size and
+	atime = Int64.of_float oc_buf.Unix.st_atime and
+	mtime = Int64.of_float oc_buf.Unix.st_mtime and
+	ctime = Int64.of_float oc_buf.Unix.st_ctime and
+	blksize = 4096L and
+	blocks = Int64.of_int (oc_buf.Unix.st_size/4096)
+    in
+      store_long addr   0 dev;
+      store_long addr   8 ino;
+      store_long addr  16 nlink;
+      store_word addr  24 mode;
+      store_word addr  28 uid;
+      store_word addr  32 gid;
+      (* 4 byte __pad0 *)
+      store_long addr  40 rdev;
+      store_long addr  48 size;
+      store_long addr  56 blksize;
+      store_long addr  64 blocks;
+      store_long addr  72 atime;
+      store_long addr  80 0L; (* atime nanosecs *)
+      store_long addr  88 mtime;
+      store_long addr  96 0L; (* mtime nanosecs *)
+      store_long addr 104 ctime;
+      store_long addr 112 0L; (* ctime nanosecs *)
+      (* 24 bytes reserved *)
 
   (* Slightly different layout than the x86 version, because the
      8-byte values are 8- rather than 4-byte aligned *)
@@ -2228,7 +2267,16 @@ object(self)
 	 | _ -> failwith "Unhandled args to set_thread_area")
 
   method sys_arch_prctl code addr =
-    (* todo: x64 equivalent of linux_setup_tcb_seg? *)
+    (match code with
+       | 0x1001 (* ARCH_SET_GS *) ->
+	   fm#set_word_var R_GS_BASE addr
+       | 0x1002 (* ARCH_SET_FS *) ->
+	   fm#set_word_var R_FS_BASE addr
+       | 0x1003 (* ARCH_GET_FS *) ->
+	   store_long addr 0 (fm#get_word_var R_FS_BASE)
+       | 0x1004 (* ARCH_GET_GS *) ->
+	   store_long addr 0 (fm#get_word_var R_GS_BASE)
+       | _ -> failwith "Unexpected arch_prctl subfunction");
     put_return 0L
 
   method sys_set_tid_address addr =
@@ -2375,7 +2423,10 @@ object(self)
 	   Unix.fstat (self#get_fd fd)
 	 else
 	   Unix.stat "/etc/group") (* pretend stdout is always redirected *) in
-	self#write_oc_statbuf_as_stat buf_addr oc_buf;
+	(match !opt_arch with
+	   | X86 -> self#write_oc_statbuf_as_stat buf_addr oc_buf
+	   | X64 -> self#write_oc_statbuf_as_x64_stat buf_addr oc_buf
+	   | ARM -> failwith "Unimplemented: ARM 32-bit fstat");
 	put_return 0L (* success *)
     with
       | Unix.Unix_error(err, _, _) -> self#put_errno err
@@ -2585,11 +2636,17 @@ object(self)
 
   method private handle_linux_syscall () =
     let get_reg r = 
-      if !opt_symbolic_syscall_error <> None then
-	fm#get_word_var r (* fail if not concrete *)
-      else
-	fm#get_word_var_concretize r
-	  !opt_measure_influence_syscall_args "syscall arg"
+      match (!opt_arch, !opt_symbolic_syscall_error) with
+	| (X64, None) ->
+	    fm#get_long_var_concretize r
+	      !opt_measure_influence_syscall_args "syscall arg"
+	| (X64, _) ->
+	    fm#get_long_var r (* fail if not concrete *)
+	| ((X86|ARM), None) ->
+	    fm#get_word_var_concretize r
+	      !opt_measure_influence_syscall_args "syscall arg"
+	| ((X86|ARM), _) ->
+	    fm#get_word_var r (* fail if not concrete *)
     in
     let uh s = raise (UnhandledSysCall(s))
     in
@@ -2785,7 +2842,8 @@ object(self)
 	 | (ARM, 32) -> uh "No gtty (32) syscall in Linux/ARM (E)ABI"
 	 | (X86, 32) -> (* gtty *)
 	     uh "Unhandled Linux system call gtty (32)"
-	 | ((X86|ARM), 33) -> (* access *)
+	 | ((X86|ARM), 33) (* access *)
+	 | (X64, 21) ->
 	     let (arg1, arg2) = read_2_regs () in
 	     let path_buf = arg1 and
 		 mode     = Int64.to_int arg2 in
@@ -2843,7 +2901,8 @@ object(self)
 	 | (ARM, 44) -> uh "No prof (44) syscall in Linux/ARM (E)ABI"
 	 | (X86, 44) -> (* prof *)
 	     uh "Unhandled Linux system call prof (44)"
-	 | ((X86|ARM), 45) -> (* brk *)
+	 | ((X86|ARM), 45) (* brk *)
+	 | (X64, 12) ->
 	     let arg1 = read_1_reg () in
 	     let addr = arg1 in
 	       if !opt_trace_syscalls then
@@ -3000,7 +3059,8 @@ object(self)
 	 | (ARM, 84) -> uh "No oldlstat (84) syscall in Linux/ARM (E)ABI"
 	 | (X86, 84) -> (* oldlstat *)
 	     uh "Unhandled Linux system call oldlstat (84)"
-	 | ((X86|ARM), 85) -> (* readlink *)
+	 | ((X86|ARM), 85) (* readlink *)
+	 | (X64, 89) ->
 	     let (arg1, arg2, arg3) = read_3_regs () in
 	     let path_buf = arg1 and
 		 out_buf  = arg2 and
@@ -3031,7 +3091,20 @@ object(self)
 		 Printf.printf "mmap(0x%08Lx, %Ld, 0x%Lx, 0x%0Lx, %Ld, %d)"
 		   addr length prot flags fd offset;
 	       self#sys_mmap addr length prot flags fd offset
-	 | ((X86|ARM), 91) -> (* munmap *)
+	 | (X64, 9) -> (* mmap *)
+	     let (arg1, arg2, arg3, arg4, arg5, arg6) = read_6_regs () in
+	     let addr     = arg1 and
+		 length   = arg2 and
+		 prot     = arg3 and
+		 flags    = arg4 and
+		 fd       = arg5 and
+		 offset = Int64.to_int arg6 in
+	       if !opt_trace_syscalls then
+		 Printf.printf "mmap(0x%08Lx, %Ld, 0x%Lx, 0x%0Lx, %Ld, %d)"
+		   addr length prot flags (fix_s32 fd) offset;
+	       self#sys_mmap addr length prot flags fd offset
+	 | ((X86|ARM), 91) (* munmap *)
+	 | (X64, 11) ->
 	     let (arg1, arg2) = read_2_regs () in
 	     let addr = arg1 and
 		 len  = arg2 in
@@ -3277,7 +3350,8 @@ object(self)
 		 Printf.printf "lstat(\"%s\", 0x%08Lx)" path buf_addr;
 	       self#sys_lstat path buf_addr
 	 | (ARM, 108) -> uh "Check whether ARM fstat (108) syscall matches x86"
-	 | (X86, 108) -> (* fstat *)
+	 | (X86, 108) (* fstat *)
+	 | (X64, 5) ->
 	     let (ebx, ecx) = read_2_regs () in
 	     let fd = Int64.to_int ebx and
 		 buf_addr = ecx in
@@ -3342,7 +3416,8 @@ object(self)
 	     uh "Unhandled Linux system call modify_ldt (123)"
 	 | ((X86|ARM), 124) -> (* adjtimex *)
 	     uh "Unhandled Linux system call adjtimex (124)"
-	 | ((X86|ARM), 125) -> (* mprotect *)
+	 | ((X86|ARM), 125) (* mprotect *)
+	 | (X64, 10) ->
 	     let (arg1, arg2, arg3) = read_3_regs () in
 	     let addr = arg1 and
 		 len  = arg2 and
@@ -3911,7 +3986,8 @@ object(self)
 	 | (X86, 250) -> (* fadvise64 *)
 	     uh "Unhandled Linux system call fadvise64 (250)"
 	 | (ARM, 248)    (* exit_group *)
-	 | (X86, 252) -> (* exit_group *)
+	 | (X86, 252)    (* exit_group *)
+	 | (X64, 231) -> (* exit_group *)
 	     let arg1 = read_1_reg () in
 	     let status = arg1 in
 	       if !opt_trace_syscalls then
@@ -4392,7 +4468,10 @@ object(self)
 	     Printf.printf "Unknown Linux/x86-64 system call %d\n" syscall_num;
 	     uh "Unhandled Linux system call");
     if !opt_trace_syscalls then
-      let ret_val = fm#get_word_var ret_reg in
+      let ret_val = match !opt_arch with
+	| (X86|ARM) -> fm#get_word_var ret_reg
+	| X64 -> fm#get_long_var ret_reg
+      in
 	Printf.printf " = %Ld (0x%08Lx)\n" (fix_s32 ret_val) ret_val;
 	flush stdout
 

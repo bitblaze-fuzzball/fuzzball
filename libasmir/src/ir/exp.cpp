@@ -87,6 +87,8 @@ Exp::cast_value(reg_t t, uint64_t v)
   assert(0); // eliminates warnings.
 }
 
+reg_t reg_address_t;
+
 uint32_t 
 Exp::reg_to_bits(const reg_t &reg)
 {
@@ -420,7 +422,7 @@ void FUnOp::destroy( FUnOp *expr )
 Mem::Mem(Exp *a)
   : Exp(MEM), addr(a)
 {
-  typ = REG_ADDRESS_T;
+  typ = reg_address_t;
 }
 */
 
@@ -667,12 +669,12 @@ void Unknown::destroy( Unknown *expr )
 
 Name::Name( string s ) : Exp(NAME), name(s)
 { 
-  //typ = REG_ADDRESS_T;
+  //typ = reg_address_t;
 }
 
 Name::Name( const Name &other ) : Exp(NAME), name(other.name)
 { 
-  //typ = REG_ADDRESS_T;
+  //typ = reg_address_t;
 }
 
 Name *
@@ -930,6 +932,10 @@ Constant *ex_const(uint32_t value )
 Constant *ex_const64(uint64_t value )
 {
   return new Constant(REG_64, value);
+}
+
+Constant *ex_addr_const(int64_t value) {
+  return new Constant(reg_address_t, value);
 }
 
 Constant *ex_const(reg_t t, const_val_t value )

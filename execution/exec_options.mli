@@ -161,6 +161,8 @@ val opt_final_pc : bool ref
 val opt_solve_final_pc : bool ref
 val opt_skip_untainted : bool ref
 val opt_arch : execution_arch ref
+val opt_trace_stmts : bool ref
+val opt_trace_eval : bool ref
 
 val asmir_arch : unit -> Asmir.arch
 

@@ -58,22 +58,22 @@ object(self)
 	  );
 	  Some ([])
       | ("cpuid", X64) ->
-	  (match Int64.logand 0xffffffffL (fm#get_word_var R_RAX) with
+	  (match Int64.logand 0xffffffffL (fm#get_long_var R_RAX) with
 	     | 0L ->
-		 fm#set_word_var R_RAX 1L;
-		 fm#set_word_var R_RBX 0x68747541L;
-		 fm#set_word_var R_RCX 0x444d4163L;
-		 fm#set_word_var R_RDX 0x69746e65L;
+		 fm#set_long_var R_RAX 1L;
+		 fm#set_long_var R_RBX 0x68747541L;
+		 fm#set_long_var R_RCX 0x444d4163L;
+		 fm#set_long_var R_RDX 0x69746e65L;
 	     | 1L ->
-		 fm#set_word_var R_RAX 0x00000f5aL;
-		 fm#set_word_var R_RBX 0x01000800L;
-		 fm#set_word_var R_RCX 0x0L;
-		 fm#set_word_var R_RDX 0x078bfbffL;
+		 fm#set_long_var R_RAX 0x00000f5aL;
+		 fm#set_long_var R_RBX 0x01000800L;
+		 fm#set_long_var R_RCX 0x0L;
+		 fm#set_long_var R_RDX 0x078bfbffL;
 	     | _ ->
-		 fm#set_word_var R_RAX 0x0L;
-		 fm#set_word_var R_RBX 0x0L;
-		 fm#set_word_var R_RCX 0x0L;
-		 fm#set_word_var R_RDX 0x0L;
+		 fm#set_long_var R_RAX 0x0L;
+		 fm#set_long_var R_RBX 0x0L;
+		 fm#set_long_var R_RCX 0x0L;
+		 fm#set_long_var R_RDX 0x0L;
 	  );
 	  Some ([])
       | (_, _) -> None

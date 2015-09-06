@@ -555,6 +555,11 @@ let x64_regs : decl list =
      through R_OF below *)
   ("R_RFLAGSREST", REG_64);
 
+  (* Limited 64-bit segments support: just a base address for %fs and
+     %gs *)
+  ("R_FS_BASE", REG_64);
+  ("R_GS_BASE", REG_64);
+
   (* condition flag bits *)
   ("R_CF", REG_1);
   ("R_PF", REG_1);
@@ -582,6 +587,40 @@ let x64_regs : decl list =
 
   (* SIMD instructions *)
   ("R_SSEROUND", REG_64);
+
+  (* SSE registers, each divided in 4 since REG_64 is our biggest *)
+  ( "R_YMM0_0", REG_64); ( "R_YMM0_1", REG_64);
+  ( "R_YMM0_2", REG_64); ( "R_YMM0_3", REG_64);
+  ( "R_YMM1_0", REG_64); ( "R_YMM1_1", REG_64);
+  ( "R_YMM1_2", REG_64); ( "R_YMM1_3", REG_64);
+  ( "R_YMM2_0", REG_64); ( "R_YMM2_1", REG_64);
+  ( "R_YMM2_2", REG_64); ( "R_YMM2_3", REG_64);
+  ( "R_YMM3_0", REG_64); ( "R_YMM3_1", REG_64);
+  ( "R_YMM3_2", REG_64); ( "R_YMM3_3", REG_64);
+  ( "R_YMM4_0", REG_64); ( "R_YMM4_1", REG_64);
+  ( "R_YMM4_2", REG_64); ( "R_YMM4_3", REG_64);
+  ( "R_YMM5_0", REG_64); ( "R_YMM5_1", REG_64);
+  ( "R_YMM5_2", REG_64); ( "R_YMM5_3", REG_64);
+  ( "R_YMM6_0", REG_64); ( "R_YMM6_1", REG_64);
+  ( "R_YMM6_2", REG_64); ( "R_YMM6_3", REG_64);
+  ( "R_YMM7_0", REG_64); ( "R_YMM7_1", REG_64);
+  ( "R_YMM7_2", REG_64); ( "R_YMM7_3", REG_64);
+  ( "R_YMM8_0", REG_64); ( "R_YMM8_1", REG_64);
+  ( "R_YMM8_2", REG_64); ( "R_YMM8_3", REG_64);
+  ( "R_YMM9_0", REG_64); ( "R_YMM9_1", REG_64);
+  ( "R_YMM9_2", REG_64); ( "R_YMM9_3", REG_64);
+  ("R_YMM10_0", REG_64); ("R_YMM10_1", REG_64);
+  ("R_YMM10_2", REG_64); ("R_YMM10_3", REG_64);
+  ("R_YMM11_0", REG_64); ("R_YMM11_1", REG_64);
+  ("R_YMM11_2", REG_64); ("R_YMM11_3", REG_64);
+  ("R_YMM12_0", REG_64); ("R_YMM12_1", REG_64);
+  ("R_YMM12_2", REG_64); ("R_YMM12_3", REG_64);
+  ("R_YMM13_0", REG_64); ("R_YMM13_1", REG_64);
+  ("R_YMM13_2", REG_64); ("R_YMM13_3", REG_64);
+  ("R_YMM14_0", REG_64); ("R_YMM14_1", REG_64);
+  ("R_YMM14_2", REG_64); ("R_YMM14_3", REG_64);
+  ("R_YMM15_0", REG_64); ("R_YMM15_1", REG_64);
+  ("R_YMM15_2", REG_64); ("R_YMM15_3", REG_64);
 
   (* more recent VEX quirks *)
   ("R_EMNOTE", REG_32);

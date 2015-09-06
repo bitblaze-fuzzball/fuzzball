@@ -790,6 +790,16 @@ struct
 	     infl_man#measure_point_influence name e);
 	  self#concretize V.REG_32 e
 
+    method get_long_var_concretize reg do_influence name : int64 =
+      let v = self#get_int_var (Hashtbl.find reg_to_var reg) in
+      try (D.to_concrete_64 v)
+      with NotConcrete _ ->
+	let e = D.to_symbolic_64 v in
+	  if do_influence then
+	    (Printf.printf "Measuring symbolic %s influence..." name;
+	     infl_man#measure_point_influence name e);
+	  self#concretize V.REG_64 e
+
     method load_word_concretize addr do_influence name =
       let v = self#load_word addr in
       try (D.to_concrete_32 v)
@@ -1197,7 +1207,9 @@ struct
 	   | V.REG_64 -> form_man#simplify64 (self#load_long_region  r addr)
 	   | _ -> failwith "Unsupported memory type") in
 	(if !opt_trace_loads then
-	  (Printf.printf "Load from %s "
+	  (if !opt_trace_eval then
+	       Printf.printf "    "; (* indent to match other details *)
+	   Printf.printf "Load from %s "
 	     (match r with
 		| None -> "sink"
 		| Some 0 -> "conc. mem"
@@ -1485,7 +1497,9 @@ struct
 	  raise NullDereference;
 	if !opt_trace_stores then
 	  if not (ty = V.REG_8 && r = None) then
-	    (Printf.printf "Store to %s "
+	    (if !opt_trace_eval then
+	       Printf.printf "    "; (* indent to match other details *)
+	     Printf.printf "Store to %s "
 	       (match r with
 		  | None -> "sink"
 		  | Some 0 -> "conc. mem"

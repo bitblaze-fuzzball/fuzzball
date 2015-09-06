@@ -292,9 +292,18 @@ IRSB *translate_insn( VexArch guest,
     VexArchInfo vai_guest;
     LibVEX_default_VexArchInfo(&vai_guest);
     switch (guest) {
-    case VexArchX86:   vai_guest.hwcaps = X86_HWCAPS;   break;
-    case VexArchAMD64: vai_guest.hwcaps = AMD64_HWCAPS; break;
-    case VexArchARM:   vai_guest.hwcaps = ARM_HWCAPS;   break;
+    case VexArchX86:
+      vai_guest.hwcaps = X86_HWCAPS;
+      reg_address_t = REG_32;
+      break;
+    case VexArchAMD64:
+      vai_guest.hwcaps = AMD64_HWCAPS;
+      reg_address_t = REG_64;
+      break;
+    case VexArchARM:
+      vai_guest.hwcaps = ARM_HWCAPS;
+      reg_address_t = REG_32;
+      break;
     default:           assert(0); /* unsupported arch. */
     }
 
@@ -318,6 +327,15 @@ IRSB *translate_insn( VexArch guest,
     if (guest == VexArchAMD64) {
       // the only supported value
       vta.abiinfo_both.guest_stack_redzone_size = 128;
+
+#if VEX_VERSION >= 1875
+      // Allow both %fs and %gs overrides. This doesn't really assume
+      // the partuclar values implied by the field names, just that we
+      // will always be able to get the base address out of the guest
+      // state.
+      vta.abiinfo_both.guest_amd64_assume_fs_is_zero = 1;
+      vta.abiinfo_both.guest_amd64_assume_gs_is_0x60 = 1;
+#endif
     }
 #endif
 

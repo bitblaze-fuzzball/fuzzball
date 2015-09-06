@@ -18,6 +18,29 @@ open Granular_memory;;
 
 let bool64 f = fun a b -> if (f a b) then 1L else 0L
 
+(* Like String.trim, but compatible with OCaml 3.12 *)
+let str_trim s =
+  let is_space = function
+    | ' ' | '\012' | '\n' | '\r' | '\t' -> true
+    | _ -> false
+  in
+  let len = String.length s in
+  let i = ref 0 in
+  while !i < len && is_space s.[!i] do incr i done;
+  let j = ref (len - 1) in
+  while !j >= !i && is_space s.[!j] do decr j done;
+  if !i = 0 && !j = len - 1 then
+    s
+  else if !j >= !i then
+    String.sub s !i (!j - !i + 1)
+  else
+    ""
+
+(* It's a bit inefficient to use the pretty-printer when the whole
+   point is that we don't want extra whitespace. *)
+let stmt_to_string_compact st =
+  str_trim (V.stmt_to_string st)
+
 let move_hash src dest =
   V.VarHash.clear dest;
   V.VarHash.iter (fun a b -> V.VarHash.add dest a b) src
@@ -59,7 +82,7 @@ type register_name =
   | R_FPREG4 | R_FPREG5 | R_FPREG6 | R_FPREG7
   | R_FPTAG0 | R_FPTAG1 | R_FPTAG2 | R_FPTAG3
   | R_FPTAG4 | R_FPTAG5 | R_FPTAG6 | R_FPTAG7
-  (* SSE, currently only supported on x86: *)
+  (* SSE, 32-bit-x86-style 128 bit: *)
   | R_XMM0L | R_XMM0H | R_XMM1L | R_XMM1H | R_XMM2L | R_XMM2H
   | R_XMM3L | R_XMM3H | R_XMM4L | R_XMM4H | R_XMM5L | R_XMM5H
   | R_XMM6L | R_XMM6H | R_XMM7L | R_XMM7H
@@ -70,6 +93,24 @@ type register_name =
   | R_RBP | R_RSP | R_RSI | R_RDI | R_RIP | R_RAX | R_RBX | R_RCX | R_RDX
   | R_R8 | R_R9 | R_R10 | R_R11 | R_R12 | R_R13 | R_R14 | R_R15
   | R_RFLAGSREST
+  | R_FS_BASE | R_GS_BASE
+  (* SSE, x64-style expanded: *)
+  | R_YMM0_0 | R_YMM0_1 | R_YMM0_2 | R_YMM0_3
+  | R_YMM1_0 | R_YMM1_1 | R_YMM1_2 | R_YMM1_3
+  | R_YMM2_0 | R_YMM2_1 | R_YMM2_2 | R_YMM2_3
+  | R_YMM3_0 | R_YMM3_1 | R_YMM3_2 | R_YMM3_3
+  | R_YMM4_0 | R_YMM4_1 | R_YMM4_2 | R_YMM4_3
+  | R_YMM5_0 | R_YMM5_1 | R_YMM5_2 | R_YMM5_3
+  | R_YMM6_0 | R_YMM6_1 | R_YMM6_2 | R_YMM6_3
+  | R_YMM7_0 | R_YMM7_1 | R_YMM7_2 | R_YMM7_3
+  | R_YMM8_0 | R_YMM8_1 | R_YMM8_2 | R_YMM8_3
+  | R_YMM9_0 | R_YMM9_1 | R_YMM9_2 | R_YMM9_3
+  | R_YMM10_0 | R_YMM10_1 | R_YMM10_2 | R_YMM10_3
+  | R_YMM11_0 | R_YMM11_1 | R_YMM11_2 | R_YMM11_3
+  | R_YMM12_0 | R_YMM12_1 | R_YMM12_2 | R_YMM12_3
+  | R_YMM13_0 | R_YMM13_1 | R_YMM13_2 | R_YMM13_3
+  | R_YMM14_0 | R_YMM14_1 | R_YMM14_2 | R_YMM14_3
+  | R_YMM15_0 | R_YMM15_1 | R_YMM15_2 | R_YMM15_3
   (* ARM *)
   | R0 | R1 |  R2 |  R3 |  R4 |  R5 |  R6 |  R7
   | R8 | R9 | R10 | R11 | R12 | R13 | R14 | R15 | R15T
@@ -92,6 +133,7 @@ let reg_to_regstr reg = match reg with
   | R_R8 -> "R_R8" | R_R9 -> "R_R9" | R_R10 -> "R_R10" | R_R11 -> "R_R11"
   | R_R12 -> "R_R12" | R_R13 -> "R_R13" | R_R14 -> "R_R14" | R_R15 -> "R_R15"
   | R_RFLAGSREST -> "R_RFLAGSREST"
+  | R_FS_BASE -> "R_FS_BASE" | R_GS_BASE -> "R_GS_BASE"
   | EFLAGSREST -> "EFLAGSREST" | R_CF -> "R_CF" | R_PF -> "R_PF"
   | R_AF -> "R_AF"| R_ZF -> "R_ZF" | R_SF -> "R_SF" | R_OF -> "R_OF"
   | R_CC_OP -> "R_CC_OP" | R_CC_DEP1 -> "R_CC_DEP1"
@@ -118,6 +160,38 @@ let reg_to_regstr reg = match reg with
   | R_XMM5L -> "R_XMM5L" | R_XMM5H -> "R_XMM5H"
   | R_XMM6L -> "R_XMM6L" | R_XMM6H -> "R_XMM6H"
   | R_XMM7L -> "R_XMM7L" | R_XMM7H -> "R_XMM7H"
+  | R_YMM0_0 -> "R_YMM0_0" | R_YMM0_1 -> "R_YMM0_1"
+  | R_YMM0_2 -> "R_YMM0_2" | R_YMM0_3 -> "R_YMM0_3"
+  | R_YMM1_0 -> "R_YMM1_0" | R_YMM1_1 -> "R_YMM1_1"
+  | R_YMM1_2 -> "R_YMM1_2" | R_YMM1_3 -> "R_YMM1_3"
+  | R_YMM2_0 -> "R_YMM2_0" | R_YMM2_1 -> "R_YMM2_1"
+  | R_YMM2_2 -> "R_YMM2_2" | R_YMM2_3 -> "R_YMM2_3"
+  | R_YMM3_0 -> "R_YMM3_0" | R_YMM3_1 -> "R_YMM3_1"
+  | R_YMM3_2 -> "R_YMM3_2" | R_YMM3_3 -> "R_YMM3_3"
+  | R_YMM4_0 -> "R_YMM4_0" | R_YMM4_1 -> "R_YMM4_1"
+  | R_YMM4_2 -> "R_YMM4_2" | R_YMM4_3 -> "R_YMM4_3"
+  | R_YMM5_0 -> "R_YMM5_0" | R_YMM5_1 -> "R_YMM5_1"
+  | R_YMM5_2 -> "R_YMM5_2" | R_YMM5_3 -> "R_YMM5_3"
+  | R_YMM6_0 -> "R_YMM6_0" | R_YMM6_1 -> "R_YMM6_1"
+  | R_YMM6_2 -> "R_YMM6_2" | R_YMM6_3 -> "R_YMM6_3"
+  | R_YMM7_0 -> "R_YMM7_0" | R_YMM7_1 -> "R_YMM7_1"
+  | R_YMM7_2 -> "R_YMM7_2" | R_YMM7_3 -> "R_YMM7_3"
+  | R_YMM8_0 -> "R_YMM8_0" | R_YMM8_1 -> "R_YMM8_1"
+  | R_YMM8_2 -> "R_YMM8_2" | R_YMM8_3 -> "R_YMM8_3"
+  | R_YMM9_0 -> "R_YMM9_0" | R_YMM9_1 -> "R_YMM9_1"
+  | R_YMM9_2 -> "R_YMM9_2" | R_YMM9_3 -> "R_YMM9_3"
+  | R_YMM10_0 -> "R_YMM10_0" | R_YMM10_1 -> "R_YMM10_1"
+  | R_YMM10_2 -> "R_YMM10_2" | R_YMM10_3 -> "R_YMM10_3"
+  | R_YMM11_0 -> "R_YMM11_0" | R_YMM11_1 -> "R_YMM11_1"
+  | R_YMM11_2 -> "R_YMM11_2" | R_YMM11_3 -> "R_YMM11_3"
+  | R_YMM12_0 -> "R_YMM12_0" | R_YMM12_1 -> "R_YMM12_1"
+  | R_YMM12_2 -> "R_YMM12_2" | R_YMM12_3 -> "R_YMM12_3"
+  | R_YMM13_0 -> "R_YMM13_0" | R_YMM13_1 -> "R_YMM13_1"
+  | R_YMM13_2 -> "R_YMM13_2" | R_YMM13_3 -> "R_YMM13_3"
+  | R_YMM14_0 -> "R_YMM14_0" | R_YMM14_1 -> "R_YMM14_1"
+  | R_YMM14_2 -> "R_YMM14_2" | R_YMM14_3 -> "R_YMM14_3"
+  | R_YMM15_0 -> "R_YMM15_0" | R_YMM15_1 -> "R_YMM15_1"
+  | R_YMM15_2 -> "R_YMM15_2" | R_YMM15_3 -> "R_YMM15_3"
   | R0  ->  "R0" | R1  ->  "R1" |  R2 ->  "R2" | R3  -> "R3"
   | R4  ->  "R4" | R5  ->  "R5" |  R6 ->  "R6" | R7  -> "R7"
   | R8  ->  "R8" | R9  ->  "R9" | R10 -> "R10" | R11 -> "R11"
@@ -149,6 +223,7 @@ let regstr_to_reg s = match s with
   | "R_R8" -> R_R8 | "R_R9" -> R_R9 | "R_R10" -> R_R10 | "R_R11" -> R_R11
   | "R_R12" -> R_R12 | "R_R13" -> R_R13 | "R_R14" -> R_R14 | "R_R15" -> R_R15
   | "R_RFLAGSREST" -> R_RFLAGSREST
+  | "R_FS_BASE" -> R_FS_BASE | "R_GS_BASE" -> R_GS_BASE
   | "EFLAGSREST" -> EFLAGSREST | "R_CF" -> R_CF | "R_PF" -> R_PF
   | "R_AF" -> R_AF| "R_ZF" -> R_ZF | "R_SF" -> R_SF | "R_OF" -> R_OF
   | "R_CC_OP" -> R_CC_OP | "R_CC_DEP1" -> R_CC_DEP1
@@ -175,6 +250,38 @@ let regstr_to_reg s = match s with
   | "R_XMM5L" -> R_XMM5L | "R_XMM5H" -> R_XMM5H
   | "R_XMM6L" -> R_XMM6L | "R_XMM6H" -> R_XMM6H
   | "R_XMM7L" -> R_XMM7L | "R_XMM7H" -> R_XMM7H
+  | "R_YMM0_0" -> R_YMM0_0 | "R_YMM0_1" -> R_YMM0_1
+  | "R_YMM0_2" -> R_YMM0_2 | "R_YMM0_3" -> R_YMM0_3
+  | "R_YMM1_0" -> R_YMM1_0 | "R_YMM1_1" -> R_YMM1_1
+  | "R_YMM1_2" -> R_YMM1_2 | "R_YMM1_3" -> R_YMM1_3
+  | "R_YMM2_0" -> R_YMM2_0 | "R_YMM2_1" -> R_YMM2_1
+  | "R_YMM2_2" -> R_YMM2_2 | "R_YMM2_3" -> R_YMM2_3
+  | "R_YMM3_0" -> R_YMM3_0 | "R_YMM3_1" -> R_YMM3_1
+  | "R_YMM3_2" -> R_YMM3_2 | "R_YMM3_3" -> R_YMM3_3
+  | "R_YMM4_0" -> R_YMM4_0 | "R_YMM4_1" -> R_YMM4_1
+  | "R_YMM4_2" -> R_YMM4_2 | "R_YMM4_3" -> R_YMM4_3
+  | "R_YMM5_0" -> R_YMM5_0 | "R_YMM5_1" -> R_YMM5_1
+  | "R_YMM5_2" -> R_YMM5_2 | "R_YMM5_3" -> R_YMM5_3
+  | "R_YMM6_0" -> R_YMM6_0 | "R_YMM6_1" -> R_YMM6_1
+  | "R_YMM6_2" -> R_YMM6_2 | "R_YMM6_3" -> R_YMM6_3
+  | "R_YMM7_0" -> R_YMM7_0 | "R_YMM7_1" -> R_YMM7_1
+  | "R_YMM7_2" -> R_YMM7_2 | "R_YMM7_3" -> R_YMM7_3
+  | "R_YMM8_0" -> R_YMM8_0 | "R_YMM8_1" -> R_YMM8_1
+  | "R_YMM8_2" -> R_YMM8_2 | "R_YMM8_3" -> R_YMM8_3
+  | "R_YMM9_0" -> R_YMM9_0 | "R_YMM9_1" -> R_YMM9_1
+  | "R_YMM9_2" -> R_YMM9_2 | "R_YMM9_3" -> R_YMM9_3
+  | "R_YMM10_0" -> R_YMM10_0 | "R_YMM10_1" -> R_YMM10_1
+  | "R_YMM10_2" -> R_YMM10_2 | "R_YMM10_3" -> R_YMM10_3
+  | "R_YMM11_0" -> R_YMM11_0 | "R_YMM11_1" -> R_YMM11_1
+  | "R_YMM11_2" -> R_YMM11_2 | "R_YMM11_3" -> R_YMM11_3
+  | "R_YMM12_0" -> R_YMM12_0 | "R_YMM12_1" -> R_YMM12_1
+  | "R_YMM12_2" -> R_YMM12_2 | "R_YMM12_3" -> R_YMM12_3
+  | "R_YMM13_0" -> R_YMM13_0 | "R_YMM13_1" -> R_YMM13_1
+  | "R_YMM13_2" -> R_YMM13_2 | "R_YMM13_3" -> R_YMM13_3
+  | "R_YMM14_0" -> R_YMM14_0 | "R_YMM14_1" -> R_YMM14_1
+  | "R_YMM14_2" -> R_YMM14_2 | "R_YMM14_3" -> R_YMM14_3
+  | "R_YMM15_0" -> R_YMM15_0 | "R_YMM15_1" -> R_YMM15_1
+  | "R_YMM15_2" -> R_YMM15_2 | "R_YMM15_3" -> R_YMM15_3
   | "R0"  ->  R0 | "R1"  ->  R1 |  "R2" ->  R2 | "R3"  -> R3
   | "R4"  ->  R4 | "R5"  ->  R5 |  "R6" ->  R6 | "R7"  -> R7
   | "R8"  ->  R8 | "R9"  ->  R9 | "R10" -> R10 | "R11" -> R11
@@ -377,6 +484,9 @@ class virtual fragment_machine = object
     register_name -> int64 -> int64 -> unit
 
   method virtual get_word_var_concretize :
+    register_name -> bool -> string -> int64
+
+  method virtual get_long_var_concretize :
     register_name -> bool -> string -> int64
 
   method virtual load_byte_concretize  : int64 -> bool -> string -> int
@@ -737,6 +847,8 @@ struct
 	reg R_R13 (D.from_concrete_64 0x0000000000000000L);
 	reg R_R14 (D.from_concrete_64 0x0000000000000000L);
 	reg R_R15 (D.from_concrete_64 0x0000000000000000L);
+	reg R_FS_BASE (D.from_concrete_64 0x0000000060000000L);
+	reg R_GS_BASE (D.from_concrete_64 0x0000000061000000L);
 	reg R_PF (D.from_concrete_1 0);
 	reg R_CF (D.from_concrete_1 0);
 	reg R_AF (D.from_concrete_1 0);
@@ -948,6 +1060,8 @@ struct
 	reg R_R13 (form_man#fresh_symbolic_64 "initial_r13");
 	reg R_R14 (form_man#fresh_symbolic_64 "initial_r14");
 	reg R_R15 (form_man#fresh_symbolic_64 "initial_r15");
+	reg R_FS_BASE (form_man#fresh_symbolic_64 "fs_base");
+	reg R_GS_BASE (form_man#fresh_symbolic_64 "gs_base");
 	reg R_DFLAG (D.from_concrete_64 1L);
 	reg R_ACFLAG (D.from_concrete_64 0L);
 	reg R_IDFLAG (D.from_concrete_64 0L);
@@ -1657,6 +1771,9 @@ struct
 	   | (V.NOT, V.REG_64) -> D.not64 v1
 	   | _ -> failwith "unexpected unop/type in eval_int_exp_ty")
       in
+	if !opt_trace_eval then
+	  Printf.printf "    %s(%s) = %s\n" (V.unop_to_string op)
+	    (D.to_string_32 v1) (D.to_string_32 result);
 	result, ty1
 
     method private eval_funop op rm v1 ty1 =
@@ -1805,7 +1922,11 @@ struct
 	| V.Constant(V.Int(V.REG_32,i)) -> (D.from_concrete_32 i),V.REG_32
 	| V.Constant(V.Int(V.REG_64,i)) -> (D.from_concrete_64 i),V.REG_64
 	| V.Constant(V.Int(_,_)) -> failwith "unexpected integer constant type"
-	| V.Lval(V.Temp((_,_,ty) as var)) -> (self#get_int_var var), ty
+	| V.Lval(V.Temp((_,s,ty) as var)) ->
+	    let v = self#get_int_var var in
+	      if !opt_trace_eval then
+		Printf.printf "    %s is %s\n" s (D.to_string_32 v);
+	      (v, ty)
 	| V.Lval(V.Mem(memv, idx, ty)) ->
 	    self#handle_load idx ty
 	| V.Cast(kind, ty, e) ->
@@ -1888,10 +2009,20 @@ struct
 	else
 	  lab
       in
-      let rec loop = 
+      let stmt_num = ref (-1) in
+      let rec loop =
 	function
 	  | [] -> "fallthrough"
 	  | st :: rest ->
+	      if !opt_trace_stmts then
+		(Printf.printf "  %08Lx."
+		   (try self#get_eip with NotConcrete(_) -> 0L);
+		 (if !stmt_num = -1 then
+		    Printf.printf "   "
+		  else
+		    (Printf.printf "%03d" !stmt_num;
+		     stmt_num := !stmt_num + 1));
+		 Printf.printf " %s\n" (stmt_to_string_compact st));
 	      (match st with
 		 | V.Jmp(l) -> jump (self#eval_label_exp l)
 		 | V.CJmp(cond, V.Name(l1), V.Name(l2))
@@ -1914,9 +2045,12 @@ struct
 			 jump (self#eval_label_exp l1)
 		       else
 			 jump (self#eval_label_exp l2)
-		 | V.Move(V.Temp(v), e) ->
-		     self#set_int_var v (self#eval_int_exp_simplify e);
-		     loop rest
+		 | V.Move(V.Temp((n,s,t) as v), e) ->
+		     let rhs = self#eval_int_exp_simplify e in
+		       if !opt_trace_eval then
+			 Printf.printf "    %s <- %s\n" s (D.to_string_32 rhs);
+		       self#set_int_var v rhs;
+		       loop rest
 		 | V.Move(V.Mem(memv, idx_e, ty), rhs_e) ->
 		     self#handle_store idx_e ty rhs_e;
 		     loop rest
@@ -1942,6 +2076,7 @@ struct
 			  if saw_jump then
 			    self#run_jump_hooks last_insn last_eip eip;
 			  self#run_eip_hooks;
+			  stmt_num := 1;
 			  last_eip <- eip;
 			  saw_jump <- false);
 		     loop rest
@@ -2309,6 +2444,7 @@ struct
       : unit =
       failwith "store_word_special_region needs a symbolic region machine"
     method get_word_var_concretize r (b:bool) (s:string) = self#get_word_var r
+    method get_long_var_concretize r (b:bool) (s:string) = self#get_long_var r
     method load_byte_concretize  addr (b:bool) (s:string)
       = self#load_byte_conc addr
     method load_short_concretize addr (b:bool) (s:string)

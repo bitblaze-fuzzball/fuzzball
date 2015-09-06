@@ -372,6 +372,47 @@ static string reg_offset_to_name( int offset, bool *is_good )
 
         case OFFB_NRADDR:   name = "NRADDR";    good=true; break;
 
+#if VEX_VERSION >= 919
+        case OFFB_FS_ZERO:  name = "FS_BASE";   good=true; break;
+#endif
+#if VEX_VERSION >= 1874
+        case OFFB_GS_0x60:  name = "GS_BASE";   good=true; break;
+#endif
+
+        case OFFB_YMM0:     name = "YMM0_0";    good=true; break;
+        case OFFB_YMM1:     name = "YMM1_0";    good=true; break;
+        case OFFB_YMM2:     name = "YMM2_0";    good=true; break;
+        case OFFB_YMM3:     name = "YMM3_0";    good=true; break;
+        case OFFB_YMM4:     name = "YMM4_0";    good=true; break;
+        case OFFB_YMM5:     name = "YMM5_0";    good=true; break;
+        case OFFB_YMM6:     name = "YMM6_0";    good=true; break;
+        case OFFB_YMM7:     name = "YMM7_0";    good=true; break;
+        case OFFB_YMM8:     name = "YMM8_0";    good=true; break;
+        case OFFB_YMM9:     name = "YMM9_0";    good=true; break;
+        case OFFB_YMM10:    name = "YMM10_0";   good=true; break;
+        case OFFB_YMM11:    name = "YMM11_0";   good=true; break;
+        case OFFB_YMM12:    name = "YMM12_0";   good=true; break;
+        case OFFB_YMM13:    name = "YMM13_0";   good=true; break;
+        case OFFB_YMM14:    name = "YMM14_0";   good=true; break;
+        case OFFB_YMM15:    name = "YMM15_0";   good=true; break;
+
+        case OFFB_YMM0+8:   name = "YMM0_1";    good=true; break;
+        case OFFB_YMM1+8:   name = "YMM1_1";    good=true; break;
+        case OFFB_YMM2+8:   name = "YMM2_1";    good=true; break;
+        case OFFB_YMM3+8:   name = "YMM3_1";    good=true; break;
+        case OFFB_YMM4+8:   name = "YMM4_1";    good=true; break;
+        case OFFB_YMM5+8:   name = "YMM5_1";    good=true; break;
+        case OFFB_YMM6+8:   name = "YMM6_1";    good=true; break;
+        case OFFB_YMM7+8:   name = "YMM7_1";    good=true; break;
+        case OFFB_YMM8+8:   name = "YMM8_1";    good=true; break;
+        case OFFB_YMM9+8:   name = "YMM9_1";    good=true; break;
+        case OFFB_YMM10+8:  name = "YMM10_1";   good=true; break;
+        case OFFB_YMM11+8:  name = "YMM11_1";   good=true; break;
+        case OFFB_YMM12+8:  name = "YMM12_1";   good=true; break;
+        case OFFB_YMM13+8:  name = "YMM13_1";   good=true; break;
+        case OFFB_YMM14+8:  name = "YMM14_1";   good=true; break;
+        case OFFB_YMM15+8:  name = "YMM15_1";   good=true; break;
+
         default:            
             panic("Unrecognized register name");
     }
@@ -583,6 +624,41 @@ static Exp *translate_get_reg_64( int offset )
     return result;
 }
 
+static Exp *translate_get_reg_128( unsigned int offset )
+{
+    string name;
+
+    switch ( offset )
+    {
+    case OFFB_YMM0: name = "YMM0"; break;
+    case OFFB_YMM1: name = "YMM1"; break;
+    case OFFB_YMM2: name = "YMM2"; break;
+    case OFFB_YMM3: name = "YMM3"; break;
+    case OFFB_YMM4: name = "YMM4"; break;
+    case OFFB_YMM5: name = "YMM5"; break;
+    case OFFB_YMM6: name = "YMM6"; break;
+    case OFFB_YMM7: name = "YMM7"; break;
+    case OFFB_YMM8: name = "YMM8"; break;
+    case OFFB_YMM9: name = "YMM9"; break;
+    case OFFB_YMM10: name = "YMM10"; break;
+    case OFFB_YMM11: name = "YMM11"; break;
+    case OFFB_YMM12: name = "YMM12"; break;
+    case OFFB_YMM13: name = "YMM13"; break;
+    case OFFB_YMM14: name = "YMM14"; break;
+    case OFFB_YMM15: name = "YMM15"; break;
+    default:
+        assert(0);
+    }
+
+    string name_l = name + "_0";
+    string name_h = name + "_1";
+
+    Exp *value = new Vector(mk_reg(name_h, REG_64),
+                            mk_reg(name_l, REG_64));
+
+    return value;
+}
+
 Exp *x64_translate_get( IRExpr *expr, IRSB *irbb, vector<Stmt *> *irout )
 {
     assert(expr);
@@ -622,13 +698,9 @@ Exp *x64_translate_get( IRExpr *expr, IRSB *irbb, vector<Stmt *> *irout )
         result = new Unknown("register type (F64)");
     }
 
-    else if ( type == Ity_I128 )
+    else if ( type == Ity_I128 || type == Ity_V128 )
     {
-        result = new Unknown("register type (I128)");
-    }
-    else if ( type == Ity_V128 )
-    {
-        result = new Unknown("register type (V128)");
+        result = translate_get_reg_128(offset);
     }
 
     else
@@ -656,8 +728,11 @@ Stmt *x64_translate_dirty( IRStmt *stmt, IRSB *irbb, vector<Stmt *> *irout )
 	func == "amd64g_dirtyhelper_CPUID_sse42_and_cx16" ||
 	func == "amd64g_dirtyhelper_CPUID_avx_and_cx16") {
 	result = new Special("cpuid");
-    }
-    else
+    } else if (func == "amd64g_dirtyhelper_RDTSC") {
+	IRTemp lhs = dirty->tmp;
+        assert(lhs != IRTemp_INVALID);
+        result = mk_assign_tmp(lhs, new Unknown("rdtsc"), irbb, irout);
+    } else
     {
         result = new ExpStmt(new Unknown("Unknown: Dirty"));
     }
@@ -884,6 +959,50 @@ static Stmt *translate_put_reg_64( int offset, Exp *data, IRSB *irbb )
     return st;
 }
 
+static Stmt *translate_put_reg_128(unsigned int offset, Exp *data, IRSB *irbb,
+                                   vector<Stmt *> *irout)
+{
+    assert(data);
+
+    string name;
+
+    switch ( offset )
+    {
+    case OFFB_YMM0: name = "YMM0"; break;
+    case OFFB_YMM1: name = "YMM1"; break;
+    case OFFB_YMM2: name = "YMM2"; break;
+    case OFFB_YMM3: name = "YMM3"; break;
+    case OFFB_YMM4: name = "YMM4"; break;
+    case OFFB_YMM5: name = "YMM5"; break;
+    case OFFB_YMM6: name = "YMM6"; break;
+    case OFFB_YMM7: name = "YMM7"; break;
+    case OFFB_YMM8: name = "YMM8"; break;
+    case OFFB_YMM9: name = "YMM9"; break;
+    case OFFB_YMM10: name = "YMM10"; break;
+    case OFFB_YMM11: name = "YMM11"; break;
+    case OFFB_YMM12: name = "YMM12"; break;
+    case OFFB_YMM13: name = "YMM13"; break;
+    case OFFB_YMM14: name = "YMM14"; break;
+    case OFFB_YMM15: name = "YMM15"; break;
+        default:
+            assert(0);
+    }
+
+    // The value should be a Vector; deconstruct it
+    assert(data->exp_type == VECTOR);
+    Vector *v = (Vector *)data;
+    Exp *high = v->lanes[1];
+    Exp *low = v->lanes[0];
+    delete v; // Shallow delete, since we reuse high and low
+
+    string name_l = name + "_0";
+    string name_h = name + "_1";
+
+    irout->push_back(new Move(mk_reg(name_h, REG_64), high));
+    return new Move(mk_reg(name_l, REG_64), low);
+}
+
+
 Stmt *x64_translate_put( IRStmt *stmt, IRSB *irbb, vector<Stmt *> *irout )
 {
     assert(stmt);
@@ -930,6 +1049,11 @@ Stmt *x64_translate_put( IRStmt *stmt, IRSB *irbb, vector<Stmt *> *irout )
     else if ( type == Ity_I64 )
     {
         result = translate_put_reg_64(offset, data, irbb);
+    }
+
+    else if ( type == Ity_I128 || type == Ity_V128 )
+    {
+        result = translate_put_reg_128(offset, data, irbb, irout);
     }
 
     else
@@ -1365,6 +1489,8 @@ get_thunk_index(vector<Stmt *> *ir,
 			}
 		    }
 		}
+	    } else if (match_ite(ir, i, NULL, NULL, NULL, NULL) >= 0) {
+		*op = i;
 	    } else if (cc_op_copy && mv->rhs->exp_type == TEMP) {
 		Temp *rhs_temp = (Temp *)mv->rhs;
 		if (rhs_temp->name == cc_op_copy->name) {
@@ -1428,6 +1554,7 @@ void x64_modify_flags( asm_program_t *prog, vine_block_t *block )
 {
     int op_st = -1, dep1_st = -1, dep2_st = -1, ndep_st = -1,
         mux0x_st = -1, nop_st = -1;
+    Exp *ite_cond = 0;
     vector<Stmt *> *ir = block->vine_ir;
     get_thunk_index(ir, &op_st, &dep1_st, &dep2_st, &ndep_st,
                     &mux0x_st, &nop_st);
@@ -1444,26 +1571,20 @@ void x64_modify_flags( asm_program_t *prog, vine_block_t *block )
         got_op = false;
     } else {
         Move *op_mov = (Move*)op_stmt;
-        if(op_mov->rhs->exp_type == CONSTANT) {
+	Exp *cond, *exp_t, *exp_f, *res;
+        if (op_mov->rhs->exp_type == CONSTANT) {
             Constant *op_const = (Constant*)op_mov->rhs;
             op = op_const->val;
             got_op = true;
-        } else if (op_mov->rhs->exp_type == BINOP) {
-            BinOp *bin_or = (BinOp*)op_mov->rhs;
-            if (bin_or->binop_type == BITOR
-                && bin_or->rhs->exp_type == BINOP) {
-                BinOp *bin_and = (BinOp*)bin_or->rhs;
-                if (bin_and->binop_type == BITAND
-                    && bin_and->lhs->exp_type == CONSTANT) {
-                    Constant *op_const = (Constant*)bin_and->lhs;
-                    op = op_const->val;
-                    got_op = true;
-                } else {
-                    got_op = false;
-                }
-            } else {
-                got_op = false;
-            }
+	} else if (match_ite(ir, op_st, &cond, &exp_t, &exp_f, &res) >= 0) {
+	    if (exp_t->exp_type == CONSTANT) {
+		Constant *op_const = (Constant*)exp_t;
+		op = op_const->val;
+		ite_cond = cond;
+		got_op = true;
+	    } else {
+		got_op = false;
+	    }
         } else {
             got_op = false;
         }
@@ -1487,7 +1608,7 @@ void x64_modify_flags( asm_program_t *prog, vine_block_t *block )
     Exp *ndep_expr = 0;
     assert(dep1_st != -1);
     assert(dep2_st != -1);
-    if (mux0x_st == -1) {
+    if (mux0x_st == -1 && !ite_cond) {
         // Unconditional case
         assert(ir->at(dep1_st)->stmt_type == MOVE);
         dep1_expr = ((Move *)(ir->at(dep1_st)))->rhs;
@@ -1499,8 +1620,25 @@ void x64_modify_flags( asm_program_t *prog, vine_block_t *block )
 	    assert(ir->at(ndep_st)->stmt_type == MOVE);
 	    ndep_expr = ((Move *)(ir->at(ndep_st)))->rhs;
 	}
+    } else if (ite_cond) {
+	// Functional conditional case
+	Exp *cond, *exp_t, *exp_f, *res;
+	int match;
+	match = match_ite(ir, dep1_st, &cond, &exp_t, &exp_f, &res);
+	assert(match == 0);
+	dep1_expr = exp_t;
+
+	match = match_ite(ir, dep2_st, &cond, &exp_t, &exp_f, &res);
+	assert(match == 0);
+	dep2_expr = exp_t;
+
+	if (ndep_st != -1) {
+	    match = match_ite(ir, dep2_st, &cond, &exp_t, &exp_f, &res);
+	    assert(match == 0);
+	    ndep_expr = exp_t;
+	}
     } else {
-        // Conditional case
+        // Multi-statement conditional case: probably mostly obsolete
         Exp *cond, *exp_t, *exp_f, *res;
         int matched;
         matched = match_ite(ir, dep1_st - 3, &cond, &exp_t, &exp_f, &res);
@@ -1734,11 +1872,9 @@ void x64_modify_flags( asm_program_t *prog, vine_block_t *block )
     case CC_OP_INCW:
     case CC_OP_INCL:
     case CC_OP_INCQ: {
-	Temp *arg = mk_temp(type, &new_ir);
-	new_ir.push_back(new Move(arg, narrow64(dep1_expr, type)));
 	Temp *result = mk_temp(type, &new_ir);
-	new_ir.push_back(new Move(result,
-				  _ex_add(ecl(arg), ex_const(type, 1))));
+	new_ir.push_back(new Move(result, narrow64(dep1_expr, type)));
+	Exp *arg = _ex_sub(ecl(result), ex_const(type, 1));
 	Exp *tmin;
 	switch (type) {
 	case REG_8:  tmin = ex_const(type,               0x80  ); break;
@@ -1758,11 +1894,9 @@ void x64_modify_flags( asm_program_t *prog, vine_block_t *block )
     case CC_OP_DECW:
     case CC_OP_DECL:
     case CC_OP_DECQ: {
-	Temp *arg = mk_temp(type, &new_ir);
-	new_ir.push_back(new Move(arg, narrow64(dep1_expr, type)));
 	Temp *result = mk_temp(type, &new_ir);
-	new_ir.push_back(new Move(result,
-				  _ex_sub(ecl(arg), ex_const(type, 1))));
+	new_ir.push_back(new Move(result, narrow64(dep1_expr, type)));
+	Exp *arg = _ex_add(ecl(result), ex_const(type, 1));
 	Exp *tmax;
 	switch (type) {
 	case REG_8:  tmax = ex_const(type,               0x7f  ); break;
@@ -1927,38 +2061,41 @@ void x64_modify_flags( asm_program_t *prog, vine_block_t *block )
     /* For now, don't try to remove the thunk, just like the x86 code
        doesn't. */
     int insert_loc = max(max(op_st, dep1_st), max(dep2_st, ndep_st));
-    if (mux0x_st != -1) {
-	// Looks like a conditional thunk; make new conditional
-	// assignments using the same condition
-	int start = mux0x_st - 2;
-	assert(start >= 0);
-	Exp *cond, *exp_t, *exp_f, *res;
-	int matched = match_ite(ir, mux0x_st, &cond, &exp_t, &exp_f, &res);
-	assert(matched != -1);
-	assert(cond);
+    if (mux0x_st != -1 || ite_cond) {
+	// Looks like a conditional thunk; make new
+	// conditional assignments using the same condition
+	Exp *cond;
+	if (ite_cond) {
+	    cond = ite_cond;
+	} else {
+	    Exp *exp_t, *exp_f, *res;
+	    int matched = match_ite(ir, mux0x_st, &cond, &exp_t, &exp_f, &res);
+	    assert(matched != -1);
+	    assert(cond);
+	}
 	Exp *ite;
 	if (cf) {
-	    ite = emit_ite(&new_ir, REG_1, ecl(cond), ecl(CF), cf);
+	    ite = emit_ite(&new_ir, REG_1, ecl(cond), cf, ecl(CF));
 	    new_ir.push_back(new Move(CF, ite));
 	}
 	if (pf) {
-	    ite = emit_ite(&new_ir, REG_1, ecl(cond), ecl(PF), pf);
+	    ite = emit_ite(&new_ir, REG_1, ecl(cond), pf, ecl(PF));
 	    new_ir.push_back(new Move(PF, ite));
 	}
 	if (af) {
-	    ite = emit_ite(&new_ir, REG_1, ecl(cond), ecl(AF), af);
+	    ite = emit_ite(&new_ir, REG_1, ecl(cond), af, ecl(AF));
 	    new_ir.push_back(new Move(AF, ite));
 	}
 	if (zf) {
-	    ite = emit_ite(&new_ir, REG_1, ecl(cond), ecl(ZF), zf);
+	    ite = emit_ite(&new_ir, REG_1, ecl(cond), zf, ecl(ZF));
 	    new_ir.push_back(new Move(ZF, ite));
 	}
 	if (sf) {
-	    ite = emit_ite(&new_ir, REG_1, ecl(cond), ecl(SF), sf);
+	    ite = emit_ite(&new_ir, REG_1, ecl(cond), sf, ecl(SF));
 	    new_ir.push_back(new Move(SF, ite));
 	}
 	if (of) {
-	    ite = emit_ite(&new_ir, REG_1, ecl(cond), ecl(OF), of);
+	    ite = emit_ite(&new_ir, REG_1, ecl(cond), of, ecl(OF));
 	    new_ir.push_back(new Move(OF, ite));
 	}
     } else {

@@ -33,6 +33,9 @@ sig
     method get_word_var_concretize : Fragment_machine.register_name ->
       bool -> string -> int64
 
+    method get_long_var_concretize : Fragment_machine.register_name ->
+      bool -> string -> int64
+
     method load_word_concretize  : int64 -> bool -> string -> int64
     method load_byte_concretize  : int64 -> bool -> string -> int
     method load_short_concretize : int64 -> bool -> string -> int

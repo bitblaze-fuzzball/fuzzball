@@ -455,6 +455,8 @@ let cmdline_opts =
      "N-M As above, but only for an eip range");
     ("-trace-eip", Arg.Set(opt_trace_eip),
      " Print PC of each insn executed");
+    ("-trace-eval", Arg.Set(opt_trace_eval),
+     " Print details of IR evaluation");
     ("-trace-fpu", Arg.Set(opt_trace_fpu),
      " Print floating point operations");
     ("-trace-unique-eips", Arg.Set(opt_trace_unique_eips),
@@ -479,6 +481,8 @@ let cmdline_opts =
      " Print register contents");
     ("-trace-setup", Arg.Set(opt_trace_setup),
      " Print progress of program loading");
+    ("-trace-stmts", Arg.Set(opt_trace_stmts),
+     " Print each IR statement executed");
     ("-trace-stopping", Arg.Set(opt_trace_stopping),
      " Print why paths terminate");
     ("-trace-sym-addrs", Arg.Set(opt_trace_sym_addrs),

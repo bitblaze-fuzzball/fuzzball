@@ -19,9 +19,10 @@ enum exp_type_t {
 
 enum reg_t { REG_1, REG_8, REG_16, REG_32, REG_64 };
 
-// The size of an address.
-#define REG_ADDRESS_T  REG_32
-
+// The size of an address. This was formely a #define, but it now
+// needs to be a variable so that it can be REG_32 when translating
+// 32-bit code and REG_64 for x64 code.
+extern enum reg_t reg_address_t;
 
 // Stuff in BinOp
   /// IMPORTANT: If you add/remove anything from this, you must
@@ -393,6 +394,7 @@ Exp *ecl( Exp *exp );
 //Constant *_ex_const( Constant co );
 Constant *ex_const(uint32_t value);
 Constant *ex_const64(uint64_t value);
+Constant *ex_addr_const(int64_t value);
 Constant *ex_const(reg_t t, const_val_t value );
 Name *ex_name( string name );
 UnOp *_ex_not( Exp *arg );
