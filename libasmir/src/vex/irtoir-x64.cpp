@@ -471,7 +471,7 @@ static Exp *translate_get_reg_8( unsigned int offset )
         case OFFB_R12L: name = "R12";    low = true;    break;
         case OFFB_R13L: name = "R13";    low = true;    break;
         case OFFB_R14L: name = "R14";    low = true;    break;
-        case OFFB_R15L: name = "R16";    low = true;    break;
+        case OFFB_R15L: name = "R15";    low = true;    break;
         default:
 	    assert(0);
     }   
@@ -774,7 +774,7 @@ static Stmt *translate_put_reg_8( unsigned int offset, Exp *data, IRSB *irbb )
         case OFFB_R12L: name = "R12";    low = true;    break;
         case OFFB_R13L: name = "R13";    low = true;    break;
         case OFFB_R14L: name = "R14";    low = true;    break;
-        case OFFB_R15L: name = "R16";    low = true;    break;
+        case OFFB_R15L: name = "R15";    low = true;    break;
 
         default:
 	    assert(0);
