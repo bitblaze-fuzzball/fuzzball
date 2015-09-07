@@ -49,6 +49,7 @@ let skip_strings =
   (let h = Hashtbl.create 2 in
      Hashtbl.replace h "NoOp" ();
      Hashtbl.replace h "x86g_use_seg_selector" ();
+     Hashtbl.replace h "Skipped: AbiHint" ();
      h)
 
 (* The interface for Vine to give us the disassembly of an instruction
@@ -643,13 +644,13 @@ struct
     method get_eip =
       match !opt_arch with
 	| X86 -> self#get_word_var R_EIP
-	| X64 -> self#get_word_var R_RIP
+	| X64 -> self#get_long_var R_RIP
 	| ARM -> self#get_word_var R15T
 
     method set_eip eip =
       match !opt_arch with
 	| X86 -> self#set_word_var R_EIP eip
-	| X64 -> self#set_word_var R_RIP eip
+	| X64 -> self#set_long_var R_RIP eip
 	| ARM -> self#set_word_var R15T eip
 
     method run_eip_hooks =
@@ -658,7 +659,7 @@ struct
     method get_esp =
       match !opt_arch with
 	| X86 -> self#get_word_var R_ESP
-	| X64 -> self#get_word_var R_RSP
+	| X64 -> self#get_long_var R_RSP
 	| ARM -> self#get_word_var R13
 
     val mutable call_stack = []

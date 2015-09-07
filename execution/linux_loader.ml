@@ -258,7 +258,10 @@ let load_ldso fm dso vaddr =
 	     load_segment fm ic phr !vaddr false)
 	phrs;
       close_in ic;
-      Int64.add !vaddr dso_eh.entry
+      let r = Int64.add !vaddr dso_eh.entry in
+	if !opt_trace_setup then
+	  Printf.printf "Finished ldso loading, entry at 0x%08Lx\n" r;
+	r
 
 let load_x87_emulator fm emulator =
   let ic = open_in emulator in
@@ -389,6 +392,8 @@ let load_dynamic_program (fm : fragment_machine) fname load_base
     | 3 -> load_base (* shared object or PIE *)
     | _ -> failwith "Unhandled ELF object type"
   in
+    if !opt_trace_setup then
+      Printf.printf "Loading executable from %s\n" (chroot fname);
     entry_point := eh.entry;
     List.iter
       (fun phr ->

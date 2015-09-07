@@ -1106,6 +1106,31 @@ Exp *translate_par16x8_binop(binop_type_t op, Exp *a, Exp *b) {
     return translate_64HLto128(r_h, r_l);
 }
 
+Exp *translate_minmax8x8(binop_type_t op, bool is_max, Exp *a64, Exp *b64) {
+    Exp *a[8], *b[8];
+    split8x8(a64, &a[7], &a[6], &a[5], &a[4], &a[3], &a[2], &a[1], &a[0]);
+    split8x8(b64, &b[7], &b[6], &b[5], &b[4], &b[3], &b[2], &b[1], &b[0]);
+    Exp *r[8];
+    for (int i = 7; i >= 0; i--) {
+	if (is_max) {
+	    r[i] = _ex_ite(new BinOp(op, b[i], a[i]), ecl(a[i]), ecl(b[i]));
+	} else {
+	    r[i] = _ex_ite(new BinOp(op, a[i], b[i]), ecl(a[i]), ecl(b[i]));
+	}
+    }
+    return assemble8x8(r[7], r[6], r[5], r[4], r[3], r[2], r[1], r[0]);
+}
+
+Exp *translate_minmax16x8(binop_type_t op, bool is_max, Exp *a, Exp *b) {
+    Exp *a_high, *a_low;
+    split_vector(a, &a_high, &a_low);
+    Exp *b_high, *b_low;
+    split_vector(b, &b_high, &b_low);
+    Exp *r_h = translate_minmax8x8(op, is_max, a_high, b_high);
+    Exp *r_l = translate_minmax8x8(op, is_max, a_low, b_low);
+    return translate_64HLto128(r_h, r_l);
+}
+
 const_val_t expand_lane_const(int bits) {
     const_val_t x = 0;
     if (bits & 1)
@@ -1582,6 +1607,30 @@ Exp *translate_simple_binop( IRExpr *expr, IRSB *irbb, vector<Stmt *> *irout )
 	    return translate_par8x8_binop(TIMES, arg1, arg2);
         case Iop_Mul8x16:
 	    return translate_par16x8_binop(TIMES, arg1, arg2);
+
+        case Iop_Min8Ux8:
+	    return translate_minmax8x8(LT, false, arg1, arg2);
+        case Iop_Min8Ux16:
+	    return translate_minmax16x8(LT, false, arg1, arg2);
+
+#if VEX_VERSION >= 2016
+        case Iop_Min8Sx8:
+	    return translate_minmax8x8(SLT, false, arg1, arg2);
+#endif
+        case Iop_Min8Sx16:
+	    return translate_minmax16x8(SLT, false, arg1, arg2);
+
+        case Iop_Max8Ux8:
+	    return translate_minmax8x8(LT, true, arg1, arg2);
+        case Iop_Max8Ux16:
+	    return translate_minmax16x8(LT, true, arg1, arg2);
+
+#if VEX_VERSION >= 2016
+        case Iop_Max8Sx8:
+	    return translate_minmax8x8(SLT, true, arg1, arg2);
+#endif
+        case Iop_Max8Sx16:
+	    return translate_minmax16x8(SLT, true, arg1, arg2);
 
         default:
             break;

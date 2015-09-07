@@ -75,7 +75,7 @@ object
   method sys_getcwd : int64 -> int -> unit
   method sys_getdents : int -> int64 -> int -> unit
   method sys_getdents64 : int -> int64 -> int -> unit
-  method sys_ugetrlimit : int -> int64 -> unit
+  method sys_getrlimit : int -> int64 -> unit
   method sys_setrlimit : int -> int64 -> unit
   method sys_getgid : unit -> unit
   method sys_getgid32 : unit -> unit
