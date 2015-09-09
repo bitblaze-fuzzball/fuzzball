@@ -1943,7 +1943,7 @@ void x64_modify_flags( asm_program_t *prog, vine_block_t *block )
     case CC_OP_ROLQ: {
 	Temp *result = mk_temp(type, &new_ir);
 	new_ir.push_back(new Move(result, narrow64(dep1_expr, type)));
-	Temp *last_moved_bit = mk_temp(type, &new_ir);
+	Temp *last_moved_bit = mk_temp(REG_1, &new_ir);
 	new_ir.push_back(new Move(last_moved_bit, ex_l_cast(result, REG_1)));
 	cf = ecl(last_moved_bit);
 	/* spec: OF defined only for amt == 1 */
@@ -1956,7 +1956,7 @@ void x64_modify_flags( asm_program_t *prog, vine_block_t *block )
     case CC_OP_RORQ: {
 	Temp *result = mk_temp(type, &new_ir);
 	new_ir.push_back(new Move(result, narrow64(dep1_expr, type)));
-	Temp *last_moved_bit = mk_temp(type, &new_ir);
+	Temp *last_moved_bit = mk_temp(REG_1, &new_ir);
 	new_ir.push_back(new Move(last_moved_bit, ex_h_cast(result, REG_1)));
 	cf = ecl(last_moved_bit);
 	/* spec: OF defined only for amt == 1 */
