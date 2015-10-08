@@ -359,9 +359,14 @@ let build_startup_state fm eh load_base ldso argv =
     (* Arrange so that the program's initial %esp is page-aligned, and
        therefore unlikely to change with changes in argv or the
        environment. *)
-  let ptrs_len = 4 * (2 * ((List.length auxv) + ((List.length auxv) mod 2))
-		      + 1 + (List.length env_locs)
-		      + 1 + (List.length argv) + 1) in
+  let ptr_size = match !opt_arch with
+    | (X86|ARM) -> 4
+    | X64 -> 8
+  in
+  let ptrs_len =
+    ptr_size * (2 * ((List.length auxv) + ((List.length auxv) mod 2))
+		+ 1 + (List.length env_locs)
+		+ 1 + (List.length argv) + 1) in
     zero_pad_to (Int64.logand !esp (Int64.lognot 0xfL)); (* 16-byte align *)
     let pad_to = Int64.logand (Int64.sub !esp 0x2000L) (Int64.lognot 0xfffL) in
       zero_pad_to (Int64.add pad_to (Int64.of_int ptrs_len));
