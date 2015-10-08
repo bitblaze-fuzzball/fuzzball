@@ -150,7 +150,7 @@ class stp_external_engine fname = object(self)
 	      | 131 -> raise (Signal "QUIT")
 	      | _ -> ());
 	   ignore(Sys.command ("cat " ^ curr_fname ^ ".stp.out"));
-	   (None, []))
+	   (None, ce_from_list []))
 	else
 	  let result_s = input_line results in
 	  let first_assert = (String.sub result_s 0 6) = "ASSERT" in
@@ -168,7 +168,7 @@ class stp_external_engine fname = object(self)
 	    [] in
 	  let ce = map_lines parse_counterex results in
 	    close_in results;
-	    (result, first_assign @ ce)
+	    (result, ce_from_list (first_assign @ ce))
 
   method after_query save_results =
     if save_results then

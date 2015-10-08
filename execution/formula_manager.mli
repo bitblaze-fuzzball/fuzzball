@@ -49,7 +49,7 @@ sig
 
     method eval_expr : Vine.exp -> int64
 
-    method eval_expr_from_ce : (string * int64) list -> Vine.exp -> int64
+    method eval_expr_from_ce : Query_engine.sat_assign -> Vine.exp -> int64
 
     method concolic_eval_1  : D.t -> int
     method concolic_eval_8  : D.t -> int

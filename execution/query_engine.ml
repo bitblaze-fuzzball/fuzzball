@@ -6,6 +6,14 @@ module V = Vine;;
 
 let query_extra_counter = ref 0
 
+type sat_assign = (string * int64) list
+
+let ce_from_list x = x
+
+let ce_lookup_nf ce s = List.assoc s ce
+
+let ce_iter ce f = List.iter (fun (s, v) -> f s v) ce
+
 class virtual query_engine = object(self)
   method virtual start_query : unit
   method virtual add_free_var : V.var -> unit
@@ -20,7 +28,7 @@ class virtual query_engine = object(self)
   method virtual add_condition : V.exp -> unit
   method virtual push : unit
   method virtual pop : unit
-  method virtual query : V.exp -> (bool option) * ((string * int64) list)
+  method virtual query : V.exp -> (bool option) * sat_assign
   method virtual after_query : bool -> unit
   method virtual reset : unit
 
@@ -55,8 +63,8 @@ let print_ce ce =
 	    is_all_digits s (pos + 1) len
 	| _ -> false
   in
-  List.iter
-    (fun (var_s, value) ->
+    ce_iter ce
+    (fun var_s value ->
        let is_tmp =
 	 if String.sub var_s 0 1 = "t" then
 	   is_all_digits var_s 1 (String.length var_s)
@@ -64,8 +72,7 @@ let print_ce ce =
 	   false
        in
        if value <> 0L && not is_tmp then
-	 Printf.printf "%s=0x%Lx " var_s value)
-    ce;
+	 Printf.printf "%s=0x%Lx " var_s value);
   Printf.printf "\n";
 
 class parallel_check_engine (e1:query_engine) (e2:query_engine) = object(self)

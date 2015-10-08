@@ -127,10 +127,9 @@ struct
 	      qe#after_query !opt_influence_details;
 	      qe#pop;
 	      let v = ref 0L in
-		List.iter
-		  (fun (s, i64) -> if s = "influence_target" then
-		     v := i64)
-		  ce;
+		ce_iter ce
+		  (fun s i64 -> if s = "influence_target" then
+		     v := i64);
 		(* It's intentional here that v will be set to zero if
 		   the variable doesn't appear in the counterexample, since
 		   some of the solvers do that. *)

@@ -494,7 +494,7 @@ struct
     method private eval_var_from_ce ce lv =
       match lv with
 	| V.Temp(_, s, ty) ->
-	    let v = try List.assoc s ce 
+	    let v = try Query_engine.ce_lookup_nf ce s
 	    with Not_found ->
 	      0L 
 	      (* Printf.printf "Missing var %s in counterexample\n" s;

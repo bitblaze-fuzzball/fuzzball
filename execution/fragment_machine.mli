@@ -237,7 +237,7 @@ class virtual fragment_machine : object
   method virtual set_query_engine : Query_engine.query_engine -> unit
 
   method virtual query_with_path_cond : Vine.exp -> bool
-    -> (bool * (string * int64) list)
+    -> (bool * Query_engine.sat_assign)
 
   method virtual match_input_var : string -> int option
 
@@ -484,7 +484,7 @@ sig
     method get_path_cond : Vine.exp list
     method set_query_engine : Query_engine.query_engine -> unit
     method query_with_path_cond : Vine.exp -> bool
-      -> (bool * (string * int64) list)
+      -> (bool * Query_engine.sat_assign)
     method match_input_var : string -> int option
     method print_tree : out_channel -> unit
     method set_iter_seed : int -> unit

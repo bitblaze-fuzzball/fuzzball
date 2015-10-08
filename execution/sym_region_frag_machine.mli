@@ -71,10 +71,10 @@ sig
     method restore_path_cond : (unit -> unit) -> unit
     method set_query_engine : Query_engine.query_engine -> unit
     method match_input_var : string -> int option
-    method print_ce : (string * int64) list -> unit
+    method print_ce : Query_engine.sat_assign -> unit
     method input_depth : int
     method query_with_path_cond : Vine.exp -> bool
-      -> (bool * (string * int64) list)
+      -> (bool * Query_engine.sat_assign)
     method query_unique_value : Vine.exp -> Vine.typ -> int64 option
     method follow_or_random : bool 
     method query_with_pc_choice : Vine.exp -> bool -> (unit -> bool)

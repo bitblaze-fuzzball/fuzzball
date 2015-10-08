@@ -14,7 +14,7 @@ class smtlib_external_engine : Solvers_common.external_solver_type -> object
   method add_condition : Vine.exp -> unit
   method push : unit
   method pop : unit
-  method query : Vine.exp -> (bool option) * ((string * int64) list)
+  method query : Vine.exp -> (bool option) * Query_engine.sat_assign
   method after_query : bool -> unit
   method reset : unit
 end

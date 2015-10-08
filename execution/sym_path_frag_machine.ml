@@ -74,15 +74,14 @@ struct
 	  '?'
       in
       let str = String.make (!max_input_string_length) ' ' in
-	List.iter
-	  (fun (var_s, value) ->
+	ce_iter ce
+	  (fun var_s value ->
 	     match self#match_input_var var_s with
 	       | Some n -> 
 		   assert(n < !max_input_string_length);
 		   str.[n] <-
 		     char_of_int_unbounded (Int64.to_int value)
-	       | None -> ())
-	  ce;
+	       | None -> ());
 	let str' = ref str in
 	  (try 
 	     while String.rindex !str' ' ' = (String.length !str') - 1 do
