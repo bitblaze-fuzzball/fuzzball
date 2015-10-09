@@ -6,13 +6,17 @@ module V = Vine;;
 
 let query_extra_counter = ref 0
 
-type sat_assign = (string * int64) list
+type sat_assign = ((string * int64) list) * (string, int64) Hashtbl.t
 
-let ce_from_list x = x
+let ce_from_list l =
+  let n = List.length l in
+  let h = Hashtbl.create n in
+    List.iter (fun (s, i) -> Hashtbl.replace h s i) l;
+    (l, h)
 
-let ce_lookup_nf ce s = List.assoc s ce
+let ce_lookup_nf (_, h) s = Hashtbl.find h s
 
-let ce_iter ce f = List.iter (fun (s, v) -> f s v) ce
+let ce_iter (l,_) f = List.iter (fun (s, v) -> f s v) l
 
 class virtual query_engine = object(self)
   method virtual start_query : unit
@@ -140,7 +144,7 @@ class parallel_check_engine (e1:query_engine) (e2:query_engine) = object(self)
 		Printf.printf "Solver 2's assignment is:\n";
 		print_ce ce2;
 	    | _ -> ());
-	 (None, []))	  
+	 (None, ce_from_list []))
       else
 	(r1, ce1)
 
