@@ -432,12 +432,30 @@ let rec constant_fold ctx e =
 	    Constant(Int(REG_32, 0xffffff00L)))
 	when (Vine_typecheck.infer_type None e) = REG_8 ->
 	Constant(Int(REG_32, 0L))
-    (* byte >> amt = 0  when amt >= 8 *)
+    (* zero-extend shift by at least reg size gives zero *)
+    | BinOp((LSHIFT|RSHIFT), e, Constant(Int(_, amt)))
+	when (Vine_typecheck.infer_type None e) = REG_8 && amt >= 8L ->
+	Constant(Int(REG_8, 0L))
+    | BinOp((LSHIFT|RSHIFT), e, Constant(Int(_, amt)))
+	when (Vine_typecheck.infer_type None e) = REG_16 && amt >= 16L ->
+	Constant(Int(REG_16, 0L))
+    | BinOp((LSHIFT|RSHIFT), e, Constant(Int(_, amt)))
+	when (Vine_typecheck.infer_type None e) = REG_32 && amt >= 32L ->
+	Constant(Int(REG_32, 0L))
+    | BinOp((LSHIFT|RSHIFT), e, Constant(Int(_, amt)))
+	when (Vine_typecheck.infer_type None e) = REG_64 && amt >= 64L ->
+	Constant(Int(REG_64, 0L))
+    (* byte >> amt = 0  when amt >= 8: special case of above within larger word *)
     | BinOp(RSHIFT,
 	    Cast(CAST_UNSIGNED, REG_32, e),
 	    Constant(Int(_, amt)))
 	when (Vine_typecheck.infer_type None e) = REG_8 && amt >= 8L ->
 	Constant(Int(REG_32, 0L))
+    | BinOp(RSHIFT,
+	    Cast(CAST_UNSIGNED, REG_64, e),
+	    Constant(Int(_, amt)))
+	when (Vine_typecheck.infer_type None e) = REG_8 && amt >= 8L ->
+	Constant(Int(REG_64, 0L))
     (* (c ? k : k + 1) = (k + (int)c) *)
     | BinOp(BITOR,
 	    BinOp(BITAND, Cast(CAST_SIGNED, REG_32, c1),
