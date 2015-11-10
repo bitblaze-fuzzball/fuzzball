@@ -499,7 +499,7 @@ struct
     method private eval_var_from_ce ce lv =
       match lv with
 	| V.Temp(_, s, ty) ->
-	    let v = try List.assoc s ce 
+	    let v = try Query_engine.ce_lookup_nf ce s
 	    with Not_found ->
 	      0L 
 	      (* Printf.eprintf "Missing var %s in counterexample\n" s;
@@ -638,6 +638,9 @@ struct
       D.inside_symbolic
 	(fun e ->
 	   let e' = simplify_fp e in
+	     (* if e <> e' then
+		Printf.printf "Simplifying %s -> %s\n"
+		(V.exp_to_string e) (V.exp_to_string e'); *)
 	     (* We're supposed to simplify expressions as we build
 		them, so something is going wrong if they get way to big
 		at once: *)

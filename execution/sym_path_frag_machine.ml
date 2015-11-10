@@ -99,28 +99,27 @@ struct
 	  '?'
       in
       let str = String.make (!max_input_string_length) ' ' in
-      List.iter
-	(fun (var_s, value) ->
-	  match self#match_input_var var_s with
-	  | Some n -> 
-	    g_assert(n < !max_input_string_length) 100 "Sym_path_frag_machine.ce_to_input_str";
-	    str.[n] <-
-	      char_of_int_unbounded (Int64.to_int value)
-	  | None -> ())
-	ce;
-      let str' = ref str in
-      (try 
-	 while String.rindex !str' ' ' = (String.length !str') - 1 do
-	   str' := String.sub !str' 0 ((String.length !str') - 1)
-	 done;
-       with Not_found -> ());
-      (try
-	 while String.rindex !str' '\000' = (String.length !str') - 1
-	 do
-	   str' := String.sub !str' 0 ((String.length !str') - 1)
-	 done;
-       with Not_found -> ());
-      !str'
+	ce_iter ce
+	  (fun var_s value ->
+	     match self#match_input_var var_s with
+	       | Some n -> 
+		   g_assert(n < !max_input_string_length) 100 "Sym_path_frag_machine.ce_to_input_str";
+		   str.[n] <-
+		     char_of_int_unbounded (Int64.to_int value)
+	       | None -> ());
+	let str' = ref str in
+	  (try 
+	     while String.rindex !str' ' ' = (String.length !str') - 1 do
+	       str' := String.sub !str' 0 ((String.length !str') - 1)
+	     done;
+	   with Not_found -> ());
+	  (try
+	     while String.rindex !str' '\000' = (String.length !str') - 1
+	     do
+	       str' := String.sub !str' 0 ((String.length !str') - 1)
+	     done;
+	   with Not_found -> ());
+	  !str'
 
     method print_ce ce = print_ce ce
 

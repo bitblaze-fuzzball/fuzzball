@@ -1711,7 +1711,7 @@ Stmt *i386_translate_puti( IRStmt *stmt, IRSB *irbb, vector<Stmt *> *irout )
     int mask = descr->nElems - 1;
     Exp *ix_e = translate_expr(ix, irbb, irout);
     Exp *index_e = _ex_and(_ex_add(ix_e, ex_const(bias)), ex_const(mask));
-    Temp *index_temp = mk_temp(REG_ADDRESS_T, irout);
+    Temp *index_temp = mk_temp(reg_address_t, irout);
     irout->push_back(new Move(index_temp, index_e));
 
     Stmt *last_stmt = 0;

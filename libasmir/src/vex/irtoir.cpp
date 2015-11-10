@@ -325,6 +325,12 @@ Temp *mk_temp( IRType ty, vector<Stmt *> *stmts )
     return mk_temp(typ, stmts);
 }
 
+Temp *mk_temp_def(reg_t type, Exp *val, vector<Stmt *> *stmts) {
+    Temp *t = mk_temp(type, stmts);
+    stmts->push_back(new Move(t, val));
+    return t;
+}
+
 Exp *mk_u32(UInt val) {
     return new Constant(REG_32, val);
 }
@@ -336,7 +342,10 @@ Exp *mk_u64(uint64_t val) {
 string addr_to_string( Addr64 dest )
 {
     char buf[80];
-    snprintf(buf, sizeof(buf), "pc_0x%x", (int)dest);
+    if (guest_arch == VexArchAMD64)
+	snprintf(buf, sizeof(buf), "pc_0x%llx", (unsigned long long)dest);
+    else
+	snprintf(buf, sizeof(buf), "pc_0x%x", (int)dest);
     return string(buf);
 }
 
@@ -367,6 +376,16 @@ Name *mk_dest_name( Addr64 dest )
 //
 //======================================================================
 
+/* My convention about the "AxB" notation is the opposite of VEX's: in
+   function names like the following, 2 is the number of lanes and 8
+   bits is their size. */
+
+Exp *assemble2x8(Exp *b1, Exp *b0) {
+    Exp *b1w = _ex_u_cast(b1, REG_16);
+    Exp *b0w = _ex_u_cast(b0, REG_16);
+    return _ex_or(_ex_shl(b1w, 8), b0w);
+}
+
 Exp *translate_16HLto32( Exp *arg1, Exp *arg2 )
 {
     assert(arg1);
@@ -378,6 +397,16 @@ Exp *translate_16HLto32( Exp *arg1, Exp *arg2 )
     high = new BinOp( LSHIFT, high, ex_const(16) );
 
     return new BinOp( BITOR, high, low );
+}
+
+Exp *assemble4x8(Exp *b3, Exp *b2, Exp *b1, Exp *b0) {
+    Exp *b3w = _ex_u_cast(b3, REG_16);
+    Exp *b2w = _ex_u_cast(b2, REG_16);
+    Exp *b1w = _ex_u_cast(b1, REG_16);
+    Exp *b0w = _ex_u_cast(b0, REG_16);
+    Exp *high = _ex_or(_ex_shl(b3w, 8), b2w);
+    Exp *low = _ex_or(_ex_shl(b1w, 8), b0w);
+    return translate_16HLto32(high, low);
 }
 
 //----------------------------------------------------------------------
@@ -396,6 +425,22 @@ Exp *translate_32HLto64( Exp *arg1, Exp *arg2 )
     high = new BinOp( LSHIFT, high, ex_const(32) );
 
     return new BinOp( BITOR, high, low );
+}
+
+Exp *assemble4x16(Exp *w3, Exp *w2, Exp *w1, Exp *w0) {
+    Exp *w3w = _ex_u_cast(w3, REG_32);
+    Exp *w2w = _ex_u_cast(w2, REG_32);
+    Exp *w1w = _ex_u_cast(w1, REG_32);
+    Exp *w0w = _ex_u_cast(w0, REG_32);
+    Exp *high = _ex_or(_ex_shl(w3w, 16), w2w);
+    Exp *low = _ex_or(_ex_shl(w1w, 16), w0w);
+    return translate_32HLto64(high, low);
+}
+
+Exp *assemble8x8(Exp *b7, Exp *b6, Exp *b5, Exp *b4,
+		 Exp *b3, Exp *b2, Exp *b1, Exp *b0) {
+    return translate_32HLto64(assemble4x8(b7, b6, b5, b4),
+			      assemble4x8(b3, b2, b1, b0));
 }
 
 Exp *translate_64HLto128( Exp *arg1, Exp *arg2 )
@@ -506,6 +551,151 @@ Exp *translate_MullS32( Exp *arg1, Exp *arg2 )
     return new BinOp( TIMES, wide1, wide2 );
 }
 
+/* This is complicated because we want to implement it using only
+   32-to-64-bit multiplication, so we have to do four different
+   partial products and add them together being careful of carries. */
+Exp *translate_MullU64( Exp *arg1, Exp *arg2, vector<Stmt *> *irout )
+{
+    assert(arg1);
+    assert(arg2);
+
+    Exp *x1 = _ex_u_cast(_ex_h_cast(arg1, REG_32), REG_64);
+    Exp *x0 = _ex_u_cast( ex_l_cast(arg1, REG_32), REG_64);
+    Exp *y1 = _ex_u_cast(_ex_h_cast(arg2, REG_32), REG_64);
+    Exp *y0 = _ex_u_cast( ex_l_cast(arg2, REG_32), REG_64);
+
+    x1 = mk_temp_def(REG_64, x1, irout);
+    x0 = mk_temp_def(REG_64, x0, irout);
+    y1 = mk_temp_def(REG_64, y1, irout);
+    y0 = mk_temp_def(REG_64, y0, irout);
+
+    Exp *p11 = ex_mul(x1, y1);
+    Exp *p10 = ex_mul(x1, y0);
+    Exp *p01 = ex_mul(x0, y1);
+    Exp *p00 = ex_mul(x0, y0);
+
+    p11 = mk_temp_def(REG_64, p11, irout);
+    p10 = mk_temp_def(REG_64, p10, irout);
+    p01 = mk_temp_def(REG_64, p01, irout);
+    p00 = mk_temp_def(REG_64, p00, irout);
+
+    Exp *s0_a = mk_temp_def(REG_64, _ex_add(ecl(p00), ex_shl(p01, 32)), irout);
+    Exp *c0_a = _ex_u_cast(ex_lt(s0_a, p00), REG_64);
+    Exp *s0_b = mk_temp_def(REG_64, _ex_add(ecl(s0_a), ex_shl(p10, 32)),irout);
+    Exp *c0_b = _ex_u_cast(ex_lt(s0_b, s0_a), REG_64);
+
+    Exp *s1 = _ex_add(_ex_add(ecl(p11), _ex_add(c0_a, c0_b)),
+		      _ex_add(ex_shr(p01, 32), ex_shr(p10, 32)));
+
+    return translate_64HLto128(s1, ecl(s0_b));
+}
+
+void split_vector(Exp *exp_v, Exp **high, Exp **low) {
+    if (exp_v->exp_type == VECTOR) {
+	// Expected case
+	Vector *v = (Vector *)exp_v;
+	*high = v->lanes[1];
+	*low = v->lanes[0];
+	delete v; // Shallow delete, since we reuse high and low
+    } else if (exp_v->exp_type == UNKNOWN) {
+	// An error or unhandled case. Propagate times two.
+	*high = exp_v;
+	*low = ecl(exp_v);
+    } else {
+	assert(exp_v->exp_type == VECTOR);
+    }
+}
+
+Exp *mk_temps128_def(Exp *val, vector<Stmt *> *stmts) {
+    Temp *t_high = mk_temp(REG_64, stmts);
+    Temp *t_low = mk_temp(REG_64, stmts);
+    Exp *v_high, *v_low;
+    split_vector(val, &v_high, &v_low);
+    stmts->push_back(new Move(t_high, v_high));
+    stmts->push_back(new Move(t_low, v_low));
+    return new Vector(ecl(t_high), ecl(t_low));
+}
+
+Exp *translate_Neg128(Exp *arg, vector<Stmt *> *irout) {
+    Exp *arg_high, *arg_low;
+    split_vector(arg, &arg_high, &arg_low);
+
+    Exp *not_high = _ex_not(arg_high);
+    Exp *not_low = _ex_not(arg_low);
+
+    Exp *inc_low = mk_temp_def(REG_64, _ex_add(not_low, mk_u64(1)), irout);
+    Exp *inc_high =
+	_ex_add(not_high, _ex_u_cast(_ex_eq(ecl(inc_low), mk_u64(0)), REG_64));
+
+    return translate_64HLto128(inc_high, ecl(inc_low));
+}
+
+Exp *vec_ite(Exp *cond, Exp *exp_t, Exp *exp_f) {
+    Exp *t_high, *t_low;
+    split_vector(exp_t, &t_high, &t_low);
+
+    Exp *f_high, *f_low;
+    split_vector(exp_f, &f_high, &f_low);
+
+    return new Vector(_ex_ite(ecl(cond), t_high, f_high),
+		      _ex_ite(ecl(cond), t_low, f_low));
+}
+
+/* Again this can't be translated directly without REG_128s. Implement
+   by splitting on cases for the signs and then using the unsigned
+   version. */
+Exp *translate_MullS64( Exp *arg1, Exp *arg2, vector<Stmt *> *irout )
+{
+    assert(arg1);
+    assert(arg2);
+
+    Exp *neg1 = mk_temp_def(REG_1, _ex_lt(arg1, mk_u64(0)), irout);
+    Exp *neg2 = mk_temp_def(REG_1, _ex_lt(arg2, mk_u64(0)), irout);
+
+    Exp *abs1 = _ex_ite(ecl(neg1), ex_neg(arg1), ecl(arg1));
+    Exp *abs2 = _ex_ite(ecl(neg2), ex_neg(arg2), ecl(arg2));
+
+    Exp *absprod =
+	mk_temps128_def(translate_MullU64(abs1, abs2, irout), irout);
+
+    Exp *negprod = mk_temp_def(REG_1, ex_xor(neg1, neg2), irout);
+
+    return vec_ite(negprod, translate_Neg128(absprod, irout), ecl(absprod));
+}
+
+/* Here we just ignore the high half of the dividend. That happens to
+   work right in the common x64 case in which div on a 64-bit register
+   implements 64-bit / or %. However in other cases it's just wrong. A
+   true 128-bit divide would be too complex to practically represent
+   in IR. */
+Exp *translate_DivModU128to64( Exp *arg1, Exp *arg2 )
+{
+    assert(arg1);
+    assert(arg2);
+    Exp *arg1h, *arg1l;
+    split_vector(arg1, &arg1h, &arg1l);
+    delete arg1h;
+
+    Exp *div = new BinOp( DIVIDE, arg1l, arg2 );
+    Exp *mod = new BinOp( MOD, ecl(arg1l), ecl(arg2) );
+
+    return translate_64HLto128( mod, div );
+}
+
+Exp *translate_DivModS128to64( Exp *arg1, Exp *arg2 )
+{
+    assert(arg1);
+    assert(arg2);
+    Exp *arg1h, *arg1l;
+    split_vector(arg1, &arg1h, &arg1l);
+    delete arg1h;
+
+    Exp *div = new BinOp( SDIVIDE, arg1l, arg2 );
+    Exp *mod = new BinOp( SMOD, ecl(arg1l), ecl(arg2) );
+
+    return translate_64HLto128( mod, div );
+}
+
 Exp *translate_Clz32( IRExpr *expr, IRSB *irbb, vector<Stmt *> *irout )
 {
     assert(expr);
@@ -524,7 +714,7 @@ Exp *translate_Clz32( IRExpr *expr, IRSB *irbb, vector<Stmt *> *irout )
 
     // The previous version of this code created a loop at the IR level.
     // But a number of other parts of our infrastructure can't deal
-    // well with loops, so we'll take advantage of the fact we can 
+    // well with loops, so we'll take advantage of the fact we can
     // unroll this one. This instruction should be rare enough that
     // the space penalty is insignificant.
 
@@ -544,6 +734,44 @@ Exp *translate_Clz32( IRExpr *expr, IRSB *irbb, vector<Stmt *> *irout )
 	irout->push_back( new Move( new Temp(*counter),
 				    new BinOp( MINUS, new Temp(*counter),
 					       ex_const(1) ) ) );
+    }
+    irout->push_back( done );
+
+    return new Temp(*counter);
+}
+
+Exp *translate_Clz64( IRExpr *expr, IRSB *irbb, vector<Stmt *> *irout )
+{
+    assert(expr);
+    assert(irbb);
+    assert(irout);
+
+    Exp *arg = translate_expr( expr->Iex.Unop.arg, irbb, irout );
+
+    Temp *counter = mk_temp( Ity_I64, irout );
+    Temp *temp = mk_temp( typeOfIRExpr(irbb->tyenv, expr->Iex.Unop.arg),irout );
+
+    Label *done = mk_label();
+
+    irout->push_back( new Move( counter, mk_u64(64) ) );
+    irout->push_back( new Move( temp, arg ) );
+
+    // Note that this loop has 65 iterations, corresponding to the 65
+    // possible return values from 0 to 64.
+    for (int i = 0; i < 65; i++) {
+	Label *not_taken = mk_label();
+	Exp *cond = new BinOp( EQ, new Temp(*temp), mk_u64(0) );
+
+	irout->push_back( new CJmp( cond, new Name(done->label),
+				    new Name(not_taken->label) ) );
+	irout->push_back( not_taken );
+
+	irout->push_back( new Move( new Temp(*temp),
+				    new BinOp( RSHIFT, new Temp(*temp),
+					       ex_const(1) ) ) );
+	irout->push_back( new Move( new Temp(*counter),
+				    new BinOp( MINUS, new Temp(*counter),
+					       mk_u64(1) ) ) );
     }
     irout->push_back( done );
 
@@ -587,6 +815,44 @@ Exp *translate_Ctz32( IRExpr *expr, IRSB *irbb, vector<Stmt *> *irout )
     return new Temp(*counter);
 }
 
+Exp *translate_Ctz64( IRExpr *expr, IRSB *irbb, vector<Stmt *> *irout )
+{
+    assert(expr);
+    assert(irbb);
+    assert(irout);
+
+    Exp *arg = translate_expr( expr->Iex.Unop.arg, irbb, irout );
+
+    Temp *counter = mk_temp( Ity_I64, irout );
+    Temp *temp = mk_temp( typeOfIRExpr(irbb->tyenv, expr->Iex.Unop.arg),irout );
+
+    Label *done = mk_label();
+
+    irout->push_back( new Move( temp, arg ) );
+    irout->push_back( new Move( counter, mk_u64(64) ) );
+
+    // See Clz64 above for comments about a similar loop that also
+    // apply to this one.
+    for (int i = 0; i < 65; i++) {
+	Label *not_taken = mk_label();
+	Exp *cond = new BinOp( EQ, new Temp(*temp), mk_u64(0) );
+
+	irout->push_back( new CJmp( cond, new Name(done->label),
+				    new Name(not_taken->label) ) );
+	irout->push_back( not_taken );
+	irout->push_back( new Move( new Temp(*temp),
+				    new BinOp( LSHIFT, new Temp(*temp),
+					       ex_const(1) ) ) );
+	irout->push_back( new Move( new Temp(*counter),
+				    new BinOp( MINUS, new Temp(*counter),
+					       mk_u64(1) ) ) );
+    }
+    irout->push_back( done );
+
+    return new Temp(*counter);
+}
+
+
 Exp *translate_CmpF(Exp *arg1, Exp *arg2, reg_t sz) {
     /* arg1 == arg2 ? 0x40 :
          (arg1 < arg2 ? 0x01 :
@@ -603,22 +869,6 @@ Exp *translate_CmpF(Exp *arg1, Exp *arg2, reg_t sz) {
     return _ex_ite(cmp_eq, ex_const(0x40),
 		   _ex_ite(cmp_lt, ex_const(0x01),
 			   _ex_ite(cmp_gt, ex_const(0), ex_const(0x45))));
-}
-
-void split_vector(Exp *exp_v, Exp **high, Exp **low) {
-    if (exp_v->exp_type == VECTOR) {
-	// Expected case
-	Vector *v = (Vector *)exp_v;
-	*high = v->lanes[1];
-	*low = v->lanes[0];
-	delete v; // Shallow delete, since we reuse high and low
-    } else if (exp_v->exp_type == UNKNOWN) {
-	// An error or unhandled case. Propagate times two.
-	*high = exp_v;
-	*low = ecl(exp_v);
-    } else {
-	assert(exp_v->exp_type == VECTOR);
-    }
 }
 
 // Low-lane single-precision FP, as in the x86 SSE addss, for instance.
@@ -700,6 +950,185 @@ Exp *translate_par64fp_128_binop(fbinop_type_t op, Exp *left, Exp *right) {
     Exp *result_l = new FBinOp(op, ROUND_NEAREST, left_l, right_l);
 
     return translate_64HLto128(result_h, result_l);
+}
+
+void split4x8(Exp *x32, Exp **b3, Exp **b2, Exp **b1, Exp **b0) {
+    *b3 = _ex_h_cast( ex_h_cast(x32, REG_16), REG_8);
+    *b2 = _ex_l_cast( ex_h_cast(x32, REG_16), REG_8);
+    *b1 = _ex_h_cast( ex_l_cast(x32, REG_16), REG_8);
+    *b0 = _ex_l_cast(_ex_l_cast(x32, REG_16), REG_8);
+}
+
+void split8x8(Exp *x64,
+	      Exp **b7, Exp **b6, Exp **b5, Exp **b4,
+	      Exp **b3, Exp **b2, Exp **b1, Exp **b0) {
+    split4x8(_ex_h_cast(x64, REG_32), b7, b6, b5, b4);
+    split4x8( ex_l_cast(x64, REG_32), b3, b2, b1, b0);
+}
+
+void split4x16(Exp *x64, Exp **w3, Exp **w2, Exp **w1, Exp **w0) {
+    *w3 = _ex_h_cast( ex_h_cast(x64, REG_32), REG_16);
+    *w2 = _ex_l_cast( ex_h_cast(x64, REG_32), REG_16);
+    *w1 = _ex_h_cast( ex_l_cast(x64, REG_32), REG_16);
+    *w0 = _ex_l_cast(_ex_l_cast(x64, REG_32), REG_16);
+}
+
+Exp *translate_CmpEQ8x8(Exp *a, Exp *b) {
+    Exp *a7, *a6, *a5, *a4, *a3, *a2, *a1, *a0;
+    split8x8(a, &a7, &a6, &a5, &a4, &a3, &a2, &a1, &a0);
+    Exp *b7, *b6, *b5, *b4, *b3, *b2, *b1, *b0;
+    split8x8(b, &b7, &b6, &b5, &b4, &b3, &b2, &b1, &b0);
+    Exp *r7 = _ex_s_cast(_ex_eq(a7, b7), REG_8);
+    Exp *r6 = _ex_s_cast(_ex_eq(a6, b6), REG_8);
+    Exp *r5 = _ex_s_cast(_ex_eq(a5, b5), REG_8);
+    Exp *r4 = _ex_s_cast(_ex_eq(a4, b4), REG_8);
+    Exp *r3 = _ex_s_cast(_ex_eq(a3, b3), REG_8);
+    Exp *r2 = _ex_s_cast(_ex_eq(a2, b2), REG_8);
+    Exp *r1 = _ex_s_cast(_ex_eq(a1, b1), REG_8);
+    Exp *r0 = _ex_s_cast(_ex_eq(a0, b0), REG_8);
+    return assemble8x8(r7, r6, r5, r4, r3, r2, r1, r0);
+}
+
+Exp *translate_CmpEQ8x16(Exp *a, Exp *b) {
+    Exp *a_high, *a_low;
+    split_vector(a, &a_high, &a_low);
+
+    Exp *b_high, *b_low;
+    split_vector(b, &b_high, &b_low);
+
+    Exp *r_high = translate_CmpEQ8x8(a_high, b_high);
+    Exp *r_low = translate_CmpEQ8x8(a_low, b_low);
+
+    return translate_64HLto128(r_high, r_low);
+}
+
+Exp *assemble8x1(Exp *b7, Exp *b6, Exp *b5, Exp *b4,
+		 Exp *b3, Exp *b2, Exp *b1, Exp *b0) {
+    b7 = _ex_shl(_ex_u_cast(b7, REG_8), 7);
+    b6 = _ex_shl(_ex_u_cast(b6, REG_8), 6);
+    b5 = _ex_shl(_ex_u_cast(b5, REG_8), 5);
+    b4 = _ex_shl(_ex_u_cast(b4, REG_8), 4);
+    b3 = _ex_shl(_ex_u_cast(b3, REG_8), 3);
+    b2 = _ex_shl(_ex_u_cast(b2, REG_8), 2);
+    b1 = _ex_shl(_ex_u_cast(b1, REG_8), 1);
+    b0 = _ex_u_cast(b0, REG_8);
+    return _ex_or(_ex_or(b7, b6, b5, b4),
+		  _ex_or(b3, b2, b1, b0));
+}
+
+Exp *translate_GetMSBs8x8(Exp *x) {
+    Exp *b7 = _ex_h_cast(x, REG_1);
+    Exp *b6 = ex_get_bit(x, 55);
+    Exp *b5 = ex_get_bit(x, 47);
+    Exp *b4 = ex_get_bit(x, 39);
+    Exp *b3 = ex_get_bit(x, 31);
+    Exp *b2 = ex_get_bit(x, 23);
+    Exp *b1 = ex_get_bit(x, 15);
+    Exp *b0 = ex_get_bit(x,  7);
+    return assemble8x1(b7, b6, b5, b4, b3, b2, b1, b0);
+}
+
+Exp *translate_GetMSBs8x16(Exp *x) {
+    Exp *x_h, *x_l;
+    split_vector(x, &x_h, &x_l);
+    Exp *r_h = translate_GetMSBs8x8(x_h);
+    Exp *r_l = translate_GetMSBs8x8(x_l);
+    return assemble2x8(r_h, r_l);
+}
+
+Exp *interleave2_4x16(Exp *a, Exp *b) {
+    Exp *a3, *a2, *a1, *a0;
+    split4x16(a, &a3, &a2, &a1, &a0);
+    Exp *b3, *b2, *b1, *b0;
+    split4x16(b, &b3, &b2, &b1, &b0);
+    Exp *r_h = assemble4x16(a3, b3, a2, b2);
+    Exp *r_l = assemble4x16(a1, b1, a0, b0);
+    return translate_64HLto128(r_h, r_l);
+}
+
+Exp *translate_InterleaveLO16x8(Exp *a, Exp *b) {
+    Exp *a_high, *a_low;
+    split_vector(a, &a_high, &a_low);
+    delete a_high;
+
+    Exp *b_high, *b_low;
+    split_vector(b, &b_high, &b_low);
+    delete b_high;
+
+    return interleave2_4x16(a_low, b_low);
+}
+
+Exp *interleave2_8x8(Exp *a, Exp *b) {
+    Exp *a7, *a6, *a5, *a4, *a3, *a2, *a1, *a0;
+    split8x8(a, &a7, &a6, &a5, &a4, &a3, &a2, &a1, &a0);
+    Exp *b7, *b6, *b5, *b4, *b3, *b2, *b1, *b0;
+    split8x8(b, &b7, &b6, &b5, &b4, &b3, &b2, &b1, &b0);
+    Exp *r_h = assemble8x8(a7, b7, a6, b6, a5, b5, a4, b4);
+    Exp *r_l = assemble8x8(a3, b3, a2, b2, a1, b1, a0, b0);
+    return translate_64HLto128(r_h, r_l);
+}
+
+Exp *translate_InterleaveLO8x16(Exp *a, Exp *b) {
+    Exp *a_high, *a_low;
+    split_vector(a, &a_high, &a_low);
+    delete a_high;
+
+    Exp *b_high, *b_low;
+    split_vector(b, &b_high, &b_low);
+    delete b_high;
+
+    return interleave2_8x8(a_low, b_low);
+}
+
+Exp *translate_par8x8_binop(binop_type_t op, Exp *a, Exp *b) {
+    Exp *a7, *a6, *a5, *a4, *a3, *a2, *a1, *a0;
+    split8x8(a, &a7, &a6, &a5, &a4, &a3, &a2, &a1, &a0);
+    Exp *b7, *b6, *b5, *b4, *b3, *b2, *b1, *b0;
+    split8x8(b, &b7, &b6, &b5, &b4, &b3, &b2, &b1, &b0);
+    Exp *r7 = new BinOp(op, a7, b7);
+    Exp *r6 = new BinOp(op, a6, b6);
+    Exp *r5 = new BinOp(op, a5, b5);
+    Exp *r4 = new BinOp(op, a4, b4);
+    Exp *r3 = new BinOp(op, a3, b3);
+    Exp *r2 = new BinOp(op, a2, b2);
+    Exp *r1 = new BinOp(op, a1, b1);
+    Exp *r0 = new BinOp(op, a0, b0);
+    return assemble8x8(r7, r6, r5, r4, r3, r2, r1, r0);
+}
+
+Exp *translate_par16x8_binop(binop_type_t op, Exp *a, Exp *b) {
+    Exp *a_high, *a_low;
+    split_vector(a, &a_high, &a_low);
+    Exp *b_high, *b_low;
+    split_vector(b, &b_high, &b_low);
+    Exp *r_h = translate_par8x8_binop(op, a_high, b_high);
+    Exp *r_l = translate_par8x8_binop(op, a_low, b_low);
+    return translate_64HLto128(r_h, r_l);
+}
+
+Exp *translate_minmax8x8(binop_type_t op, bool is_max, Exp *a64, Exp *b64) {
+    Exp *a[8], *b[8];
+    split8x8(a64, &a[7], &a[6], &a[5], &a[4], &a[3], &a[2], &a[1], &a[0]);
+    split8x8(b64, &b[7], &b[6], &b[5], &b[4], &b[3], &b[2], &b[1], &b[0]);
+    Exp *r[8];
+    for (int i = 7; i >= 0; i--) {
+	if (is_max) {
+	    r[i] = _ex_ite(new BinOp(op, b[i], a[i]), ecl(a[i]), ecl(b[i]));
+	} else {
+	    r[i] = _ex_ite(new BinOp(op, a[i], b[i]), ecl(a[i]), ecl(b[i]));
+	}
+    }
+    return assemble8x8(r[7], r[6], r[5], r[4], r[3], r[2], r[1], r[0]);
+}
+
+Exp *translate_minmax16x8(binop_type_t op, bool is_max, Exp *a, Exp *b) {
+    Exp *a_high, *a_low;
+    split_vector(a, &a_high, &a_low);
+    Exp *b_high, *b_low;
+    split_vector(b, &b_high, &b_low);
+    Exp *r_h = translate_minmax8x8(op, is_max, a_high, b_high);
+    Exp *r_l = translate_minmax8x8(op, is_max, a_low, b_low);
+    return translate_64HLto128(r_h, r_l);
 }
 
 const_val_t expand_lane_const(int bits) {
@@ -873,6 +1302,16 @@ Exp *translate_simple_unop( IRExpr *expr, IRSB *irbb, vector<Stmt *> *irout )
         case Iop_ReinterpI64asF64:
         case Iop_ReinterpF64asI64:
 	    return arg; // We don't make any distinction here
+
+#if VEX_VERSION >= 2559
+        case Iop_GetMSBs8x8:
+	    return translate_GetMSBs8x8(arg);
+#endif
+#if VEX_VERSION >= 2663
+        case Iop_GetMSBs8x16:
+	    return translate_GetMSBs8x16(arg);
+#endif
+
         default:
             break;
     }
@@ -897,6 +1336,8 @@ Exp *translate_unop( IRExpr *expr, IRSB *irbb, vector<Stmt *> *irout )
         
         case Iop_Clz32:     return translate_Clz32( expr, irbb, irout );
         case Iop_Ctz32:     return translate_Ctz32( expr, irbb, irout );
+        case Iop_Clz64:     return translate_Clz64( expr, irbb, irout );
+        case Iop_Ctz64:     return translate_Ctz64( expr, irbb, irout );
 
         case Iop_AbsF64:
             return new Unknown("Floating point op");
@@ -1008,6 +1449,7 @@ Exp *translate_simple_binop( IRExpr *expr, IRSB *irbb, vector<Stmt *> *irout )
 
         case Iop_16HLto32:          return translate_16HLto32(arg1, arg2);
         case Iop_32HLto64:          return translate_32HLto64(arg1, arg2);
+        case Iop_64HLto128:         return translate_64HLto128(arg1, arg2);
         case Iop_64HLtoV128:        return translate_64HLto128(arg1, arg2);
         case Iop_MullU8:            return translate_MullU8(arg1, arg2);
         case Iop_MullS8:            return translate_MullS8(arg1, arg2);
@@ -1017,6 +1459,8 @@ Exp *translate_simple_binop( IRExpr *expr, IRSB *irbb, vector<Stmt *> *irout )
         case Iop_MullS32:           return translate_MullS32(arg1, arg2);
         case Iop_DivModU64to32:     return translate_DivModU64to32(arg1, arg2);
         case Iop_DivModS64to32:     return translate_DivModS64to32(arg1, arg2);
+        case Iop_DivModU128to64:    return translate_DivModU128to64(arg1,arg2);
+        case Iop_DivModS128to64:    return translate_DivModS128to64(arg1,arg2);
 
 	case Iop_DivU32: return new BinOp(DIVIDE, arg1, arg2);
 	case Iop_DivS32: return new BinOp(SDIVIDE, arg1, arg2);
@@ -1136,6 +1580,56 @@ Exp *translate_simple_binop( IRExpr *expr, IRSB *irbb, vector<Stmt *> *irout )
         case Iop_F64toF32:
            return new FCast(arg2, REG_32, CAST_FNARROW, ROUND_NEAREST);
 
+	case Iop_InterleaveLO16x8:
+	    return translate_InterleaveLO16x8(arg1, arg2);
+
+	case Iop_InterleaveLO8x16:
+	    return translate_InterleaveLO8x16(arg1, arg2);
+
+#if VEX_VERSION >= 2218
+        case Iop_CmpEQ8x16:
+	    return translate_CmpEQ8x16(arg1, arg2);
+#endif
+
+        case Iop_Add8x8:
+	    return translate_par8x8_binop(PLUS, arg1, arg2);
+        case Iop_Add8x16:
+	    return translate_par16x8_binop(PLUS, arg1, arg2);
+
+        case Iop_Sub8x8:
+	    return translate_par8x8_binop(MINUS, arg1, arg2);
+        case Iop_Sub8x16:
+	    return translate_par16x8_binop(MINUS, arg1, arg2);
+
+        case Iop_Mul8x8:
+	    return translate_par8x8_binop(TIMES, arg1, arg2);
+        case Iop_Mul8x16:
+	    return translate_par16x8_binop(TIMES, arg1, arg2);
+
+        case Iop_Min8Ux8:
+	    return translate_minmax8x8(LT, false, arg1, arg2);
+        case Iop_Min8Ux16:
+	    return translate_minmax16x8(LT, false, arg1, arg2);
+
+#if VEX_VERSION >= 2016
+        case Iop_Min8Sx8:
+	    return translate_minmax8x8(SLT, false, arg1, arg2);
+#endif
+        case Iop_Min8Sx16:
+	    return translate_minmax16x8(SLT, false, arg1, arg2);
+
+        case Iop_Max8Ux8:
+	    return translate_minmax8x8(LT, true, arg1, arg2);
+        case Iop_Max8Ux16:
+	    return translate_minmax16x8(LT, true, arg1, arg2);
+
+#if VEX_VERSION >= 2016
+        case Iop_Max8Sx8:
+	    return translate_minmax8x8(SLT, true, arg1, arg2);
+#endif
+        case Iop_Max8Sx16:
+	    return translate_minmax16x8(SLT, true, arg1, arg2);
+
         default:
             break;
     }
@@ -1160,6 +1654,18 @@ Exp *translate_binop( IRExpr *expr, IRSB *irbb, vector<Stmt *> *irout )
 
     switch ( expr->Iex.Binop.op ) 
     {
+        case Iop_MullU64: {
+	    Exp *arg1 = translate_expr(expr->Iex.Binop.arg1, irbb, irout);
+	    Exp *arg2 = translate_expr(expr->Iex.Binop.arg2, irbb, irout);
+	    return translate_MullU64(arg1, arg2, irout);
+	}
+
+        case Iop_MullS64: {
+	    Exp *arg1 = translate_expr(expr->Iex.Binop.arg1, irbb, irout);
+	    Exp *arg2 = translate_expr(expr->Iex.Binop.arg2, irbb, irout);
+	    return translate_MullS64(arg1, arg2, irout);
+	}
+
         // arg1 in this case, specifies rounding mode, and so is ignored
         case Iop_RoundF64toInt:
         case Iop_2xm1F64:
@@ -1493,7 +1999,7 @@ Stmt *translate_store( IRStmt *stmt, IRSB *irbb, vector<Stmt *> *irout )
 	// Split into two 64-bit stores
 	Exp *data_high, *data_low;
 	split_vector(data, &data_high, &data_low);
-	Exp *dest_h = _ex_add(ecl(dest), ex_const(8));
+	Exp *dest_h = _ex_add(ecl(dest), ex_addr_const(8));
 	irout->push_back(new Move(new Mem(dest, REG_64), data_low));
 	return new Move(new Mem(dest_h, REG_64), data_high);
     } else {
@@ -1515,8 +2021,17 @@ Stmt *translate_exit( IRStmt *stmt, IRSB *irbb, vector<Stmt *> *irout )
     assert(irbb);
     assert(irout);
 
-    // We assume the jump destination is always ever a 32 bit uint
-    assert(stmt->Ist.Exit.dst->tag == Ico_U32);
+    Addr64 dest_addr;
+
+    if (stmt->Ist.Exit.dst->tag == Ico_U32) {
+	// 32 bits, expected on 32-bit archs
+	dest_addr = stmt->Ist.Exit.dst->Ico.U32;
+    } else if (stmt->Ist.Exit.dst->tag == Ico_U64) {
+	// 64 bits, expected on x64
+	dest_addr = stmt->Ist.Exit.dst->Ico.U64;
+    } else {
+	panic("Unexpected destination address constant type");
+    }
 
     Exp *cond = translate_expr( stmt->Ist.Exit.guard, irbb, irout );
 
@@ -1528,7 +2043,7 @@ Stmt *translate_exit( IRStmt *stmt, IRSB *irbb, vector<Stmt *> *irout )
       return new Assert(new UnOp(NOT,cond));
     }
     
-    Name *dest = mk_dest_name( stmt->Ist.Exit.dst->Ico.U32 );
+    Name *dest = mk_dest_name( dest_addr );
     Label *next = mk_label();
 
     irout->push_back( new CJmp( cond, dest, new Name(next->label) ) );
@@ -2202,6 +2717,38 @@ int match_ite(vector<Stmt*> *ir, unsigned int i,
       *exp_f = ite->false_e;
     if (res)
       *res = s0->lhs;
+  } else if (i >= 2 &&
+	     ir->at(i-2)->stmt_type == MOVE &&
+	     ir->at(i-1)->stmt_type == MOVE &&
+	     ir->at(i)->stmt_type == MOVE) {
+      // Similar to the previous case, but with two intervening temps
+      Move *s0 = (Move *)ir->at(i-2);
+      Move *s1 = (Move *)ir->at(i-1);
+      Move *s2 = (Move *)ir->at(i);
+      if (s0->lhs->exp_type != TEMP ||
+	  s0->rhs->exp_type != ITE ||
+	  s1->lhs->exp_type != TEMP ||
+	  s1->rhs->exp_type != TEMP ||
+	  s2->lhs->exp_type != TEMP ||
+	  s2->rhs->exp_type != TEMP)
+	  return -1;
+      Temp *temp0l = (Temp *)s0->lhs;
+      Temp *temp1l = (Temp *)s1->lhs;
+      Temp *temp1r = (Temp *)s1->rhs;
+      Temp *temp2l = (Temp *)s2->lhs;
+      Temp *temp2r = (Temp *)s2->rhs;
+      if (temp0l->name != temp1r->name ||
+	  temp1l->name != temp2r->name)
+	  return -1;
+      Ite *ite = (Ite *)s0->rhs;
+      if (cond)
+	  *cond = ite->cond;
+      if (exp_t)
+	  *exp_t = ite->true_e;
+      if (exp_f)
+	  *exp_f = ite->false_e;
+      if (res)
+	  *res = temp2l;
   } else if (ir->at(i)->stmt_type == MOVE
       && ir->at(i+3)->stmt_type == MOVE
       && ir->at(i+2)->stmt_type == LABEL

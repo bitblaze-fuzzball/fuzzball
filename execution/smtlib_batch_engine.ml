@@ -209,7 +209,7 @@ class smtlib_batch_engine e_s_t fname = object(self)
 		    | Some ce -> ce | None -> failwith "Unexpected parse failure")]
 	      else
 		[] in
-	      let ce =
+	      let ce_list =
 		if e_s_t = Z3 then
 		  parse_z3_ce_lines (map_lines (fun s -> Some s) results)
 		else if e_s_t = MATHSAT then
@@ -218,7 +218,7 @@ class smtlib_batch_engine e_s_t fname = object(self)
 		  map_lines (parse_counterex e_s_t) results
 	      in
 		close_in results;
-		(result, first_assign @ ce)
+		(result, ce_from_list (first_assign @ ce_list))
 	  | _ ->
 	      Printf.eprintf "Solver died with result code %d\n" rcode;
 	      (match rcode with
@@ -234,7 +234,7 @@ class smtlib_batch_engine e_s_t fname = object(self)
 		 | 131 -> raise (Signal "QUIT")
 		 | _ -> ());
 	      ignore(Sys.command ("cat " ^ curr_fname ^ ".smt2.out"));
-	      (None, [])
+	      (None, (ce_from_list []))
 
   method after_query save_results =
     if save_results then

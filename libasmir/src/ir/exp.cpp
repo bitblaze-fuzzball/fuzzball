@@ -11,9 +11,8 @@ using namespace std;
 // in the string constructor. I couldn't tell whether that was a
 // real error or not, but I was able to make it go away (and presumably
 // save a trivial amount of time at startup) by constructing the
-// std::strings lazily. -SMcC
+// std::strings only on request. -SMcC
 
-// Do NOT change this. It is used in producing XML output.
 static const char *binopnames_strs[] = {
   "PLUS",
   "MINUS",
@@ -38,8 +37,9 @@ static const char *binopnames_strs[] = {
   "LE",
   "SDIVIDE",
   "SMOD",
+  "SLT",
+  "SLE",
 };
-static string *binopnames[sizeof(binopnames_strs)/sizeof(char *)];
 
 static const char *strs_strs[] = {
   "+",
@@ -65,8 +65,9 @@ static const char *strs_strs[] = {
   "<=",
   "/$",
   "%$",
+  "<$",
+  "<=$",
 };
-static string *strs[sizeof(strs_strs)/sizeof(char *)];
 
 uint64_t
 Exp::cast_value(reg_t t, uint64_t v)
@@ -85,6 +86,8 @@ Exp::cast_value(reg_t t, uint64_t v)
   }
   assert(0); // eliminates warnings.
 }
+
+reg_t reg_address_t;
 
 uint32_t 
 Exp::reg_to_bits(const reg_t &reg)
@@ -182,23 +185,19 @@ BinOp::tostring() const
 string
 BinOp::optype_to_string(const binop_type_t binop_type)
 {
-  if (!strs[binop_type])
-    strs[binop_type] = new string(strs_strs[binop_type]);
-  return *(strs[binop_type]);
+  return string(strs_strs[binop_type]);
 }
 
 string
 BinOp::optype_to_name(const binop_type_t binop_type)
 {
-  if (!binopnames[binop_type])
-    binopnames[binop_type] = new string(binopnames_strs[binop_type]);
-  return *(binopnames[binop_type]);
+  return string(binopnames_strs[binop_type]);
 }
 
 binop_type_t
 BinOp::string_to_optype(const string s)
 {
-  for(unsigned i = 0; i < sizeof(strs); i++){
+  for(unsigned i = 0; i < sizeof(strs_strs); i++){
     if(optype_to_string((binop_type_t)i) == s)
       return (binop_type_t) i;
   }
@@ -423,7 +422,7 @@ void FUnOp::destroy( FUnOp *expr )
 Mem::Mem(Exp *a)
   : Exp(MEM), addr(a)
 {
-  typ = REG_ADDRESS_T;
+  typ = reg_address_t;
 }
 */
 
@@ -670,12 +669,12 @@ void Unknown::destroy( Unknown *expr )
 
 Name::Name( string s ) : Exp(NAME), name(s)
 { 
-  //typ = REG_ADDRESS_T;
+  //typ = reg_address_t;
 }
 
 Name::Name( const Name &other ) : Exp(NAME), name(other.name)
 { 
-  //typ = REG_ADDRESS_T;
+  //typ = reg_address_t;
 }
 
 Name *
@@ -935,6 +934,10 @@ Constant *ex_const64(uint64_t value )
   return new Constant(REG_64, value);
 }
 
+Constant *ex_addr_const(int64_t value) {
+  return new Constant(reg_address_t, value);
+}
+
 Constant *ex_const(reg_t t, const_val_t value )
 {
     return new Constant(t, value);
@@ -953,8 +956,19 @@ UnOp *_ex_not( Exp *arg )
 
 UnOp *ex_not( Exp *arg )
 {
-  arg = arg->clone();
+    arg = arg->clone();
     return _ex_not(arg);
+}
+
+UnOp *_ex_neg( Exp *arg )
+{
+    return new UnOp(NEG, arg);
+}
+
+UnOp *ex_neg( Exp *arg )
+{
+    arg = arg->clone();
+    return _ex_neg(arg);
 }
 
 BinOp *_ex_add( Exp *arg1, Exp *arg2 )
@@ -1003,6 +1017,18 @@ BinOp *ex_div( Exp *arg1, Exp *arg2 )
   arg1 = arg1->clone();
   arg2 = arg2->clone();
   return _ex_div(arg1, arg2);
+}
+
+BinOp *_ex_mod( Exp *arg1, Exp *arg2 )
+{
+    return new BinOp(MOD, arg1, arg2);
+}
+
+BinOp *ex_mod( Exp *arg1, Exp *arg2 )
+{
+  arg1 = arg1->clone();
+  arg2 = arg2->clone();
+  return _ex_mod(arg1, arg2);
 }
 
 BinOp *_ex_and( Exp *arg1, Exp *arg2 )
@@ -1151,6 +1177,11 @@ BinOp *_ex_shl( Exp *arg1, Exp *arg2 )
     return new BinOp(LSHIFT, arg1, arg2);
 }
 
+BinOp *_ex_shl( Exp *arg1, int arg2 )
+{
+    return new BinOp(LSHIFT, arg1, ex_const(arg2));
+}
+
 BinOp *ex_shl( Exp *arg1, Exp *arg2 )
 {
     arg1 = arg1->clone();
@@ -1167,6 +1198,11 @@ BinOp *ex_shl( Exp *arg1, int arg2 )
 BinOp *_ex_shr( Exp *arg1, Exp *arg2 )
 {
     return new BinOp(RSHIFT, arg1, arg2);
+}
+
+BinOp *_ex_shr( Exp *arg1, int arg2 )
+{
+    return new BinOp(RSHIFT, arg1, ex_const(arg2));
 }
 
 BinOp *ex_shr( Exp *arg1, Exp *arg2 )
@@ -1231,6 +1267,11 @@ BinOp *ex_gt( Exp *arg1, Exp *arg2 )
     return new BinOp(GT, arg1, arg2);
 }
 
+BinOp *_ex_lt( Exp *arg1, Exp *arg2 )
+{
+    return new BinOp(LT, arg1, arg2);
+}
+
 BinOp *ex_lt( Exp *arg1, Exp *arg2 )
 {   
     arg1 = arg1->clone();
@@ -1245,11 +1286,40 @@ BinOp *ex_ge( Exp *arg1, Exp *arg2 )
     return new BinOp(GE, arg1, arg2);
 }
 
+BinOp *_ex_le( Exp *arg1, Exp *arg2 )
+{
+    return new BinOp(LE, arg1, arg2);
+}
+
 BinOp *ex_le( Exp *arg1, Exp *arg2 )
 {   
     arg1 = arg1->clone();
     arg2 = arg2->clone();
     return new BinOp(LE, arg1, arg2);
+}
+
+BinOp *_ex_slt( Exp *arg1, Exp *arg2 )
+{
+    return new BinOp(SLT, arg1, arg2);
+}
+
+BinOp *ex_slt( Exp *arg1, Exp *arg2 )
+{
+    arg1 = arg1->clone();
+    arg2 = arg2->clone();
+    return new BinOp(SLT, arg1, arg2);
+}
+
+BinOp *_ex_sle( Exp *arg1, Exp *arg2 )
+{
+    return new BinOp(SLE, arg1, arg2);
+}
+
+BinOp *ex_sle( Exp *arg1, Exp *arg2 )
+{
+    arg1 = arg1->clone();
+    arg2 = arg2->clone();
+    return new BinOp(SLE, arg1, arg2);
 }
 
 Cast *ex_u_cast( Exp *arg, reg_t width )

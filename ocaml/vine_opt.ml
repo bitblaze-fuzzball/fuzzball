@@ -419,6 +419,7 @@ let rec constant_fold ctx e =
     | Ite(((Constant(Int(_,_))) as cond), e1, e2) ->
 	if (bool_of_const cond) then e1 else e2
     | Ite(cond, e1, e1') when e1 = e1' -> e1
+    | Ite(UnOp(NOT, c), x, y) -> Ite(c, y, x)
     (* AND / OR with itself *)
     | BinOp(BITOR, x, y)
     | BinOp(BITAND, x, y)
@@ -449,12 +450,30 @@ let rec constant_fold ctx e =
 	    Constant(Int(REG_32, 0xffffff00L)))
 	when (Vine_typecheck.infer_type None e) = REG_8 ->
 	Constant(Int(REG_32, 0L))
-    (* byte >> amt = 0  when amt >= 8 *)
+    (* zero-extend shift by at least reg size gives zero *)
+    | BinOp((LSHIFT|RSHIFT), e, Constant(Int(_, amt)))
+	when (Vine_typecheck.infer_type None e) = REG_8 && amt >= 8L ->
+	Constant(Int(REG_8, 0L))
+    | BinOp((LSHIFT|RSHIFT), e, Constant(Int(_, amt)))
+	when (Vine_typecheck.infer_type None e) = REG_16 && amt >= 16L ->
+	Constant(Int(REG_16, 0L))
+    | BinOp((LSHIFT|RSHIFT), e, Constant(Int(_, amt)))
+	when (Vine_typecheck.infer_type None e) = REG_32 && amt >= 32L ->
+	Constant(Int(REG_32, 0L))
+    | BinOp((LSHIFT|RSHIFT), e, Constant(Int(_, amt)))
+	when (Vine_typecheck.infer_type None e) = REG_64 && amt >= 64L ->
+	Constant(Int(REG_64, 0L))
+    (* byte >> amt = 0  when amt >= 8: special case of above within larger word *)
     | BinOp(RSHIFT,
 	    Cast(CAST_UNSIGNED, REG_32, e),
 	    Constant(Int(_, amt)))
 	when (Vine_typecheck.infer_type None e) = REG_8 && amt >= 8L ->
 	Constant(Int(REG_32, 0L))
+    | BinOp(RSHIFT,
+	    Cast(CAST_UNSIGNED, REG_64, e),
+	    Constant(Int(_, amt)))
+	when (Vine_typecheck.infer_type None e) = REG_8 && amt >= 8L ->
+	Constant(Int(REG_64, 0L))
     (* (c ? k : k + 1) = (k + (int)c) *)
     | BinOp(BITOR,
 	    BinOp(BITAND, Cast(CAST_SIGNED, REG_32, c1),
@@ -466,6 +485,9 @@ let rec constant_fold ctx e =
 	      Cast(CAST_UNSIGNED, REG_32, c1))
     (* x + -x = 0 *)
     | BinOp(PLUS, x, UnOp(NEG, y)) when x = y ->
+	Constant(Int((Vine_typecheck.infer_type None x), 0L))
+    (* -x + x = 0 *)
+    | BinOp(PLUS, UnOp(NEG, x), y) when x = y ->
 	Constant(Int((Vine_typecheck.infer_type None x), 0L))
     (* x + x = x << 1 *)
     | BinOp(PLUS, x, y) when x = y ->

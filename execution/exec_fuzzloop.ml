@@ -31,7 +31,7 @@ let loop_w_stats count fn =
 	 let old_wtime = Unix.gettimeofday () and
              old_ctime = Sys.time () in
 	   if !opt_trace_iterations then 
-	     Printf.eprintf "Iteration %Ld:\n" !iter;
+	     Printf.eprintf "Iteration %Ld:\n%!" !iter;
 	   fn !iter;
 	   let wtime = Unix.gettimeofday() in
 	     if !opt_time_stats then

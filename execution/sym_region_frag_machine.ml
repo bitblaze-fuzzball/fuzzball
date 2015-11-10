@@ -24,21 +24,22 @@ struct
   module FormMan = FormulaManagerFunctor(D)
   module GM = GranularMemoryFunctor(D)
   module SPFM = SymPathFragMachineFunctor(D)
-    
+
+  (* Sign extend a typed constant to a 64-bit constant *)
+  let fix_s ty v =
+    match ty with
+      | V.REG_1 -> fix_s1 v
+      | V.REG_8 -> fix_s8 v
+      | V.REG_16 -> fix_s16 v
+      | V.REG_32 -> fix_s32 v
+      | V.REG_64 -> v
+      | _ -> failwith "Bad type in fix_s"
+
   let is_high_mask ty v =
     let is_power_of_2_or_zero x =
       Int64.logand x (Int64.pred x) = 0L
     in
-    let mask64 =
-      match ty with
-	| V.REG_1 -> fix_s1 v
-	| V.REG_8 -> fix_s8 v
-	| V.REG_16 -> fix_s16 v
-	| V.REG_32 -> fix_s32 v
-	| V.REG_64 -> v
-	| _ -> failwith "Bad type in is_high_mask"
-    in
-      is_power_of_2_or_zero (Int64.succ (Int64.lognot mask64))
+      is_power_of_2_or_zero (Int64.succ (Int64.lognot (fix_s ty v)))
 
   let floor_log2 i =
     let rec loop = function
@@ -46,14 +47,18 @@ struct
       | 1L -> 0
       | 2L|3L -> 1
       | 4L|5L|6L|7L -> 2
-      | i when i < 16L -> 2 + loop(Int64.shift_right i 2)
-      | i when i < 256L -> 4 + loop(Int64.shift_right i 4)
-      | i when i < 65536L -> 8 + loop(Int64.shift_right i 8)
-      | i when i < 0x100000000L -> 16 + loop(Int64.shift_right i 16)
-      | _ -> 32 + loop(Int64.shift_right i 32)
+      | i when i < 16L -> 2 + loop(Int64.shift_right_logical i 2)
+      | i when i < 256L -> 4 + loop(Int64.shift_right_logical i 4)
+      | i when i < 65536L -> 8 + loop(Int64.shift_right_logical i 8)
+      | i when i < 0x100000000L -> 16 + loop(Int64.shift_right_logical i 16)
+      | _ -> 32 + loop(Int64.shift_right_logical i 32)
     in
       loop i
 
+  (* Conservatively anayze the smallest number of non-zero
+     least-significant bits into which a value will fit. This is a fairly
+     quick way to tell if an expression could be an index, or to give a
+     bound on the size of a table. *)
   let narrow_bitwidth form_man e =
     let combine wd res = min wd res in
     let f loop e =
@@ -109,6 +114,63 @@ struct
 	    failwith "Unhandled string in narrow_bitwidth"
 	| V.Unknown(_) ->
 	    failwith "Unhandled unknown in narrow_bitwidth"
+    in
+      FormMan.map_expr_temp form_man e f combine
+
+  (* Similar to narrow_bitwidth, but count negative numbers of small
+     absolute value (i.e. with many leading 1s) as narrow as well. I
+     can't decide whether this would work better as a single function
+     with a flag: some of the cases are similar, but others aren't. *)
+  let narrow_bitwidth_signed form_man e =
+    let combine wd res = min wd res in
+    let f loop = function
+      | V.Constant(V.Int(ty, v)) ->
+	  min (1 + floor_log2 v)
+	    (1 + floor_log2 (Int64.neg (fix_s ty v)))
+      | V.BinOp(V.BITAND, e1, e2) -> max (loop e1) (loop e2)
+      | V.BinOp(V.BITOR, e1, e2) -> max (loop e1) (loop e2)
+      | V.BinOp(V.XOR, e1, e2) -> max (loop e1) (loop e2)
+      | V.BinOp(V.PLUS, e1, e2) -> 1 + (max (loop e1) (loop e2))
+      | V.BinOp(V.TIMES, e1, e2) -> (loop e1) + (loop e2)
+      | V.BinOp(V.MOD, e1, e2) -> min (loop e1) (loop e2)
+      | V.BinOp(V.SMOD, e1, e2) -> min (loop e1) (loop e2)
+      | V.Cast((V.CAST_UNSIGNED|V.CAST_LOW|V.CAST_SIGNED), V.REG_32, e1)
+	-> min 32 (loop e1)
+      | V.Cast((V.CAST_UNSIGNED|V.CAST_LOW|V.CAST_SIGNED), V.REG_16, e1)
+	-> min 16 (loop e1)
+      | V.Cast((V.CAST_UNSIGNED|V.CAST_LOW|V.CAST_SIGNED), V.REG_8, e1)
+	-> min 8  (loop e1)
+      | V.Cast((V.CAST_UNSIGNED|V.CAST_LOW|V.CAST_SIGNED), V.REG_1, e1)
+	-> min 1  (loop e1)
+      | V.Cast(_, V.REG_32, _) -> 32
+      | V.Cast(_, V.REG_16, _) -> 16
+      | V.Cast(_, V.REG_8, _) -> 8
+      | V.Cast(_, V.REG_1, _) -> 1
+      | V.Cast(_, _, _) ->
+	  V.bits_of_width (Vine_typecheck.infer_type_fast e)
+      | V.Lval(V.Mem(_, _, V.REG_8))  ->  8
+      | V.Lval(V.Mem(_, _, V.REG_16)) -> 16
+      | V.Lval(V.Mem(_, _, V.REG_32)) -> 32
+      | V.Lval(V.Mem(_, _, _))
+      | V.Lval(V.Temp(_)) ->
+	  V.bits_of_width (Vine_typecheck.infer_type_fast e)
+      | V.BinOp((V.EQ|V.NEQ|V.LT|V.LE|V.SLT|V.SLE), _, _) -> 1
+      | V.BinOp(V.LSHIFT, e1, V.Constant(V.Int(_, v))) ->
+	  (loop e1) + (Int64.to_int v)
+      | V.BinOp(_, _, _) ->
+	  V.bits_of_width (Vine_typecheck.infer_type_fast e)
+      | V.Ite(_, te, fe) -> max (loop te) (loop fe)
+      | V.UnOp(_)
+      | V.Let(_, _, _)
+      | V.Name(_)
+      | V.FBinOp(_, _, _, _)
+      | V.FUnOp(_, _, _)
+      | V.FCast(_, _, _, _) ->
+	  V.bits_of_width (Vine_typecheck.infer_type_fast e)
+      | V.Constant(V.Str(_)) ->
+	  failwith "Unhandled string in narrow_bitwidth_signed"
+      | V.Unknown(_) ->
+	  failwith "Unhandled unknown in narrow_bitwidth_signed"
     in
       FormMan.map_expr_temp form_man e f combine
 
@@ -209,6 +271,9 @@ struct
       | V.Constant(V.Int(V.REG_32, off))
 	  when (Int64.abs (fix_s32 off)) < 0x4000L
 	    -> ConstantOffset(off)
+      | V.Constant(V.Int(V.REG_64, off))
+	  when (Int64.abs off) < 0x4000L
+	    -> ConstantOffset(off)
       | V.Constant(V.Int(V.REG_32, off)) when (fix_s32 off) > 0x8000000L
 	  -> ConstantBase(off)
       | V.Constant(V.Int(V.REG_32, off))
@@ -240,7 +305,7 @@ struct
 	  when off >= 0x80000000L && off < 0xffffffffL
 	    (* XXX let Windows 7 wander over the whole top half *)
 	  -> ConstantBase(off)
-      | V.Constant(V.Int(V.REG_32, off))
+      | V.Constant(V.Int((V.REG_32|V.REG_64), off))
 	    (* XXX -random-memory can produce any value at all *)
 	  -> ConstantBase(off)
       | V.UnOp(V.NEG, _) -> ExprOffset(e)
@@ -253,6 +318,8 @@ struct
       | V.Cast(V.CAST_SIGNED, _, x)
 	  when (narrow_bitwidth form_man x) < 23
 	    -> ExprOffset(e)
+      | e when (narrow_bitwidth_signed form_man e) < 23
+	  -> ExprOffset(e)
       | V.BinOp(V.ARSHIFT, _, _)
 	  -> ExprOffset(e)
       | V.BinOp(V.RSHIFT, _, _)
@@ -810,11 +877,15 @@ struct
 	  | _ -> failwith "multiple bases"
 
     method eval_addr_exp_region exp =
+      let (to_concrete, to_symbolic) = match !opt_arch with
+	| (X86|ARM) -> (D.to_concrete_32, D.to_symbolic_32)
+	| X64       -> (D.to_concrete_64, D.to_symbolic_64)
+      in
       let v = self#eval_int_exp_simplify exp in
 	try
-	  (Some 0, D.to_concrete_32 v)
+	  (Some 0, to_concrete v)
 	with NotConcrete _ ->
-	  let e = D.to_symbolic_32 v in
+	  let e = to_symbolic v in
 	  let eip = self#get_eip in
 	    if !opt_trace_sym_addrs then
 	      Printf.eprintf "Symbolic address %s @ (0x%Lx)\n"
@@ -893,6 +964,16 @@ struct
 	    (Printf.eprintf "Measuring symbolic %s influence..." name;
 	     infl_man#measure_point_influence name e);
 	  self#concretize V.REG_32 e
+
+    method get_long_var_concretize reg do_influence name : int64 =
+      let v = self#get_int_var (Hashtbl.find reg_to_var reg) in
+      try (D.to_concrete_64 v)
+      with NotConcrete _ ->
+	let e = D.to_symbolic_64 v in
+	  if do_influence then
+	    (Printf.printf "Measuring symbolic %s influence..." name;
+	     infl_man#measure_point_influence name e);
+	  self#concretize V.REG_64 e
 
     method load_word_concretize addr do_influence name =
       let v = self#load_word addr in
@@ -1335,7 +1416,9 @@ struct
 	   | V.REG_64 -> form_man#simplify64 (self#load_long_region  r addr)
 	   | _ -> failwith "Unsupported memory type") in
 	(if !opt_trace_loads then
-	  (Printf.eprintf "Load from %s "
+	  (if !opt_trace_eval then
+	       Printf.eprintf "    "; (* indent to match other details *)
+	   Printf.printf "eLoad from %s "
 	     (match r with
 		| None -> "sink"
 		| Some 0 -> "conc. mem"
@@ -1725,7 +1808,9 @@ struct
 		   addr_derefed = addr;});
 	if !opt_trace_stores then
 	  if not (ty = V.REG_8 && r = None) then
-	    (Printf.eprintf "Store to %s "
+	    (if !opt_trace_eval then
+	       Printf.eprintf "    "; (* indent to match other details *)
+	     Printf.eprintf "Store to %s "
 	       (match r with
 		  | None -> "sink"
 		  | Some 0 -> "conc. mem"

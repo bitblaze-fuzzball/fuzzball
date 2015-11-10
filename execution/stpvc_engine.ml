@@ -86,7 +86,7 @@ class stpvc_engine = object(self)
     (* Printf.eprintf "STP formula is %s\n" (Stpvc.to_string s);
        flush stdout; *)
     let result = Stpvc.query vc s in
-    let ce = if result then [] else
+    let ce_list = if result then [] else
       (* Strategy 1: getTrueCounterExample. A custom interface that Vine
 	 has patched into STP for a while, but I don't know the reason
 	 why it's desirable. Probably better to avoid.
@@ -152,7 +152,7 @@ class stpvc_engine = object(self)
 		free_vars))
     in
       the_query <- Some s;
-      ((Some result), ce)
+      ((Some result), ce_from_list ce_list)
 
   val mutable filenum = 0
 

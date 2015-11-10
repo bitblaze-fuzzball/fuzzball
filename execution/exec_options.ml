@@ -146,6 +146,7 @@ let opt_skip_call_addr_symbol = ref []
 let opt_skip_func_addr_symbol = ref []
 let opt_skip_call_addr_region = ref []
 let opt_skip_func_addr_region = ref []
+let opt_skip_call_addr_symbol_once = ref []
 let opt_trace_eip = ref false
 let opt_trace_unique_eips = ref false
 let opt_trace_ir = ref false
@@ -273,6 +274,8 @@ let convert_string_to_veritesting str =
 let set_opt_veritesting str =
   opt_veritesting := (convert_string_to_veritesting str)
 
+let opt_trace_stmts = ref false
+let opt_trace_eval = ref false
 
 let asmir_arch () =
   asmir_arch_of_execution_arch !opt_arch

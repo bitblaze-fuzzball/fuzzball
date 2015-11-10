@@ -8,6 +8,11 @@ open Fragment_machine
 open Linux_syscalls
 open Exec_assert_minder
 
+(* Our versions of ELF structures use int64 for any value that is
+   either always 32 bits, or 32 or 64 depending on the architecture. This
+   fits with FuzzBALL's general strategy of not bothering with int32s,
+   and also means we don't need separate 32-bit and 64-bit structure
+   versions. *)
 type elf_header = {
   eh_type : int;
   machine : int;
@@ -54,51 +59,97 @@ let read_ui32 i =
 let read_elf_header ic =
   let i = IO.input_channel ic in
   let ident = IO.really_nread i 16 in
-    g_assert(ident = "\x7fELF\001\001\001\000\000\000\000\000\000\000\000\000" ||
-	ident = "\x7fELF\001\001\001\003\000\000\000\000\000\000\000\000") 100 "Linux_loader.read_elf_header";
-    (* OCaml structure initialization isn't guaranteed to happen
-       left to right, so we need to use a bunch of lets here: *)
-    let eh_type = IO.read_ui16 i in
-    let machine = IO.read_ui16 i in
-    let version = read_ui32 i in
-    let entry = read_ui32 i in
-    let phoff = read_ui32 i in
-    let shoff = read_ui32 i in
-    let eh_flags = read_ui32 i in
-    let ehsize = IO.read_ui16 i in
-    let phentsize = IO.read_ui16 i in
-    let phnum = IO.read_ui16 i in
-    let shentsize = IO.read_ui16 i in
-    let shnum = IO.read_ui16 i in
-    let shstrndx = IO.read_ui16 i in
-    let eh = {
-      eh_type = eh_type; machine = machine; version = version;
-      entry = entry; phoff = phoff; shoff = shoff; eh_flags = eh_flags;
-      ehsize = ehsize; phentsize = phentsize; phnum = phnum;
-      shentsize = shentsize; shnum = shnum; shstrndx = shstrndx }
-    in
-      g_assert(eh.ehsize = 16 + 36) 100 "Linux_loader.read_elf_header";
-      eh
+    match ident with
+      | ("\x7fELF\001\001\001\000\000\000\000\000\000\000\000\000"|
+	 "\x7fELF\001\001\001\003\000\000\000\000\000\000\000\000") ->
+	  (* 32-bit *)
+	  (* OCaml structure initialization isn't guaranteed to happen
+	     left to right, so we need to use a bunch of lets here: *)
+	  let eh_type = IO.read_ui16 i in
+	  let machine = IO.read_ui16 i in
+	  let version = read_ui32 i in
+	  let entry = read_ui32 i in
+	  let phoff = read_ui32 i in
+	  let shoff = read_ui32 i in
+	  let eh_flags = read_ui32 i in
+	  let ehsize = IO.read_ui16 i in
+	  let phentsize = IO.read_ui16 i in
+	  let phnum = IO.read_ui16 i in
+	  let shentsize = IO.read_ui16 i in
+	  let shnum = IO.read_ui16 i in
+	  let shstrndx = IO.read_ui16 i in
+	  let eh = {
+	    eh_type = eh_type; machine = machine; version = version;
+	    entry = entry; phoff = phoff; shoff = shoff; eh_flags = eh_flags;
+	    ehsize = ehsize; phentsize = phentsize; phnum = phnum;
+	    shentsize = shentsize; shnum = shnum; shstrndx = shstrndx }
+	  in
+	    g_assert(eh.ehsize = 16 + 36) 100 "Linux_loader.read_elf_header";
+	    eh
+      | ("\x7fELF\x02\x01\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00"|
+         "\x7fELF\x02\x01\x01\x03\x00\x00\x00\x00\x00\x00\x00\x00") ->
+	  (* 64-bit *)
+	  let eh_type = IO.read_ui16 i in
+	  let machine = IO.read_ui16 i in
+	  let version = read_ui32 i in
+	  let entry = IO.read_i64 i in
+	  let phoff = IO.read_i64 i in
+	  let shoff = IO.read_i64 i in
+	  let eh_flags = read_ui32 i in
+	  let ehsize = IO.read_ui16 i in
+	  let phentsize = IO.read_ui16 i in
+	  let phnum = IO.read_ui16 i in
+	  let shentsize = IO.read_ui16 i in
+	  let shnum = IO.read_ui16 i in
+	  let shstrndx = IO.read_ui16 i in
+	  let eh = {
+	    eh_type = eh_type; machine = machine; version = version;
+	    entry = entry; phoff = phoff; shoff = shoff; eh_flags = eh_flags;
+	    ehsize = ehsize; phentsize = phentsize; phnum = phnum;
+	    shentsize = shentsize; shnum = shnum; shstrndx = shstrndx }
+	  in
+	    g_assert(eh.ehsize = 16 + 48) 100 "Linux_loader.read_elf_header";
+	    eh
+      | _ ->
+	  failwith "Unrecognized identification bytes in ELF file"
 
 let read_program_headers ic eh =
-  g_assert(eh.phentsize = 32) 100 "Linux_loader.read_program_headers";
+  g_assert(eh.phentsize = 32 || eh.phentsize = 56) 100 "Linux_loader.read_program_headers";
+  assert(eh.phentsize = 32 || eh.phentsize = 56);
   seek_in ic (Int64.to_int eh.phoff);
   let i = IO.input_channel ic in
     ExtList.List.init eh.phnum
-      (fun _ -> 
-	 let ph_type = read_ui32 i in
-	 let offset = read_ui32 i in
-	 let vaddr = read_ui32 i in
-	 let paddr = read_ui32 i in
-	 let filesz = read_ui32 i in
-	 let memsz = read_ui32 i in
-	 let ph_flags = read_ui32 i in
-	 let align = read_ui32 i in
-	   { ph_type = ph_type; offset = offset; vaddr = vaddr;
-	     paddr = paddr; filesz = filesz; memsz = memsz;
-	     ph_flags = ph_flags;
-	     align = align
-	   })
+      (fun _ ->
+	 match eh.phentsize with
+	   | 32 -> (* 32-bit *)
+	       let ph_type = read_ui32 i in
+	       let offset = read_ui32 i in
+	       let vaddr = read_ui32 i in
+	       let paddr = read_ui32 i in
+	       let filesz = read_ui32 i in
+	       let memsz = read_ui32 i in
+	       let ph_flags = read_ui32 i in
+	       let align = read_ui32 i in
+		 { ph_type = ph_type; offset = offset; vaddr = vaddr;
+		   paddr = paddr; filesz = filesz; memsz = memsz;
+		   ph_flags = ph_flags;
+		   align = align
+		 }
+	   | 56 -> (* 64-bit, n.b. slightly different order *)
+	       let ph_type = read_ui32 i in
+	       let ph_flags = read_ui32 i in
+	       let offset = IO.read_i64 i in
+	       let vaddr = IO.read_i64 i in
+	       let paddr = IO.read_i64 i in
+	       let filesz = IO.read_i64 i in
+	       let memsz = IO.read_i64 i in
+	       let align = IO.read_i64 i in
+		 { ph_type = ph_type; offset = offset; vaddr = vaddr;
+		   paddr = paddr; filesz = filesz; memsz = memsz;
+		   ph_flags = ph_flags;
+		   align = align
+		 }
+	   | _ -> failwith "Unsupported program header size")
 
 let store_page fm vaddr str =
   if Int64.rem vaddr 0x1000L = 0L && (String.length str) = 4096 then
@@ -211,7 +262,10 @@ let load_ldso fm dso vaddr =
 	     load_segment fm ic phr !vaddr false)
 	phrs;
       close_in ic;
-      Int64.add !vaddr dso_eh.entry
+      let r = Int64.add !vaddr dso_eh.entry in
+	if !opt_trace_setup then
+	  Printf.printf "Finished ldso loading, entry at 0x%08Lx\n" r;
+	r
 
 let load_x87_emulator fm emulator =
   let ic = open_in emulator in
@@ -235,8 +289,13 @@ let build_startup_state (fm : Fragment_machine.fragment_machine) eh load_base ld
     !esp
   in
   let push_word i =
-    esp := Int64.sub !esp 4L;
-    fm#store_word_conc !esp i
+    match !opt_arch with
+      | (X86|ARM) ->
+	  esp := Int64.sub !esp 4L;
+	  fm#store_word_conc !esp i
+      | X64 ->
+	  esp := Int64.sub !esp 8L;
+	  fm#store_long_conc !esp i
   in
   let zero_pad_to new_sp =
     let old_sp = !esp in
@@ -304,9 +363,14 @@ let build_startup_state (fm : Fragment_machine.fragment_machine) eh load_base ld
     (* Arrange so that the program's initial %esp is page-aligned, and
        therefore unlikely to change with changes in argv or the
        environment. *)
-  let ptrs_len = 4 * (2 * ((List.length auxv) + ((List.length auxv) mod 2))
-		      + 1 + (List.length env_locs)
-		      + 1 + (List.length argv) + 1) in
+  let ptr_size = match !opt_arch with
+    | (X86|ARM) -> 4
+    | X64 -> 8
+  in
+  let ptrs_len =
+    ptr_size * (2 * ((List.length auxv) + ((List.length auxv) mod 2))
+		+ 1 + (List.length env_locs)
+		+ 1 + (List.length argv) + 1) in
     zero_pad_to (Int64.logand !esp (Int64.lognot 0xfL)); (* 16-byte align *)
     let pad_to = Int64.logand (Int64.sub !esp 0x2000L) (Int64.lognot 0xfffL) in
       zero_pad_to (Int64.add pad_to (Int64.of_int ptrs_len));
@@ -319,13 +383,11 @@ let build_startup_state (fm : Fragment_machine.fragment_machine) eh load_base ld
       List.iter push_word (List.rev argv_locs);
       push_word (Int64.of_int (List.length argv)); (* argc *)
       if !opt_trace_setup then
-	Printf.eprintf "Initial ESP is 0x%08Lx\n" !esp;
-      let sp = match !opt_arch with
-	| X86 -> R_ESP
-	| X64 -> R_RSP
-	| ARM -> R13
-      in
-	fm#set_word_var sp !esp      
+	Printf.eprintf "Initial stack pointer is 0x%08Lx\n" !esp;
+      match !opt_arch with
+	| X86 -> fm#set_word_var R_ESP !esp
+	| ARM -> fm#set_word_var R13 !esp
+	| X64 -> fm#set_long_var R_RSP !esp
 
 let load_dynamic_program (fm : fragment_machine) fname load_base
     data_too do_setup extras argv =
@@ -340,6 +402,8 @@ let load_dynamic_program (fm : fragment_machine) fname load_base
     | _ -> failwith "Unhandled ELF object type"
   in
     initial_break := None;
+    if !opt_trace_setup then
+      Printf.printf "Loading executable from %s\n" (chroot fname);
     entry_point := eh.entry;
     List.iter
       (fun phr ->

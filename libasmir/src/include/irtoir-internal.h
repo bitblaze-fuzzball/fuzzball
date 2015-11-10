@@ -36,6 +36,10 @@ Exp *translate_expr( IRExpr *expr, IRSB *irbb, vector<Stmt *> *irout );
 
 string get_op_str(asm_program_t *prog, Instruction *inst );
 
+void split_vector(Exp *exp_v, Exp **high, Exp **low);
+Exp *translate_MullU64(Exp *arg1, Exp *arg2, vector<Stmt *> *irout);
+Exp *translate_MullS64(Exp *arg1, Exp *arg2, vector<Stmt *> *irout);
+
 Exp *emit_ite(vector<Stmt *> *irout, reg_t type,
 	      Exp *cond, Exp *exp_t, Exp *exp_f);
 int match_ite(vector<Stmt*> *ir, unsigned int i,

@@ -26,7 +26,7 @@ type register_name =
   | R_FPREG4 | R_FPREG5 | R_FPREG6 | R_FPREG7
   | R_FPTAG0 | R_FPTAG1 | R_FPTAG2 | R_FPTAG3
   | R_FPTAG4 | R_FPTAG5 | R_FPTAG6 | R_FPTAG7
-  (* SSE, currently only supported on x86: *)
+  (* SSE, 32-bit-x86-style 128 bit: *)
   | R_XMM0L | R_XMM0H | R_XMM1L | R_XMM1H | R_XMM2L | R_XMM2H
   | R_XMM3L | R_XMM3H | R_XMM4L | R_XMM4H | R_XMM5L | R_XMM5H
   | R_XMM6L | R_XMM6H | R_XMM7L | R_XMM7H
@@ -37,6 +37,24 @@ type register_name =
   | R_RBP | R_RSP | R_RSI | R_RDI | R_RIP | R_RAX | R_RBX | R_RCX | R_RDX
   | R_R8 | R_R9 | R_R10 | R_R11 | R_R12 | R_R13 | R_R14 | R_R15
   | R_RFLAGSREST
+  | R_FS_BASE | R_GS_BASE
+  (* SSE, x64-style expanded: *)
+  | R_YMM0_0 | R_YMM0_1 | R_YMM0_2 | R_YMM0_3
+  | R_YMM1_0 | R_YMM1_1 | R_YMM1_2 | R_YMM1_3
+  | R_YMM2_0 | R_YMM2_1 | R_YMM2_2 | R_YMM2_3
+  | R_YMM3_0 | R_YMM3_1 | R_YMM3_2 | R_YMM3_3
+  | R_YMM4_0 | R_YMM4_1 | R_YMM4_2 | R_YMM4_3
+  | R_YMM5_0 | R_YMM5_1 | R_YMM5_2 | R_YMM5_3
+  | R_YMM6_0 | R_YMM6_1 | R_YMM6_2 | R_YMM6_3
+  | R_YMM7_0 | R_YMM7_1 | R_YMM7_2 | R_YMM7_3
+  | R_YMM8_0 | R_YMM8_1 | R_YMM8_2 | R_YMM8_3
+  | R_YMM9_0 | R_YMM9_1 | R_YMM9_2 | R_YMM9_3
+  | R_YMM10_0 | R_YMM10_1 | R_YMM10_2 | R_YMM10_3
+  | R_YMM11_0 | R_YMM11_1 | R_YMM11_2 | R_YMM11_3
+  | R_YMM12_0 | R_YMM12_1 | R_YMM12_2 | R_YMM12_3
+  | R_YMM13_0 | R_YMM13_1 | R_YMM13_2 | R_YMM13_3
+  | R_YMM14_0 | R_YMM14_1 | R_YMM14_2 | R_YMM14_3
+  | R_YMM15_0 | R_YMM15_1 | R_YMM15_2 | R_YMM15_3
   (* ARM *)
   | R0 | R1 |  R2 |  R3 |  R4 |  R5 |  R6 |  R7
   | R8 | R9 | R10 | R11 | R12 | R13 | R14 | R15 | R15T
@@ -224,7 +242,7 @@ class virtual fragment_machine : object
 
   method virtual eval_expr_to_symbolic_expr : Vine.exp -> Vine.exp
 
-  method virtual eval_expr_from_ce : (string * int64) list -> Vine.exp -> int64
+  method virtual eval_expr_from_ce : Query_engine.sat_assign -> Vine.exp -> int64
 
   method virtual watchpoint : unit
 
@@ -235,7 +253,7 @@ class virtual fragment_machine : object
   method virtual set_query_engine : Query_engine.query_engine -> unit
 
   method virtual query_with_path_cond : Vine.exp -> bool
-    -> (bool * (string * int64) list)
+    -> (bool * Query_engine.sat_assign)
 
   method virtual match_input_var : string -> int option
 
@@ -254,6 +272,8 @@ class virtual fragment_machine : object
     register_name -> int64 -> int64 -> unit
 
   method virtual get_word_var_concretize :
+    register_name -> bool -> string -> int64
+  method virtual get_long_var_concretize :
     register_name -> bool -> string -> int64
 
   method virtual load_byte_concretize  : int64 -> bool -> string -> int
@@ -489,7 +509,7 @@ sig
 
     method eval_expr_to_symbolic_expr : Vine.exp -> Vine.exp
 
-    method eval_expr_from_ce : (string * int64) list -> Vine.exp -> int64
+    method eval_expr_from_ce : Query_engine.sat_assign -> Vine.exp -> int64
 
     method watchpoint : unit
 
@@ -507,7 +527,7 @@ sig
     method get_path_cond : Vine.exp list
     method set_query_engine : Query_engine.query_engine -> unit
     method query_with_path_cond : Vine.exp -> bool
-      -> (bool * (string * int64) list)
+      -> (bool * Query_engine.sat_assign)
     method match_input_var : string -> int option
     method print_tree : out_channel -> unit
     method set_iter_seed : int -> unit
@@ -518,6 +538,8 @@ sig
     method store_word_special_region :
       register_name -> int64 -> int64 -> unit
     method get_word_var_concretize :
+      register_name -> bool -> string -> int64
+    method get_long_var_concretize :
       register_name -> bool -> string -> int64
     method load_byte_concretize  : int64 -> bool -> string -> int
     method load_short_concretize : int64 -> bool -> string -> int

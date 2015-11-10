@@ -19,9 +19,10 @@ enum exp_type_t {
 
 enum reg_t { REG_1, REG_8, REG_16, REG_32, REG_64 };
 
-// The size of an address.
-#define REG_ADDRESS_T  REG_32
-
+// The size of an address. This was formely a #define, but it now
+// needs to be a variable so that it can be REG_32 when translating
+// 32-bit code and REG_64 for x64 code.
+extern enum reg_t reg_address_t;
 
 // Stuff in BinOp
   /// IMPORTANT: If you add/remove anything from this, you must
@@ -34,7 +35,7 @@ enum binop_type_t {
   LROTATE,  RROTATE,  LOGICAND, LOGICOR,
   BITAND,  BITOR,       XOR,      EQ,
   NEQ,  GT,       LT,       GE,
-  LE, SDIVIDE, SMOD    };
+  LE, SDIVIDE, SMOD, SLT, SLE };
 
 enum fbinop_type_t {
   FPLUS = 0, FMINUS, FTIMES, FDIVIDE,
@@ -393,10 +394,13 @@ Exp *ecl( Exp *exp );
 //Constant *_ex_const( Constant co );
 Constant *ex_const(uint32_t value);
 Constant *ex_const64(uint64_t value);
+Constant *ex_addr_const(int64_t value);
 Constant *ex_const(reg_t t, const_val_t value );
 Name *ex_name( string name );
 UnOp *_ex_not( Exp *arg );
 UnOp *ex_not( Exp *arg );
+UnOp *_ex_neg( Exp *arg );
+UnOp *ex_neg( Exp *arg );
 BinOp *_ex_add( Exp *arg1, Exp *arg2 );
 BinOp *ex_add( Exp *arg1, Exp *arg2 );
 BinOp *_ex_sub( Exp *arg1, Exp *arg2 );
@@ -405,6 +409,8 @@ BinOp *_ex_mul( Exp *arg1, Exp *arg2 );
 BinOp *ex_mul( Exp *arg1, Exp *arg2 );
 BinOp *_ex_div( Exp *arg1, Exp *arg2 );
 BinOp *ex_div( Exp *arg1, Exp *arg2 );
+BinOp *_ex_mod( Exp *arg1, Exp *arg2 );
+BinOp *ex_mod( Exp *arg1, Exp *arg2 );
 BinOp *_ex_and( Exp *arg1, Exp *arg2 );
 BinOp *_ex_and( Exp *arg1, Exp *arg2, Exp *arg3 );
 BinOp *_ex_and( Exp *arg1, Exp *arg2, Exp *arg3, Exp *arg4, Exp *arg5, Exp *arg6, Exp *arg7 );
@@ -428,9 +434,11 @@ BinOp *_ex_xor( Exp *arg1, Exp *arg2, Exp *arg3, Exp *arg4,
 BinOp *ex_xor( Exp *arg1, Exp *arg2 );
 BinOp *ex_xor( Exp *arg1, Exp *arg2, Exp *arg3 );
 BinOp *_ex_shl( Exp *arg1, Exp *arg2 );
+BinOp *_ex_shl( Exp *arg1, int arg2 );
 BinOp *ex_shl( Exp *arg1, Exp *arg2 );
 BinOp *ex_shl( Exp *arg1, int arg2 );
 BinOp *_ex_shr( Exp *arg1, Exp *arg2 );
+BinOp *_ex_shr( Exp *arg1, int arg2 );
 BinOp *ex_shr( Exp *arg1, Exp *arg2 );
 BinOp *ex_shr( Exp *arg1, int arg2 );
 BinOp *_ex_sar( Exp *arg1, Exp *arg2 );
@@ -441,9 +449,15 @@ BinOp *ex_eq( Exp *arg1, Exp *arg2 );
 BinOp *_ex_neq( Exp *arg1, Exp *arg2 );
 BinOp *ex_neq( Exp *arg1, Exp *arg2 );
 BinOp *ex_gt( Exp *arg1, Exp *arg2 );
+BinOp *_ex_lt( Exp *arg1, Exp *arg2 );
 BinOp *ex_lt( Exp *arg1, Exp *arg2 );
 BinOp *ex_ge( Exp *arg1, Exp *arg2 );
+BinOp *_ex_le( Exp *arg1, Exp *arg2 );
 BinOp *ex_le( Exp *arg1, Exp *arg2 );
+BinOp *_ex_slt( Exp *arg1, Exp *arg2 );
+BinOp *ex_slt( Exp *arg1, Exp *arg2 );
+BinOp *_ex_sle( Exp *arg1, Exp *arg2 );
+BinOp *ex_sle( Exp *arg1, Exp *arg2 );
 Cast *ex_u_cast( Exp *arg, reg_t r );
 Cast *_ex_u_cast( Exp *arg, reg_t r );
 Cast *ex_s_cast( Exp *arg, reg_t r );

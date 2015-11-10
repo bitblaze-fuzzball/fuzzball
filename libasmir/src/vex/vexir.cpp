@@ -53,8 +53,8 @@ Int                 tmpbuf_used;
 // within the callback (instrument1)
 IRSB *irbb_current = NULL;
 
-// These choices are somewhat arbitrary. Our translation doesn't yet
-// support any level of SSE, but it's helpful in debugging for VEX to
+// These choices are somewhat arbitrary. Our translation of SSE is
+// far from complete, but it's helpful in debugging for VEX to
 // give its semantics for an instruction, even if we can't translate
 // them, rather than claiming that the instruction is illegal.
 #ifndef VEX_HWCAPS_X86_MMXEXT /* Added in r2745 */
@@ -273,6 +273,11 @@ void translate_init()
     vta.disp_cp_chain_me_to_fastEP = 0;
     vta.disp_cp_xindir             = 0;
 #endif
+#if VEX_VERSION >= 1689
+    /* At last check the default values are all zero bits, so this is
+       a no-op. But it can't hurt. */
+    LibVEX_default_VexAbiInfo(&vta.abiinfo_both);
+#endif
 
 }
 
@@ -287,9 +292,18 @@ IRSB *translate_insn( VexArch guest,
     VexArchInfo vai_guest;
     LibVEX_default_VexArchInfo(&vai_guest);
     switch (guest) {
-    case VexArchX86:   vai_guest.hwcaps = X86_HWCAPS;   break;
-    case VexArchAMD64: vai_guest.hwcaps = AMD64_HWCAPS; break;
-    case VexArchARM:   vai_guest.hwcaps = ARM_HWCAPS;   break;
+    case VexArchX86:
+      vai_guest.hwcaps = X86_HWCAPS;
+      reg_address_t = REG_32;
+      break;
+    case VexArchAMD64:
+      vai_guest.hwcaps = AMD64_HWCAPS;
+      reg_address_t = REG_64;
+      break;
+    case VexArchARM:
+      vai_guest.hwcaps = ARM_HWCAPS;
+      reg_address_t = REG_32;
+      break;
     default:           assert(0); /* unsupported arch. */
     }
 
@@ -307,6 +321,23 @@ IRSB *translate_insn( VexArch guest,
       vta.guest_bytes++;
       vta.guest_bytes_addr |= 1;
     }
+
+
+#if VEX_VERSION >= 1689
+    if (guest == VexArchAMD64) {
+      // the only supported value
+      vta.abiinfo_both.guest_stack_redzone_size = 128;
+
+#if VEX_VERSION >= 1875
+      // Allow both %fs and %gs overrides. This doesn't really assume
+      // the partuclar values implied by the field names, just that we
+      // will always be able to get the base address out of the guest
+      // state.
+      vta.abiinfo_both.guest_amd64_assume_fs_is_zero = 1;
+      vta.abiinfo_both.guest_amd64_assume_gs_is_0x60 = 1;
+#endif
+    }
+#endif
 
     // Do the actual translation
     if (!(vex_return_val = setjmp(vex_return))) {

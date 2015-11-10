@@ -26,9 +26,9 @@ export SOURCES = \
 	concrete_domain.mli concrete_domain.ml \
 	frag_simplify.mli frag_simplify.ml \
 	frag_marshal.mli frag_marshal.ml \
+	query_engine.mli query_engine.ml \
 	formula_manager.mli formula_manager.ml \
 	symbolic_domain.mli symbolic_domain.ml \
-	query_engine.mli query_engine.ml \
 	stpvc_engine.mli stpvc_engine.ml \
         solvers_common.mli solvers_common.ml \
 	stp_external_engine.mli stp_external_engine.ml \

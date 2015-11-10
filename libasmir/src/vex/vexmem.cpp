@@ -392,11 +392,14 @@ IRStmt* vx_IRStmt_IMark ( Addr64 addr, Int len, UChar delta ) {
 #endif
    return s;
 }
-IRStmt* vx_IRStmt_AbiHint ( IRExpr* base, Int len ) {
+IRStmt* vx_IRStmt_AbiHint ( IRExpr* base, Int len, IRExpr *nia ) {
    IRStmt* s           = (IRStmt *)vx_Alloc(sizeof(IRStmt));
    s->tag              = Ist_AbiHint;
    s->Ist.AbiHint.base = base;
    s->Ist.AbiHint.len  = len;
+#if VEX_VERSION >= 1832
+   s->Ist.AbiHint.nia  = nia;
+#endif
    return s;
 }
 IRStmt* vx_IRStmt_Put ( Int off, IRExpr* data ) {
@@ -447,6 +450,7 @@ IRStmt* vx_IRStmt_Dirty ( IRDirty* d )
    s->Ist.Dirty.details = d;
    return s;
 }
+#if LIBASMIR_VEX_VERSION < 1793
 IRStmt* vx_IRStmt_MFence ( void )
 {
    /* Just use a single static closure. */
@@ -454,6 +458,15 @@ IRStmt* vx_IRStmt_MFence ( void )
    static_closure.tag = Ist_MFence;
    return &static_closure;
 }
+#else
+IRStmt* vx_IRStmt_MBE ( IRMBusEvent event )
+{
+  IRStmt* s            = (IRStmt *)vx_Alloc(sizeof(IRStmt));
+  s->tag               = Ist_MBE;
+  s->Ist.MBE.event     = event;
+  return s;
+}
+#endif
 IRStmt* vx_IRStmt_Exit ( IRExpr* guard, IRJumpKind jk, IRConst* dst ) {
    IRStmt* s         = (IRStmt *)vx_Alloc(sizeof(IRStmt));
    s->tag            = Ist_Exit;
@@ -698,7 +711,13 @@ IRStmt* vx_dopyIRStmt ( IRStmt* s )
          return vx_IRStmt_NoOp();
       case Ist_AbiHint:
          return vx_IRStmt_AbiHint(vx_dopyIRExpr(s->Ist.AbiHint.base),
-                               s->Ist.AbiHint.len);
+				  s->Ist.AbiHint.len,
+#if VEX_VERSION >= 1832
+				  s->Ist.AbiHint.nia
+#else
+				  0
+#endif
+				  );
       case Ist_IMark:
          return vx_IRStmt_IMark(s->Ist.IMark.addr, s->Ist.IMark.len,
 #if VEX_VERSION >= 2153
@@ -731,8 +750,13 @@ IRStmt* vx_dopyIRStmt ( IRStmt* s )
                              vx_dopyIRExpr(s->Ist.Store.data));
       case Ist_Dirty: 
          return vx_IRStmt_Dirty(vx_dopyIRDirty(s->Ist.Dirty.details));
-      case Ist_MFence: /* AKA Ist_MBE */
+#if LIBASMIR_VEX_VERSION < 1793
+      case Ist_MFence:
          return vx_IRStmt_MFence();
+#else
+      case Ist_MBE:
+         return vx_IRStmt_MBE(s->Ist.MBE.event);
+#endif
       case Ist_Exit: 
          return vx_IRStmt_Exit(vx_dopyIRExpr(s->Ist.Exit.guard),
                             s->Ist.Exit.jk,
@@ -784,6 +808,9 @@ IRSB* vx_dopyIRSB ( IRSB* bb )
    bb2->stmts    = sts2;
    bb2->next     = vx_dopyIRExpr(bb->next);
    bb2->jumpkind = bb->jumpkind;
+#if VEX_VERSION >= 2296
+   bb2->offsIP   = bb->offsIP;
+#endif
    return bb2;
 }
 

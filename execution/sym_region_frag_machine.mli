@@ -33,6 +33,9 @@ sig
     method get_word_var_concretize : Fragment_machine.register_name ->
       bool -> string -> int64
 
+    method get_long_var_concretize : Fragment_machine.register_name ->
+      bool -> string -> int64
+
     method load_word_concretize  : int64 -> bool -> string -> int64
     method load_byte_concretize  : int64 -> bool -> string -> int
     method load_short_concretize : int64 -> bool -> string -> int
@@ -75,10 +78,10 @@ sig
     method restore_path_cond : (unit -> unit) -> unit
     method set_query_engine : Query_engine.query_engine -> unit
     method match_input_var : string -> int option
-    method print_ce : (string * int64) list -> unit
+    method print_ce : Query_engine.sat_assign -> unit
     method input_depth : int
     method query_with_path_cond : Vine.exp -> bool
-      -> (bool * (string * int64) list)
+      -> (bool * Query_engine.sat_assign)
     method query_unique_value : Vine.exp -> Vine.typ -> int64 option
     method follow_or_random : bool 
     method query_with_pc_choice : Vine.exp -> bool -> (unit -> bool)
@@ -246,7 +249,7 @@ sig
     method private eval_expr_to_string : Vine.exp -> string
     method eval_expr_to_int64 : Vine.exp -> int64
     method eval_expr_to_symbolic_expr : Vine.exp -> Vine.exp
-    method eval_expr_from_ce : (string * int64) list -> Vine.exp -> int64
+    method eval_expr_from_ce : Query_engine.sat_assign -> Vine.exp -> int64
     method watchpoint : unit
     method mem_val_as_string : int64 -> Vine.typ -> string
     method schedule_proc : unit

@@ -167,7 +167,7 @@ class smtlib_external_engine solver = object(self)
 	  | Some ce -> ce | None -> failwith "Unexpected parse failure")]
 	else
 	  [] in
-      let ce =
+      let ce_list =
 	if (result = Some false) && first_assert then
 	  map_lines (parse_counterex solver) solver_in
 	else if (result = Some false) &&
@@ -185,7 +185,7 @@ class smtlib_external_engine solver = object(self)
 	else
           []
       in
-        (result, first_assign @ ce)
+        (result, ce_from_list (first_assign @ ce_list))
 
   method after_query save_results =
     if save_results then

@@ -44,25 +44,42 @@ class cpuid_special_handler (fm : fragment_machine)
 =
 object(self)
   method handle_special str : V.stmt list option =
-    match str with
-      | "cpuid" -> ( 
-	  (* Modelled after VEX/priv/guest-x86/ghelpers.c *)
-	  let eaxval = fm#get_word_var R_EAX in
-	    (match eaxval with 
-	       | 0L -> 
-		   fm#set_word_var R_EAX 1L;
-		   fm#set_word_var R_EBX 0x756e6547L;
-		   fm#set_word_var R_ECX 0x6c65746eL;
-		   fm#set_word_var R_EDX 0x49656e69L;
-	       | _ ->
-		   fm#set_word_var R_EAX 0x543L;
-		   fm#set_word_var R_EBX 0x0L;
-		   fm#set_word_var R_ECX 0x0L;
-		   fm#set_word_var R_EDX 0x8001bfL;
-	    );
-	    Some ([])
-	)
-      | _ -> None
+    match (str, !opt_arch) with
+      | ("cpuid", X86) ->
+	  (* Modeled after VEX/priv/guest-x86/ghelpers.c *)
+	  (match fm#get_word_var R_EAX with
+	     | 0L ->
+		 fm#set_word_var R_EAX 1L;
+		 fm#set_word_var R_EBX 0x756e6547L;
+		 fm#set_word_var R_ECX 0x6c65746eL;
+		 fm#set_word_var R_EDX 0x49656e69L;
+	     | _ ->
+		 fm#set_word_var R_EAX 0x543L;
+		 fm#set_word_var R_EBX 0x0L;
+		 fm#set_word_var R_ECX 0x0L;
+		 fm#set_word_var R_EDX 0x8001bfL;
+	  );
+	  Some ([])
+      | ("cpuid", X64) ->
+	  (match Int64.logand 0xffffffffL (fm#get_long_var R_RAX) with
+	     | 0L ->
+		 fm#set_long_var R_RAX 1L;
+		 fm#set_long_var R_RBX 0x68747541L;
+		 fm#set_long_var R_RCX 0x444d4163L;
+		 fm#set_long_var R_RDX 0x69746e65L;
+	     | 1L ->
+		 fm#set_long_var R_RAX 0x00000f5aL;
+		 fm#set_long_var R_RBX 0x01000800L;
+		 fm#set_long_var R_RCX 0x0L;
+		 fm#set_long_var R_RDX 0x078bfbffL;
+	     | _ ->
+		 fm#set_long_var R_RAX 0x0L;
+		 fm#set_long_var R_RBX 0x0L;
+		 fm#set_long_var R_RCX 0x0L;
+		 fm#set_long_var R_RDX 0x0L;
+	  );
+	  Some ([])
+      | (_, _) -> None
   method make_snap : unit = ()
   method reset : unit = ()
   method state_json : Yojson.Safe.json option = None
