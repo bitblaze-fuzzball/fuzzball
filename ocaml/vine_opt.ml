@@ -328,6 +328,12 @@ let rec constant_fold ctx e =
 		  w3 = bits_of_width (Vine_typecheck.infer_type None e3) in
 		w1 <= (w2 - w3))
 	  -> Constant(Int(t1, 0L))
+    (* U widen then S widen same as single U widen *)
+    | Cast(CAST_SIGNED, t1, Cast(CAST_UNSIGNED, t2, e3))
+	when (let w2 = bits_of_width t2 and
+		  w3 = bits_of_width (Vine_typecheck.infer_type None e3) in
+		w3 < w2)
+	-> Cast(CAST_UNSIGNED, t1, e3)
     (* Boolean -> integer -> boolean conversion with == 0 *)
     | BinOp(EQ, Cast((CAST_SIGNED|CAST_UNSIGNED), _, e),
 	    Constant(Int(_, 0L)))

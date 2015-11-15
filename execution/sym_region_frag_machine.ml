@@ -24,6 +24,12 @@ struct
   module GM = GranularMemoryFunctor(D)
   module SPFM = SymPathFragMachineFunctor(D)
 
+  let reg_addr () = match !opt_arch with
+    | (X86|ARM) -> V.REG_32
+    | X64 -> V.REG_64
+
+  let addr_const addr = V.Constant(V.Int(reg_addr(), addr))
+
   (* Sign extend a typed constant to a 64-bit constant *)
   let fix_s ty v =
     match ty with
@@ -69,6 +75,8 @@ struct
 	| V.BinOp(V.PLUS, e1, e2) -> 1 + (max (loop e1) (loop e2))
 	| V.BinOp(V.TIMES, e1, e2) -> (loop e1) + (loop e2)
 	| V.BinOp(V.MOD, e1, e2) -> min (loop e1) (loop e2)
+	| V.Cast(V.CAST_UNSIGNED, V.REG_64, e1)
+	  -> min 64 (loop e1)
 	| V.Cast((V.CAST_UNSIGNED|V.CAST_LOW), V.REG_32, e1)
 	  -> min 32 (loop e1)
 	| V.Cast((V.CAST_UNSIGNED|V.CAST_LOW), V.REG_16, e1)
@@ -131,6 +139,8 @@ struct
       | V.BinOp(V.TIMES, e1, e2) -> (loop e1) + (loop e2)
       | V.BinOp(V.MOD, e1, e2) -> min (loop e1) (loop e2)
       | V.BinOp(V.SMOD, e1, e2) -> min (loop e1) (loop e2)
+      | V.Cast((V.CAST_UNSIGNED|V.CAST_SIGNED), V.REG_64, e1)
+	-> min 64 (loop e1)
       | V.Cast((V.CAST_UNSIGNED|V.CAST_LOW|V.CAST_SIGNED), V.REG_32, e1)
 	-> min 32 (loop e1)
       | V.Cast((V.CAST_UNSIGNED|V.CAST_LOW|V.CAST_SIGNED), V.REG_16, e1)
@@ -455,7 +465,7 @@ struct
 
   let sum_list l = 
     match l with 
-      | [] -> V.Constant(V.Int(V.REG_32, 0L))
+      | [] -> addr_const 0L
       | [a] -> a
       | e :: r -> List.fold_left (fun a b -> V.BinOp(V.PLUS, a, b))
 	  e r
@@ -579,6 +589,9 @@ struct
     method private concretize_inner ty e =
       match e with 
 	| V.Cast((V.CAST_UNSIGNED|V.CAST_SIGNED) as ckind, cty, e2) ->
+	    if cty <> ty then
+	      Printf.printf "Cast type is not %s in concretize_inner of %s\n"
+		(V.type_to_string ty) (V.exp_to_string e);
 	    assert(cty = ty);
 	    let ty2 = Vine_typecheck.infer_type None e2 in
 	    let bits = self#choose_conc_offset_cached ty2 e2 in
@@ -619,7 +632,7 @@ struct
     method private region_expr e =
       if !opt_check_for_null then
 	(match
-	   self#check_cond (V.BinOp(V.EQ, e, V.Constant(V.Int(V.REG_32, 0L))))
+	   self#check_cond (V.BinOp(V.EQ, e, addr_const 0L))
 	 with
 	   | Some true -> Printf.printf "Can be null.\n"
 	   | Some false -> Printf.printf "Cannot be null.\n"
@@ -678,8 +691,7 @@ struct
 		      self#restore_path_cond
 			(fun () ->
 			   sat_dir := self#extend_pc_random
-			     (V.BinOp(V.LT, e,
-				      V.Constant(V.Int(V.REG_32, size))))
+			     (V.BinOp(V.LT, e, addr_const size))
 			     false);
 		      if !sat_dir = true then
 			Printf.printf "Can be in bounds.\n"
@@ -693,7 +705,7 @@ struct
 		   (match (eoffs, off_syms) with
 		      | ([], []) -> 0L
 		      | (el, vel) -> 
-			  (self#concretize_inner V.REG_32
+			  (self#concretize_inner (reg_addr())
 			     (sum_list (el @ vel)))) in
 		   (base, (fix_u32 offset)))
 	in
@@ -714,8 +726,7 @@ struct
 		if !opt_trace_sym_addrs then
 		  Printf.printf "Computed concrete value 0x%08Lx\n" a;
 		if !opt_solve_path_conditions then
-		  (let cond = V.BinOp(V.EQ, e,
-				      V.Constant(V.Int(V.REG_32, a)))
+		  (let cond = V.BinOp(V.EQ, e, addr_const a)
 		   in
 		   let sat = self#extend_pc_known cond false true in
 		     assert(sat));
@@ -723,7 +734,7 @@ struct
 	  | [V.Lval(V.Temp(var)) as vexp] ->
 	      let sum = sum_list rest in
 	      let a = form_man#eval_expr sum in
-	      let a_const = V.Constant(V.Int(V.REG_32, a)) in
+	      let a_const = addr_const a in
 		if !opt_trace_sym_addrs then
 		  Printf.printf
 		    "Computed concrete offset %s + 0x%08Lx\n" 
@@ -922,7 +933,7 @@ struct
 	if !opt_table_limit = 0 then
 	  None
 	else if fast_wd > !opt_table_limit then
-	  let slow_wd = self#query_bitwidth off_exp V.REG_32 in
+	  let slow_wd = self#query_bitwidth off_exp (reg_addr()) in
 	    assert(slow_wd <= fast_wd);
 	    if slow_wd > !opt_table_limit then
 	      (if !opt_trace_tables then
@@ -963,7 +974,7 @@ struct
 	     Printf.printf "opt_offset_limit = 0\n";
 	  Some 0)
 	else if fast_wd > !opt_offset_limit then
-	  let slow_wd = self#query_bitwidth off_exp V.REG_32 in
+	  let slow_wd = self#query_bitwidth off_exp (reg_addr()) in
 	    assert(slow_wd <= fast_wd);
 	    if slow_wd > !opt_offset_limit then
 	      (if !opt_trace_offset_limit then
@@ -1038,7 +1049,7 @@ struct
 	if !opt_table_limit = 0 then
 	  None
 	else
-	  let maxval = self#query_maxval off_exp V.REG_32 in
+	  let maxval = self#query_maxval off_exp (reg_addr()) in
 	    if maxval > Int64.shift_left 1L !opt_table_limit then
 	      (if !opt_trace_tables then
 		 Printf.printf
@@ -1072,7 +1083,7 @@ struct
 	if !opt_offset_limit = 0 then
 	  Some 0L
 	else
-	  let maxval = self#query_maxval off_exp V.REG_32 in
+	  let maxval = self#query_maxval off_exp (reg_addr()) in
 	    if maxval > Int64.shift_left 1L !opt_offset_limit then
 	      None
 	    else
@@ -1100,7 +1111,7 @@ struct
 	  let shift_amt = V.Constant(V.Int(V.REG_8, (Int64.of_int shift))) in
 	    V.BinOp(V.RSHIFT, off_exp, shift_amt)
 	else
-	  let stride_amt = V.Constant(V.Int(V.REG_32, (Int64.of_int stride))) in
+	  let stride_amt = addr_const (Int64.of_int stride) in
 	    V.BinOp(V.DIVIDE, off_exp, stride_amt)
       in
       let load_ent addr = match ty with
@@ -1158,7 +1169,7 @@ struct
       let (is_sat, ce) = self#query_with_path_cond taut false in
         assert(is_sat);
         let addr = form_man#eval_expr_from_ce ce addr_e in
-        let cond = V.BinOp(V.EQ, addr_e, V.Constant(V.Int(V.REG_32, addr))) in
+        let cond = V.BinOp(V.EQ, addr_e, (addr_const addr)) in
 	let value =
 	  if Hashtbl.mem used_addr_cache addr then
 	    load_ent addr
@@ -1423,7 +1434,7 @@ struct
         for i = 0 to num_ents - 1 do
 	  let addr = Int64.add cloc (Int64.of_int (i * stride)) in
 	  let old_v = load_ent addr in
-	  let cond_e = (V.BinOp(V.EQ, e, V.Constant(V.Int(V.REG_32, addr)))) in
+	  let cond_e = (V.BinOp(V.EQ, e, addr_const addr)) in
 	  let cond_v = D.from_symbolic cond_e in
 	  let ite_v = form_man#make_ite cond_v ty value old_v in
 	    store_ent addr ite_v;
@@ -1461,7 +1472,7 @@ struct
       let (is_sat, ce) = self#query_with_path_cond taut false in
         assert(is_sat);
         let addr = form_man#eval_expr_from_ce ce addr_e in
-        let cond = V.BinOp(V.EQ, addr_e, V.Constant(V.Int(V.REG_32, addr))) in
+        let cond = V.BinOp(V.EQ, addr_e, addr_const addr) in
 	  if !opt_trace_offset_limit then
 	    Printf.printf "Concretized store once to 0x%08Lx\n" addr;
           store_ent addr value;
