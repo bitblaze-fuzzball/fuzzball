@@ -746,7 +746,8 @@ struct
 	      remake
 	    else
 	      (let v = Hashtbl.find table_trees_cache (table_num, idx_exp) in
-		 Printf.printf "Hit table cache\n";
+		 if !opt_trace_tables then
+		   Printf.printf "Hit table cache\n";
 		 v)
 	  in
 	    if !opt_trace_tables then
