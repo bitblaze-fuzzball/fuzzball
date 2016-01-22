@@ -4003,6 +4003,16 @@ object(self)
 	     uh "Unhandled Linux system call io_cancel"
 	 | (X86, 250) -> (* fadvise64 *)
 	     uh "Unhandled Linux system call fadvise64 (250)"
+	 | (X64, 221) -> (* fadvise64 *)
+	     let (arg1, arg2, arg3, arg4) = read_4_regs () in
+	     let fd = Int64.to_int arg1 and
+		 offset = arg2 and
+		 len = arg3 and
+		 advice = Int64.to_int arg4 in
+	       if !opt_trace_syscalls then
+		 Printf.printf "fadvise64(%d, %Ld, %Ld, %d)"
+		   fd offset len advice;
+	       self#sys_fadvise64_64 fd offset len advice
 	 | (ARM, 248)    (* exit_group *)
 	 | (X86, 252)    (* exit_group *)
 	 | (X64, 231) -> (* exit_group *)
