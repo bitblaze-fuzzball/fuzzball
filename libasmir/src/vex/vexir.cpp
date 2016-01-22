@@ -105,11 +105,11 @@ FILE *change_vex_debug_out(FILE *new_fp) {
     return old_fp;
 }
 
-void log_bytes( const HChar* bytes,
+void log_bytes(
 #if VEX_VERSION < 3047
-		Int nbytes
+		HChar* bytes, Int nbytes
 #else
-		SizeT nbytes
+		const HChar* bytes, SizeT nbytes
 #endif
 		)
 {
@@ -140,12 +140,17 @@ void *dispatch( void )
 //----------------------------------------------------------------------
 // This is where we copy out the IRSB
 //----------------------------------------------------------------------
+#if VEX_VERSION > 2958
+#define const_r2958 const
+#else
+#define const_r2958 /* not const */
+#endif
 IRSB *instrument1(  void *callback_opaque, 
                     IRSB *irbb,
-                    const VexGuestLayout *vgl,
-                    const VexGuestExtents *vge,
+                    const_r2958 VexGuestLayout *vgl,
+                    const_r2958 VexGuestExtents *vge,
 #if VEX_VERSION >= 2549
-		    const VexArchInfo *archinfo_host_unused,
+		    const_r2958 VexArchInfo *archinfo_host_unused,
 #endif
                     IRType gWordTy,
                     IRType hWordTy )
@@ -196,7 +201,7 @@ static UInt dont_need_self_check ( void* opaque,
 #if VEX_VERSION >= 3084
 				   VexRegisterUpdates* pxControl,
 #endif
-				   const VexGuestExtents* vge ) {
+				   const_r2958 VexGuestExtents* vge ) {
    return 0;
 }
 #endif
@@ -222,7 +227,7 @@ void translate_init()
     vc.iropt_level                  = 2;
 #if VEX_VERSION < 2454
     vc.iropt_precise_memory_exns    = False;
-#elsif VEX_VERSION < 3084
+#elif VEX_VERSION < 3084
     vc.iropt_register_updates       = VexRegUpdUnwindregsAtMemAccess;
 #else
     vc.iropt_register_updates_default=VexRegUpdUnwindregsAtMemAccess;
