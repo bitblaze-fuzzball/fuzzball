@@ -37,8 +37,13 @@
 
 #define OFFB_RIP       offsetof(VexGuestAMD64State,guest_RIP)
 
-#define OFFB_FS_ZERO   offsetof(VexGuestAMD64State,guest_FS_ZERO)
-#define OFFB_GS_0x60   offsetof(VexGuestAMD64State,guest_GS_0x60)
+#if VEX_VERSION < 3043
+#define OFFB_FS_CONST   offsetof(VexGuestAMD64State,guest_FS_ZERO)
+#define OFFB_GS_CONST   offsetof(VexGuestAMD64State,guest_GS_0x60)
+#else
+#define OFFB_FS_CONST   offsetof(VexGuestAMD64State,guest_FS_CONST)
+#define OFFB_GS_CONST   offsetof(VexGuestAMD64State,guest_GS_CONST)
+#endif
 
 #define OFFB_CC_OP     offsetof(VexGuestAMD64State,guest_CC_OP)
 #define OFFB_CC_DEP1   offsetof(VexGuestAMD64State,guest_CC_DEP1)
@@ -211,8 +216,8 @@ vector<VarDecl *> x64_get_reg_decls()
   ret.push_back(new VarDecl("R_OF", r1));  
 
   // VEX represetations of segment information
-  ret.push_back(new VarDecl("R_FS_ZERO", r64));
-  ret.push_back(new VarDecl("R_GS_0x60", r64));
+  ret.push_back(new VarDecl("R_FS_CONST", r64));
+  ret.push_back(new VarDecl("R_GS_CONST", r64));
 
   // SIMD registers. We don't yet support 256-bit registers, so break
   // them up a 4x64. 
@@ -373,10 +378,10 @@ static string reg_offset_to_name( int offset, bool *is_good )
         case OFFB_NRADDR:   name = "NRADDR";    good=true; break;
 
 #if VEX_VERSION >= 919
-        case OFFB_FS_ZERO:  name = "FS_BASE";   good=true; break;
+        case OFFB_FS_CONST: name = "FS_BASE";   good=true; break;
 #endif
 #if VEX_VERSION >= 1874
-        case OFFB_GS_0x60:  name = "GS_BASE";   good=true; break;
+        case OFFB_GS_CONST: name = "GS_BASE";   good=true; break;
 #endif
 
         case OFFB_YMM0:     name = "YMM0_0";    good=true; break;

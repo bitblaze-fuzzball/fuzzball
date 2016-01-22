@@ -90,8 +90,14 @@
 #define OFFB_EMWARN    offsetof(VexGuestX86State,guest_EMNOTE)
 #endif
 
+#if VEX_VERSION < 2852
 #define OFFB_TISTART   offsetof(VexGuestX86State,guest_TISTART)
 #define OFFB_TILEN     offsetof(VexGuestX86State,guest_TILEN)
+#else
+#define OFFB_TISTART   offsetof(VexGuestX86State,guest_CMSTART)
+#define OFFB_TILEN     offsetof(VexGuestX86State,guest_CMLEN)
+#endif
+
 #define OFFB_NRADDR    offsetof(VexGuestX86State,guest_NRADDR)
 #if VEX_VERSION >= 1536
 #define OFFB_SC_CLASS  offsetof(VexGuestX86State,guest_SC_CLASS)

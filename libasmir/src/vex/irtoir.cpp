@@ -2304,11 +2304,17 @@ Stmt *translate_jumpkind( IRSB *irbb, vector<Stmt *> *irout )
       Exp::destroy(dest);
       break;
 #endif
-#if VEX_VERSION >= 1320
+#if VEX_VERSION >= 1320 && VEX_VERSION < 2852
     case Ijk_TInval:
       irout->push_back( new Special("TInval") );
       result = new Jmp(dest);
       break; 
+#endif
+#if VEX_VERSION >= 2852
+    case Ijk_InvalICache:
+      irout->push_back( new Special("TInval") );
+      result = new Jmp(dest);
+      break;
 #endif
     default:
       assert(0);

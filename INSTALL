@@ -78,20 +78,28 @@ changes incompatibly from time to time, requiring matching updates in
 our interface code (look for "#if VEX_VERSION > xxxx" in
 libasmir/src).
 
-The most recent version of VEX we've checked to work correctly out of
-the box is r2737. Typical commands to check out and compile it look
-like:
+The most recent version of VEX we've tested with is r3206. However it
+doesn't work out of the box because the Valgrind developers have
+broken their Makefile. A patch for this is in vex-r3206.patch. You'll
+want to use this version if you're running x86-64 binaries new enough
+to contain MPX instructions, since VEX versions before r2858 can't
+deal with them. However ARM support hasn't been tested in this version
+yet.
+
+The more recent stable version of VEX we recommend is r2737. For x86
+and x86-64 it works out of the box. Typical commands to check out and
+compile it look like:
 
    % svn co -r2737 svn://svn.valgrind.org/vex/trunk vex-r2737
    % cd vex-r2737
    % make -f Makefile-gcc
 
-For many uses of FuzzBALL, especially on x86, any version of VEX will
-work just fine. If you want to run on ARM code it's more important to
-use a more recent version. Some changes to VEX to make it work better
-for our purposes are in vex-r????.patch. For x86, these only affect a
-few obscure instructions. But for ARM they also disable a Thumb
-instruction optimization that tries to peek directly at other
+For many uses of FuzzBALL, and especially on x86-32, any version of
+VEX will work just fine. If you want to run on ARM code it's more
+important to use a more recent version. Some changes to VEX to make it
+work better for our purposes are in vex-r????.patch. For x86, these
+only affect a few obscure instructions. But for ARM they also disable
+a Thumb instruction optimization that tries to peek directly at other
 instruction bytes in a way that usually crashes FuzzBALL.
 
 The oldest version we've traditionally used is r1856. Back then the

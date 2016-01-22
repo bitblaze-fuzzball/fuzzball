@@ -77,8 +77,15 @@
 #else
 #define OFFB_EMWARN        offsetof(VexGuestARMState,guest_EMNOTE)
 #endif
+
+#if VEX_VERSION < 2852
 #define OFFB_TISTART       offsetof(VexGuestARMState,guest_TISTART)
 #define OFFB_TILEN         offsetof(VexGuestARMState,guest_TILEN)
+#else
+#define OFFB_TISTART       offsetof(VexGuestARMState,guest_CMSTART)
+#define OFFB_TILEN         offsetof(VexGuestARMState,guest_CMLEN)
+#endif
+
 #define OFFB_NRADDR        offsetof(VexGuestARMState,guest_NRADDR)
 #define OFFB_IP_AT_SYSCALL offsetof(VexGuestARMState,guest_IP_AT_SYSCALL)
 #endif
