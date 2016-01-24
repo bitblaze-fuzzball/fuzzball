@@ -156,8 +156,8 @@ let concrete_state_cmdline_opts =
      "addr=val Set 16-bit location to a concrete value");
     ("-store-word", Arg.String
        (add_delimited_pair opt_store_words '='),
-     "addr=val Set a memory word to a concrete value");
-    ("-store-word", Arg.String
+     "addr=val Set a 32-bit memory word to a concrete value");
+    ("-store-long", Arg.String
        (add_delimited_pair opt_store_longs '='),
      "addr=val Set 64-bit location to a concrete value");
     ("-skip-call-ret", Arg.String

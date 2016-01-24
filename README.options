@@ -1,0 +1,659 @@
+FuzzBALL command-line options
+-----------------------------
+
+This list is organized alphabetically. FuzzBALL's normal options all
+start with a single "-", which also separates words. Options that take
+an argument always take a single additional argv[] element as the
+argument; multiple conceptual arguments within that string are
+separated by punctuation characters but not whitespace. Arguments that
+are complex or contain special characters or whitespace should
+therefore probably be enclosed with quotes according to the
+conventions of your shell. Arguments that are numbers generally follow
+OCaml parsing conventions: you'll often want a prefix "0x" to specify
+a value in hexadecimal.
+
+The only non-option argument allowed is the name of a program to
+execute.
+
+This list omits some options that are not recommended for use and may
+be renamed or removed in the future. However there are a lot of
+options and not all have been recently tested, so mention on this list
+is not a guarantee of quality either. You'll also note we haven't yet
+gotten around to writing detailed descriptions for every option,
+sorry.
+
+Some notes on terminology: "eip", from the name for the x86 program
+counter register, refers to the addresses of instructions. "pc" stands
+not for program counter but for path condition. "short", "word", and
+"long" refer to 16-bit, 32-bit, and 64-bit values respectively.
+
+--
+
+  Separate options to FuzzBALL (before "--") from the command line to
+  the program to execute. Note that the command line, like the argv[]
+  array in C, should start with the name of the program, even though
+  it is also mentioned as a non-option argument to FuzzBALL before the
+  "--". It's recommended that you always use "--" and a command line
+  when running a complete program.
+
+-always-prefer <bool>
+  Prefer given branch direction instead of random
+
+-arch <arch>
+
+  Set the CPU architecture of FuzzBALL, where <arch> is either "x86"
+  (32-bit Intel i386 compatible) or "arm" (ARM, including Thumb).
+
+-branch-preference <eip>:<0 or 1>
+
+  For a branch that occurs at the given instruction, prefer paths
+  where the branch condition is false (0) or true (1). This preference
+  means that if both the 0 and 1 sides of a branch are feasible and
+  not completely explored, FuzzBALL will pick the preferred one. The
+  sense of the condition matches other FuzzBALL options like
+  -trace-binary-paths, but because of the IR production process it may
+  not always correspond to "not taken" and "taken" at the instruction
+  level.
+
+-branch-preference-unchecked <eip>:<0 or 1>
+  Prefer given direction without solving
+
+-check-condition-at <eip>:<expr>
+
+  When the given instruction is reached, check whether the Boolean
+  condition <expr> (expressed in the Vine IL) can be true and/or
+  false, by passing it to the decision procedure in the same way as a
+  branch condition. The expression can be written in terms of the Vine
+  IL names for registers, such as R_EAX:reg32_t for %eax, and a
+  variable "mem" for memory.
+
+-check-for-null
+
+  Every time a value is dereferenced, check whether it can have the
+  value 0, via a mechanism similar to -check-condition-at. Note that
+  FuzzBALL will in any case stop a path if the actual dereferenced
+  value is null (in fact if it's less than 4096), but -check-for-null
+  will also catch a case where a null value would be allowed by the
+  path condition even if it's not the value FuzzBALL's address logic
+  chooses.
+
+-chroot <path>
+
+  Add the given path to the front of every absolute pathname accessed
+  by the program. As suggested by the name, this produces an effect
+  similar to the chroot(2) Unix system call, making the program appear
+  to treat <path> as its root directory. Though unlike chroot(8), the
+  program keeps access to its current working directory, and absolute
+  symbolic links won't be affected because FuzzBALL doesn't interpose
+  on their resolution. A common use case for this option is as a
+  lightweight virtualization to run a program with libraries and
+  system files from another system, perhaps with a different
+  architecture.
+
+-concolic-cstring <base>=<str>
+
+  Create a symbolic string in memory, starting at the base address
+  <base>. Following C conventions, this will be a string of symbolic
+  bytes equal in number to the length of <str>, followed by a concrete
+  null byte with value 0. The particular string value specified will
+  be used for the purposes of -concolic-prob and -concrete-path. Be
+  sure to use appropriate shell quoting of the string if it contains
+  whitespace or special characters.
+
+-concolic-cstring-file <base>=<file>
+
+  Like -concolic-cstring, but load the concrete contents of the string
+  from a file with the given name.
+
+-concolic-file <fname>
+  Make data read from the named file concolic
+
+-concolic-prob <p>
+
+  The argument <p> should be a probability, expressed as a number
+  between 0 and 1 inclusive. Each time FuzzBALL encounters a symbolic
+  branch, it will plug in the concrete values supplied with
+  -concolic-string and related options to compute a branch
+  direction. With probability <p>, it will prefer this branch
+  direction (in the sense of -branch-preference); otherwise it will
+  select a direction as usual. The default behavior is equivalent to
+  -concolic-prob 0. "-concolic-prob 1 -num-paths 1" has an effect
+  similar to -concrete-path; see its entry for a discussion of the
+  difference.
+
+-concolic-string <base>=<str>
+
+  Create a symbolic string in memory, starting at the base address
+  <base>. This will be a string of symbolic bytes equal in number to
+  the length of <str>. Note that no terminator is supplied, in
+  contrast to -concolic-cstring. The particular string value specified
+  will be used for the purposes of -concolic-prob and
+  -concrete-path. Be sure to use appropriate shell quoting of the
+  string if it contains whitespace or special characters.
+
+-concrete-path
+
+  Instead of passing path conditions to the decision procedure, make
+  the decisions about how to execute branches based on the concrete
+  values supplied by -concolic-string and related options. It doesn't
+  make sense to run the code repeatedly in this case, so FuzzBALL will
+  stop after a single path. The effect is similar to "-concolic-prob 1
+  -num-paths 1". The -concrete-path mode shares less code with regular
+  symbolic execution, which allows it to run faster, but because its
+  behavior matches symbolic execution less closely it is less useful
+  for debugging.
+
+-concretize-divisors
+
+  If a symbolic value is being used as the divisor in a division or
+  remainder operation, choose a concrete value for the divisor (as for
+  a branch condition) before performing the division. This can be
+  useful when using a solver that cannot efficiently reason about
+  division: concretization will make each path execute more quickly,
+  at the expense of multiplying their numbers.
+
+-core <corefile>
+
+  Load the memory and register state from an ELF core dump. This can
+  be a convenient way to start symbolic execution at a point in the
+  middle of the execution of a long-running program. Of course since a
+  core dump only records the user-space state of a program, there's no
+  guarantee that the OS or any other communication partners of the
+  program will be in the same state. [gcore patch]
+
+-coverage-stats
+  Print pseudo-BB coverage statistics
+
+-decision-tree-use-file
+  Store the decision tree in a file (default: in memory)
+
+-disable-ce-cache
+  Do not use cached satisfying assingments at all
+
+-disqualify-addr <addr>
+  As -fuzz-end-addr, but also remove from influence
+
+-env <name>=<val>
+  Set environment variable for program
+
+-external-uname
+  Use real uname and domainname to simulate uname(2)
+
+-extra-condition <cond>
+  Add an extra constraint for solving
+
+-extra-conditions-file <filename>
+  Read '-extra-condition's one per line from file
+
+-final-pc
+  Print final path condition at end of trace
+
+-finish-on-nonfalse-cond
+  Finish exploration if -check-condition-at condition could be true
+
+-finish-on-target-match
+  Finish exploration on -target-string match
+
+-finish-reasons-needed <n>
+  Require N finish reasons to finish
+
+-follow-path string
+  String of 0's and 1's signifying the specific path decisions to make.
+
+-fuzz-end-addr <addr>
+  Code address to finish fuzzing, may be repeated
+
+-fuzz-start-addr <addr>
+  Code address to start fuzzing
+
+-fuzz-start-addr-count <count>
+  Start at nth occurrence of -fuzz-start-addr (instead of first)
+
+-gc-stats
+  Print memory usage (include GC = garbage collection) statistics
+
+-git-version
+  Print GIT revision hash
+
+-global-ce-cache-limit
+  Set an integer limit on the global cache size
+
+-help
+--help
+  Display a one-line-per-flag list of options
+
+-implied-value-conc
+  Concretize values that are unique based on the path condition
+
+-influence-bound <float>
+  Stop path when influence is <= this value
+
+-initial-eax <word>
+-initial-ebp <word>
+-initial-ebx <word>
+-initial-ecx <word>
+-initial-edi <word>
+-initial-edx <word>
+-initial-esi <word>
+-initial-esp <word>
+  Supply an initial concrete value for one of the x86 general purpose
+  registers
+
+-initial-eflagsrest word
+  Concrete value for %eflags, less the condition codes [CPAZSO]F
+
+-initial-rax <long>
+-initial-rbp <long>
+-initial-rbx <long>
+-initial-rcx <long>
+-initial-rdi <long>
+-initial-rdx <long>
+-initial-rsi <long>
+-initial-rsp <long>
+  Supply an initial concrete value for one of the x86-64 general purpose
+  registers
+
+-insn-limit <N>
+  Stop path after N instructions
+
+-iteration-limit <N>
+  Stop path if a loop iterates (i.e., instruction executes) more than
+  N times
+
+-linux-syscalls
+  Simulate Linux system calls on the real system
+
+-load-base <addr>
+  Base address for program image
+
+-load-data <bool>
+  Load data segments from a binary?
+
+-load-region <base>+<size>
+  Load an additional region from program image
+
+-measure-deref-influence-at <eip>
+  Measure influence of pointer at given code address
+
+-measure-expr-influence-at <eip>:<expr>
+  Measure influence of value at given code address
+
+-measure-influence-derefs
+  Measure influence on uses of sym. pointer values
+
+-measure-influence-reploops
+  Measure influence on %ecx at rep-prefixed instructions
+
+-measure-influence-syscall-args
+  Measure influence on uses of sym. system call args.
+
+-multipath-influence-only
+  Skip single-path influence measurements
+
+-nonfatal-solver
+  Keep going even if the solver fails/crashes
+
+-nop-system-insns
+  Treat some unhandled system instructions as no-ops
+
+-no-table-store
+  Disable symbolic treatment of table stores
+
+-num-paths <N>
+  Stop after N different paths
+
+-offset-limit <BITS>
+  Concretize offsets with at most 2**bits entries
+
+-offset-strategy <strategy>
+  Strategy for offset concretization: uniform, biased-small
+
+-omit-pf-af
+  Omit computation of the (rarely used) PF and AF flags
+
+-path-depth-limit <N>
+  Stop path after N bits of symbolic branching
+
+-periodic-influence <k>
+  Check influence every K bits of branching
+
+-periodic-stats <period>
+  Trigger statistics every PERIOD instructions
+
+-pid <pid>
+  Use regs from specified LWP when loading from core
+
+-prefix-out <prefix>
+  Add a distinguishing prefix before the program's writes
+
+-query-branch-limit <N>
+  Try at most N possibilities per branch
+
+-random-memory
+  Use random values for uninitialized memory reads
+
+-random-seed <N>
+  Use given seed for path choice
+
+-save-decision-tree-interval <SECS>
+  Output decision tree every SECS seconds
+
+-save-solver-files
+  Retain solver input and output files
+
+-setup-initial-proc-state <bool>
+  Setup initial process state (argv, etc.)?
+
+-sink-region <var>+<size>
+  Range-check but ignore writes to a region
+
+-skip-call-ret <addr>=<retval>
+  Replace the call at address 'addr' with a nop, and return 'retval'
+  in EAX
+
+-skip-call-ret-region <addr>=<symname>
+  Like -skip-call-ret-symbol, but hint that the symbol is a memory
+  region address
+
+-skip-call-ret-symbol <addr>=<symname>
+  Like -skip-call-ret, but return a fresh symbolic variable
+
+-skip-call-ret-symbol-once <addr>=<symname>
+  Like -skip-call-ret-symbol, but always use the same symbolic variable
+
+-skip-func-ret <addr>=<retval>
+  Replace the function at address 'addr' with a nop, and return
+  'retval' in EAX
+
+-skip-func-ret-region <addr>=<symname>
+  Like -skip-func-ret-symbol, but hint that the symbol is a memory
+  region address
+
+-skip-func-ret-symbol <addr>=<symname>
+  Like -skip-func-ret, but return a fresh symbolic variable
+
+-skip-output-concretize
+  Output symbolic bytes as ? instead of solving
+
+-smtlib-solver-type <type>
+  stp,cvc4,btor,z3 (default is guessed from path)
+
+-solve-final-pc
+  Solve final path condition
+
+-solve-path-conditions
+  Solve conditions along a -concrete-path
+
+-solver-check-against <solver>
+  Compare solver results with the given one
+
+-stp-path <path> (historical name)
+-solver-path <path>
+  Location of external SMT solver binary
+
+-solver-slow-time <secs>
+  Save queries that take longer than SECS
+
+-solver <solver>
+  smtlib (incremental), smtlib-batch, stpvc (internal) or stp-external
+
+-solver-stats
+  Print solver statistics
+
+-solver-timeout <secs>
+  Run each query for at most SECS seconds
+
+-start-addr <addr>
+  Code address to start executing
+
+-state <file>
+  Load memory state from TEMU state file
+
+-stop-at-measurement
+  Stop paths after an '-at' influence measurement
+
+-stop-on-symbolic-syscall-args
+  Cut off path on symbolic value in system call argument
+
+-store-byte <addr>=<val>
+  Set the byte at address to a concrete value
+
+-store-short <addr>=<val>
+  Set 16-bit location to a concrete value
+
+-store-long <addr>=<val>
+  Set 64-bit location to a concrete value
+
+-store-word <addr>=<val>
+  Set a 32-bit memory word to a concrete value
+
+-symbolic-byte <addr>=<var>
+ Make a memory byte symbolic
+
+-symbolic-byte-influence <addr>=<var>
+  Like -symbolic-byte, but also use for -periodic-influence
+
+-symbolic-cstring <base>+<size>
+  Make a C string with given size, concrete \0
+
+-symbolic-cstring-fulllen <base>+<size>
+  As -symbolic-cstring, but assume all chars are non-null
+
+-symbolic-file <fname>
+  Make data read from the named file symbolic
+
+-symbolic-long <addr>=<var>
+  Make a 64-bit memory valule symbolic
+
+-symbolic-long-influence <addr>=<var>
+  Like -symbolic-long, but also use for -periodic-influence
+
+-symbolic-memory
+  Use symbolic values for uninitialized memory reads
+
+-symbolic-region <base>+<size>
+  Memory region of unknown structure
+
+-symbolic-regs
+  Give symbolic initial values to registers
+
+-symbolic-short <addr>=<var>
+  Make a 16-bit memory valule symbolic
+
+-symbolic-short-influence <addr>=<var>
+  Like -symbolic-short, but also use for -periodic-influence
+
+-symbolic-string16 <base>+<16s>
+  As -symbolic-string, but with 16-bit characters
+
+-symbolic-string <base>+<size>
+  Make a byte string with given size, no terminator
+
+-symbolic-syscall-error <errno>
+  Force syscalls with symbolic args to return given value
+
+-symbolic-word <addr>=<var>
+  Make a memory 32-bit word symbolic
+
+-symbolic-word-influence <addr>=<var>
+  Like -symbolic-word, but also use for -periodic-influence
+
+-table-limit <BITS>
+  Match tables with at most 2**bits entries
+
+-target-formulas <base>=<exprs-file>
+  Try to make a buffer have the given contents
+
+-target-guidance <PROB>
+  Prefer better target matches with given probability
+
+-target-no-prune
+  Do not stop path at a target mismatch
+
+-target-string <base>=<string>
+  Try to make a buffer have the given contents
+
+-target-string-file <base>=<filename>
+  Like -target-string, but read string contents from a file
+
+-timeout-as-unsat
+  Treat solver timeouts the same as "unsat" results
+
+-time-stats
+  Print running time statistics
+
+-tls-base <addr>
+  Use a Linux TLS (%gs) segment at the given address
+
+-total-timeout <SECS>
+  Finish exploration after a given time has elapsed
+
+-trace-assigns
+  Print satisfying assignments
+
+-trace-assigns-string
+  Print satisfying assignments as a string
+
+-trace-basic
+  Enable several common trace and stats options
+
+-trace-binary-paths-bracketed
+  As -trace-binary-paths, but with []s around multibit queries
+
+-trace-binary-paths-delimited
+  As -trace-binary-paths, but with '-'s separating queries
+
+-trace-binary-paths
+  Print decision paths as bit strings
+
+-trace-callstack
+  Print calls and returns
+
+-trace-conditions
+  Print branch conditions
+
+-trace-decisions
+  Print symbolic branch choices
+
+-trace-decision-tree
+  Print internal decision tree operations
+
+-trace-detailed
+  Enable several verbose tracing options
+
+-trace-detailed-range <N>-<M>
+  As -trace-detailed, but only for an eip range
+
+-trace-eip
+  Print PC of each instruction executed
+
+-trace-end-jump
+  Print the target of the jump at the address specified by -fuzz-end-addr
+
+-trace-eval
+  Print details of IR evaluation
+
+-trace-fpu
+  Print floating point operations
+
+-trace-global-ce-cache
+  Print global and working counterexample caches after each query
+
+-trace-guidance
+  Print operation of -target-guidance
+
+-trace-insns
+  Print assembly-level instructions
+
+-trace-ir
+  Print Vine IR before executing it
+
+-trace-iterations
+  Print iteration count
+
+-trace-ivc
+  Print operations of -implied-value-conc
+
+-trace-loads
+  Print each memory load
+
+-trace-offset-limit
+  Print offset width information
+
+-trace-orig-ir
+  Print Vine IR as produced by Asmir (before optimization)
+
+-tracepoint <eip>:<expr>
+  Print scalar expression on given EIP
+
+-tracepoint-string <eip>:<expr>
+  Print string expression on given EIP
+
+-trace-randomness
+  Print operation of PRNG 'random' choices
+
+-trace-regions
+  Print symbolic memory regions
+
+-trace-registers
+  Print register contents
+
+-trace-setup
+  Print progress of program loading
+
+-trace-solver
+  Print calls to decision procedure
+
+-trace-stmts
+  Print each IR statement executed
+
+-trace-stopping
+  Print why paths terminate
+
+-trace-stores
+  Print each memory store
+
+-trace-sym-addr-details
+  Print even more about symbolic address values
+
+-trace-sym-addrs
+  Print symbolic address values
+
+-trace-syscalls
+  Print systems calls (like strace)
+
+-trace-tables
+  Print information about table lookups
+
+-trace-target
+  Print targeting checks
+
+-trace-temps-encoded
+  -trace-temps in a line-noise-like format
+
+-trace-temps
+  Print intermediate formulas
+
+-trace-unique-eips
+  Print PC of each new insn executed
+
+-trace-working-ce-cache
+  Print working cache after each query
+
+-translation-cache-size <N>
+  Save translations of at most N instructions
+
+-use-ids-from-core
+  Simulate getpid(), etc., using values from core file
+
+-use-tags
+  Track data flow with numeric tags
+
+-watch-expr <expr>
+  Print the value of a Vine expression on each instruction
+
+-x87-emulator <emulator.so>
+  Enable x87 emulation with given code
+
+-zero-memory
+  Use zero values for uninitialized memory reads
