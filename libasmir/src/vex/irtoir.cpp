@@ -1002,6 +1002,35 @@ Exp *translate_CmpEQ8x16(Exp *a, Exp *b) {
     return translate_64HLto128(r_high, r_low);
 }
 
+Exp *translate_CmpGT8Sx8(Exp *a, Exp *b) {
+    Exp *a7, *a6, *a5, *a4, *a3, *a2, *a1, *a0;
+    split8x8(a, &a7, &a6, &a5, &a4, &a3, &a2, &a1, &a0);
+    Exp *b7, *b6, *b5, *b4, *b3, *b2, *b1, *b0;
+    split8x8(b, &b7, &b6, &b5, &b4, &b3, &b2, &b1, &b0);
+    Exp *r7 = _ex_s_cast(_ex_slt(b7, a7), REG_8);
+    Exp *r6 = _ex_s_cast(_ex_slt(b6, a6), REG_8);
+    Exp *r5 = _ex_s_cast(_ex_slt(b5, a5), REG_8);
+    Exp *r4 = _ex_s_cast(_ex_slt(b4, a4), REG_8);
+    Exp *r3 = _ex_s_cast(_ex_slt(b3, a3), REG_8);
+    Exp *r2 = _ex_s_cast(_ex_slt(b2, a2), REG_8);
+    Exp *r1 = _ex_s_cast(_ex_slt(b1, a1), REG_8);
+    Exp *r0 = _ex_s_cast(_ex_slt(b0, a0), REG_8);
+    return assemble8x8(r7, r6, r5, r4, r3, r2, r1, r0);
+}
+
+Exp *translate_CmpGT8Sx16(Exp *a, Exp *b) {
+    Exp *a_high, *a_low;
+    split_vector(a, &a_high, &a_low);
+
+    Exp *b_high, *b_low;
+    split_vector(b, &b_high, &b_low);
+
+    Exp *r_high = translate_CmpGT8Sx8(a_high, b_high);
+    Exp *r_low = translate_CmpGT8Sx8(a_low, b_low);
+
+    return translate_64HLto128(r_high, r_low);
+}
+
 Exp *assemble8x1(Exp *b7, Exp *b6, Exp *b5, Exp *b4,
 		 Exp *b3, Exp *b2, Exp *b1, Exp *b0) {
     b7 = _ex_shl(_ex_u_cast(b7, REG_8), 7);
@@ -1588,9 +1617,13 @@ Exp *translate_simple_binop( IRExpr *expr, IRSB *irbb, vector<Stmt *> *irout )
 	case Iop_InterleaveLO8x16:
 	    return translate_InterleaveLO8x16(arg1, arg2);
 
-#if VEX_VERSION >= 2218
+#if VEX_VERSION >= 636
         case Iop_CmpEQ8x16:
 	    return translate_CmpEQ8x16(arg1, arg2);
+#endif
+#if VEX_VERSION >= 1984
+        case Iop_CmpGT8Sx16:
+	    return translate_CmpGT8Sx16(arg1, arg2);
 #endif
 
         case Iop_Add8x8:
