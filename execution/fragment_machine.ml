@@ -809,7 +809,8 @@ struct
 	reg R_CC_DEP1 (D.from_concrete_32 0L);
 	reg R_CC_DEP2 (D.from_concrete_32 0L);
 	reg R_CC_NDEP (D.from_concrete_32 0L);
-	reg R_SSEROUND (D.from_concrete_32 0L);
+	reg R_FPROUND (D.from_concrete_32 0L); (* to nearest *)
+	reg R_SSEROUND (D.from_concrete_32 0L); (* to nearest *)
 	reg R_XMM0L (D.from_concrete_64 0L);
 	reg R_XMM0H (D.from_concrete_64 0L);
 	reg R_XMM1L (D.from_concrete_64 0L);
@@ -866,7 +867,8 @@ struct
 	reg R_CC_DEP1 (D.from_concrete_64 0L);
 	reg R_CC_DEP2 (D.from_concrete_64 0L);
 	reg R_CC_NDEP (D.from_concrete_64 0L);
-	reg R_SSEROUND (D.from_concrete_64 0L);
+	reg R_FPROUND (D.from_concrete_64 0L); (* to nearest *)
+	reg R_SSEROUND (D.from_concrete_64 0L); (* to nearest *)
 	()
 
     method private make_arm_regs_zero =

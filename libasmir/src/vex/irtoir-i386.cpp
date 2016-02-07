@@ -890,7 +890,9 @@ Stmt *i386_translate_dirty( IRStmt *stmt, IRSB *irbb, vector<Stmt *> *irout )
 	result = new Special("cpuid");
     }
     else if (func == "x86g_dirtyhelper_loadF80le") {
-        result = new ExpStmt(new Unknown("Unknown: loadF80"));
+	IRTemp lhs = dirty->tmp;
+	assert(lhs != IRTemp_INVALID);
+	result = mk_assign_tmp(lhs, new Unknown("loadF80"), irbb, irout);
     }
     else if (func == "x86g_dirtyhelper_storeF80le") {
         result = new ExpStmt(new Unknown("Unknown: storeF80"));
@@ -1246,11 +1248,26 @@ Exp *i386_translate_ccall( IRExpr *expr, IRSB *irbb, vector<Stmt *> *irout )
 	result = _ex_or(ex_const(0x1f80),
 			_ex_shl(arg, ex_const(13)));
     }
+    else if ( func == "x86g_create_fpucw" )
+    {
+	Exp *arg = translate_expr(expr->Iex.CCall.args[0], irbb, irout);
+	result = _ex_or(ex_const(0x037f),
+			_ex_shl(arg, ex_const(10)));
+    }
     else if ( func == "x86g_check_ldmxcsr" )
     {
 	Exp *arg = translate_expr(expr->Iex.CCall.args[0], irbb, irout);
 	/* Extract the rounding mode */
 	Exp *rmode = _ex_and(_ex_shr(arg, ex_const(13)),
+			     ex_const(3));
+	/* The high word is for emulation warnings: skip it */
+	result = _ex_u_cast(rmode, REG_64);
+    }
+    else if ( func == "x86g_check_fldcw" )
+    {
+	Exp *arg = translate_expr(expr->Iex.CCall.args[0], irbb, irout);
+	/* Extract the rounding mode */
+	Exp *rmode = _ex_and(_ex_shr(arg, ex_const(10)),
 			     ex_const(3));
 	/* The high word is for emulation warnings: skip it */
 	result = _ex_u_cast(rmode, REG_64);

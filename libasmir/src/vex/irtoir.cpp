@@ -150,6 +150,7 @@ Exp *translate_geti( IRExpr *expr, IRSB *irbb, vector<Stmt *> *irout )
     case VexArchX86:
       return i386_translate_geti(expr, irbb, irout);
     case VexArchAMD64:
+      return x64_translate_geti(expr, irbb, irout);
     case VexArchARM:
       return new Unknown(uTag("GetI"));
     default:
@@ -178,6 +179,7 @@ Stmt *translate_puti( IRStmt *stmt, IRSB *irbb, vector<Stmt *> *irout )
     case VexArchX86:
       return i386_translate_puti(stmt, irbb, irout);
     case VexArchAMD64:
+      return x64_translate_puti(stmt, irbb, irout);
     case VexArchARM:
       return new ExpStmt(new Unknown(uTag("PutI")));
     default:
