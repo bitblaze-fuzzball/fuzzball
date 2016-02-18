@@ -94,6 +94,10 @@ class linux_special_handler (fm : fragment_machine) =
        | X64 -> fm#set_long_var R_RAX
        | ARM -> put_reg R0)
   in
+  let load_long addr =
+    fm#load_long_concretize addr !opt_measure_influence_syscall_args
+      "syscall arg"
+  in
   let load_word addr =
     fm#load_word_concretize addr !opt_measure_influence_syscall_args
       "syscall arg"
@@ -2628,12 +2632,17 @@ object(self)
       done
 
   method private gather_iovec iov cnt =
-    Array.concat
-      (Vine_util.mapn
-	 (fun i -> read_buf
-	    (load_word (lea iov i 8 0)) (* iov_base *)
-	    (Int64.to_int (load_word (lea iov i 8 4)))) (* iov_len *)
-	 (cnt - 1))
+    let read_vec = match !opt_arch with
+      | X86|ARM ->
+	  (fun i -> read_buf
+	     (load_word (lea iov i 8 0)) (* iov_base *)
+	     (Int64.to_int (load_word (lea iov i 8 4)))) (* iov_len *)
+      | X64 ->
+	  (fun i -> read_buf
+	     (load_long (lea iov i 16 0)) (* iov_base *)
+	     (Int64.to_int (load_long (lea iov i 16 8)))) (* iov_len *)
+    in
+      Array.concat (Vine_util.mapn read_vec (cnt - 1))
 
   method sys_writev fd iov cnt =
     let bytes = self#gather_iovec iov cnt in
@@ -3534,7 +3543,8 @@ object(self)
 	       if !opt_trace_syscalls then
 		 Printf.printf "readv(%d, 0x%08Lx, %d)" fd iov cnt;
 	       self#sys_readv fd iov cnt
-	 | ((X86|ARM), 146) -> (* writev *)
+	 | ((X86|ARM), 146) (* writev *)
+	 | (X64, 20) ->
 	     let (arg1, arg2, arg3) = read_3_regs () in
 	     let fd  = Int64.to_int arg1 and
 		 iov = arg2 and

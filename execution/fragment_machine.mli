@@ -261,6 +261,7 @@ class virtual fragment_machine : object
   method virtual load_byte_concretize  : int64 -> bool -> string -> int
   method virtual load_short_concretize : int64 -> bool -> string -> int
   method virtual load_word_concretize  : int64 -> bool -> string -> int64
+  method virtual load_long_concretize  : int64 -> bool -> string -> int64
 
   method virtual make_sink_region : string -> int64 -> unit
 end
@@ -500,6 +501,7 @@ sig
     method load_byte_concretize  : int64 -> bool -> string -> int
     method load_short_concretize : int64 -> bool -> string -> int
     method load_word_concretize  : int64 -> bool -> string -> int64
+    method load_long_concretize  : int64 -> bool -> string -> int64
     method make_sink_region : string -> int64 -> unit
   end
 end

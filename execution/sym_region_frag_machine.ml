@@ -811,6 +811,16 @@ struct
 	     infl_man#measure_point_influence name e);
 	  self#concretize V.REG_64 e
 
+    method load_long_concretize addr do_influence name =
+      let v = self#load_long addr in
+      try (D.to_concrete_64 v)
+      with NotConcrete _ ->
+	let e = D.to_symbolic_64 v in
+	  if do_influence then
+	    (Printf.printf "Measuring symbolic %s influence..." name;
+	     infl_man#measure_point_influence name e);
+	  self#concretize V.REG_64 e
+
     method load_word_concretize addr do_influence name =
       let v = self#load_word addr in
       try (D.to_concrete_32 v)
