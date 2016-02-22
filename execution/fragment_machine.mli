@@ -475,6 +475,8 @@ sig
 
     method get_loop_cnt : int64
 
+    method private get_stmt_num : int
+
     val form_man : Formula_manager.FormulaManagerFunctor(D).formula_manager
     method get_form_man :
       Formula_manager.FormulaManagerFunctor(D).formula_manager

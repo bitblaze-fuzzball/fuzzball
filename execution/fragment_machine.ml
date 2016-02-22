@@ -2005,6 +2005,9 @@ struct
     val mutable last_insn = "none"
     val mutable saw_jump = false
 
+    val mutable stmt_num = -1
+    method private get_stmt_num = stmt_num
+
     method run_sl do_jump sl =
       let jump lab =
 	saw_jump <- true;
@@ -2013,7 +2016,6 @@ struct
 	else
 	  lab
       in
-      let stmt_num = ref (-1) in
       let rec loop =
 	function
 	  | [] -> "fallthrough"
@@ -2021,12 +2023,12 @@ struct
 	      if !opt_trace_stmts then
 		(Printf.printf "  %08Lx."
 		   (try self#get_eip with NotConcrete(_) -> 0L);
-		 (if !stmt_num = -1 then
+		 (if stmt_num = -1 then
 		    Printf.printf "   "
 		  else
-		    (Printf.printf "%03d" !stmt_num;
-		     stmt_num := !stmt_num + 1));
+		    Printf.printf "%03d" stmt_num);
 		 Printf.printf " %s\n" (stmt_to_string_compact st));
+	      stmt_num <- stmt_num + 1;
 	      (match st with
 		 | V.Jmp(l) -> jump (self#eval_label_exp l)
 		 | V.CJmp(cond, V.Name(l1), V.Name(l2))
@@ -2080,7 +2082,7 @@ struct
 			  if saw_jump then
 			    self#run_jump_hooks last_insn last_eip eip;
 			  self#run_eip_hooks;
-			  stmt_num := 1;
+			  stmt_num <- 1;
 			  last_eip <- eip;
 			  saw_jump <- false);
 		     loop rest
@@ -2105,6 +2107,7 @@ struct
 		     let v = D.to_concrete_32 (self#eval_int_exp e) in
 		       Printf.sprintf "halt_%Ld" v)
       in
+	stmt_num <- -1;
 	loop sl
 
     method run () = self#run_sl (fun lab -> true) insns

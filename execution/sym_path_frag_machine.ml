@@ -397,6 +397,52 @@ struct
 	       None)
 	  d ty
 
+    (* It's an important but sometimes subtle invariant that FuzzBALL
+       must always reach the same decision points in the same order when
+       re-executing a path, so that the decision tree gives consistent
+       information. In the past, failures of this invariant have led to
+       hard-to-debug strange behavior. To help catch such problems more
+       quickly, we now annotate each decision tree node with 64 bits
+       which should almost uniquely identify the decision. The top 48
+       bits are the low 48 bits of the address of the instruction that
+       was executing (the "eip" in the code's x86-32-influenced
+       terminology). The low 16 bits identify what kind of decision is
+       being made: the various methods in SPFM and SRFM that lead to
+       decisions being made build these up as an "ident" argument they
+       pass around. Here's a key for interpreting the values:
+
+       0x1xxx Conditional jump, xxx = stmt_num
+       0x2xxx Check-cond-at, xxx = per insn serial num
+       0x31xx Check-for-null, xx = stmt_num
+       0x4000 SPFM.eval_bool_exp, IR assert()
+       0x5ryy Register concretize, r = register number
+       0x61yy Memory byte concretize
+       0x62yy Memory short concretize
+       0x64yy Memory word concretize
+       0x68yy Memory long concretize
+       0x6ayy Misc. concretize
+       0x6byy Binop concretize
+       0x7100 on_missing_random
+       0x81yy SRFM load, base choice
+       0x82yy SRFM load, offset concretize, yy is bit or 0x80 + try
+       0x8400 SRFM load, concolic solve-pc
+       0x8600 SRFM load, sink region check
+       0x91yy SRFM store, base choice
+       0x92yy SRFM store, offset concretize, yy is bit or 0x80 + try
+       0x9300 Target store check, single
+       0x9310 Target store check, table full match
+       0x9320 Target store check, table any match
+       0x9400 SRFM store, concolic solve-pc
+       0x9600 SRFM load, sink region check
+       0xa1yy SRFM jump, base choice
+       0xa2yy SRFM jump, offset concretize, yy is bit or 0x80 + try
+       0xa400 SRFM jump, concolic solve-pc
+       0xb2yy SPFM addr_exp, bit yy
+    *)
+    method private eip_ident ident =
+      let eip = self#get_eip in
+	Int64.logor (Int64.shift_left eip 16) (Int64.of_int ident)
+
     method follow_or_random =
 	let currpath_str = dt#get_hist_str in
 	let followplen = String.length !opt_follow_path and
@@ -422,7 +468,7 @@ struct
 			 Printf.printf "No guidance, choosing randomly\n";
 		       dt#random_bit)
 
-    method query_with_pc_choice cond verbose choice =
+    method query_with_pc_choice cond verbose ident choice =
       let trans_func b =
 	if b then cond else V.UnOp(V.NOT, cond)
       in
@@ -450,7 +496,7 @@ struct
 	if !opt_trace_binary_paths then
 	  Printf.printf "Current Path String: %s\n" dt#get_hist_str;
 	let r = dt#try_extend trans_func try_func non_try_func choice
-	  both_fail_func self#get_eip
+	  both_fail_func (self#eip_ident ident)
 	in
 	  if !opt_trace_binary_paths then
 	    Printf.printf "Current Path String: %s\n" dt#get_hist_str;
@@ -460,38 +506,40 @@ struct
 	    Printf.printf "Current path: %s\n" dt#get_hist_str_bracketed;
 	  r
 
-    method extend_pc_random cond verbose =
+    method extend_pc_random cond verbose ident =
       if !opt_concrete_path_simulate ||
 	(match !opt_concolic_prob with
 	   | Some p -> (dt#random_float < p)
 	   | None -> false)
       then
-	self#extend_pc_known cond verbose ((form_man#eval_expr cond) <> 0L)
+	self#extend_pc_known cond verbose ident
+	  ((form_man#eval_expr cond) <> 0L)
       else
-	let (result, cond') = (self#query_with_pc_choice cond verbose
+	let (result, cond') = (self#query_with_pc_choice cond verbose ident
 				 (fun () -> self#follow_or_random)) in
 	  self#add_to_path_cond cond';
 	  result
 
-    method extend_pc_known cond verbose b =
-      let (result, cond') = (self#query_with_pc_choice cond verbose
+    method extend_pc_known cond verbose ident b =
+      let (result, cond') = (self#query_with_pc_choice cond verbose ident
 			       (fun () -> b)) in
 	self#add_to_path_cond cond';
 	result
 
     (* Like _known, but check the concolic path before the supplied
        preference *)
-    method extend_pc_pref cond verbose pref =
+    method extend_pc_pref cond verbose ident pref =
       if !opt_concrete_path_simulate ||
 	(match !opt_concolic_prob with
 	   | Some p -> (dt#random_float < p)
 	   | None -> false)
       then
-	self#extend_pc_known cond verbose ((form_man#eval_expr cond) <> 0L)
+	self#extend_pc_known cond verbose ident
+	  ((form_man#eval_expr cond) <> 0L)
       else
-	self#extend_pc_known cond verbose pref
+	self#extend_pc_known cond verbose ident pref
 
-    method random_case_split verbose =
+    method random_case_split verbose ident =
       let trans_func b = V.Unknown("unused") in
       let try_func b _ =
 	if verbose then Printf.printf "Trying %B: " b;
@@ -506,15 +554,15 @@ struct
       in
       let (result, _) = (dt#try_extend trans_func try_func non_try_func
 			   (fun () -> self#follow_or_random) both_fail_func
-			   self#get_eip) in
+			   (self#eip_ident ident)) in
 	result
 
-    method private eval_bool_exp_conc_path e =
+    method private eval_bool_exp_conc_path e ident =
       let b = (form_man#eval_expr e) <> 0L in
 	if !opt_trace_conditions then 
 	  Printf.printf "Computed concrete value %b\n" b;
 	if !opt_solve_path_conditions then
-	  (let b' = self#extend_pc_known e true b in
+	  (let b' = self#extend_pc_known e true ident b in
 	   let choices = dt#check_last_choices in
 	     assert(b = b');
 	     (b, choices))
@@ -523,7 +571,7 @@ struct
 	     (if b then e else V.UnOp(V.NOT, e));
 	   (b, Some b))
 
-    method private eval_bool_exp_tristate exp choice =
+    method private eval_bool_exp_tristate exp choice ident =
       let v = self#eval_int_exp exp in
 	try
 	  if (D.to_concrete_1 v) = 1 then
@@ -537,19 +585,19 @@ struct
 		  Printf.printf "Symbolic branch condition (0x%08Lx) %s\n"
 		    (self#get_eip) (V.exp_to_string e);
 		if !opt_concrete_path then
-		  self#eval_bool_exp_conc_path e
+		  self#eval_bool_exp_conc_path e ident
 		else 
 		  (dt#start_new_query_binary;
 		   let b = match choice with
-		     | None -> self#extend_pc_random e true
-		     | Some bit -> self#extend_pc_known e true bit
+		     | None -> self#extend_pc_random e true ident
+		     | Some bit -> self#extend_pc_known e true ident bit
 		   in
 		   let choices = dt#check_last_choices in
 		     dt#count_query;
 		     (b, choices))
 
     method eval_bool_exp e = 
-      let (b, _) = self#eval_bool_exp_tristate e None in
+      let (b, _) = self#eval_bool_exp_tristate e None 0x4000 in
 	b
 
     val mutable cjmp_heuristic = None
@@ -603,11 +651,12 @@ struct
 	   result)
 	else
 	  let e = D.to_symbolic_1 v in
+	  let ident = 0x1000 + (self#get_stmt_num land 0xfff) in
 	    if !opt_trace_conditions then 
 	      Printf.printf "Symbolic branch condition (0x%08Lx) %s\n"
 		(self#get_eip) (V.exp_to_string e);
 	    if !opt_concrete_path then
-	      let (b, _) = self#eval_bool_exp_conc_path e in
+	      let (b, _) = self#eval_bool_exp_conc_path e ident in
 		b
 	    else
 	      (dt#start_new_query_binary;
@@ -617,8 +666,8 @@ struct
 		 None
 	       in
 	       let b = match choice with
-		 | None -> self#extend_pc_random e true
-		 | Some bit -> self#extend_pc_known e true bit
+		 | None -> self#extend_pc_random e true ident
+		 | Some bit -> self#extend_pc_known e true ident bit
 	       in
 		 dt#count_query;
 		 ignore(self#call_cjmp_heuristic eip targ1 targ2 (Some b));
@@ -644,7 +693,8 @@ struct
 			 let bit = self#extend_pc_random
 			   (V.Cast(V.CAST_LOW, V.REG_1,
 				   (V.BinOp(V.ARSHIFT, e,
-					    (c32 (Int64.of_int b)))))) false
+					    (c32 (Int64.of_int b))))))
+			   false (0xb200 + b)
 			 in
 			   bits := (Int64.logor (Int64.shift_left !bits 1)
 				      (if bit then 1L else 0L));
@@ -658,12 +708,12 @@ struct
       let rec random_int width =
 	if width = 0 then 0 else
 	  2 * (random_int width - 1) + 
-	    (if self#random_case_split false then 1 else 0)
+	    (if self#random_case_split false 0x7100 then 1 else 0)
       in
       let rec random_int64 width =
 	if width = 0 then 0L else
 	  Int64.add (Int64.mul 2L (random_int64 (width - 1)))
-	    (if self#random_case_split false then 1L else 0L)
+	    (if self#random_case_split false 0x7100 then 1L else 0L)
       in
       m#on_missing
 	(fun size _ -> match size with
@@ -734,22 +784,27 @@ struct
 		 eip e_str str_addr str)
 	!opt_string_tracepoints;
       infl_man#eip_hook eip;
-      List.iter
-	(fun (eip', expr) ->
-	   if eip' = eip then
-	     let (_, choices) = self#eval_bool_exp_tristate expr (Some true) in
-	       Printf.printf "At 0x%08Lx, condition %s %s\n"
-		 eip (V.exp_to_string expr)
-		 (match choices with
-		    | Some true -> "is true"
-		    | Some false -> "is false"
-		    | None -> "can be true or false");
-	       (if !opt_finish_on_nonfalse_cond then
-		 if choices <> Some false then
-		   self#finish_fuzz "supplied condition non-false"
-		 else
-		   self#unfinish_fuzz "supplied condition false"))
-	!opt_check_condition_at;
+      (let cond_counter = ref 0 in
+	 List.iter
+	   (fun (eip', expr) ->
+	      cond_counter := !cond_counter + 1;
+	      if eip' = eip then
+		let ident = 0x2000 + !cond_counter in
+		let (_, choices) = self#eval_bool_exp_tristate expr
+		  (Some true) ident
+		in
+		  Printf.printf "At 0x%08Lx, condition %s %s\n"
+		    eip (V.exp_to_string expr)
+		    (match choices with
+		       | Some true -> "is true"
+		       | Some false -> "is false"
+		       | None -> "can be true or false");
+		  (if !opt_finish_on_nonfalse_cond then
+		     if choices <> Some false then
+		       self#finish_fuzz "supplied condition non-false"
+		     else
+		       self#unfinish_fuzz "supplied condition false"))
+	   !opt_check_condition_at);
       List.iter
 	(fun (_, t_eip) -> 
 	   if t_eip = eip then

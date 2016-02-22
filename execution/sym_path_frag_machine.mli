@@ -39,23 +39,23 @@ sig
 
     method follow_or_random : bool 
 
-    method query_with_pc_choice : Vine.exp -> bool -> (unit -> bool)
+    method query_with_pc_choice : Vine.exp -> bool -> int -> (unit -> bool)
       -> (bool * Vine.exp)
 
-    method extend_pc_random : Vine.exp -> bool -> bool
+    method extend_pc_random : Vine.exp -> bool -> int -> bool
 
-    method extend_pc_known : Vine.exp -> bool -> bool -> bool 
+    method extend_pc_known : Vine.exp -> bool -> int -> bool -> bool
 
-    method extend_pc_pref : Vine.exp -> bool -> bool -> bool
+    method extend_pc_pref : Vine.exp -> bool -> int -> bool -> bool
 
-    method random_case_split : bool -> bool
+    method random_case_split : bool -> int -> bool
 
     method set_cjmp_heuristic :
       (int64 -> int64 -> int64 -> float -> bool option -> bool option) -> unit
 
     method eval_cjmp : Vine.exp -> int64 -> int64 -> bool
 
-    method eval_bool_exp : Vine.exp -> bool
+    method eval_bool_exp : Vine.exp ->  bool
 
     method eval_addr_exp : Vine.exp -> int64
 
@@ -224,6 +224,7 @@ sig
     method watchpoint : unit
     method mem_val_as_string : int64 -> Vine.typ -> string
     method get_loop_cnt : int64
+    method private get_stmt_num : int
     val form_man : Formula_manager.FormulaManagerFunctor(D).formula_manager
     method get_form_man :
       Formula_manager.FormulaManagerFunctor(D).formula_manager
