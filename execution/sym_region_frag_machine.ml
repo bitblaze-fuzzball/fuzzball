@@ -667,18 +667,22 @@ struct
 	  | (0L, [v], _) -> (Some(self#region_for v), ambig)
 	  | (0L, vl, _) ->
 	      let (bvar, rest_vars) =
-		let (known_regions, not_known) =
-		  List.partition (fun e -> self#is_region_base e) vl
-		in
+		(* We used to have logic here that checked whether one
+		   of the symbols was known to have already been used as
+		   a region base, and if so selected it. But the set of
+		   region base variables expands during a run, so this
+		   lead to decision tree inconsistencies. If we wanted
+		   this heuristic, we need to do something more
+		   complicated like always choose from among the same
+		   set, but with preferences based on seen regions. For
+		   now, omit that logic and always choose randomly from
+		   among all the possibilties.  *)
 		let split_count = ref (-1) in
-		  match known_regions with
-		    | [v] -> (v, not_known)
-		    | _ -> 
-			select_one vl
-			  (fun () ->
-			     split_count := !split_count + 1;
-			     self#random_case_split !opt_trace_decisions
-			       (!split_count + 0x100 + ident))
+		  select_one vl
+		    (fun () ->
+		       split_count := !split_count + 1;
+		       self#random_case_split !opt_trace_decisions
+			 (!split_count + 0x100 + ident))
 	      in
 		if !opt_trace_sym_addrs then
 		  Printf.printf "Choosing %s as the base address\n"
