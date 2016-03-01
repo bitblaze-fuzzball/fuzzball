@@ -1286,6 +1286,13 @@ Exp *translate_const( IRExpr *expr )
     return result;
 }
 
+Exp *distribute_unop128(unop_type_t op, Exp *arg_v) {
+    Exp *arg_high, *arg_low;
+    split_vector(arg_v, &arg_high, &arg_low);
+
+    return new Vector(new UnOp(op, arg_high), new UnOp(op, arg_low));
+}
+
 Exp *translate_simple_unop( IRExpr *expr, IRSB *irbb, vector<Stmt *> *irout )
 {
 
@@ -1298,7 +1305,6 @@ Exp *translate_simple_unop( IRExpr *expr, IRSB *irbb, vector<Stmt *> *irout )
 	case Iop_Not16:
 	case Iop_Not32:
 	case Iop_Not64:
-        case Iop_NotV128:
 	    return new UnOp( NOT, arg );
 #if VEX_VERSION < 1770
         case Iop_Neg8:
@@ -1404,6 +1410,9 @@ Exp *translate_simple_unop( IRExpr *expr, IRSB *irbb, vector<Stmt *> *irout )
         case Iop_GetMSBs8x16:
 	    return translate_GetMSBs8x16(arg);
 #endif
+
+        case Iop_NotV128:
+	    return distribute_unop128(NOT, arg);
 
         default:
             break;
