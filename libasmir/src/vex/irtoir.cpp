@@ -975,6 +975,11 @@ void split4x16(Exp *x64, Exp **w3, Exp **w2, Exp **w1, Exp **w0) {
     *w0 = _ex_l_cast(_ex_l_cast(x64, REG_32), REG_16);
 }
 
+void split2x32(Exp *x64, Exp **w1, Exp **w0) {
+    *w1 =  ex_h_cast(x64, REG_32);
+    *w0 = _ex_l_cast(x64, REG_32);
+}
+
 Exp *translate_CmpEQ8x8(Exp *a, Exp *b) {
     Exp *a7, *a6, *a5, *a4, *a3, *a2, *a1, *a0;
     split8x8(a, &a7, &a6, &a5, &a4, &a3, &a2, &a1, &a0);
@@ -1065,6 +1070,38 @@ Exp *translate_GetMSBs8x16(Exp *x) {
     Exp *r_h = translate_GetMSBs8x8(x_h);
     Exp *r_l = translate_GetMSBs8x8(x_l);
     return assemble2x8(r_h, r_l);
+}
+
+Exp *interleave2_2x32(Exp *a, Exp *b) {
+    Exp *a1, *a0;
+    split2x32(a, &a1, &a0);
+    Exp *b1, *b0;
+    split2x32(b, &b1, &b0);
+    return assemble4x32(a1, b1, a0, b0);
+}
+
+Exp *translate_InterleaveLO32x4(Exp *a, Exp *b) {
+    Exp *a_high, *a_low;
+    split_vector(a, &a_high, &a_low);
+    delete a_high;
+
+    Exp *b_high, *b_low;
+    split_vector(b, &b_high, &b_low);
+    delete b_high;
+
+    return interleave2_2x32(a_low, b_low);
+}
+
+Exp *translate_InterleaveLO64x2(Exp *a, Exp *b) {
+    Exp *a_high, *a_low;
+    split_vector(a, &a_high, &a_low);
+    delete a_high;
+
+    Exp *b_high, *b_low;
+    split_vector(b, &b_high, &b_low);
+    delete b_high;
+
+    return translate_64HLto128(a_low, b_low);
 }
 
 Exp *interleave2_4x16(Exp *a, Exp *b) {
@@ -1612,6 +1649,12 @@ Exp *translate_simple_binop( IRExpr *expr, IRSB *irbb, vector<Stmt *> *irout )
 	// Float narrowing (for widening see unops)
         case Iop_F64toF32:
            return new FCast(arg2, REG_32, CAST_FNARROW, ROUND_NEAREST);
+
+        case Iop_InterleaveLO64x2:
+	    return translate_InterleaveLO64x2(arg1, arg2);
+
+        case Iop_InterleaveLO32x4:
+	    return translate_InterleaveLO32x4(arg1, arg2);
 
 	case Iop_InterleaveLO16x8:
 	    return translate_InterleaveLO16x8(arg1, arg2);
