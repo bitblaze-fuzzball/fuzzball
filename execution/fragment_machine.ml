@@ -1142,6 +1142,24 @@ struct
 	reg R_YMM15_1 (form_man#fresh_symbolic_64 "initial_ymm15_1");
 	reg R_YMM15_2 (form_man#fresh_symbolic_64 "initial_ymm15_2");
 	reg R_YMM15_3 (form_man#fresh_symbolic_64 "initial_ymm15_3");
+	reg R_FTOP (D.from_concrete_32 0L);
+	reg R_FC3210 (D.from_concrete_32 0L);
+	reg R_FPREG0 (D.from_concrete_64 0L);
+	reg R_FPREG1 (D.from_concrete_64 0L);
+	reg R_FPREG2 (D.from_concrete_64 0L);
+	reg R_FPREG3 (D.from_concrete_64 0L);
+	reg R_FPREG4 (D.from_concrete_64 0L);
+	reg R_FPREG5 (D.from_concrete_64 0L);
+	reg R_FPREG6 (D.from_concrete_64 0L);
+	reg R_FPREG7 (D.from_concrete_64 0L);
+	reg R_FPTAG0 (D.from_concrete_8 0);
+	reg R_FPTAG1 (D.from_concrete_8 0);
+	reg R_FPTAG2 (D.from_concrete_8 0);
+	reg R_FPTAG3 (D.from_concrete_8 0);
+	reg R_FPTAG4 (D.from_concrete_8 0);
+	reg R_FPTAG5 (D.from_concrete_8 0);
+	reg R_FPTAG6 (D.from_concrete_8 0);
+	reg R_FPTAG7 (D.from_concrete_8 0);
 
     method private make_arm_regs_symbolic =
       let reg r v =
