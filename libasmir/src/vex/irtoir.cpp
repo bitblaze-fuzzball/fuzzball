@@ -980,6 +980,29 @@ void split2x32(Exp *x64, Exp **w1, Exp **w0) {
     *w0 = _ex_l_cast(x64, REG_32);
 }
 
+Exp *translate_CmpEQ32x2(Exp *a, Exp *b) {
+    Exp *a1, *a0;
+    split2x32(a, &a1, &a0);
+    Exp *b1, *b0;
+    split2x32(b, &b1, &b0);
+    Exp *r1 = _ex_s_cast(_ex_eq(a1, b1), REG_32);
+    Exp *r0 = _ex_s_cast(_ex_eq(a0, b0), REG_32);
+    return translate_32HLto64(r1, r0);
+}
+
+Exp *translate_CmpEQ32x4(Exp *a, Exp *b) {
+    Exp *a_high, *a_low;
+    split_vector(a, &a_high, &a_low);
+
+    Exp *b_high, *b_low;
+    split_vector(b, &b_high, &b_low);
+
+    Exp *r_high = translate_CmpEQ32x2(a_high, b_high);
+    Exp *r_low = translate_CmpEQ32x2(a_low, b_low);
+
+    return translate_64HLto128(r_high, r_low);
+}
+
 Exp *translate_CmpEQ8x8(Exp *a, Exp *b) {
     Exp *a7, *a6, *a5, *a4, *a3, *a2, *a1, *a0;
     split8x8(a, &a7, &a6, &a5, &a4, &a3, &a2, &a1, &a0);
@@ -1665,6 +1688,9 @@ Exp *translate_simple_binop( IRExpr *expr, IRSB *irbb, vector<Stmt *> *irout )
 #if VEX_VERSION >= 636
         case Iop_CmpEQ8x16:
 	    return translate_CmpEQ8x16(arg1, arg2);
+
+        case Iop_CmpEQ32x4:
+	    return translate_CmpEQ32x4(arg1, arg2);
 #endif
 #if VEX_VERSION >= 1984
         case Iop_CmpGT8Sx16:
