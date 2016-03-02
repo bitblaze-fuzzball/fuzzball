@@ -169,7 +169,9 @@ struct
 	      (fun es e -> V.BinOp(V.BITAND, e, es)) cond rest
 	    in
 	    let select ce_ref count_ref =
-	      if (form_man#eval_expr_from_ce !ce_ref conj) <> 0L then
+	      if try (form_man#eval_expr_from_ce !ce_ref conj) <> 0L
+	      with Division_by_zero -> false
+	      then
 		self#add_to_working_cache ce_ref
 	    in
 	      Hashtbl.iter select global_ce_cache
@@ -179,7 +181,11 @@ struct
       let conj = List.fold_left
 	(fun es e -> V.BinOp(V.BITAND, e, es)) new_cond path_cond
       in
-      let filter ce_ref = (form_man#eval_expr_from_ce !ce_ref conj) <> 0L in
+      let filter ce_ref =
+	try
+	  (form_man#eval_expr_from_ce !ce_ref conj) <> 0L
+	with Division_by_zero -> false
+      in
         working_ce_cache <- List.filter filter working_ce_cache
 
     method input_depth =
@@ -263,7 +269,9 @@ struct
       let ce_opt =
 	let rec loop = function
 	  | ce_ref :: rest
-	      when (form_man#eval_expr_from_ce !ce_ref conj) <> 0L ->
+	      when (try
+		      (form_man#eval_expr_from_ce !ce_ref conj) <> 0L
+		    with Division_by_zero -> false) ->
 	      Some !ce_ref
 	  | ce_ref :: rest -> loop rest
 	  | [] -> None
