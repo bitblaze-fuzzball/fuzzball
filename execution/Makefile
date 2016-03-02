@@ -43,6 +43,7 @@ export SOURCES = \
 	sym_path_frag_machine.mli sym_path_frag_machine.ml \
 	sym_region_frag_machine.mli sym_region_frag_machine.ml \
 	special_handlers.mli special_handlers.ml \
+	noop_syscalls.mli noop_syscalls.ml \
 	linux_syscalls.mli linux_syscalls.ml \
 	linux_loader.mli linux_loader.ml \
 	state_loader.mli state_loader.ml \
