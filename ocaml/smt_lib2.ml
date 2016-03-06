@@ -161,9 +161,13 @@ object (self)
 	  failwith "Memory access translation to SMT-LIB2 not supported"
       | Lval(Mem _) ->
 	  raise (Invalid_argument "Memory type not handled")
-
-      | Let(_,_,_) ->
-	  failwith "Let expression translation to SMT-LIB2 not supported"
+      | Let(Temp(v), rhs, body) ->
+	  let v_s = self#tr_var v and
+	      rhs_s = tr_exp rhs and
+	      body_s = tr_exp body in
+	    "(let ((" ^ v_s ^ " " ^ rhs_s ^ ")) " ^ body_s ^ ")"
+      | Let(Mem(_,_,_), _, _) ->
+	  failwith "Memory let expression translation to SMT-LIB2 not supported"
       | UnOp(uop, e1) ->
 	  let pre = match (uop, (Vine_typecheck.infer_type_fast e1)) with
 	    | (_, REG_1) -> "(not "
