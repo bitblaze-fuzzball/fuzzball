@@ -343,9 +343,11 @@ struct
 	  -> ExprOffset(e)
       | V.BinOp(V.TIMES, _, _)
 	  -> ExprOffset(e)
-      | e when (narrow_bitwidth form_man e) < 23
+      | e when (narrow_bitwidth form_man e)
+	  < (if reg_addr () == V.REG_32 then 23 else 40)
 	  -> ExprOffset(e)
-      | e when (narrow_bitwidth_signed form_man e) < 23
+      | e when (narrow_bitwidth_signed form_man e)
+	  < (if reg_addr () == V.REG_32 then 23 else 40)
 	  -> ExprOffset(e)
       | V.BinOp(V.ARSHIFT, _, _)
 	  -> ExprOffset(e)
