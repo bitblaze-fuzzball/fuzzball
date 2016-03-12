@@ -409,6 +409,11 @@ struct
 	  when (fix_u32 off) >= 0xffffff00L
 	    ->
 	  (classify_term form_man x)
+      | V.BinOp(V.BITAND, x, V.Constant(V.Int(V.REG_64, off)))
+	  when off >= 0xffffffffffffff00L
+	    ->
+	  (classify_term form_man x)
+
       (* Addition inside another operation (top-level addition should
 	 be handled by split_terms) *)
       | V.BinOp(V.PLUS, e1, e2)
