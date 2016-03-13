@@ -1061,6 +1061,29 @@ Exp *translate_CmpGT8Sx16(Exp *a, Exp *b) {
     return translate_64HLto128(r_high, r_low);
 }
 
+Exp *translate_CmpGT32Sx2(Exp *a, Exp *b) {
+    Exp *a1, *a0;
+    split2x32(a, &a1, &a0);
+    Exp *b1, *b0;
+    split2x32(b, &b1, &b0);
+    Exp *r1 = _ex_s_cast(_ex_slt(b1, a1), REG_32);
+    Exp *r0 = _ex_s_cast(_ex_slt(b0, a0), REG_32);
+    return translate_32HLto64(r1, r0);
+}
+
+Exp *translate_CmpGT32Sx4(Exp *a, Exp *b) {
+    Exp *a_high, *a_low;
+    split_vector(a, &a_high, &a_low);
+
+    Exp *b_high, *b_low;
+    split_vector(b, &b_high, &b_low);
+
+    Exp *r_high = translate_CmpGT32Sx2(a_high, b_high);
+    Exp *r_low = translate_CmpGT32Sx2(a_low, b_low);
+
+    return translate_64HLto128(r_high, r_low);
+}
+
 Exp *assemble8x1(Exp *b7, Exp *b6, Exp *b5, Exp *b4,
 		 Exp *b3, Exp *b2, Exp *b1, Exp *b0) {
     b7 = _ex_shl(_ex_u_cast(b7, REG_8), 7);
@@ -1115,6 +1138,18 @@ Exp *translate_InterleaveLO32x4(Exp *a, Exp *b) {
     return interleave2_2x32(a_low, b_low);
 }
 
+Exp *translate_InterleaveHI32x4(Exp *a, Exp *b) {
+    Exp *a_high, *a_low;
+    split_vector(a, &a_high, &a_low);
+    delete a_low;
+
+    Exp *b_high, *b_low;
+    split_vector(b, &b_high, &b_low);
+    delete b_low;
+
+    return interleave2_2x32(a_high, b_high);
+}
+
 Exp *translate_InterleaveLO64x2(Exp *a, Exp *b) {
     Exp *a_high, *a_low;
     split_vector(a, &a_high, &a_low);
@@ -1125,6 +1160,18 @@ Exp *translate_InterleaveLO64x2(Exp *a, Exp *b) {
     delete b_high;
 
     return translate_64HLto128(a_low, b_low);
+}
+
+Exp *translate_InterleaveHI64x2(Exp *a, Exp *b) {
+    Exp *a_high, *a_low;
+    split_vector(a, &a_high, &a_low);
+    delete a_low;
+
+    Exp *b_high, *b_low;
+    split_vector(b, &b_high, &b_low);
+    delete b_low;
+
+    return translate_64HLto128(a_high, b_high);
 }
 
 Exp *interleave2_4x16(Exp *a, Exp *b) {
@@ -1149,6 +1196,18 @@ Exp *translate_InterleaveLO16x8(Exp *a, Exp *b) {
     return interleave2_4x16(a_low, b_low);
 }
 
+Exp *translate_InterleaveHI16x8(Exp *a, Exp *b) {
+    Exp *a_high, *a_low;
+    split_vector(a, &a_high, &a_low);
+    delete a_low;
+
+    Exp *b_high, *b_low;
+    split_vector(b, &b_high, &b_low);
+    delete b_low;
+
+    return interleave2_4x16(a_high, b_high);
+}
+
 Exp *interleave2_8x8(Exp *a, Exp *b) {
     Exp *a7, *a6, *a5, *a4, *a3, *a2, *a1, *a0;
     split8x8(a, &a7, &a6, &a5, &a4, &a3, &a2, &a1, &a0);
@@ -1169,6 +1228,18 @@ Exp *translate_InterleaveLO8x16(Exp *a, Exp *b) {
     delete b_high;
 
     return interleave2_8x8(a_low, b_low);
+}
+
+Exp *translate_InterleaveHI8x16(Exp *a, Exp *b) {
+    Exp *a_high, *a_low;
+    split_vector(a, &a_high, &a_low);
+    delete a_low;
+
+    Exp *b_high, *b_low;
+    split_vector(b, &b_high, &b_low);
+    delete b_low;
+
+    return interleave2_8x8(a_high, b_high);
 }
 
 Exp *translate_par8x8_binop(binop_type_t op, Exp *a, Exp *b) {
@@ -1219,6 +1290,36 @@ Exp *translate_minmax16x8(binop_type_t op, bool is_max, Exp *a, Exp *b) {
     split_vector(b, &b_high, &b_low);
     Exp *r_h = translate_minmax8x8(op, is_max, a_high, b_high);
     Exp *r_l = translate_minmax8x8(op, is_max, a_low, b_low);
+    return translate_64HLto128(r_h, r_l);
+}
+
+Exp *translate_par2x32_binop(binop_type_t op, Exp *a, Exp *b) {
+    Exp *a1, *a0;
+    split2x32(a, &a1, &a0);
+    Exp *b1, *b0;
+    split2x32(b, &b1, &b0);
+    Exp *r1 = new BinOp(op, a1, b1);
+    Exp *r0 = new BinOp(op, a0, b0);
+    return translate_32HLto64(r1, r0);
+}
+
+Exp *translate_par4x32_binop(binop_type_t op, Exp *a, Exp *b) {
+    Exp *a_high, *a_low;
+    split_vector(a, &a_high, &a_low);
+    Exp *b_high, *b_low;
+    split_vector(b, &b_high, &b_low);
+    Exp *r_h = translate_par2x32_binop(op, a_high, b_high);
+    Exp *r_l = translate_par2x32_binop(op, a_low, b_low);
+    return translate_64HLto128(r_h, r_l);
+}
+
+Exp *translate_par2x64_binop(binop_type_t op, Exp *a, Exp *b) {
+    Exp *a_high, *a_low;
+    split_vector(a, &a_high, &a_low);
+    Exp *b_high, *b_low;
+    split_vector(b, &b_high, &b_low);
+    Exp *r_h = new BinOp(op, a_high, b_high);
+    Exp *r_l = new BinOp(op, a_low, b_low);
     return translate_64HLto128(r_h, r_l);
 }
 
@@ -1462,6 +1563,15 @@ Exp *distribute_binop128(binop_type_t op, Exp *left_v, Exp *right_v) {
 		      new BinOp(op, left_low, right_low));
 }
 
+Exp *translate_vs2x64_shift(binop_type_t op, Exp *left_v, Exp *right) {
+    Exp *left_high, *left_low;
+    split_vector(left_v, &left_high, &left_low);
+
+    return new Vector(new BinOp(op, left_high, right),
+		      new BinOp(op, left_low, ecl(right)));
+}
+
+
 Exp *translate_simple_binop( IRExpr *expr, IRSB *irbb, vector<Stmt *> *irout )
 {
     Exp *arg1 = translate_expr(expr->Iex.Binop.arg1, irbb, irout);
@@ -1684,15 +1794,21 @@ Exp *translate_simple_binop( IRExpr *expr, IRSB *irbb, vector<Stmt *> *irout )
 
         case Iop_InterleaveLO64x2:
 	    return translate_InterleaveLO64x2(arg1, arg2);
-
         case Iop_InterleaveLO32x4:
 	    return translate_InterleaveLO32x4(arg1, arg2);
-
 	case Iop_InterleaveLO16x8:
 	    return translate_InterleaveLO16x8(arg1, arg2);
-
 	case Iop_InterleaveLO8x16:
 	    return translate_InterleaveLO8x16(arg1, arg2);
+
+        case Iop_InterleaveHI64x2:
+	    return translate_InterleaveHI64x2(arg1, arg2);
+        case Iop_InterleaveHI32x4:
+	    return translate_InterleaveHI32x4(arg1, arg2);
+	case Iop_InterleaveHI16x8:
+	    return translate_InterleaveHI16x8(arg1, arg2);
+	case Iop_InterleaveHI8x16:
+	    return translate_InterleaveHI8x16(arg1, arg2);
 
 #if VEX_VERSION >= 636
         case Iop_CmpEQ8x16:
@@ -1704,6 +1820,8 @@ Exp *translate_simple_binop( IRExpr *expr, IRSB *irbb, vector<Stmt *> *irout )
 #if VEX_VERSION >= 1984
         case Iop_CmpGT8Sx16:
 	    return translate_CmpGT8Sx16(arg1, arg2);
+        case Iop_CmpGT32Sx4:
+	    return translate_CmpGT32Sx4(arg1, arg2);
 #endif
 
         case Iop_Add8x8:
@@ -1744,6 +1862,36 @@ Exp *translate_simple_binop( IRExpr *expr, IRSB *irbb, vector<Stmt *> *irout )
 #endif
         case Iop_Max8Sx16:
 	    return translate_minmax16x8(SLT, true, arg1, arg2);
+
+        case Iop_Add32x2:
+	    return translate_par2x32_binop(PLUS, arg1, arg2);
+        case Iop_Add32x4:
+	    return translate_par4x32_binop(PLUS, arg1, arg2);
+
+        case Iop_Sub32x2:
+	    return translate_par2x32_binop(MINUS, arg1, arg2);
+        case Iop_Sub32x4:
+	    return translate_par4x32_binop(MINUS, arg1, arg2);
+
+        case Iop_Mul32x2:
+	    return translate_par2x32_binop(TIMES, arg1, arg2);
+        case Iop_Mul32x4:
+	    return translate_par4x32_binop(TIMES, arg1, arg2);
+
+        case Iop_Add64x2:
+	    return translate_par2x64_binop(PLUS, arg1, arg2);
+
+        case Iop_Sub64x2:
+	    return translate_par2x64_binop(MINUS, arg1, arg2);
+
+        case Iop_ShlN64x2:
+	    return translate_vs2x64_shift(LSHIFT, arg1, arg2);
+        case Iop_ShrN64x2:
+	    return translate_vs2x64_shift(RSHIFT, arg1, arg2);
+#if VEX_VERSION >= 2016
+        case Iop_SarN64x2:
+	    return translate_vs2x64_shift(ARSHIFT, arg1, arg2);
+#endif
 
         default:
             break;
