@@ -1982,7 +1982,7 @@ struct
       in
 	((func rm v1), ty)
 
-    method private eval_ite v_c v_t v_f ty_t =
+    method eval_ite v_c v_t v_f ty_t =
       let func =
 	match ty_t with
 	  | V.REG_1  -> D.ite1

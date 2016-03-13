@@ -405,6 +405,7 @@ sig
     method eval_bool_exp : Vine.exp -> bool
     method eval_addr_exp : Vine.exp -> int64
     method eval_label_exp : Vine.exp -> string
+    method eval_ite : D.t -> D.t -> D.t -> Vine.typ -> (D.t * Vine.typ)
 
     method jump : (string -> bool) -> string -> string
 

@@ -135,6 +135,7 @@ val opt_trace_offset_limit : bool ref
 val opt_no_table_store : bool ref
 val opt_implied_value_conc : bool ref
 val opt_trace_ivc : bool ref
+val opt_ite_ivc : bool ref
 val opt_periodic_stats : int64 option ref
 val opt_trace_global_ce_cache : bool ref
 val opt_trace_working_ce_cache : bool ref

@@ -391,6 +391,20 @@ struct
 	Printf.printf "Concolic value 0x%Lx for %s is feasible\n"
 	  conc_val (V.exp_to_string exp)
 
+    method eval_ite v_c v_t v_f ty_t =
+      let v_c' =
+	if !opt_ite_ivc then
+	  form_man#simplify_with_callback
+	    (fun e2 ty ->
+	       match self#query_unique_value e2 ty with
+		 | Some v ->
+		     Some (V.Constant(V.Int(ty, v)))
+		 | None -> None) v_c V.REG_1
+	else
+	  v_c
+      in
+	fm#eval_ite v_c' v_t v_f ty_t
+
     method eval_int_exp_simplify exp =
       let (d, ty) = self#eval_int_exp_ty exp in
 	form_man#simplify_with_callback

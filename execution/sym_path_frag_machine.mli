@@ -59,6 +59,8 @@ sig
 
     method eval_addr_exp : Vine.exp -> int64
 
+    method eval_ite : D.t -> D.t -> D.t -> Vine.typ -> (D.t * Vine.typ)
+
     method on_missing_random : unit
 
     method on_missing_zero : unit
