@@ -27,7 +27,12 @@ let solver_fails = ref 0L
 let is_input_byte_compare e =
   let eq flip a b =
     let a_is_input = match a with
-      | V.Lval(V.Mem((_, "input0", _), _, V.REG_8)) -> true
+      | V.Lval(V.Mem((_, name, _), _, V.REG_8)) ->
+        (if Str.string_match (Str.regexp "^input") name 0 then
+            true
+         else
+            false
+        )
       | V.Cast((V.CAST_SIGNED|V.CAST_UNSIGNED), _,
 	       V.Lval(V.Mem((_, "input0", _), _, V.REG_8))) -> true
       | _ -> false
