@@ -883,7 +883,8 @@ Stmt *i386_translate_dirty( IRStmt *stmt, IRSB *irbb, vector<Stmt *> *irout )
 	assert(lhs != IRTemp_INVALID);
 	result = mk_assign_tmp(lhs, new Unknown("rdtsc"), irbb, irout);
     }
-    else if ( func == "x86g_dirtyhelper_CPUID_sse2" 
+    else if ( func == "x86g_dirtyhelper_CPUID_sse3"
+	      || func == "x86g_dirtyhelper_CPUID_sse2"
 	      || func == "x86g_dirtyhelper_CPUID_sse1"
 	      || func == "x86g_dirtyhelper_CPUID_sse0") 
     {
