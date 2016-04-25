@@ -3970,7 +3970,8 @@ object(self)
 	     uh "Unhandled Linux system call tkill (238)"
 	 | ((X86|ARM), 239) -> (* sendfile64 *)
 	     uh "Unhandled Linux system call sendfile64 (239)"
-	 | ((X86|ARM), 240) -> (* futex *)
+	 | ((X86|ARM), 240) (* futex *)
+	 | (X64, 202) ->
 	     let (arg1, arg2, arg3, arg4, arg5, arg6) = read_6_regs () in
 	     let uaddr    = arg1 and
 		 op       = Int64.to_int arg2 and
