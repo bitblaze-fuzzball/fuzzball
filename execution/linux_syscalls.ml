@@ -2804,7 +2804,8 @@ object(self)
 	 | (X86, 18) -> (* oldstat *)
 	     uh "Unhandled Linux system call oldstat (18)"
 	 | (ARM, 19) -> uh "Check whether ARM lseek syscall matches x86"
-	 | (X86, 19) -> (* lseek *)
+	 | (X86, 19) (* lseek *)
+	 | (X64,  8) ->
 	     let (ebx, ecx, edx) = read_3_regs () in
 	     let (fd: int) = Int64.to_int ebx and
 		 offset = ecx and
