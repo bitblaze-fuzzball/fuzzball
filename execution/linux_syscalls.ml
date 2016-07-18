@@ -1433,15 +1433,16 @@ object(self)
       | Unix.Unix_error(err, _, _) -> self#put_errno err
 	  
   method private mmap_common addr length prot flags fd offset =
-    let fdi = Int64.to_int fd in
-    compare_fds !netlink_sim_sockfd fdi
+    compare_fds !netlink_sim_sockfd fd
       Unix.ENOSYS "mmap(2) for netlink socket fd not implemented";
+    let offset_i = Int64.to_int offset in
     let do_read addr = 
       let len = Int64.to_int length in
-      let old_loc = Unix.lseek (self#get_fd fdi) 0 Unix.SEEK_CUR in
-      let _ = Unix.lseek (self#get_fd fdi) offset Unix.SEEK_SET in
-      let _ = self#do_unix_read (self#get_fd fdi) addr len in
-      let _ = Unix.lseek (self#get_fd fdi) old_loc Unix.SEEK_SET in
+      let fd_oc = self#get_fd fd in
+      let old_loc = Unix.lseek fd_oc 0 Unix.SEEK_CUR in
+	ignore(Unix.lseek fd_oc offset_i Unix.SEEK_SET);
+	ignore(self#do_unix_read fd_oc addr len);
+	ignore(Unix.lseek fd_oc old_loc Unix.SEEK_SET);
 	(* assert(nr = len); *)
 	addr
     in
@@ -1450,32 +1451,32 @@ object(self)
 	| (_, length, _, _, _) when
 	    length < 0L || length > 1073741824L ->
 	    raise (Unix.Unix_error(Unix.ENOMEM, "Too large in mmap", ""))
-	| (0L, _, 0x3L (* PROT_READ|PROT_WRITE *),
-	   0x22L (* MAP_PRIVATE|MAP_ANONYMOUS *), 0xffffffffL) ->
+	| (0L, _, 0x3 (* PROT_READ|PROT_WRITE *),
+	   0x22 (* MAP_PRIVATE|MAP_ANONYMOUS *), -1) ->
 	    let fresh = self#fresh_addr length in
 	      zero_region fresh (Int64.to_int length);
 	      fresh
-	| (0L, _, 0x0L (* PROT_NONE *),
-	   0x4022L (* MAP_NORESERVE|MAP_PRIVATE|MAP_ANONYMOUS *),
-	   0xffffffffL) ->
+	| (0L, _, 0x0 (* PROT_NONE *),
+	   0x4022 (* MAP_NORESERVE|MAP_PRIVATE|MAP_ANONYMOUS *),
+	   -1) ->
 	    let fresh = self#fresh_addr length in
 	      zero_region fresh (Int64.to_int length);
 	      fresh	    
-	| (_, _, (0x3L|0x7L) (* PROT_READ|PROT_WRITE|PROT_EXEC) *),
-	   0x32L (* MAP_PRIVATE|FIXED|ANONYMOUS *), 0xffffffffL) ->
+	| (_, _, (0x3|0x7) (* PROT_READ|PROT_WRITE|PROT_EXEC) *),
+	   0x32 (* MAP_PRIVATE|FIXED|ANONYMOUS *), -1) ->
 	    zero_region addr (Int64.to_int length);
 	    addr
 	| (0L, _, 
-	   (0x1L|0x5L) (* PROT_READ|PROT_EXEC *),
-	   (0x802L|0x2L|0x1L) (* MAP_PRIVATE|MAP_DENYWRITE|MAP_SHARED *), _) ->
+	   (0x1|0x5) (* PROT_READ|PROT_EXEC *),
+	   (0x802|0x2|0x1) (* MAP_PRIVATE|MAP_DENYWRITE|MAP_SHARED *), _) ->
 	    let dest_addr = self#fresh_addr length in
 	      do_read dest_addr
 	| (_, _,
-	   (0x1L|0x5L) (* PROT_READ|PROT_EXEC *),
-	   (0x802L|0x2L|0x1L) (* MAP_PRIVATE|MAP_DENYWRITE|MAP_SHARED *), _) ->
+	   (0x1|0x5) (* PROT_READ|PROT_EXEC *),
+	   (0x802|0x2|0x1) (* MAP_PRIVATE|MAP_DENYWRITE|MAP_SHARED *), _) ->
 	    do_read addr
-	| (_, _, (0x3L|0x7L) (* PROT_READ|PROT_WRITE|PROT_EXEC *),
-	   0x812L (* MAP_DENYWRITE|PRIVATE|FIXED *), _) ->
+	| (_, _, (0x3|0x7) (* PROT_READ|PROT_WRITE|PROT_EXEC *),
+	   0x812 (* MAP_DENYWRITE|PRIVATE|FIXED *), _) ->
 	    do_read addr
 	| _ -> failwith "Unhandled mmap operation"
     in
@@ -1489,7 +1490,7 @@ object(self)
 
   method sys_mmap2 addr length prot flags fd pgoffset =
     try
-      self#mmap_common addr length prot flags fd (4096*pgoffset)
+      self#mmap_common addr length prot flags fd (Int64.mul 4096L pgoffset)
     with
       | Unix.Unix_error(err, _, _) -> self#put_errno err
 
@@ -3109,25 +3110,25 @@ object(self)
 	     let ebx = read_1_reg () in
 	     let addr   = load_word ebx and
 		 length = load_word (lea ebx 0 0 4) and
-		 prot   = load_word (lea ebx 0 0 8) and
-		 flags  = load_word (lea ebx 0 0 12) and
-		 fd     = load_word (lea ebx 0 0 16) and
-		 offset = Int64.to_int (load_word (lea ebx 0 0 20)) in
+		 prot   = Int64.to_int (load_word (lea ebx 0 0 8)) and
+		 flags  = Int64.to_int (load_word (lea ebx 0 0 12)) and
+		 fd     = Int64.to_int (load_word (lea ebx 0 0 16)) and
+		 offset = load_word (lea ebx 0 0 20) in
 	       if !opt_trace_syscalls then
-		 Printf.printf "mmap(0x%08Lx, %Ld, 0x%Lx, 0x%0Lx, %Ld, %d)"
+		 Printf.printf "mmap(0x%08Lx, %Ld, 0x%x, 0x%0x, %d, %Ld)"
 		   addr length prot flags fd offset;
 	       self#sys_mmap addr length prot flags fd offset
 	 | (X64, 9) -> (* mmap *)
 	     let (arg1, arg2, arg3, arg4, arg5, arg6) = read_6_regs () in
 	     let addr     = arg1 and
 		 length   = arg2 and
-		 prot     = arg3 and
-		 flags    = arg4 and
-		 fd       = arg5 and
-		 offset = Int64.to_int arg6 in
+		 prot     = Int64.to_int arg3 and
+		 flags    = Int64.to_int arg4 and
+		 fd       = Int64.to_int (fix_s32 arg5) and
+		 offset   = arg6 in
 	       if !opt_trace_syscalls then
-		 Printf.printf "mmap(0x%08Lx, %Ld, 0x%Lx, 0x%0Lx, %Ld, %d)"
-		   addr length prot flags (fix_s32 fd) offset;
+		 Printf.printf "mmap(0x%08Lx, %Ld, 0x%x, 0x%x, %d, %Ld)"
+		   addr length prot flags fd offset;
 	       self#sys_mmap addr length prot flags fd offset
 	 | ((X86|ARM), 91) (* munmap *)
 	 | (X64, 11) ->
@@ -3737,12 +3738,12 @@ object(self)
 	     let (arg1, arg2, arg3, arg4, arg5, arg6) = read_6_regs () in
 	     let addr     = arg1 and
 		 length   = arg2 and
-		 prot     = arg3 and
-		 flags    = arg4 and
-		 fd       = arg5 and
-		 pgoffset = Int64.to_int arg6 in
+		 prot     = Int64.to_int arg3 and
+		 flags    = Int64.to_int arg4 and
+		 fd       = Int64.to_int (fix_s32 arg5) and
+		 pgoffset = arg6 in
 	       if !opt_trace_syscalls then
-		 Printf.printf "mmap2(0x%08Lx, %Ld, 0x%Lx, 0x%0Lx, %Ld, %d)"
+		 Printf.printf "mmap2(0x%08Lx, %Ld, 0x%x, 0x%0x, %d, %Ld)"
 		   addr length prot flags fd pgoffset;
 	       self#sys_mmap2 addr length prot flags fd pgoffset
 	 | ((X86|ARM), 193) -> (* truncate64 *)

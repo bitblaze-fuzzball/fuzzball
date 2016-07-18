@@ -109,8 +109,8 @@ object
   method sys__llseek : int -> int64 -> int64 -> int -> unit
   method sys_mincore : int64 -> int -> int64 -> unit
   method sys_mkdir : string -> Unix.file_perm -> unit
-  method sys_mmap : int64 -> int64 -> int64 -> int64 -> int64 -> int -> unit
-  method sys_mmap2 : int64 -> int64 -> int64 -> int64 -> int64 -> int -> unit
+  method sys_mmap : int64 -> int64 -> int -> int -> int -> int64 -> unit
+  method sys_mmap2 : int64 -> int64 -> int -> int -> int -> int64 -> unit
   method sys_mprotect : int64 -> int64 -> int64 -> unit
   method sys_munmap : int64 -> int64 -> unit
   method sys_open : string -> int -> Unix.file_perm -> unit
