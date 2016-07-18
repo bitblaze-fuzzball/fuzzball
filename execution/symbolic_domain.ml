@@ -160,6 +160,10 @@ module SymbolicDomain : Exec_domain.DOMAIN = struct
 	  when v1 = v2 && (Int64.sub addr2 addr1) = 1L
 	    ->
 	  V.Lval(V.Mem(v1, V.Constant(V.Int(V.REG_32, addr1)), V.REG_16))
+      | (V.Cast(V.CAST_LOW, V.REG_8, s1), (V.Cast(V.CAST_HIGH, V.REG_8, s2)))
+	  when s1 = s2 && (Vine_typecheck.infer_type_fast s1) = V.REG_16
+	    ->
+	  s1
       | _ -> assemble16 e e2
 
   let reassemble32 e e2 =
@@ -171,6 +175,10 @@ module SymbolicDomain : Exec_domain.DOMAIN = struct
 	  when v1 = v2 && (Int64.sub addr2 addr1) = 2L
 	    ->
 	  V.Lval(V.Mem(v1, V.Constant(V.Int(V.REG_32, addr1)), V.REG_32))
+      | (V.Cast(V.CAST_LOW, V.REG_16, w1), (V.Cast(V.CAST_HIGH, V.REG_16, w2)))
+	  when w1 = w2 && (Vine_typecheck.infer_type_fast w1) = V.REG_32
+	    ->
+	  w1
       | _ -> assemble32 e e2
 
   let reassemble64 e e2 =
@@ -182,6 +190,10 @@ module SymbolicDomain : Exec_domain.DOMAIN = struct
 	  when v1 = v2 && (Int64.sub addr2 addr1) = 4L
 	    ->
 	  V.Lval(V.Mem(v1, V.Constant(V.Int(V.REG_32, addr1)), V.REG_64))
+      | (V.Cast(V.CAST_LOW, V.REG_32, l1), (V.Cast(V.CAST_HIGH, V.REG_32, l2)))
+	  when l1 = l2 && (Vine_typecheck.infer_type_fast l1) = V.REG_64
+	    ->
+	  l1
       | _ -> assemble64 e e2
 
   let to_string e = V.exp_to_string e
