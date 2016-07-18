@@ -385,6 +385,9 @@ let explore_cmdline_opts =
      " Set an integer limit on the global cache size");
     ("-disable-ce-cache", Arg.Set(opt_disable_ce_cache),
      " Do not use cached satisfying assingments at all");
+    ("-narrow-bitwidth-cutoff", Arg.String
+       (fun s -> opt_narrow_bitwidth_cutoff := Some (int_of_string s)),
+     "BITS Treat values narrower than width as non-pointers");
   ]
 
 
