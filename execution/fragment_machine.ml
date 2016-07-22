@@ -388,11 +388,13 @@ class virtual fragment_machine = object
   method virtual set_word_reg_symbolic : register_name -> string -> unit
   method virtual set_word_reg_concolic :
     register_name -> string -> int64 -> unit
-  method virtual set_word_reg_fresh_symbolic : register_name -> string -> unit
+  method virtual set_word_reg_fresh_symbolic : register_name -> string
+    -> string
   method virtual set_word_reg_fresh_region : register_name -> string -> unit
 
   method virtual set_long_reg_symbolic : register_name -> string -> unit
-  method virtual set_long_reg_fresh_symbolic : register_name -> string -> unit
+  method virtual set_long_reg_fresh_symbolic : register_name -> string
+    -> string
 
   method virtual run_sl : (string -> bool) -> Vine.stmt list -> string
 		  
@@ -1737,12 +1739,16 @@ struct
     val mutable symbol_uniq = 0
       
     method set_word_reg_fresh_symbolic reg s =
-      self#set_word_reg_symbolic reg (s ^ "_" ^ (string_of_int symbol_uniq)); 
-      symbol_uniq <- symbol_uniq + 1
+      let s' = (s ^ "_" ^ (string_of_int symbol_uniq)) in
+	self#set_word_reg_symbolic reg s';
+	symbol_uniq <- symbol_uniq + 1;
+	s' ^ ":reg32_t"
 
-    method set_long_reg_fresh_symbolic reg s =
-      self#set_long_reg_symbolic reg (s ^ "_" ^ (string_of_int symbol_uniq));
-      symbol_uniq <- symbol_uniq + 1
+    method set_long_reg_fresh_symbolic reg s : string =
+      let s' = (s ^ "_" ^ (string_of_int symbol_uniq)) in
+	self#set_long_reg_symbolic reg s';
+	symbol_uniq <- symbol_uniq + 1;
+	s' ^ ":reg64_t"
 
     method set_word_reg_fresh_region reg s =
       let name = s ^ "_" ^ (string_of_int symbol_uniq) in

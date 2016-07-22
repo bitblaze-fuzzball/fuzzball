@@ -40,13 +40,13 @@ let call_replacements fm last_eip eip =
       | (Some sfa_val, None, None, None, None, None, None) ->
 	  Some (fun () -> fm#set_word_var ret_reg sfa_val)
       | (None, Some sfas_sym, None, None, None, None, None) ->
-	  Some (fun () -> fm#set_word_reg_fresh_symbolic ret_reg sfas_sym)
+	  Some (fun () -> ignore(fm#set_word_reg_fresh_symbolic ret_reg sfas_sym))
       | (None, None, Some sfar_sym, None, None, None, None) ->
 	  Some (fun () -> fm#set_word_reg_fresh_region ret_reg sfar_sym)
       | (None, None, None, Some cfa_val, None, None, None) ->
 	  Some (fun () -> fm#set_word_var ret_reg cfa_val)
       | (None, None, None, None, Some cfas_sym, None, None) ->
-	  Some (fun () -> fm#set_word_reg_fresh_symbolic ret_reg cfas_sym)
+	  Some (fun () -> ignore(fm#set_word_reg_fresh_symbolic ret_reg cfas_sym))
       | (None, None, None, None, None, Some cfaso_sym, None) ->
 	  Some (fun () -> fm#set_word_reg_symbolic ret_reg cfaso_sym)
       | (None, None, None, None, None, None, Some cfar_sym) ->
