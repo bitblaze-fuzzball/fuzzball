@@ -107,7 +107,7 @@ struct
 	  | V.Lval(V.Temp((_, _, V.REG_64) as var)) -> maybe_recurse e var 64
 	  | _ -> f recurse e
     in
-      f recurse e
+      recurse e
 
   class formula_manager = object(self)
     val input_vars = Hashtbl.create 30
