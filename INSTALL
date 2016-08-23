@@ -113,19 +113,26 @@ build steps instead looked like:
 You need a version of the Binutils library suitable for development;
 for instance, the "binutils-dev" package in Debian or Ubuntu.
 
-If you want cross-architecture support, you'll probably need to
-compile your own version of the Binutils. (Debian has a
-binutils-multiarch, but no binutils-multiarch-dev.) You can get the
-source at:
+If you want cross-architecture support, you may want to compile your
+own version of the Binutils. (Debian has a binutils-multiarch, but for
+a long time there was no binutils-multiarch-dev, and we haven't done
+much testing with it.) You can get the source at:
 
 http://www.gnu.org/s/binutils/
 
-and compile it with:
+and compile it with, for instance:
 
-../configure --disable-werror --enable-targets=arm-linux-gnueabi,i486-linux-gnu,x86_64-linux-gnu --prefix=<wherever>/binutils-multiarch
+../configure --disable-werror --disable-shared --enable-targets=arm-linux-gnueabi,i486-linux-gnu,x86_64-linux-gnu --prefix=<wherever>/binutils-multiarch
 
 and then pass --with-binutils=<wherever>/binutils-multiarch to
-Vine's ./configure.
+Vine's ./configure. In this case where you're using the Binutils
+compiled in a non-system location, the choice that will make later
+steps easiest is to compile only a static version of the Binutils
+libraries, which is what --disable-shared does. Shared libraries save
+space, but they make the build process more complicated because they
+need to be found both at compile time and at runtime. (FuzzBALL's
+build process doesn't currently incorporate libtool, which would be
+the most standard way to automate the linking decisions.)
 
 4. STP
 
