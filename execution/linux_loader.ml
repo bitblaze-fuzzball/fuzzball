@@ -7,6 +7,8 @@ open Exec_options
 open Fragment_machine
 open Linux_syscalls
 
+let opt_hwcap : int64 option ref = ref None
+
 (* Our versions of ELF structures use int64 for any value that is
    either always 32 bits, or 32 or 64 depending on the architecture. This
    fits with FuzzBALL's general strategy of not bothering with int32s,
@@ -327,12 +329,18 @@ let build_startup_state fm eh load_base ldso argv =
   in
   let env_locs = List.map push_cstr env in
   let argv_locs = List.map push_cstr argv in
-  let (platform_loc, hwcap) = match !opt_arch with
-    | X86 -> (push_cstr "i686", 0L) (* barebones HWCAP *)
-	  (* 0xbfebfbffL (* AT_HWCAP, Core 2 Duo *) *)
-    | X64 -> (push_cstr "x86_64", 0L) (* barebones HWCAP *)
-    | ARM -> (push_cstr "v5l", 0x1d7L)
+  let hwcap = match (!opt_hwcap, !opt_arch) with
+    | (Some h, _) -> h
+    | (None, X86) -> 0L (* minimal *)
+    | (None, X64) -> 0L (* minimal *)
+    | (None, ARM) -> 0x1d7L
   in
+  let platform_str = match !opt_arch with
+    | X86 -> "i686"
+    | X64 -> "x86_64"
+    | ARM -> "v5l"
+  in
+  let platform_loc = push_cstr platform_str in
   let reloc_entry = Int64.add eh.entry
     (if eh.eh_type = 3 then load_base else 0L)
   in
@@ -456,8 +464,43 @@ let read_core_note fm ic =
   let ntype = read_ui32 i in
   let namez = IO.really_nread i ((namesz + 3) land (lnot 3)) in
   let name = String.sub namez 0 (namesz - 1) in
-  let endpos = pos_in ic + descsz in
-    assert(descsz mod 4 = 0);
+  let endpos = pos_in ic + ((descsz + 3) land (lnot 3)) in
+  let type_str = match ntype with
+    |  1L -> "NT_PRSTATUS"
+    |  2L -> "NT_FPREGSET"
+    |  3L -> "NT_PRPSINFO"
+    |  4L -> "NT_PRXREG/NT_TASKSTRUCT"
+    |  5L -> "NT_PLATFORM"
+    |  6L -> "NT_AUXV"
+    |  7L -> "NT_GWINDOWS"
+    |  8L -> "NT_ASRS"
+    | 10L -> "NT_PSTATUS"
+    | 13L -> "NT_PSINFO"
+    | 14L -> "NT_PRCRED"
+    | 15L -> "NT_UTSNAME"
+    | 16L -> "NT_LWPSTATUS"
+    | 17L -> "NT_LWPSINFO"
+    | 20L -> "NT_PRFPXREG"
+    | 0x53494749L -> "NT_SIGINFO"
+    | 0x46494c45L -> "NT_FILE"
+    | 0x46e62b7fL -> "NT_PRXFPREG"
+    | 0x200L -> "NT_386_TLS"
+    | 0x201L -> "NT_386_IOPERM"
+    | 0x202L -> "NT_X86_XSTATE"
+    | 0x400L -> "NT_ARM_VFP"
+    | 0x401L -> "NT_ARM_TLS"
+    | 0x402L -> "NT_ARM_HW_BREAK"
+    | 0x403L -> "NT_ARM_HW_WATCH"
+    | _ -> "unknown"
+  in
+    if !opt_trace_setup then
+      Printf.printf "Core note of size 0x%x, type 0x%Lx (%s), name %s\n"
+	descsz ntype type_str name;
+    (* The ELF spec seems at some places to suggest that the contents
+       of notes will consist only of 4-bte values, but other parts of the
+       spec suggest otherwise, and modern Linux seems to generate
+       odd-sized NT_FILE notes. *)
+    (* assert(descsz mod 4 = 0); *)
     if name = "CORE" && ntype = 1L then
       (let si_signo = IO.read_i32 i in
        let si_code = IO.read_i32 i in

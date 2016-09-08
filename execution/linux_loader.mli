@@ -13,6 +13,8 @@ val load_core : Fragment_machine.fragment_machine -> string -> int64
 val setup_tls_segment : Fragment_machine.fragment_machine 
   -> int64 -> int64 -> unit
 
+val opt_hwcap : int64 option ref
+
 val proc_identities : (int * int * int * int) option ref
 
 val addr_to_io : string -> int64 -> IO.input

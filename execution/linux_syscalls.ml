@@ -4538,8 +4538,16 @@ object(self)
 	    Some []	    
 	| "sysenter" ->
 	    let sysenter_eip = fm#get_word_var R_EIP in
-	    let sysexit_eip = (Int64.logor 0x430L
-				 (Int64.logand 0xfffff000L sysenter_eip)) in
+            (* The address to which a sysenter-based syscall will
+            return is controlled by MSRs which are set by the kernel
+            and not visible from user space, so this has to be
+            somewhat of a guess. Empirically, the location of the
+            syscall stub within the vDSO page has been unpredictable
+            between kernels, but the return address has been a
+            multiple of 16, so let's guess that we can round the entry
+            address up to the next multiple of 16. *)
+	    let sysexit_eip =
+	      (Int64.logand (-16L) (Int64.add 15L sysenter_eip)) in
 	    let label = "pc_0x" ^ (Printf.sprintf "%08Lx" sysexit_eip) in
 	      handle_catch ();
 	      Some [V.Jmp(V.Name(label))]
