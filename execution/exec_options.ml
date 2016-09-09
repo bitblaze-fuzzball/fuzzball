@@ -58,6 +58,7 @@ let opt_branch_preference = Hashtbl.create 10
 let opt_branch_preference_unchecked = Hashtbl.create 10
 let opt_always_prefer = ref None
 let opt_iteration_limit = ref 1000000000000L
+let opt_iteration_limit_enforced = ref None
 let opt_insn_limit = ref Int64.minus_one
 let opt_watch_expr_str = ref None
 let opt_watch_expr = ref None

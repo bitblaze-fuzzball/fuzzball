@@ -115,7 +115,9 @@ let rec runloop (fm : fragment_machine) eip asmir_gamma until =
 	  1L)
      in
        Hashtbl.replace loop_detect eip (Int64.succ old_count);
-       if old_count > !opt_iteration_limit then raise TooManyIterations);
+       (match !opt_iteration_limit_enforced with
+       | Some lim -> if old_count > lim then raise TooManyIterations
+       | _ -> ()););
     let (dl, sl) = decode_insns_cached fm asmir_gamma eip in
     let prog = (dl, sl) in
       let prog' = match call_replacements fm last_eip eip with
