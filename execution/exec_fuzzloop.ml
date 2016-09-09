@@ -85,7 +85,10 @@ let fuzz start_eip opt_fuzz_start_eip end_eips
 	     (fun a ->
 		if a = opt_fuzz_start_eip then
 		  (decr opt_fuzz_start_addr_count;
-		   !opt_fuzz_start_addr_count = 0)
+		   if !opt_fuzz_start_addr_count = 0 then 
+		     opt_iteration_limit_enforced := Some !opt_iteration_limit;
+		   !opt_fuzz_start_addr_count = 0
+		  )
 		else
 		  false))
       with

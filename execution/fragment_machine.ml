@@ -2161,7 +2161,9 @@ struct
 	  | st :: rest -> find_label lab rest 
       in
 	loop_cnt <- Int64.succ loop_cnt;
-	if loop_cnt > !opt_iteration_limit then raise TooManyIterations;
+        (match !opt_iteration_limit_enforced with
+	| Some lim -> if loop_cnt > lim then raise TooManyIterations;
+	| _ -> ());
 	let (_, sl) = frag in
 	  match find_label lab sl with
 	    | None -> lab
