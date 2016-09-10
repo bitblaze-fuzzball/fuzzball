@@ -2781,9 +2781,10 @@ object(self)
 		 Printf.printf "chdir(\"%s\")" path;
 	       self#sys_chdir path
 	 | (ARM, 13) -> uh "Check whether ARM time syscall matches x86"
-	 | (X86, 13) -> (* time *)
-	     let ebx = read_1_reg () in
-	     let addr = ebx in
+	 | (X86, 13) (* time *)
+	 | (X64, 201) ->
+	     let arg1 = read_1_reg () in
+	     let addr = arg1 in
 	       if !opt_trace_syscalls then
 		 Printf.printf "time(0x%08Lx)" addr;
 	       self#sys_time addr
