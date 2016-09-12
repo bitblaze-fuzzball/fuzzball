@@ -43,18 +43,24 @@ object(self)
   method handle_special str : V.stmt list option =
     match (str, !opt_arch) with
       | ("cpuid", X86) ->
-	  (* Modeled after VEX/priv/guest-x86/ghelpers.c *)
+	  (* Modeled after VEX/priv/guest-x86/ghelpers.c's
+	     x86g_dirtyhelper_CPUID_sse1 (Pentium III) *)
 	  (match fm#get_word_var R_EAX with
 	     | 0L ->
-		 fm#set_word_var R_EAX 1L;
+		 fm#set_word_var R_EAX 2L;
 		 fm#set_word_var R_EBX 0x756e6547L;
 		 fm#set_word_var R_ECX 0x6c65746eL;
 		 fm#set_word_var R_EDX 0x49656e69L;
+	     | 1L ->
+		 fm#set_word_var R_EAX 0x6b1L;
+		 fm#set_word_var R_EBX 4L;
+		 fm#set_word_var R_ECX 0L;
+		 fm#set_word_var R_EDX 0x0383fbffL;
 	     | _ ->
-		 fm#set_word_var R_EAX 0x543L;
+		 fm#set_word_var R_EAX 0x03020101L;
 		 fm#set_word_var R_EBX 0x0L;
 		 fm#set_word_var R_ECX 0x0L;
-		 fm#set_word_var R_EDX 0x8001bfL;
+		 fm#set_word_var R_EDX 0x0c040883L;
 	  );
 	  Some ([])
       | ("cpuid", X64) ->
