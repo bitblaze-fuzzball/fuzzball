@@ -4519,6 +4519,36 @@ object(self)
 	Printf.printf " = %Ld (0x%08Lx)\n" (fix_s32 ret_val) ret_val;
 	flush stdout
 
+  (* The address to which a sysenter-based syscall will return is
+     controlled by MSRs which are set by the kernel and not visible from
+     user space, so this has to be somewhat of a guess. It also seems
+     to have changed between kernel versions. So match some features of
+     layouts we've seen, otherwise die.  *)
+  method private guess_sysexit_addr enter =
+    assert(Int64.logand enter 0xfL = 5L);
+    let next = Int64.add enter 2L in
+    match load_byte next with
+      | 0x90 ->
+	  (* Older layout:
+	     sysenter (0f 34)
+             nop x 7 (90 90 90 90 90 90 90)
+             int 0x80 (cd 80)
+             <return_point> *)
+	  assert(load_byte (Int64.add next 1L) = 0x90);
+	  assert(load_byte (Int64.add next 2L) = 0x90);
+	  assert(load_byte (Int64.add next 3L) = 0x90);
+	  assert(load_byte (Int64.add next 4L) = 0x90);
+	  assert(load_byte (Int64.add next 5L) = 0x90);
+	  assert(load_byte (Int64.add next 6L) = 0x90);
+	  assert(load_byte (Int64.add next 7L) = 0xcd);
+	  assert(load_byte (Int64.add next 8L) = 0x80);
+	  Int64.add next 9L (* in this layout, 16-byte aligned *)
+      | 0xcd ->
+	  (* Newer layout: similar to above, but with the nops *)
+	  assert(load_byte (Int64.add next 1L) = 0x80);
+	  Int64.add next 2L
+      | _ -> failwith "Unhandled sysenter call layout"
+
   method handle_special str =
     let handle_catch () =
       try
@@ -4539,16 +4569,7 @@ object(self)
 	    Some []	    
 	| "sysenter" ->
 	    let sysenter_eip = fm#get_word_var R_EIP in
-            (* The address to which a sysenter-based syscall will
-            return is controlled by MSRs which are set by the kernel
-            and not visible from user space, so this has to be
-            somewhat of a guess. Empirically, the location of the
-            syscall stub within the vDSO page has been unpredictable
-            between kernels, but the return address has been a
-            multiple of 16, so let's guess that we can round the entry
-            address up to the next multiple of 16. *)
-	    let sysexit_eip =
-	      (Int64.logand (-16L) (Int64.add 15L sysenter_eip)) in
+	    let sysexit_eip = self#guess_sysexit_addr sysenter_eip in
 	    let label = "pc_0x" ^ (Printf.sprintf "%08Lx" sysexit_eip) in
 	      handle_catch ();
 	      Some [V.Jmp(V.Name(label))]
