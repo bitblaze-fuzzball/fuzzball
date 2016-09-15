@@ -23,6 +23,9 @@ let solver_unsats = ref 0L
 let solver_fake_unsats = ref 0L
 let solver_fails = ref 0L
 
+let ce_cache_refs = ref 0L
+let ce_cache_hits = ref 0L
+
 module SymPathFragMachineFunctor =
   functor (D : DOMAIN) ->
 struct
@@ -136,7 +139,15 @@ struct
 	    self#prune_global_cache
 
     method private add_to_working_cache ce_ref =
-      working_ce_cache <- ce_ref :: working_ce_cache
+      if not !opt_disable_ce_cache then
+	working_ce_cache <-
+	  match working_ce_cache with
+	    | [] -> [ce_ref]
+	    | last :: rest ->
+		if !ce_ref = !last then
+		  working_ce_cache
+		else
+		  ce_ref :: working_ce_cache
 
     method private prune_global_cache =
       let goal = global_ce_limit / 2 in
@@ -279,12 +290,14 @@ struct
           if !opt_disable_ce_cache then
             None
           else
-            loop working_ce_cache
+	    (ce_cache_refs := Int64.succ !ce_cache_refs;
+             loop working_ce_cache)
       in
       let (is_sat, ce) = match (ce_opt, with_cache) with
 	| (Some ce', true) ->
 	    if !opt_trace_working_ce_cache || !opt_trace_global_ce_cache then
-	      (Printf.printf "CE Cache Hit: ";
+	      (ce_cache_hits := Int64.succ !ce_cache_hits;
+	       Printf.printf "CE Cache Hit: ";
 	       self#print_ce ce');
 	    (true, ce')
 	| _ ->
@@ -341,7 +354,7 @@ struct
 	   else
 	     if !opt_trace_decisions then
 	       Printf.printf "Unsatisfiable.\n");
-        if is_sat then
+        if is_sat && not !opt_disable_ce_cache then
 	  (self#add_to_global_cache (ref ce);
 	   if !opt_trace_global_ce_cache then
 	     (Printf.printf "\n******* Global Cache *******\n";
@@ -877,6 +890,9 @@ struct
       new_path <- true
 
     method after_exploration =
-      infl_man#after_exploration
+      infl_man#after_exploration;
+      if !opt_trace_working_ce_cache then
+	Printf.printf "CE cache stats: %Ld hits / %Ld refs\n"
+	  !ce_cache_hits !ce_cache_refs
   end
 end

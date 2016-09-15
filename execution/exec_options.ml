@@ -162,7 +162,7 @@ let opt_ite_ivc = ref false
 let opt_periodic_stats = ref None
 let opt_trace_working_ce_cache = ref false
 let opt_trace_global_ce_cache = ref false
-let opt_global_ce_cache_limit = ref 10000
+let opt_global_ce_cache_limit = ref 100
 let opt_disable_ce_cache = ref false
 let opt_narrow_bitwidth_cutoff = ref None
 
