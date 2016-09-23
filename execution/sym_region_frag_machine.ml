@@ -269,7 +269,8 @@ struct
 			 V.BinOp(V.BITAND, e,
 				 V.UnOp(V.NOT, V.Constant(V.Int(ty, v)))))))
 	| V.BinOp(V.BITOR, e1, e2) ->
-	    let (w1, w2) = (narrow_bitwidth e1), (narrow_bitwidth e2) in
+	    let w1 = narrow_bitwidth form_man e1 and
+		w2 = narrow_bitwidth form_man e2 in
 (* 	      Printf.printf "In %s (OR) %s, widths are %d and %d\n" *)
 (* 		(V.exp_to_string e1) (V.exp_to_string e2) w1 w2; *)
 	      if min w1 w2 <= 8 then
@@ -284,7 +285,7 @@ struct
 		  assert(w >= 0); (* x & 0 should have been optimized away *)
 		  let mask = Int64.pred (Int64.shift_left 1L w) in
 		  let ty_y = Vine_typecheck.infer_type None e_y in
-		  let masked = V.BinOp(V.BITAND, e_y,
+		  let masked = V.BinOp(V.BITAND, e_x,
 				       V.Constant(V.Int(ty_y, mask))) in
 		    (loop e_x) @ 
 		      [V.UnOp(V.NEG, masked);
@@ -659,6 +660,7 @@ struct
 	       infl_man#maybe_measure_influence_deref e);
       dt#start_new_query;
       let (cbases, coffs, eoffs, ambig, syms) = classify_terms e form_man in
+      let eoffs = List.map simplify_fp eoffs in
 	if !opt_trace_sym_addr_details then
 	  (Printf.printf "Concrete base terms: %s\n"
 	     (String.concat " "
@@ -732,7 +734,8 @@ struct
 		      | ([], []) -> 0L
 		      | (el, vel) -> 
 			  (self#concretize_inner (reg_addr())
-			     (sum_list (el @ vel))) (ident + 0x200)) in
+			     (simplify_fp (sum_list (el @ vel))))
+			    (ident + 0x200)) in
 		   (base, (fix_u32 offset)))
 	in
 	  dt#count_query;

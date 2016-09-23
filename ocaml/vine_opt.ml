@@ -375,6 +375,25 @@ let rec constant_fold ctx e =
 	Cast(CAST_LOW, REG_16, e)
     | Cast(CAST_LOW, REG_32, BinOp(BITAND, e, Constant(Int(_,0xffffffffL)))) ->
 	Cast(CAST_LOW, REG_32, e)
+    (* A different way a mask can be redundant with a cast *)
+    | BinOp(BITAND,
+	    (Cast(CAST_UNSIGNED, (REG_16|REG_32|REG_64), e) as thecast),
+            Constant(Int(_, mask)))
+	when ((Vine_typecheck.infer_type None e) = REG_8) &&
+          (Int64.logand mask 0xffL) = 0xffL ->
+	thecast
+    | BinOp(BITAND,
+	    (Cast(CAST_UNSIGNED, (REG_32|REG_64), e) as thecast),
+            Constant(Int(_, mask)))
+	when ((Vine_typecheck.infer_type None e) = REG_16) &&
+          (Int64.logand mask 0xffffL) = 0xffffL ->
+	thecast
+    | BinOp(BITAND,
+	    (Cast(CAST_UNSIGNED, REG_64, e) as thecast),
+            Constant(Int(_, mask)))
+	when ((Vine_typecheck.infer_type None e) = REG_32) &&
+          (Int64.logand mask 0xffffffffL) = 0xffffffffL ->
+	thecast
     (* A more complex way of writing sign extension *)
     | BinOp(BITOR, Cast(CAST_UNSIGNED, REG_64, e1),
 	    BinOp(LSHIFT,
