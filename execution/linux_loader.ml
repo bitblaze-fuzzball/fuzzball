@@ -252,7 +252,7 @@ let load_ldso fm dso vaddr =
     let phrs = read_program_headers ic dso_eh in
       (* If the loader already has a non-zero base address, disable
 	 our default offset. This can happen if it's prelinked. *)
-      if (List.hd phrs).vaddr <> 0L then
+      if (List.hd phrs).ph_type = 1L && (List.hd phrs).vaddr <> 0L then
 	vaddr := 0L;
       List.iter
 	(fun phr ->
