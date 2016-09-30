@@ -546,6 +546,18 @@ let rec constant_fold ctx e =
     | BinOp(EQ, BinOp(PLUS, x, (Constant(_) as c)),
 	    Constant(Int(ty, 0L))) ->
 	BinOp(EQ, x, (constant_fold ctx (UnOp(NEG, c))))
+    (* a + -b = 0 ==> a == b *)
+    | BinOp(EQ, BinOp(PLUS, a, UnOp(NEG, b)),
+	    Constant(Int(ty, 0L))) ->
+	BinOp(EQ, a, b)
+    (* a < b | a == b ==> a <= b*)
+    | BinOp(BITOR, BinOp(LT, a1, b1), BinOp(EQ, a2, b2))
+	 when a1 = a2 && b1 = b2 ->
+	BinOp(LE, a1, b1)
+    (* a <$ b | a == b ==> a <=$ b*)
+    | BinOp(BITOR, BinOp(SLT, a1, b1), BinOp(EQ, a2, b2))
+	 when a1 = a2 && b1 = b2 ->
+	BinOp(SLE, a1, b1)
     | _ -> e (* leave other expressions as they are *)
 
 

@@ -388,6 +388,9 @@ let explore_cmdline_opts =
     ("-narrow-bitwidth-cutoff", Arg.String
        (fun s -> opt_narrow_bitwidth_cutoff := Some (int_of_string s)),
      "BITS Treat values narrower than width as non-pointers");
+    ("-t-expr-size", Arg.String
+       (fun s -> opt_t_expr_size := int_of_string s),
+     "SIZE Introduce temporaries for exprs of size or larger");
   ]
 
 

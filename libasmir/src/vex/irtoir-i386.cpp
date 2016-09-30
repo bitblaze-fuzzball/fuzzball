@@ -2225,6 +2225,21 @@ vector<Stmt *> mod_eflags_add( reg_t type, Exp *arg1, Exp *arg2 )
     return irout;
 }
 
+Exp *_narrow32(Exp *e, reg_t type) {
+    if (type == REG_32)
+        return e;
+    else
+        return _ex_l_cast(e, type);
+}
+
+Exp *narrow32(Exp *e, reg_t type) {
+    if (type == REG_32)
+        return ecl(e);
+    else
+        return ex_l_cast(e, type);
+}
+
+
 vector<Stmt *> mod_eflags_sub( reg_t type, Exp *arg1, Exp *arg2 )
 {
     vector<Stmt *> irout;
@@ -2267,11 +2282,11 @@ vector<Stmt *> mod_eflags_sub( reg_t type, Exp *arg1, Exp *arg2 )
     Exp *condZF = ex_eq( res, &c_0 );
     set_flag(&irout, type, ZF, condZF);
     
-    Exp *condSF = _ex_eq( ecl(&c_1), _ex_and( ecl(&c_1), ex_shr( res, &c_TYPE_SIZE_LESS_1)) );
+    Exp *condSF = _ex_h_cast(narrow32(res, type), REG_1);
     set_flag(&irout, type, SF, condSF);
 
-    Exp *condOF = _ex_eq( ecl(&c_1), _ex_and( ecl(&c_1), 
-                    _ex_shr( _ex_and( ex_xor(arg1, arg2), ex_xor(arg1, res) ), ecl(&c_TYPE_SIZE_LESS_1) )) );
+    Exp *condOF = _ex_xor(ecl(condSF), _ex_slt(narrow32(arg1, type),
+					       narrow32(arg2, type)));
     set_flag(&irout, type, OF, condOF);
 
     return irout;
