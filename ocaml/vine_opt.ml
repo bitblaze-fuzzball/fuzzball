@@ -375,6 +375,10 @@ let rec constant_fold ctx e =
 	Cast(CAST_LOW, REG_16, e)
     | Cast(CAST_LOW, REG_32, BinOp(BITAND, e, Constant(Int(_,0xffffffffL)))) ->
 	Cast(CAST_LOW, REG_32, e)
+    (* Low cast gets only 0 due to left shift *)
+    | Cast(CAST_LOW, cty, BinOp(LSHIFT, e, Constant(Int(_, amt))))
+	when amt >= Int64.of_int (bits_of_width cty) ->
+	Constant(Int(cty, 0L))
     (* A different way a mask can be redundant with a cast *)
     | BinOp(BITAND,
 	    (Cast(CAST_UNSIGNED, (REG_16|REG_32|REG_64), e) as thecast),
@@ -549,6 +553,9 @@ let rec constant_fold ctx e =
     (* a + -b = 0 ==> a == b *)
     | BinOp(EQ, BinOp(PLUS, a, UnOp(NEG, b)),
 	    Constant(Int(ty, 0L))) ->
+	BinOp(EQ, a, b)
+    (* a ^ b = 0 ==> a == b *)
+    | BinOp(EQ, BinOp(XOR, a, b), Constant(Int(ty, 0L))) ->
 	BinOp(EQ, a, b)
     (* a < b | a == b ==> a <= b*)
     | BinOp(BITOR, BinOp(LT, a1, b1), BinOp(EQ, a2, b2))
