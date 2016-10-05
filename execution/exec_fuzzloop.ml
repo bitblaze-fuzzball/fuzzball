@@ -27,10 +27,13 @@ let loop_w_stats count fn =
        do
 	 iter := Int64.add !iter 1L;
 	 let old_wtime = Unix.gettimeofday () and
-             old_ctime = Sys.time () in
+             old_ctime = Sys.time () and
+	     is_final = ref false in
 	   if !opt_trace_iterations then 
 	     Printf.printf "Iteration %Ld:\n%!" !iter;
-	   fn !iter;
+	   (try
+	      fn !iter;
+	    with LastIteration -> is_final := true);
 	   let wtime = Unix.gettimeofday() in
 	     if !opt_time_stats then
 	       ((let ctime = Sys.time() in
@@ -39,12 +42,13 @@ let loop_w_stats count fn =
 		(Printf.printf "Wall time %f sec, %f total\n"
 		   (wtime -. old_wtime) (wtime -. start_wtime)));
 	     flush stdout;
-	     match !opt_total_timeout with
-	       | None -> ()
-	       | Some t ->
-		   if (wtime -. start_wtime) > t then
-		     (Printf.printf "Total exploration time timeout.\n";
-		      raise LastIteration)
+	     (match !opt_total_timeout with
+		| None -> ()
+		| Some t ->
+		    if (wtime -. start_wtime) > t then
+		      (Printf.printf "Total exploration time timeout.\n";
+		       raise LastIteration));
+	     if !is_final then raise LastIteration
        done
      with
 	 LastIteration -> ());
