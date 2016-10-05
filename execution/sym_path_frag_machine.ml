@@ -247,7 +247,8 @@ struct
     method add_to_path_cond cond =
       self#ensure_extra_conditions;
       if (self#quick_check_in_path_cond cond) <> Some true then
-	(self#filter_working_cache cond;
+	(if not !opt_disable_ce_cache then
+	   self#filter_working_cache cond;
 	 path_cond <- cond :: path_cond;
 	 self#push_cond_to_qe cond)
 
