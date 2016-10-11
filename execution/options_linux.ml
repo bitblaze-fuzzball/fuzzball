@@ -103,7 +103,7 @@ let apply_linux_cmdline_opts (fm : Fragment_machine.fragment_machine) =
 	       (match !opt_arch with
 		  | X86 -> 0x08048000L
 		  | X64 -> 0x00400000L
-		  | ARM -> 0x8000L
+		  | ARM -> 0x00010000L (* previously common: 0x8000 *)
 	       )
 	 in
 	   state_start_addr := Some

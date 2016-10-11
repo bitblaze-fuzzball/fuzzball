@@ -412,7 +412,9 @@ let load_dynamic_program (fm : fragment_machine) fname load_base
       (fun phr ->
 	 if phr.ph_type = 1L then (* PT_LOAD *)
 	   (if phr.ph_flags = 5L && extra_vaddr = 0L then
-	      assert(phr.vaddr = load_base);
+	      (if phr.vaddr <> load_base then
+		 Printf.printf "Unexpected code load address. Perhaps you need the -load-base 0x%Lx or -arch options\n" phr.vaddr;
+	       assert(phr.vaddr = load_base));
 	    if data_too || (phr.ph_flags <> 6L && phr.ph_flags <> 7L) then
 	      load_segment fm ic phr extra_vaddr true)
 	 else if phr.ph_type = 3L then (* PT_INTERP *)
