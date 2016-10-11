@@ -810,6 +810,7 @@ get_thunk_index(vector<Stmt *> *ir,
 	    if (match_ite(ir, i-6, NULL, NULL, NULL, NULL) >= 0)
 		*mux0x = i-6;
 #else
+	    Exp *cond, *exp_t, *exp_f, *res;
 	    if (match_ite(ir, i-3, NULL, NULL, NULL, NULL) >= 0) {
 		if (i >= 3) {
 		    Stmt *prev_stmt = ir->at(i - 1);
@@ -827,6 +828,28 @@ get_thunk_index(vector<Stmt *> *ir,
 			}
 		    }
 		}
+	    } else if (i >= 2 &&
+		       match_ite(ir, i-2, &cond, &exp_t, &exp_f, &res) >= 0) {
+                // i-2: res = (cond ? exp_t : exp_f);
+		// i-1: t = res;
+		// i  : R_CC_OP = t;
+		Stmt *prev_stmt = ir->at(i - 1);
+		if ( prev_stmt->stmt_type == MOVE ) {
+		    Move *prev_mv = (Move*)prev_stmt;
+		    if ( prev_mv->lhs->exp_type == TEMP ) {
+			Temp *prev_temp = (Temp *)prev_mv->lhs;
+			if ( mv->rhs->exp_type == TEMP ) {
+			    Temp *rhs_temp = (Temp *)mv->rhs;
+			    if ( prev_temp->name == rhs_temp->name ) {
+				*op = i-2;
+				*mux0x = i-2;
+			    }
+			}
+		    }
+		}
+
+            } else if (match_ite(ir, i, NULL, NULL, NULL, NULL) >= 0) {
+                *op = i;
 	    } else if (cc_op_copy && mv->rhs->exp_type == TEMP) {
 		Temp *rhs_temp = (Temp *)mv->rhs;
 		if (rhs_temp->name == cc_op_copy->name) {
@@ -872,10 +895,19 @@ void arm_modify_flags(asm_program_t *prog, vine_block_t *block)
 	got_op = false;
     } else {
 	Move *op_mov = (Move*)op_stmt;
+	Exp *cond, *exp_t, *exp_f, *res;
 	if(op_mov->rhs->exp_type == CONSTANT) {
 	    Constant *op_const = (Constant*)op_mov->rhs;
 	    op = op_const->val;
 	    got_op = true;
+	} else if (match_ite(ir, op_st, &cond, &exp_t, &exp_f, &res) >= 0) {
+	    if (exp_t->exp_type == CONSTANT) {
+                Constant *op_const = (Constant*)exp_t;
+                op = op_const->val;
+                got_op = true;
+            } else {
+                got_op = false;
+            }
 	} else if (op_mov->rhs->exp_type == BINOP) {
 	    BinOp *bin_or = (BinOp*)op_mov->rhs;
 	    if (bin_or->binop_type == BITOR
@@ -929,17 +961,17 @@ void arm_modify_flags(asm_program_t *prog, vine_block_t *block)
 	// Conditional case
 	Exp *cond, *exp_t, *exp_f, *res;
 	int matched;
-	matched = match_ite(ir, dep1_st - 3, &cond, &exp_t, &exp_f, &res);
+	matched = match_ite(ir, dep1_st - 2, &cond, &exp_t, &exp_f, &res);
 	assert(matched != -1);
 	assert(exp_f);
 	dep1_expr = exp_f;
 
-	matched = match_ite(ir, dep2_st - 3, &cond, &exp_t, &exp_f, &res);
+	matched = match_ite(ir, dep2_st - 2, &cond, &exp_t, &exp_f, &res);
 	assert(matched != -1);
 	assert(exp_f);
 	dep2_expr = exp_f;
 
-	matched = match_ite(ir, ndep_st - 3, &cond, &exp_t, &exp_f, &res);
+	matched = match_ite(ir, ndep_st - 2, &cond, &exp_t, &exp_f, &res);
 	assert(matched != -1);
 	assert(exp_f);
 	ndep_expr = exp_f;
@@ -1049,10 +1081,10 @@ void arm_modify_flags(asm_program_t *prog, vine_block_t *block)
 	new_ir.push_back(new Move(VF, vf));
 	ir->insert(ir->begin() + op_st, new_ir.begin(), new_ir.end());
     } else {
-	if (mux0x_st != -1 && ndep_st - (mux0x_st - 2) + 1 == 4 * 6) {
+	if (mux0x_st != -1 && ndep_st - (mux0x_st - 1) + 1 == 4 * 4) {
 	    // Looks like a conditional thunk; replace with new
 	    // conditional assignments using the same condition
-	    int start = mux0x_st - 2;
+	    int start = mux0x_st - 1;
 	    assert(start >= 0);
 	    Exp *cond, *exp_t, *exp_f, *res;
 	    int matched = match_ite(ir, mux0x_st, &cond, &exp_t, &exp_f, &res);

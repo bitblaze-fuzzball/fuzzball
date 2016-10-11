@@ -2425,6 +2425,85 @@ Stmt *translate_llsc( IRStmt *stmt, IRSB *irbb, vector<Stmt *> *irout ) {
 }
 #endif
 
+#if VEX_VERSION >= 2642
+Stmt *translate_loadg( IRStmt *stmt, IRSB *irbb, vector<Stmt *> *irout ) {
+    assert(stmt);
+    assert(irbb);
+    assert(irout);
+
+    assert(stmt->Ist.LoadG.details->end == Iend_LE); // Assume little-endian
+    Exp *addr = translate_expr(stmt->Ist.LoadG.details->addr, irbb, irout);
+    Exp *alt = translate_expr(stmt->Ist.LoadG.details->alt, irbb, irout);
+    Exp *guard = translate_expr(stmt->Ist.LoadG.details->guard, irbb, irout);
+    IRLoadGOp op = stmt->Ist.LoadG.details->cvt;
+
+    reg_t load_type;
+    switch (op) {
+    case ILGop_IdentV128:
+	panic("Unsupported V128 type in LoadG");
+	break;
+    case ILGop_Ident64:
+	load_type = REG_64;
+	break;
+    case ILGop_Ident32:
+	load_type = REG_32;
+	break;
+    case ILGop_16Uto32:
+    case ILGop_16Sto32:
+	load_type = REG_16;
+	break;
+    case ILGop_8Uto32:
+    case ILGop_8Sto32:
+	load_type = REG_8;
+	break;
+    default:
+	panic("Unexpected conversion type in LoadG");
+    }
+    Mem *mem = new Mem(addr, load_type);
+
+    Exp *cvt_val;
+    switch (op) {
+    case ILGop_IdentV128:
+    case ILGop_Ident64:
+    case ILGop_Ident32:
+	cvt_val = mem;
+	break;
+    case ILGop_16Uto32:
+    case ILGop_8Uto32:
+	cvt_val = _ex_u_cast(mem, REG_32);
+	break;
+    case ILGop_16Sto32:
+    case ILGop_8Sto32:
+	cvt_val = _ex_s_cast(mem, REG_32);
+	break;
+    default:
+	panic("Unexpected conversion type (2) in LoadG");
+    }
+
+    Exp *choice = _ex_ite(guard, cvt_val, alt);
+    IRTemp dst = stmt->Ist.LoadG.details->dst;
+    IRType dst_type = typeOfIRTemp(irbb->tyenv, dst);
+    return new Move( mk_temp(dst, dst_type), choice );
+}
+
+Stmt *translate_storeg( IRStmt *stmt, IRSB *irbb, vector<Stmt *> *irout ) {
+    assert(stmt);
+    assert(irbb);
+    assert(irout);
+
+    assert(stmt->Ist.StoreG.details->end == Iend_LE); // Assume little-endian
+    Exp *addr = translate_expr(stmt->Ist.StoreG.details->addr, irbb, irout);
+    Exp *data = translate_expr(stmt->Ist.StoreG.details->data, irbb, irout);
+    Exp *guard = translate_expr(stmt->Ist.StoreG.details->guard, irbb, irout);
+    IRType itype = typeOfIRExpr(irbb->tyenv, stmt->Ist.StoreG.details->data);
+    reg_t rtype = IRType_to_reg_type(itype);
+
+    Mem *mem = new Mem(addr, rtype);
+    Exp *choice = _ex_ite(guard, data, ecl(mem));
+    return new Move(mem, choice);
+}
+#endif
+
 //----------------------------------------------------------------------
 // Translate a single statement
 //----------------------------------------------------------------------
@@ -2475,6 +2554,14 @@ Stmt *translate_stmt( IRStmt *stmt, IRSB *irbb, vector<Stmt *> *irout )
 #if VEX_VERSION >= 1930
         case Ist_LLSC:
 	    result = translate_llsc(stmt, irbb, irout);
+	    break;
+#endif
+#if VEX_VERSION >= 2642
+        case Ist_LoadG:
+	    result = translate_loadg(stmt, irbb, irout);
+	    break;
+        case Ist_StoreG:
+	    result = translate_storeg(stmt, irbb, irout);
 	    break;
 #endif
         default:
