@@ -1748,14 +1748,14 @@ Exp *translate_simple_binop( IRExpr *expr, IRSB *irbb, vector<Stmt *> *irout )
         case Iop_F64toI64S:
 #endif
             return new FCast(arg2, REG_64, CAST_SFIX, ROUND_NEAREST);
-#if VEX_VERSION >= 2105
+#if VEX_VERSION >= 2496
         case Iop_F32toI32U:
 #endif
 #if VEX_VERSION >= 1949
         case Iop_F64toI32U:
             return new FCast(arg2, REG_32, CAST_UFIX, ROUND_NEAREST);
 #endif
-#if VEX_VERSION >= 2105
+#if VEX_VERSION >= 2496
         case Iop_F32toI64U:
 #endif
 #if VEX_VERSION >= 2184

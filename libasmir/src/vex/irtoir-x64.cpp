@@ -80,9 +80,35 @@
 #define OFFB_YMM14     offsetof(VexGuestAMD64State,guest_YMM14)
 #define OFFB_YMM15     offsetof(VexGuestAMD64State,guest_YMM15)
 #define OFFB_YMM16     offsetof(VexGuestAMD64State,guest_YMM16)
+#else
+/* Older versions of VEX only modeled the SSE state as 128-bit
+   XMM registers, like x86-32. We'll try to cover up for this
+   difference, but the YMM-style code path is better tested. */
+#define OFFB_XMM0      offsetof(VexGuestAMD64State,guest_XMM0)
+#define OFFB_XMM1      offsetof(VexGuestAMD64State,guest_XMM1)
+#define OFFB_XMM2      offsetof(VexGuestAMD64State,guest_XMM2)
+#define OFFB_XMM3      offsetof(VexGuestAMD64State,guest_XMM3)
+#define OFFB_XMM4      offsetof(VexGuestAMD64State,guest_XMM4)
+#define OFFB_XMM5      offsetof(VexGuestAMD64State,guest_XMM5)
+#define OFFB_XMM6      offsetof(VexGuestAMD64State,guest_XMM6)
+#define OFFB_XMM7      offsetof(VexGuestAMD64State,guest_XMM7)
+#define OFFB_XMM8      offsetof(VexGuestAMD64State,guest_XMM8)
+#define OFFB_XMM9      offsetof(VexGuestAMD64State,guest_XMM9)
+#define OFFB_XMM10     offsetof(VexGuestAMD64State,guest_XMM10)
+#define OFFB_XMM11     offsetof(VexGuestAMD64State,guest_XMM11)
+#define OFFB_XMM12     offsetof(VexGuestAMD64State,guest_XMM12)
+#define OFFB_XMM13     offsetof(VexGuestAMD64State,guest_XMM13)
+#define OFFB_XMM14     offsetof(VexGuestAMD64State,guest_XMM14)
+#define OFFB_XMM15     offsetof(VexGuestAMD64State,guest_XMM15)
+#define OFFB_XMM16     offsetof(VexGuestAMD64State,guest_XMM16)
 #endif
 
+#if VEX_VERSION < 2484
+#define OFFB_EMNOTE    offsetof(VexGuestAMD64State,guest_EMWARN)
+#else
 #define OFFB_EMNOTE    offsetof(VexGuestAMD64State,guest_EMNOTE)
+#endif
+
 #define OFFB_TISTART   offsetof(VexGuestAMD64State,guest_TISTART)
 #define OFFB_TILEN     offsetof(VexGuestAMD64State,guest_TILEN)
 
@@ -384,6 +410,7 @@ static string reg_offset_to_name( int offset, bool *is_good )
         case OFFB_GS_CONST: name = "GS_BASE";   good=true; break;
 #endif
 
+#if VEX_VERSION >= 2330
         case OFFB_YMM0:     name = "YMM0_0";    good=true; break;
         case OFFB_YMM1:     name = "YMM1_0";    good=true; break;
         case OFFB_YMM2:     name = "YMM2_0";    good=true; break;
@@ -417,6 +444,41 @@ static string reg_offset_to_name( int offset, bool *is_good )
         case OFFB_YMM13+8:  name = "YMM13_1";   good=true; break;
         case OFFB_YMM14+8:  name = "YMM14_1";   good=true; break;
         case OFFB_YMM15+8:  name = "YMM15_1";   good=true; break;
+#else
+        case OFFB_XMM0:     name = "YMM0_0";    good=true; break;
+        case OFFB_XMM1:     name = "YMM1_0";    good=true; break;
+        case OFFB_XMM2:     name = "YMM2_0";    good=true; break;
+        case OFFB_XMM3:     name = "YMM3_0";    good=true; break;
+        case OFFB_XMM4:     name = "YMM4_0";    good=true; break;
+        case OFFB_XMM5:     name = "YMM5_0";    good=true; break;
+        case OFFB_XMM6:     name = "YMM6_0";    good=true; break;
+        case OFFB_XMM7:     name = "YMM7_0";    good=true; break;
+        case OFFB_XMM8:     name = "YMM8_0";    good=true; break;
+        case OFFB_XMM9:     name = "YMM9_0";    good=true; break;
+        case OFFB_XMM10:    name = "YMM10_0";   good=true; break;
+        case OFFB_XMM11:    name = "YMM11_0";   good=true; break;
+        case OFFB_XMM12:    name = "YMM12_0";   good=true; break;
+        case OFFB_XMM13:    name = "YMM13_0";   good=true; break;
+        case OFFB_XMM14:    name = "YMM14_0";   good=true; break;
+        case OFFB_XMM15:    name = "YMM15_0";   good=true; break;
+
+        case OFFB_XMM0+8:   name = "YMM0_1";    good=true; break;
+        case OFFB_XMM1+8:   name = "YMM1_1";    good=true; break;
+        case OFFB_XMM2+8:   name = "YMM2_1";    good=true; break;
+        case OFFB_XMM3+8:   name = "YMM3_1";    good=true; break;
+        case OFFB_XMM4+8:   name = "YMM4_1";    good=true; break;
+        case OFFB_XMM5+8:   name = "YMM5_1";    good=true; break;
+        case OFFB_XMM6+8:   name = "YMM6_1";    good=true; break;
+        case OFFB_XMM7+8:   name = "YMM7_1";    good=true; break;
+        case OFFB_XMM8+8:   name = "YMM8_1";    good=true; break;
+        case OFFB_XMM9+8:   name = "YMM9_1";    good=true; break;
+        case OFFB_XMM10+8:  name = "YMM10_1";   good=true; break;
+        case OFFB_XMM11+8:  name = "YMM11_1";   good=true; break;
+        case OFFB_XMM12+8:  name = "YMM12_1";   good=true; break;
+        case OFFB_XMM13+8:  name = "YMM13_1";   good=true; break;
+        case OFFB_XMM14+8:  name = "YMM14_1";   good=true; break;
+        case OFFB_XMM15+8:  name = "YMM15_1";   good=true; break;
+#endif
 
         case OFFB_FPREGS:       name = "FPREG0";good=true; break;
         case OFFB_FPREGS+(1*8): name = "FPREG1";good=true; break;
@@ -807,6 +869,7 @@ static Exp *translate_get_reg_128( unsigned int offset )
 
     switch ( offset )
     {
+#if VEX_VERSION >= 2330
     case OFFB_YMM0: name = "YMM0"; break;
     case OFFB_YMM1: name = "YMM1"; break;
     case OFFB_YMM2: name = "YMM2"; break;
@@ -823,6 +886,24 @@ static Exp *translate_get_reg_128( unsigned int offset )
     case OFFB_YMM13: name = "YMM13"; break;
     case OFFB_YMM14: name = "YMM14"; break;
     case OFFB_YMM15: name = "YMM15"; break;
+#else
+    case OFFB_XMM0: name = "YMM0"; break;
+    case OFFB_XMM1: name = "YMM1"; break;
+    case OFFB_XMM2: name = "YMM2"; break;
+    case OFFB_XMM3: name = "YMM3"; break;
+    case OFFB_XMM4: name = "YMM4"; break;
+    case OFFB_XMM5: name = "YMM5"; break;
+    case OFFB_XMM6: name = "YMM6"; break;
+    case OFFB_XMM7: name = "YMM7"; break;
+    case OFFB_XMM8: name = "YMM8"; break;
+    case OFFB_XMM9: name = "YMM9"; break;
+    case OFFB_XMM10: name = "YMM10"; break;
+    case OFFB_XMM11: name = "YMM11"; break;
+    case OFFB_XMM12: name = "YMM12"; break;
+    case OFFB_XMM13: name = "YMM13"; break;
+    case OFFB_XMM14: name = "YMM14"; break;
+    case OFFB_XMM15: name = "YMM15"; break;
+#endif
     default:
         assert(0);
     }
@@ -1251,6 +1332,7 @@ static Stmt *translate_put_reg_128(unsigned int offset, Exp *data, IRSB *irbb,
 
     switch ( offset )
     {
+#if VEX_VERSION >= 2330
     case OFFB_YMM0: name = "YMM0"; break;
     case OFFB_YMM1: name = "YMM1"; break;
     case OFFB_YMM2: name = "YMM2"; break;
@@ -1267,6 +1349,24 @@ static Stmt *translate_put_reg_128(unsigned int offset, Exp *data, IRSB *irbb,
     case OFFB_YMM13: name = "YMM13"; break;
     case OFFB_YMM14: name = "YMM14"; break;
     case OFFB_YMM15: name = "YMM15"; break;
+#else
+    case OFFB_XMM0: name = "YMM0"; break;
+    case OFFB_XMM1: name = "YMM1"; break;
+    case OFFB_XMM2: name = "YMM2"; break;
+    case OFFB_XMM3: name = "YMM3"; break;
+    case OFFB_XMM4: name = "YMM4"; break;
+    case OFFB_XMM5: name = "YMM5"; break;
+    case OFFB_XMM6: name = "YMM6"; break;
+    case OFFB_XMM7: name = "YMM7"; break;
+    case OFFB_XMM8: name = "YMM8"; break;
+    case OFFB_XMM9: name = "YMM9"; break;
+    case OFFB_XMM10: name = "YMM10"; break;
+    case OFFB_XMM11: name = "YMM11"; break;
+    case OFFB_XMM12: name = "YMM12"; break;
+    case OFFB_XMM13: name = "YMM13"; break;
+    case OFFB_XMM14: name = "YMM14"; break;
+    case OFFB_XMM15: name = "YMM15"; break;
+#endif
         default:
             assert(0);
     }
@@ -1792,6 +1892,15 @@ Exp *x64_translate_ccall( IRExpr *expr, IRSB *irbb, vector<Stmt *> *irout )
 			     ex_const64(3));
 	/* The high word is for emulation warnings: skip it */
 	result = rmode;
+    } else if ( func == "amd64g_calculate_sse_pmovmskb" ) {
+	Exp *arg_hi = translate_expr(expr->Iex.CCall.args[0], irbb, irout);
+	Exp *arg_lo = translate_expr(expr->Iex.CCall.args[1], irbb, irout);
+	Exp *hi_b = translate_GetMSBs8x8(arg_hi);
+	Exp *lo_b = translate_GetMSBs8x8(arg_lo);
+	Exp *hi_16 = _ex_u_cast(hi_b, REG_16);
+	Exp *lo_16 = _ex_u_cast(lo_b, REG_16);
+	Exp *res_16 = _ex_or(_ex_shl(hi_16, 8), lo_16);
+	result = _ex_u_cast(res_16, REG_64);
     } else {
         result = new Unknown("CCall: " + func);
     }
