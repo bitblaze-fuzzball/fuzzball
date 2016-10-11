@@ -304,17 +304,17 @@ let rec constant_fold ctx e =
 
     | Cast(ct2, w2, Cast(ct1, w1, e1)) when ct1 = ct2 ->
 	Cast(ct1, w2, e1) (* no redundant double casts *)
-    (* Redundant widening inside narrowing *)
-    | Cast(CAST_LOW, t2, Cast((CAST_SIGNED|CAST_UNSIGNED), t1, e))
-	when (let w_e = bits_of_width (Vine_typecheck.infer_type None e) and
-		  w_2 = bits_of_width t2 in
-		w_2 <= w_e) ->
-	Cast(CAST_LOW, t2, e)
     (* Widening cast followed by narrowing cast with same type *)
     | Cast(CAST_LOW,t2,Cast(CAST_UNSIGNED,_,e)) 
 	when ((Vine_typecheck.infer_type None e) = t2) -> e
     | Cast(CAST_LOW,t2,Cast(CAST_SIGNED,_,e)) 
 	when ((Vine_typecheck.infer_type None e) = t2) -> e
+    (* Redundant widening inside narrowing *)
+    | Cast(CAST_LOW, t2, Cast((CAST_SIGNED|CAST_UNSIGNED), t1, e))
+	when (let w_e = bits_of_width (Vine_typecheck.infer_type None e) and
+		  w_2 = bits_of_width t2 in
+		w_2 < w_e) ->
+	Cast(CAST_LOW, t2, e)
     (* Widening followed by narrowing equivalent to narrower widening *)
     | Cast(CAST_LOW, t1, Cast((CAST_SIGNED|CAST_UNSIGNED) as cast_ty, t2, e))
 	when (let w1 = bits_of_width t1 and
