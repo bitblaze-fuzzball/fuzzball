@@ -2439,12 +2439,16 @@ Stmt *translate_loadg( IRStmt *stmt, IRSB *irbb, vector<Stmt *> *irout ) {
 
     reg_t load_type;
     switch (op) {
+#if VEX_VERSION >= 3169
     case ILGop_IdentV128:
 	panic("Unsupported V128 type in LoadG");
 	break;
+#endif
+#if VEX_VERSION >= 3047
     case ILGop_Ident64:
 	load_type = REG_64;
 	break;
+#endif
     case ILGop_Ident32:
 	load_type = REG_32;
 	break;
@@ -2463,8 +2467,12 @@ Stmt *translate_loadg( IRStmt *stmt, IRSB *irbb, vector<Stmt *> *irout ) {
 
     Exp *cvt_val;
     switch (op) {
+#if VEX_VERSION >= 3169
     case ILGop_IdentV128:
+#endif
+#if VEX_VERSION >= 3047
     case ILGop_Ident64:
+#endif
     case ILGop_Ident32:
 	cvt_val = mem;
 	break;
