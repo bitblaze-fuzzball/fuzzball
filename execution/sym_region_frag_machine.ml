@@ -46,19 +46,7 @@ struct
     in
       is_power_of_2_or_zero (Int64.succ (Int64.lognot (fix_s ty v)))
 
-  let floor_log2 i =
-    let rec loop = function
-      | 0L -> -1
-      | 1L -> 0
-      | 2L|3L -> 1
-      | 4L|5L|6L|7L -> 2
-      | i when i < 16L -> 2 + loop(Int64.shift_right_logical i 2)
-      | i when i < 256L -> 4 + loop(Int64.shift_right_logical i 4)
-      | i when i < 65536L -> 8 + loop(Int64.shift_right_logical i 8)
-      | i when i < 0x100000000L -> 16 + loop(Int64.shift_right_logical i 16)
-      | _ -> 32 + loop(Int64.shift_right_logical i 32)
-    in
-      loop i
+  let floor_log2 = Vine_util.int64_floor_log2
 
   (* Conservatively anayze the smallest number of non-zero
      least-significant bits into which a value will fit. This is a fairly

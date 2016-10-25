@@ -332,6 +332,25 @@ let int64_u_of_string s =
 	  high_v = Int64.of_string high_s in
 	Int64.add low_v (Int64.mul high_v 1000000000000000000L)
 
+let int64_floor_log2 i =
+  let rec loop = function
+    | 0L -> -1
+    | 1L -> 0
+    | 2L|3L -> 1
+    | 4L|5L|6L|7L -> 2
+    | i when i < 16L -> 2 + loop(Int64.shift_right_logical i 2)
+    | i when i < 256L -> 4 + loop(Int64.shift_right_logical i 4)
+    | i when i < 65536L -> 8 + loop(Int64.shift_right_logical i 8)
+    | i when i < 0x100000000L -> 16 + loop(Int64.shift_right_logical i 16)
+    | _ -> 32 + loop(Int64.shift_right_logical i 32)
+  in
+    loop i
+
+let int64_ceil_log2 i =
+  match i with
+    | 0L -> -1
+    | _ -> 1 + (int64_floor_log2 (Int64.pred i))
+
 (* end stuff that should be in Int64 *)
 
 (** execute f with fd_from remapped to fd_to.

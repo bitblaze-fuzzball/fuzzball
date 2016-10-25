@@ -157,8 +157,19 @@ object (self)
 	  )
       | Lval(Temp v) ->
 	  self#tr_var v
-      | Lval(Mem(((_,_,m_ty)), idx,t)) when is_not_memory t ->
-	  failwith "Memory access translation to SMT-LIB2 not supported"
+      | Lval(Mem(((_,_,Array(elt_ty, size)) as var), idx, load_ty))
+	  when elt_ty = load_ty ->
+	  let idx_wide = tr_exp idx and
+	      ary_wd = Vine_util.int64_ceil_log2 size and
+	      idx_ty = Vine_typecheck.infer_type_fast idx in
+	  let idx_exp =
+	    if ary_wd = (bits_of_width idx_ty) then
+	      idx_wide
+	    else
+	      let high_pos = string_of_int (ary_wd - 1) in
+		"((_ extract " ^ high_pos ^ " 0) " ^ idx_wide ^ ")"
+	  in
+	    "(select " ^ (self#tr_var var) ^ " " ^ idx_exp ^ ")"
       | Lval(Mem _) ->
 	  raise (Invalid_argument "Memory type not handled")
       | Let(Temp(v), rhs, body) ->
