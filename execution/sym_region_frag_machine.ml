@@ -968,11 +968,12 @@ struct
 	  min
 	else
 	  let mid = (min + max) / 2 in
-	  let mask = Int64.shift_right_logical (-1L) (64-mid) in
+	  let mask = if mid = 0 then 0L 
+	    else (Int64.shift_right_logical (-1L) (64-mid)) in
 	  let cond_e = V.BinOp(V.LE, e, V.Constant(V.Int(ty, mask))) in
 	  let in_bounds = self#query_valid cond_e in
 	    if !opt_trace_tables then
-	      Printf.printf "(%s) < 2**%d: %s\n" (V.exp_to_string e) mid
+	      Printf.printf "(%s) <= 2**%d: %s\n" (V.exp_to_string e) mid
 		(if in_bounds then "valid" else "invalid");
 	    if in_bounds then
 	      loop min mid
@@ -1084,7 +1085,7 @@ struct
 	  let cond_e = V.BinOp(V.LE, e, V.Constant(V.Int(ty, mid))) in
 	  let in_bounds = self#query_valid cond_e in
 	    if !opt_trace_tables then
-	      Printf.printf "(%s) < %Ld: %s\n" (V.exp_to_string e) mid
+	      Printf.printf "(%s) <= %Ld: %s\n" (V.exp_to_string e) mid
 		(if in_bounds then "valid" else "invalid");
 	    if in_bounds then
 	      loop min mid
@@ -1489,7 +1490,7 @@ struct
       in
       let stride = stride form_man off_exp in
       let stride64 = Int64.of_int stride in
-      let num_ents64 = Int64.div (Int64.succ maxval) stride64 in
+      let num_ents64 = Int64.succ (Int64.div maxval stride64) in
       let num_ents = Int64.to_int num_ents64 in
       let target_conds = ref [] in
         for i = 0 to num_ents - 1 do
