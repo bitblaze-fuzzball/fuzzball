@@ -4079,7 +4079,8 @@ object(self)
 	 | (X86, 264) -> (* clock_settime *)
 	     uh "Unhandled Linux system call clock_settime"
 	 | (ARM, 263)
-	 | (X86, 265) -> (* clock_gettime *)
+	 | (X86, 265)
+	 | (X64, 228) -> (* clock_gettime *)
 	     let (arg1, arg2) = read_2_regs () in
 	     let clkid = Int64.to_int arg1 and
 		 timep = arg2 in
