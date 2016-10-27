@@ -11,6 +11,10 @@ open Exec_options
 open Frag_simplify
 open Frag_marshal
 
+let reg_addr () = match !opt_arch with
+  | (X86|ARM) -> V.REG_32
+  | X64 -> V.REG_64
+
 module VarWeak = Weak.Make(VarByInt)
 
 (* Unlike Vine_util.list_unique, this preserves order (keeping the
@@ -139,7 +143,7 @@ struct
 
     method fresh_region_base s =
       assert(not (Hashtbl.mem region_base_vars s));
-      let var = self#fresh_symbolic_var s V.REG_32 in
+      let var = self#fresh_symbolic_var s (reg_addr ()) in
 	Hashtbl.replace region_base_vars s var;
 	D.from_symbolic (V.Lval(V.Temp(var)))
 
@@ -200,7 +204,7 @@ struct
 
     method fresh_region_base_concolic s v =
       assert(not (Hashtbl.mem region_base_vars s));
-      let var = self#fresh_symbolic_var s V.REG_32 in
+      let var = self#fresh_symbolic_var s (reg_addr ()) in
 	Hashtbl.replace region_base_vars s var;
 	ignore(self#make_concolic_32 s v);
 	D.from_symbolic (V.Lval(V.Temp(var)))

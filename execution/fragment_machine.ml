@@ -390,7 +390,7 @@ class virtual fragment_machine = object
     register_name -> string -> int64 -> unit
   method virtual set_word_reg_fresh_symbolic : register_name -> string
     -> string
-  method virtual set_word_reg_fresh_region : register_name -> string -> unit
+  method virtual set_reg_fresh_region : register_name -> string -> unit
 
   method virtual set_long_reg_symbolic : register_name -> string -> unit
   method virtual set_long_reg_fresh_symbolic : register_name -> string
@@ -1750,7 +1750,7 @@ struct
 	symbol_uniq <- symbol_uniq + 1;
 	s' ^ ":reg64_t"
 
-    method set_word_reg_fresh_region reg s =
+    method set_reg_fresh_region reg s =
       let name = s ^ "_" ^ (string_of_int symbol_uniq) in
       (* Make up a fake value for things like null and alignment checks,
 	 in case this run is concolic. *)

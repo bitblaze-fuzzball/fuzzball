@@ -159,7 +159,7 @@ class virtual fragment_machine : object
     register_name -> string -> int64 -> unit
   method virtual set_word_reg_fresh_symbolic : register_name -> string
     -> string
-  method virtual set_word_reg_fresh_region : register_name -> string -> unit
+  method virtual set_reg_fresh_region : register_name -> string -> unit
 
   method virtual set_long_reg_symbolic : register_name -> string -> unit
   method virtual set_long_reg_fresh_symbolic : register_name -> string
@@ -385,7 +385,7 @@ sig
     method set_word_reg_symbolic : register_name -> string -> unit
     method set_word_reg_concolic : register_name -> string -> int64 -> unit
     method set_word_reg_fresh_symbolic : register_name -> string -> string
-    method set_word_reg_fresh_region : register_name -> string -> unit
+    method set_reg_fresh_region : register_name -> string -> unit
 
     method set_long_reg_symbolic : register_name -> string -> unit
     method set_long_reg_fresh_symbolic : register_name -> string -> string
