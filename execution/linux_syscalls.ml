@@ -309,7 +309,9 @@ object(self)
 	      Printf.printf "[%s fd %d]: " prefix fd
 	  | _ -> ());
        (match fd with
-	  | (1|2) -> Array.iter print_char bytes;
+	  | (1|2) ->
+	      Array.iter print_char bytes;
+	      flush stdout;
 	      put_return (Int64.of_int count)
 	  | _ ->
 	      let str = string_of_char_array bytes and
@@ -578,7 +580,7 @@ object(self)
       | X64 -> failwith "64-bit syscalls not supported"
       | ARM -> self#write_oc_statbuf_as_arm_stat64 addr oc_buf
 
-  method write_fake_statfs_buf addr =
+  method private write_fake_statfs_buf addr =
     (* OCaml's Unix module doesn't provide an interface for this
        information, so we just make it up. *)
     let f_type   = 0x52654973L (* REISERFS_SUPER_MAGIC *) and
@@ -605,7 +607,7 @@ object(self)
       store_word addr 36 f_namelen;
       store_word addr 40 f_frsize
 
-  method write_fake_statfs64buf addr =
+  method private write_fake_statfs64buf addr =
     (* OCaml's Unix module doesn't provide an interface for this
        information, so we just make it up. *)
     let f_type   = 0x52654973L (* REISERFS_SUPER_MAGIC *) and
@@ -640,12 +642,26 @@ object(self)
 
   (* This works for either a struct timeval or a struct timespec,
      depending on the resolution *)
-  method write_ftime_as_words ftime addr resolution =
+  method private write_ftime_as_words ftime addr resolution =
     let fsecs = floor ftime in
     let secs = Int64.of_float fsecs and
 	fraction = Int64.of_float (resolution *. (ftime -. fsecs)) in
-      store_word addr 0 secs;
-      store_word addr 4 fraction
+      match !opt_arch with
+	| (X86|ARM) ->
+	    store_word addr 0 secs;
+	    store_word addr 4 fraction
+	| X64 ->
+	    store_long addr 0 secs;
+	    store_long addr 8 fraction
+
+  method private read_words_as_ftime addr resolution =
+    let (secs, frac) = match !opt_arch with
+      | (X86|ARM) ->
+	  (load_word (lea addr 0 0 0)), (load_word (lea addr 0 0 4))
+      | X64 ->
+	  (load_word (lea addr 0 0 0)), (load_long (lea addr 0 0 8))
+    in
+      (Int64.to_float secs) +. (Int64.to_float frac) /. resolution
 
   val mutable proc_identities = None
 
@@ -827,10 +843,10 @@ object(self)
 	     changing the system's clock while running the program.
 	     Pretend we were booted on 2010-03-18. *)
 	  (self#write_ftime_as_words (Unix.gettimeofday () -. 1268959142.0)
-	     timep 1000000000.0);
+	     timep 1e9);
 	  put_return 0L
       | 0 -> (* CLOCK_REALTIME *)
-	  self#write_ftime_as_words (Unix.gettimeofday ()) timep 1000000000.0;
+	  self#write_ftime_as_words (Unix.gettimeofday ()) timep 1e9;
 	  put_return 0L
       | _ -> self#put_errno Unix.EINVAL (* unsupported clock type *)
 
@@ -1218,7 +1234,7 @@ object(self)
 
   method sys_gettimeofday timep zonep =
     if timep <> 0L then
-      self#write_ftime_as_words (Unix.gettimeofday ()) timep 1000000.0;
+      self#write_ftime_as_words (Unix.gettimeofday ()) timep 1e6;
     if zonep <> 0L then
       (* Simulate a modern system where the kernel knows nothing about
 	 the timezone: *)
@@ -2372,6 +2388,13 @@ object(self)
 	   | _ -> failwith "Unexpected set size in (rt_)sigprocmask"));
     put_return 0L (* success *)
 
+  method sys_nanosleep req_addr rem_addr =
+    let req_time = self#read_words_as_ftime req_addr 1e9 in
+      (* Unix.sleepf req_time; (* not added until 4.03 *) *)
+      ignore(Unix.select [] [] [] req_time);
+      self#write_ftime_as_words 0.0 rem_addr 1e9;
+      put_return 0L (* success *)
+
   method sys_socket dom_i typ_i prot_i =
     try
       let netlink_flag = ref false in
@@ -3062,6 +3085,7 @@ object(self)
 	       if !opt_trace_syscalls then
 		 Printf.printf "getrusage(%d, 0x%08Lx)" who buf;
 	       self#sys_getrusage who buf
+	 | (X64, 96)
 	 | ((X86|ARM), 78) -> (* gettimeofday *)
 	     let (arg1, arg2) = read_2_regs () in
 	     let timep = arg1 and
@@ -3609,8 +3633,12 @@ object(self)
 	       self#sys_sched_get_priority_min policy
 	 | ((X86|ARM), 161) -> (* sched_rr_get_interval *)
 	     uh "Unhandled Linux system call sched_rr_get_interval (161)"
-	 | ((X86|ARM), 162) -> (* nanosleep *)
-	     uh "Unhandled Linux system call nanosleep (162)"
+	 | ((X86|ARM), 162)
+	 | (X64, 35) -> (* nanosleep *)
+	     let (req_addr, rem_addr) = read_2_regs () in
+	       if !opt_trace_syscalls then
+		 Printf.printf "nanosleep(0x%08Lx, 0x%08Lx)" req_addr rem_addr;
+	       self#sys_nanosleep req_addr rem_addr
 	 | ((X86|ARM), 163) -> (* mremap *)
 	     uh "Unhandled Linux system call mremap (163)"
 	 | ((X86|ARM), 164) -> (* setresuid *)
@@ -4079,6 +4107,7 @@ object(self)
 	 | (X86, 264) -> (* clock_settime *)
 	     uh "Unhandled Linux system call clock_settime"
 	 | (ARM, 263)
+	 | (X64, 228)
 	 | (X86, 265) -> (* clock_gettime *)
 	     let (arg1, arg2) = read_2_regs () in
 	     let clkid = Int64.to_int arg1 and
