@@ -34,6 +34,9 @@ class stpvc_engine = object(self)
   method add_temp_var v =
     temp_vars <- v :: temp_vars
 
+  method add_table var el =
+    failwith "-solver stpvc does not support -tables-as-arrays yet"
+
   method private ensure_ctx =
     match ctx with
       | Some c -> ()

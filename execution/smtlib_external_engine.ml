@@ -101,6 +101,9 @@ class smtlib_external_engine solver = object(self)
   method add_temp_var var =
     ()
 
+  method add_table var el =
+    failwith "-solver smtlib does not support -tables-as-arrays yet"
+
   method assert_eq var rhs =
     if first_query then self#real_prepare;
     self#real_assert_eq (var, rhs)

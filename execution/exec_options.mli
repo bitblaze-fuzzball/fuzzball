@@ -134,6 +134,7 @@ val opt_table_limit : int ref
 val opt_offset_limit : int ref
 val opt_trace_offset_limit : bool ref
 val opt_no_table_store : bool ref
+val opt_tables_as_arrays : bool ref
 val opt_implied_value_conc : bool ref
 val opt_trace_ivc : bool ref
 val opt_ite_ivc : bool ref

@@ -97,26 +97,41 @@ let encode_exp_flags e printable =
 	 push s.[i]
        done)
   in
-  let push_var ((n,s,t) as var) =
+  let push_reg_type ty =
     let c =
-      (match t with
+      (match ty with
 	 | V.REG_1  -> 'b'
 	 | V.REG_8  -> 'c'
 	 | V.REG_16 -> 's'
 	 | V.REG_32 -> 'i'
 	 | V.REG_64 -> 'l'
-	 | V.TMem(V.REG_32, V.Little) -> 'M'
-	 | _ ->
-	     Printf.printf "Bad type: %s\n" (V.type_to_string t);
-	     failwith "Unexpected variable type in encode_exp") in
-      push c;
-      if printable then
-	push_printable_str (Printf.sprintf "(%s)" s)
-      else
-	(push_int64 (Int64.of_int n);
-	 Hashtbl.replace var_num_to_name n s;
-	 ignore(VarWeak.merge canon_vars var);
-	 vars := var :: !vars)
+	 | _ -> failwith "Unexpected reg_type in encode_exp")
+    in
+      push c
+  in
+  let push_type ty =
+    match ty with
+      | (V.REG_1 | V.REG_8 | V.REG_16 | V.REG_32 | V.REG_64) ->
+	  push_reg_type ty
+      | V.TMem(V.REG_32, V.Little) ->
+	  push 'M'
+      | V.Array(elt_ty, size) ->
+	  push 'A';
+	  push_reg_type elt_ty;
+	  push_int64 size
+      | _ ->
+	  Printf.printf "Bad type: %s\n" (V.type_to_string ty);
+	  failwith "Unexpected variable type in encode_exp"
+  in
+  let push_var ((n,s,t) as var) =
+    push_type t;
+    if printable then
+      push_printable_str (Printf.sprintf "(%s)" s)
+    else
+      (push_int64 (Int64.of_int n);
+       Hashtbl.replace var_num_to_name n s;
+       ignore(VarWeak.merge canon_vars var);
+       vars := var :: !vars)
   in
   let push_round_mode rm =
     let c = match rm with
@@ -349,24 +364,30 @@ let decode_exp s =
     let len = Char.code s.[i] in
       (i + len + 1, String.sub s (i + 1) len)
   in
+  let rec parse_type i =
+    match s.[i] with
+      | 'b' -> (i + 1, V.REG_1)
+      | 'c' -> (i + 1, V.REG_8)
+      | 's' -> (i + 1, V.REG_16)
+      | 'i' -> (i + 1, V.REG_32)
+      | 'l' -> (i + 1, V.REG_64)
+      | 'M' -> (i + 1, V.TMem(V.REG_32, V.Little))
+      | 'A' ->
+	  let (i2, elt_ty) = parse_type (i + 1) in
+	  let (i3, size) = parse_int64 i2 in
+	    (i3, V.Array(elt_ty, size))
+      |  _ -> failwith "Bad type in parse_var"
+  in
   let parse_var i =
-    let ty =
-      (match s.[i] with
-	 | 'b' -> V.REG_1
-	 | 'c' -> V.REG_8
-	 | 's' -> V.REG_16
-	 | 'i' -> V.REG_32
-	 | 'l' -> V.REG_64
-	 | 'M' -> V.TMem(V.REG_32, V.Little)
-	 | _ -> failwith "Bad type in parse_var") in
-    let (i2, n64) = parse_int64 (i + 1) in
+    let (i2, ty) = parse_type i in
+    let (i3, n64) = parse_int64 (i2) in
     let n = Int64.to_int n64 in
     let var = (n, (Hashtbl.find var_num_to_name n), ty) in
     let cvar = try
       VarWeak.find canon_vars var
     with Not_found -> var
     in
-      (i2, cvar)
+      (i3, cvar)
   in
   let parse_round_mode i =
     (i + 1, decode_round_mode s.[i])

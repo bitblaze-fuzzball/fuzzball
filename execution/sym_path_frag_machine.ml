@@ -236,10 +236,11 @@ struct
 	  | _ -> None 
 
     method private push_cond_to_qe cond =
-      let (decls, assigns, cond_e, new_vars) =
+      let (decls, assigns, cond_e, new_vars, tables) =
 	form_man#one_cond_for_solving cond var_seen_hash
       in
 	List.iter query_engine#add_free_var decls;
+	List.iter (fun (v,el) -> query_engine#add_table v el) tables;
 	List.iter (fun (v,_) -> query_engine#add_temp_var v) assigns;
 	List.iter (fun (v,e) -> query_engine#assert_eq v e) assigns;
 	query_engine#add_condition cond_e
@@ -302,12 +303,13 @@ struct
 	       self#print_ce ce');
 	    (true, ce')
 	| _ ->
-	    let (decls, assigns, cond_e, new_vars) =
+	    let (decls, assigns, cond_e, new_vars, tables) =
 	      form_man#one_cond_for_solving cond var_seen_hash
 	    in
 	      query_engine#push;
 	      query_engine#start_query;
 	      List.iter query_engine#add_free_var decls;
+	      List.iter (fun (v,el) -> query_engine#add_table v el) tables;
 	      List.iter (fun (v,_) -> query_engine#add_temp_var v) assigns;
 	      List.iter (fun (v,e) -> query_engine#assert_eq v e) assigns;
 	      let time_before = get_time () in

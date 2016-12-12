@@ -371,6 +371,8 @@ let explore_cmdline_opts =
      " Print offset width information");
     ("-no-table-store", Arg.Set(opt_no_table_store),
      " Disable symbolic treatment of table stores");
+    ("-tables-as-arrays", Arg.Set(opt_tables_as_arrays),
+     " Use SMT array theory for table loads");
     ("-implied-value-conc", Arg.Set(opt_implied_value_conc),
      " Concretize based on path condition");
     ("-trace-ivc", Arg.Set(opt_trace_ivc),

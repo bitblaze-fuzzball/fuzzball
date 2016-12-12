@@ -10,6 +10,7 @@ class smtlib_external_engine : Solvers_common.external_solver_type -> object
   method start_query : unit
   method add_free_var : Vine.var -> unit
   method add_temp_var : Vine.var -> unit
+  method add_table : Vine.var -> Vine.exp list -> unit
   method assert_eq : Vine.var -> Vine.exp -> unit
   method add_condition : Vine.exp -> unit
   method push : unit

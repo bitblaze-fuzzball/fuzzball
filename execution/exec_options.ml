@@ -156,6 +156,7 @@ let opt_table_limit = ref 0
 let opt_offset_limit = ref 0
 let opt_trace_offset_limit = ref false
 let opt_no_table_store = ref false
+let opt_tables_as_arrays = ref false
 let opt_implied_value_conc = ref false
 let opt_trace_ivc = ref false
 let opt_ite_ivc = ref false

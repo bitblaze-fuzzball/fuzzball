@@ -944,10 +944,12 @@ struct
     method private load_long_region  r addr = (self#region r)#load_long  addr
 
     method private query_valid e =
-      let (is_sat, _) = 
-	self#query_with_path_cond (V.UnOp(V.NOT, e)) false
-      in
-	not is_sat
+      let is_sat_r = ref false in
+	self#restore_path_cond
+	  (fun _ -> let (is_sat, _) =
+	     self#query_with_path_cond (V.UnOp(V.NOT, e)) false in
+	     is_sat_r := is_sat);
+	not !is_sat_r
 
     method private query_bitwidth e ty =
       let rec loop min max =

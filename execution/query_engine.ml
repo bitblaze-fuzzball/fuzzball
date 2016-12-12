@@ -22,6 +22,7 @@ class virtual query_engine = object(self)
   method virtual start_query : unit
   method virtual add_free_var : V.var -> unit
   method virtual add_temp_var : V.var -> unit
+  method virtual add_table : V.var -> V.exp list -> unit
 
   method prepare free_vars temp_vars =
     self#start_query;
@@ -49,6 +50,7 @@ class dummy_query_engine = object(self)
   method start_query = no "start_query"
   method add_free_var v = no "add_free_var"
   method add_temp_var v = no "add_temp_var"
+  method add_table v el = no "add_table"
   method assert_eq v e = no "assert_eq"
   method add_condition e = no "add_condition"
   method push = no "push"
@@ -96,6 +98,10 @@ class parallel_check_engine (e1:query_engine) (e2:query_engine) = object(self)
   method add_temp_var var =
     e1#add_temp_var var;
     e2#add_temp_var var
+
+  method add_table var exp_l =
+    e1#add_table var exp_l;
+    e2#add_table var exp_l
 
   method assert_eq var rhs =
     e1#assert_eq var rhs;

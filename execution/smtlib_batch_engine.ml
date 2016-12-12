@@ -80,6 +80,7 @@ class smtlib_batch_engine e_s_t fname = object(self)
   val mutable free_vars = []
   val mutable eqns = []
   val mutable conds = []
+  val mutable tables = []
 
   method start_query =
     ()
@@ -93,6 +94,13 @@ class smtlib_batch_engine e_s_t fname = object(self)
   method add_temp_var var =
     ()
 
+  method add_table var el =
+    tables <- (var, el) :: tables
+
+  method private real_add_table var el =
+    self#visitor#declare_var var;
+    self#visitor#assert_array_contents var el
+
   method assert_eq var rhs =
     eqns <- (var, rhs) :: eqns;
 
@@ -102,14 +110,15 @@ class smtlib_batch_engine e_s_t fname = object(self)
   val mutable ctx_stack = []
 
   method push =
-    ctx_stack <- (free_vars, eqns, conds) :: ctx_stack
+    ctx_stack <- (free_vars, eqns, conds, tables) :: ctx_stack
 
   method pop =
     match ctx_stack with
-      | (free_vars', eqns', conds') :: rest ->
+      | (free_vars', eqns', conds', tables') :: rest ->
 	  free_vars <- free_vars';
 	  eqns <- eqns';
 	  conds <- conds';
+	  tables <- tables';
 	  ctx_stack <- rest
       | [] -> failwith "Context underflow in smtlib_batch_engine#pop"
 
@@ -134,6 +143,7 @@ class smtlib_batch_engine e_s_t fname = object(self)
       output_string self#chan
 	("(set-logic "^logic^")\n(set-info :smt-lib-version 2.0)\n\n");
       List.iter self#real_add_free_var (List.rev free_vars);
+      List.iter (fun (v,el) -> self#real_add_table v el) (List.rev tables);
       List.iter self#real_assert_eq (List.rev eqns);
 
   method query qe =
@@ -247,5 +257,6 @@ class smtlib_batch_engine e_s_t fname = object(self)
     visitor <- None;
     free_vars <- [];
     eqns <- [];
-    conds <- []
+    conds <- [];
+    tables <- []
 end

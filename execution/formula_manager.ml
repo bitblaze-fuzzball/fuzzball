@@ -33,6 +33,15 @@ let list_unique l =
   in
     (loop l)
 
+let list_where elt l =
+  let rec loop pos l =
+    match l with
+      | (a :: r) when a = elt -> pos
+      | (a :: r) -> loop (pos + 1) r
+      | [] -> failwith "Not present in list_where"
+  in
+    loop 0 l
+
 let cf_eval e =
   match Vine_opt.constant_fold (fun _ -> None) e with
     | V.Constant(V.Int(_, _)) as c -> c
@@ -112,6 +121,15 @@ struct
 	  | _ -> f recurse e
     in
       recurse e
+
+  let to_symbolic v ty =
+    match ty with
+      | V.REG_1  -> D.to_symbolic_1  v
+      | V.REG_8  -> D.to_symbolic_8  v
+      | V.REG_16 -> D.to_symbolic_16 v
+      | V.REG_32 -> D.to_symbolic_32 v
+      | V.REG_64 -> D.to_symbolic_64 v
+      | _ -> failwith "Unexpected type in FM.to_symbolic"
 
   class formula_manager = object(self)
     val input_vars = Hashtbl.create 30
@@ -299,8 +317,16 @@ struct
 	      al;
 	    assert(V.VarHash.mem mem_axioms var);
 
+    val mutable table_vars = []
+    val mutable tables_by_idx : V.exp list list = []
+    val tables : (D.t list, int) Hashtbl.t = Hashtbl.create 101
+    val tables_cache_limit = 1000000L
+
     method private rewrite_mem_expr e =
       match e with
+	| V.Lval(V.Mem(table_var, idx, elt_ty))
+	    when List.mem table_var table_vars ->
+	    e
 	| V.Lval(V.Mem((_,region_str,ty1),
 		       V.Constant(V.Int(V.REG_32, addr)), ty2))
 	  -> (self#add_mem_axioms region_str ty2 addr;
@@ -532,6 +558,13 @@ struct
 		     in
 		       Hashtbl.replace memo n e';
 		       e')
+	  | V.Lval(V.Mem(table_var, idx_e, elt_ty))
+	      when List.mem table_var table_vars ->
+	      let idx = Int64.to_int (loop_to_i64 idx_e) and
+		  table_num = list_where table_var table_vars in
+	      let table = List.nth tables_by_idx table_num in
+	      let elt_e = List.nth table idx in
+		loop elt_e
 	  | V.Lval(V.Mem(_, _, _)) -> loop (self#rewrite_mem_expr e)
 	  | V.Lval(V.Temp(memvar))
 	      when V.VarHash.mem mem_axioms memvar
@@ -546,13 +579,15 @@ struct
 	    ->
 	      Printf.printf "Can't evaluate %s\n" (V.exp_to_string e);
 	      failwith "Unexpected expr in eval_expr_from_ce"
-      in
+
+      and loop_to_i64 e =
 	match loop e with
 	  | V.Constant(V.Int(_, i64)) -> i64
 	  | e ->
 	      Printf.printf "Left with %s\n" (V.exp_to_string e);
 	      failwith "Constant invariant failed in eval_expr"
-      
+      in
+	loop_to_i64 e
 
     val temp_var_num_has_loop_var = Hashtbl.create 1001
 
@@ -724,14 +759,7 @@ struct
     method private table_lookup_cached table table_num idx_exp0 idx_wd ty =
       let idx_ty = Vine_typecheck.infer_type_fast idx_exp0 in
       let idx_v = self#tempify (D.from_symbolic idx_exp0) idx_ty in
-      let idx_exp = match idx_ty with
-	| V.REG_1  -> D.to_symbolic_1  idx_v
-	| V.REG_8  -> D.to_symbolic_8  idx_v
-	| V.REG_16 -> D.to_symbolic_16 idx_v
-	| V.REG_32 -> D.to_symbolic_32 idx_v
-	| V.REG_64 -> D.to_symbolic_64 idx_v
-	| _ -> failwith "Unexpected type in make_table_lookup"
-      in
+      let idx_exp = to_symbolic idx_v idx_ty in
       let remake =
 	let v = self#lookup_tree idx_exp idx_wd ty table in
 	let v' = self#tempify v ty
@@ -763,25 +791,35 @@ struct
 	  | Not_found ->
 	      remake
 
-    val tables = Hashtbl.create 101
-    val tables_cache_limit = 1000000L
-
-    method private save_table table ty =
-      let num_cached = Int64.of_int (Hashtbl.length tables) and
-	  size = Int64.of_int (List.length table)
+    method private save_table table elt_ty =
+      let size = Int64.of_int (List.length table) and
+	  num_cached = Hashtbl.length tables in
+      let use_cache table =
+	try
+	  (Hashtbl.find tables table, false)
+	with
+	  | Not_found ->
+	      let i = Hashtbl.length tables in
+		Hashtbl.replace tables table i;
+		if !opt_tables_as_arrays then
+		  (let table_e =
+		     List.map (fun v -> to_symbolic v elt_ty) table in
+		   let array_ty = V.Array(elt_ty, size) in
+		   let name = "table" ^ (string_of_int i) in
+		   let table_var = V.newvar name array_ty in
+		     tables_by_idx <- tables_by_idx @ [table_e];
+		     table_vars <- table_vars @ [table_var]);
+		(i, true)
       in
-      let prod = Int64.mul num_cached size
-      in
-	if prod > tables_cache_limit then
-	  (-1, true)
+	if !opt_tables_as_arrays then
+	  use_cache table
 	else
-	  try
-	    (Hashtbl.find tables table, false)
-	  with
-	    | Not_found ->
-		let i = Hashtbl.length tables in
-		  Hashtbl.replace tables table i;
-		  (i, true)
+	  let prod = Int64.mul (Int64.of_int num_cached) size
+	  in
+	    if prod > tables_cache_limit then
+	      (-1, true)
+	    else
+	      use_cache table
 
     method private print_table table ty i =
       Printf.printf "Table %d is: " i;
@@ -892,14 +930,7 @@ struct
       in
       let idx_ty = Vine_typecheck.infer_type_fast idx_exp0 in
       let idx_v = self#tempify (D.from_symbolic idx_exp0) idx_ty in
-      let idx_exp = match idx_ty with
-	| V.REG_1  -> D.to_symbolic_1  idx_v
-	| V.REG_8  -> D.to_symbolic_8  idx_v
-	| V.REG_16 -> D.to_symbolic_16 idx_v
-	| V.REG_32 -> D.to_symbolic_32 idx_v
-	| V.REG_64 -> D.to_symbolic_64 idx_v
-	| _ -> failwith "Unexpected type in make_gf2_operator"
-      in
+      let idx_exp = to_symbolic idx_v idx_ty in
       let terms = term_loop spine idx_exp 0 in
       let e = xorjoin terms in
       let v = D.from_symbolic e in
@@ -909,6 +940,12 @@ struct
 	     (V.exp_to_string idx_exp) (D.to_string_64 v');
 	   flush stdout);
 	v'
+
+    method private table_lookup_array table_num idx_exp idx_wd ty =
+      let table_var = List.nth table_vars table_num in
+      let e = V.Lval(V.Mem(table_var, idx_exp, ty)) in
+      let v = D.from_symbolic e in
+	self#tempify v ty
 
     method make_table_lookup table idx_exp idx_wd ty =
       let (table_num, is_new) = self#save_table table ty in
@@ -922,7 +959,10 @@ struct
 	      self#make_gf2_operator spine ty idx_exp
 	  | None ->
 	      let v =
-		self#table_lookup_cached table table_num idx_exp idx_wd ty
+		if !opt_tables_as_arrays then
+		  self#table_lookup_array table_num idx_exp idx_wd ty
+		else
+		  self#table_lookup_cached table table_num idx_exp idx_wd ty
 	      in
 		if is_new && !opt_trace_tables then
 		  self#print_table table ty table_num;
@@ -1001,7 +1041,9 @@ struct
 	(decls, assigns, cond_expr, val_expr, inputs_in_val_expr)
 
     method one_cond_for_solving cond seen_hash =
-      let (all_decls, all_assigns, cond_expr) =
+      let saw_var v =
+	V.VarHash.replace seen_hash v () in
+      let (all_decls, all_assigns, all_tables, cond_expr) =
 	self#with_saved_mem_axioms
 	  (fun _ ->
 	     let cond_expr = self#rewrite_for_solver cond in
@@ -1014,16 +1056,22 @@ struct
 	     let m_axioms = self#get_mem_axioms in
 	     let m_vars = List.map (fun (v, _) -> v) m_axioms in
 	     let assigns = m_axioms @ temps in
+	     let all_tables =
+	       List.map2 (fun v el -> (v, el)) table_vars tables_by_idx in
 	     let decls = Vine_util.list_difference i_vars m_vars in
-	       (decls, assigns, cond_expr))
+	       (decls, assigns, all_tables, cond_expr))
       in
       let new_decls = List.filter
 	(fun v -> not (V.VarHash.mem seen_hash v)) all_decls in
       let new_assigns = List.filter
 	(fun (v,_) -> not (V.VarHash.mem seen_hash v)) all_assigns in
-      let new_vars = new_decls @ (List.map (fun (v,_) -> v) new_assigns) in
-	List.iter (fun v -> V.VarHash.replace seen_hash v ()) new_vars;
-	(new_decls, new_assigns, cond_expr, new_vars)
+      let new_tables = List.filter
+	(fun (v,_) -> not (V.VarHash.mem seen_hash v)) all_tables in
+      let new_vars = new_decls @ (List.map (fun (v,_) -> v) new_assigns)
+	@ (List.map (fun (v,_) -> v) new_tables)
+      in
+	List.iter saw_var new_vars;
+	(new_decls, new_assigns, cond_expr, new_vars, new_tables)
 
     method measure_size =
       let (input_ents, input_nodes) =

@@ -84,7 +84,7 @@ sig
 
     method one_cond_for_solving : Vine.exp -> unit Vine.VarHash.t ->
       Vine.var list * (Vine.var * Vine.exp) list * Vine.exp *
-        Vine.var list
+        Vine.var list * (Vine.var * Vine.exp list) list
 
     method measure_size : (int * int)
   end

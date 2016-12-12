@@ -19,6 +19,7 @@ class virtual query_engine : object
   method virtual start_query : unit
   method virtual add_free_var : Vine.var -> unit
   method virtual add_temp_var : Vine.var -> unit
+  method virtual add_table : Vine.var -> Vine.exp list -> unit
   method prepare : Vine.var list -> Vine.var list -> unit
   method virtual assert_eq : Vine.var -> Vine.exp -> unit
   method virtual add_condition : Vine.exp -> unit
@@ -35,6 +36,7 @@ class dummy_query_engine : object
   method start_query : unit
   method add_free_var : Vine.var -> unit
   method add_temp_var : Vine.var -> unit
+  method add_table : Vine.var -> Vine.exp list -> unit
   method assert_eq : Vine.var -> Vine.exp -> unit
   method add_condition : Vine.exp -> unit
   method push : unit
@@ -51,6 +53,7 @@ class parallel_check_engine : query_engine -> query_engine -> object
   method start_query : unit
   method add_free_var : Vine.var -> unit
   method add_temp_var : Vine.var -> unit
+  method add_table : Vine.var -> Vine.exp list -> unit
   method assert_eq : Vine.var -> Vine.exp -> unit
   method add_condition : Vine.exp -> unit
   method push : unit
