@@ -116,23 +116,8 @@ class smtlib_external_engine solver fname = object(self)
   method start_query =
     ()
 
-  method add_free_var var =
-    if first_query then self#real_prepare;
-    self#real_add_free_var var
-
   method private real_add_free_var var =
     self#visitor#declare_var var
-
-  method add_temp_var var =
-    ()
-
-  method add_table var el =
-    if first_query then self#real_prepare;
-    self#real_add_table var el
-
-  method assert_eq var rhs =
-    if first_query then self#real_prepare;
-    self#real_assert_eq (var, rhs)
 
   method add_condition e =
     if first_query then self#real_prepare;

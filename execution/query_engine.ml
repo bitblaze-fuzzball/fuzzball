@@ -28,11 +28,7 @@ type qe_decl =
 
 class virtual query_engine = object(self)
   method virtual start_query : unit
-  method virtual add_free_var : V.var -> unit
-  method virtual add_temp_var : V.var -> unit
-  method virtual add_table : V.var -> V.exp list -> unit
   method virtual add_decl : qe_decl -> unit
-  method virtual assert_eq : V.var -> V.exp -> unit
   method virtual add_condition : V.exp -> unit
   method virtual push : unit
   method virtual pop : unit
@@ -47,10 +43,6 @@ class dummy_query_engine = object(self)
   inherit query_engine
 
   method start_query = no "start_query"
-  method add_free_var v = no "add_free_var"
-  method add_temp_var v = no "add_temp_var"
-  method add_table v el = no "add_table"
-  method assert_eq v e = no "assert_eq"
   method add_decl d = no "add_decl"
   method add_condition e = no "add_condition"
   method push = no "push"
@@ -90,23 +82,6 @@ class parallel_check_engine (e1:query_engine) (e2:query_engine) = object(self)
   method start_query =
     e1#start_query;
     e2#start_query
-
-  method add_free_var var =
-    e1#add_free_var var;
-    e2#add_free_var var
-
-  method add_temp_var var =
-    e1#add_temp_var var;
-    e2#add_temp_var var
-
-  method add_table var exp_l =
-    e1#add_table var exp_l;
-    e2#add_table var exp_l
-
-  method assert_eq var rhs =
-    e1#assert_eq var rhs;
-    e2#assert_eq var rhs;
-    eqns <- (var, rhs) :: eqns
 
   method add_decl decl =
     e1#add_decl decl;

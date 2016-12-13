@@ -415,19 +415,17 @@ struct
 	List.iter (fun v -> Printf.printf " %s" (V.var_to_string v))
 	  free_decls;
 	Printf.printf "\n";
-	List.iter qe#add_free_var free_decls;
+	List.iter (fun v -> qe#add_decl (InputVar(v))) free_decls;
 	Printf.printf "Temp assignments are:\n";
 	List.iter (fun (v, exp) ->
 		     Printf.printf " %s = %s\n"
 		       (V.var_to_string v) (V.exp_to_string exp))
 	  assigns;
-	List.iter (fun (v, exp) ->
-		     qe#add_temp_var v;
-		     qe#assert_eq v exp)
-	  assigns;
+	List.iter (fun (v, exp) -> qe#add_decl (TempVar(v, exp))) assigns;
 	Printf.printf "Conditional expr is %s\n" (V.exp_to_string cond_e);
 	qe#add_condition cond_e;
 	Printf.printf "Target expr is %s\n" (V.exp_to_string target_e);
+	flush stdout;
 	assert(self#check_sat target_eq V.exp_true <> None);
 	let i = self#influence_strategies target_eq target_e' ty in
 	  qe#reset;

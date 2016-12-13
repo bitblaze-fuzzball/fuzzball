@@ -85,24 +85,12 @@ class smtlib_batch_engine e_s_t fname = object(self)
   method start_query =
     ()
 
-  method add_free_var var =
-    free_vars <- var :: free_vars
-
   method private real_add_free_var var =
     self#visitor#declare_var var
-
-  method add_temp_var var =
-    ()
-
-  method add_table var el =
-    tables <- (var, el) :: tables
 
   method private real_add_table var el =
     self#visitor#declare_var var;
     self#visitor#assert_array_contents var el
-
-  method assert_eq var rhs =
-    eqns <- (var, rhs) :: eqns;
 
   method add_decl d =
     match d with

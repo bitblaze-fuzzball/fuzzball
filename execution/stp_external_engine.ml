@@ -58,21 +58,6 @@ class stp_external_engine fname = object(self)
   method start_query =
     ()
 
-  method add_free_var var =
-    free_vars <- var :: free_vars
- 
-  method private real_add_free_var var =
-    self#visitor#declare_var var
-
-  method add_temp_var var =
-    ()
-
-  method add_table var el =
-    failwith "-solver stp-external does not support -tables-as-arrays yet"
-
-  method assert_eq var rhs =
-    eqns <- (var, rhs) :: eqns;
-
   method add_decl d =
     match d with
       | InputVar(v) -> free_vars <- v :: free_vars
@@ -111,7 +96,7 @@ class stp_external_engine fname = object(self)
       chan <- Some(open_out (fname ^ ".stp"));
       visitor <- Some(new Stp.vine_cvcl_print_visitor
 			(output_string self#chan));
-      List.iter self#real_add_free_var (List.rev free_vars);
+      List.iter self#visitor#declare_var (List.rev free_vars);
       List.iter self#real_assert_eq (List.rev eqns);
 
   method query qe =

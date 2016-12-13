@@ -28,23 +28,11 @@ class stpvc_engine = object(self)
   method start_query =
     Libstp.vc_push vc    
 
-  method add_free_var v =
-    free_vars <- v :: free_vars
-
-  method add_temp_var v =
-    temp_vars <- v :: temp_vars
-
-  method add_table var el =
-    failwith "-solver stpvc does not support -tables-as-arrays yet"
-
   method private ensure_ctx =
     match ctx with
       | Some c -> ()
       | None -> 
 	  ctx <- Some(Vine_stpvc.new_ctx vc (free_vars @ temp_vars))
-
-  method assert_eq var rhs =
-    eqns <- (var, rhs) :: eqns
 
   method add_decl d =
     match d with

@@ -26,10 +26,6 @@ type qe_decl =
 
 class virtual query_engine : object
   method virtual start_query : unit
-  method virtual add_free_var : Vine.var -> unit
-  method virtual add_temp_var : Vine.var -> unit
-  method virtual add_table : Vine.var -> Vine.exp list -> unit
-  method virtual assert_eq : Vine.var -> Vine.exp -> unit
   method virtual add_decl : qe_decl -> unit
   method virtual add_condition : Vine.exp -> unit
   method virtual push : unit
@@ -42,10 +38,6 @@ end
 class dummy_query_engine : object
   inherit query_engine
   method start_query : unit
-  method add_free_var : Vine.var -> unit
-  method add_temp_var : Vine.var -> unit
-  method add_table : Vine.var -> Vine.exp list -> unit
-  method assert_eq : Vine.var -> Vine.exp -> unit
   method add_decl : qe_decl -> unit
   method add_condition : Vine.exp -> unit
   method push : unit
@@ -60,10 +52,6 @@ val print_ce : sat_assign -> unit
 class parallel_check_engine : query_engine -> query_engine -> object
   inherit query_engine
   method start_query : unit
-  method add_free_var : Vine.var -> unit
-  method add_temp_var : Vine.var -> unit
-  method add_table : Vine.var -> Vine.exp list -> unit
-  method assert_eq : Vine.var -> Vine.exp -> unit
   method add_decl : qe_decl -> unit
   method add_condition : Vine.exp -> unit
   method push : unit
