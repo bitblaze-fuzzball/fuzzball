@@ -4,6 +4,7 @@
 *)
 
 module V = Vine
+module QE = Query_engine
 
 open Exec_domain
 open Exec_exceptions
@@ -63,6 +64,12 @@ let xorjoin l =
   match l with
     | [] -> V.exp_false
     | e :: el -> List.fold_left (fun a b -> V.BinOp(V.XOR, a, b)) e el
+
+let qe_decl_var =
+  function
+    | QE.InputVar(v) -> v
+    | QE.TempVar(v, e) -> v
+    | QE.TempArray(v, el) -> v
 
 module FormulaManagerFunctor =
   functor (D : Exec_domain.DOMAIN) ->
@@ -563,8 +570,14 @@ struct
 	      let idx = Int64.to_int (loop_to_i64 idx_e) and
 		  table_num = list_where table_var table_vars in
 	      let table = List.nth tables_by_idx table_num in
-	      let elt_e = List.nth table idx in
-		loop elt_e
+		if idx >= List.length table then
+		  (* Undefined, treat as 0 *)
+		  (* Printf.printf "Out of range index %d in table %d\n"
+		     idx table_num; *)
+		  V.Constant(V.Int(elt_ty, 0L))
+		else
+		  let elt_e = List.nth table idx in
+		    loop elt_e
 	  | V.Lval(V.Mem(_, _, _)) -> loop (self#rewrite_mem_expr e)
 	  | V.Lval(V.Temp(memvar))
 	      when V.VarHash.mem mem_axioms memvar
@@ -808,7 +821,9 @@ struct
 		   let name = "table" ^ (string_of_int i) in
 		   let table_var = V.newvar name array_ty in
 		     tables_by_idx <- tables_by_idx @ [table_e];
-		     table_vars <- table_vars @ [table_var]);
+		     table_vars <- table_vars @ [table_var];
+		     assert(List.length tables_by_idx =
+			 List.length table_vars));
 		(i, true)
       in
 	if !opt_tables_as_arrays then
@@ -979,10 +994,12 @@ struct
       with
 	| Some e_enc -> (fn_t (Some(decode_exp e_enc)))
 	| None -> (fn_t None)
-	
-    (* This was originally designed to be polymorphic in the return
-       type of f, and could be made so again as with if_expr_temp *)
-    method walk_temps (f : (V.var -> V.exp -> (V.var * V.exp))) exp =
+
+    (* walk_temps and collect_for_solving are now mostly simplified
+       special cases of walk_decls and one_cond_for_solving respectively,
+       and used only in the influence code. It would be nice to refactor
+       them away at some point. *)
+    method private walk_temps exp =
       let h = V.VarHash.create 21 in
       let temps = ref [] in
       let nontemps_h = V.VarHash.create 21 in
@@ -998,7 +1015,7 @@ struct
 	      (let fn_t = (fun e ->
 			     V.VarHash.replace h var ();
 			     walk e;
-			     temps := (f var e) :: !temps) in
+			     temps := (var, e) :: !temps) in
 	       let else_fn =
 		 (fun v -> (* v is not a temp *)
 		    if not (V.VarHash.mem nontemps_h var) then
@@ -1010,7 +1027,7 @@ struct
 	| V.Cast(_, _, e1) -> walk e1
 	| V.FCast(_, _, _, e1) -> walk e1
 	| V.Unknown(_) -> ()
-	| V.Let(_, e1, e2) -> walk e1; walk e2 
+	| V.Let(_, e1, e2) -> walk e1; walk e2
 	| V.Ite(ce, te, fe) -> walk ce; walk te; walk fe
       in
 	walk exp;
@@ -1020,11 +1037,11 @@ struct
       let val_expr = self#rewrite_for_solver val_e in
       let cond_expr = self#rewrite_for_solver
 	(conjoin (List.rev conds)) in
-      let (nts1, ts1) = self#walk_temps (fun var e -> (var, e)) cond_expr in
-      let (nts2, ts2) = self#walk_temps (fun var e -> (var, e)) val_expr in
+      let (nts1, ts1) = self#walk_temps cond_expr in
+      let (nts2, ts2) = self#walk_temps val_expr in
       let (nts3, ts3) = List.fold_left 
 	(fun (ntl, tl) (lhs, rhs) ->
-	   let (nt, t) = self#walk_temps (fun var e -> (var, e)) rhs in
+	   let (nt, t) = self#walk_temps rhs in
 	     (nt @ ntl, t @ tl))
 	([], []) u_temps in
       let temps = 
@@ -1040,38 +1057,94 @@ struct
       in
 	(decls, assigns, cond_expr, val_expr, inputs_in_val_expr)
 
+    (* Recursively traverse all the t variables and tables that are
+       transitively referenced from an expression (typically a branch
+       condition) to build a list of all of the necessary
+       declarations. Order is significant in the list: earlier entries
+       can depend only on later entries, the opposite of the order
+       they'll have for the solver. *)
+    method private walk_decls root_exp =
+      let seen_vars = V.VarHash.create 21 and
+	  decls_l = ref [] in
+      let rec walk = function
+	| V.BinOp(_, e1, e2) -> walk e1; walk e2
+	| V.FBinOp(_, rm, e1, e2) -> walk e1; walk e2
+	| V.UnOp(_, e1) -> walk e1
+	| V.FUnOp(_, _, e1) -> walk e1
+	| V.Constant(_) -> ()
+	| V.Lval(V.Temp(var)) ->
+	    (if V.VarHash.mem seen_vars var then
+	       () (* already processed *)
+	     else
+	       if_expr_temp self var (* then *)
+		 (fun e ->
+		    V.VarHash.replace seen_vars var ();
+		    walk e;
+		    decls_l := QE.TempVar(var, e) :: !decls_l)
+		 () (* else *)
+		 (fun e ->
+		    V.VarHash.replace seen_vars var ();
+		    decls_l := QE.InputVar(var) :: !decls_l))
+	| V.Lval(V.Mem(var, e1, _)) ->
+	    walk e1;
+	    if V.VarHash.mem seen_vars var then
+	      () (* already processed *)
+	    else
+	      if List.mem var table_vars then
+		let table_num = list_where var table_vars in
+		let table = List.nth tables_by_idx table_num in
+		  V.VarHash.replace seen_vars var ();
+		  List.iter walk table;
+		  decls_l := QE.TempArray(var, table) :: !decls_l
+	| V.Name(_) -> ()
+	| V.Cast(_, _, e1) -> walk e1
+	| V.FCast(_, _, _, e1) -> walk e1
+	| V.Unknown(_) -> ()
+	| V.Let(_, e1, e2) -> walk e1; walk e2
+	| V.Ite(ce, te, fe) -> walk ce; walk te; walk fe
+      in
+	walk root_exp;
+	List.rev !decls_l
+
     method one_cond_for_solving cond seen_hash =
       let saw_var v =
 	V.VarHash.replace seen_hash v () in
-      let (all_decls, all_assigns, all_tables, cond_expr) =
+      let (walked_qdecls, cond_expr) =
 	self#with_saved_mem_axioms
 	  (fun _ ->
 	     let cond_expr = self#rewrite_for_solver cond in
-	     let (nts, ts) =
-	       self#walk_temps (fun var e -> (var, e)) cond_expr in
-	     let temps =
-	       List.map
-		 (fun (var, e) -> (var, self#rewrite_for_solver e)) ts in
-	     let i_vars = (list_unique (nts @ self#get_mem_bytes)) in
-	     let m_axioms = self#get_mem_axioms in
-	     let m_vars = List.map (fun (v, _) -> v) m_axioms in
-	     let assigns = m_axioms @ temps in
-	     let all_tables =
-	       List.map2 (fun v el -> (v, el)) table_vars tables_by_idx in
-	     let decls = Vine_util.list_difference i_vars m_vars in
-	       (decls, assigns, all_tables, cond_expr))
+	     let walked_qdecls = self#walk_decls cond_expr in
+	     let walked_qdecls2 = List.map
+	       (function
+		  | QE.TempVar(v, e) ->
+		      QE.TempVar(v, (self#rewrite_for_solver e))
+		  | QE.TempArray(v, el) ->
+		      QE.TempArray(v, List.map self#rewrite_for_solver el)
+		  | d -> d) walked_qdecls in
+	     let mem_bytes = self#get_mem_bytes and
+		 mem_axioms = self#get_mem_axioms in
+	     let mem_vars = List.map (fun (v, _) -> v) mem_axioms in
+	     let mem_axioms_d =
+	       List.map (fun (v, e) -> QE.TempVar(v, e)) mem_axioms in
+	     let mem_bytes_d = List.map (fun v -> QE.InputVar(v)) mem_bytes in
+	     let mem_vars_as_in =
+	       List.map (fun v -> QE.InputVar(v)) mem_vars
+	     in
+	     let walked_qdecls3 =
+	       list_unique
+		 ((Vine_util.list_difference walked_qdecls2 mem_vars_as_in)
+		  @ mem_axioms_d
+		  @ mem_bytes_d)
+	     in
+	       (walked_qdecls3, cond_expr))
       in
-      let new_decls = List.filter
-	(fun v -> not (V.VarHash.mem seen_hash v)) all_decls in
-      let new_assigns = List.filter
-	(fun (v,_) -> not (V.VarHash.mem seen_hash v)) all_assigns in
-      let new_tables = List.filter
-	(fun (v,_) -> not (V.VarHash.mem seen_hash v)) all_tables in
-      let new_vars = new_decls @ (List.map (fun (v,_) -> v) new_assigns)
-	@ (List.map (fun (v,_) -> v) new_tables)
+      let new_qdecls = List.filter
+	(fun d -> not (V.VarHash.mem seen_hash (qe_decl_var d)))
+	walked_qdecls
       in
+      let new_vars = List.map qe_decl_var new_qdecls in
 	List.iter saw_var new_vars;
-	(new_decls, new_assigns, cond_expr, new_vars, new_tables)
+	(new_qdecls, cond_expr, new_vars)
 
     method measure_size =
       let (input_ents, input_nodes) =

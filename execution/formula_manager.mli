@@ -74,17 +74,13 @@ sig
 
     method if_expr_temp_unit : Vine.var -> (Vine.exp option -> unit) -> unit
 
-    method walk_temps : (Vine.var -> Vine.exp -> (Vine.var * Vine.exp)) ->
-      Vine.exp -> (Vine.var list * (Vine.var * Vine.exp) list)
-
     method collect_for_solving : (Vine.var * Vine.exp) list ->
       Vine.exp list -> Vine.exp ->
       (Vine.var list * (Vine.var * Vine.exp) list * Vine.exp * 
 	 Vine.exp * Vine.var list)
 
     method one_cond_for_solving : Vine.exp -> unit Vine.VarHash.t ->
-      Vine.var list * (Vine.var * Vine.exp) list * Vine.exp *
-        Vine.var list * (Vine.var * Vine.exp list) list
+      Query_engine.qe_decl list * Vine.exp * Vine.var list
 
     method measure_size : (int * int)
   end

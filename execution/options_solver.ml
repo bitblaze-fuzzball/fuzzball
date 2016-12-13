@@ -110,7 +110,8 @@ let solvers_table =
 		else
 		  failwith "Please specify -smtlib-solver-type"
 	  in
-	    Some (new Smtlib_external_engine.smtlib_external_engine stype));
+	    Some (new Smtlib_external_engine.smtlib_external_engine stype
+		    ("fuzz" ^ s)));
      h)
 
 let construct_solver suffix =

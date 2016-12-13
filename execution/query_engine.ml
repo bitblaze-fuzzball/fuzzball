@@ -18,17 +18,20 @@ let ce_lookup_nf (_, h) s = Hashtbl.find h s
 
 let ce_iter (l,_) f = List.iter (fun (s, v) -> f s v) l
 
+(* Each one of these represents one named object we want to tell a
+   solver about. They're in one data-type so that we can have a list
+   of them in a dependency-respecting order. *)
+type qe_decl =
+  | InputVar of V.var (* variable with no particular known value *)
+  | TempVar of V.var * V.exp (* variable used as shorthand for an expression *)
+  | TempArray of V.var * (V.exp list) (* like TempVar, but array type *)
+
 class virtual query_engine = object(self)
   method virtual start_query : unit
   method virtual add_free_var : V.var -> unit
   method virtual add_temp_var : V.var -> unit
   method virtual add_table : V.var -> V.exp list -> unit
-
-  method prepare free_vars temp_vars =
-    self#start_query;
-    List.iter self#add_free_var free_vars;
-    List.iter self#add_temp_var temp_vars
-
+  method virtual add_decl : qe_decl -> unit
   method virtual assert_eq : V.var -> V.exp -> unit
   method virtual add_condition : V.exp -> unit
   method virtual push : unit
@@ -36,10 +39,6 @@ class virtual query_engine = object(self)
   method virtual query : V.exp -> (bool option) * sat_assign
   method virtual after_query : bool -> unit
   method virtual reset : unit
-
-  method unprepare save =
-    self#after_query save;
-    self#reset
 end
 
 let no s = failwith (s ^ " called on dummy_query_engine")
@@ -52,6 +51,7 @@ class dummy_query_engine = object(self)
   method add_temp_var v = no "add_temp_var"
   method add_table v el = no "add_table"
   method assert_eq v e = no "assert_eq"
+  method add_decl d = no "add_decl"
   method add_condition e = no "add_condition"
   method push = no "push"
   method pop = no "pop"
@@ -107,6 +107,10 @@ class parallel_check_engine (e1:query_engine) (e2:query_engine) = object(self)
     e1#assert_eq var rhs;
     e2#assert_eq var rhs;
     eqns <- (var, rhs) :: eqns
+
+  method add_decl decl =
+    e1#add_decl decl;
+    e2#add_decl decl
 
   method add_condition e =
     e1#add_condition e;

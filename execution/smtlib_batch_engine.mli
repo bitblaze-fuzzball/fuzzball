@@ -13,6 +13,7 @@ class smtlib_batch_engine
   method add_temp_var : Vine.var -> unit
   method add_table : Vine.var -> Vine.exp list -> unit
   method assert_eq : Vine.var -> Vine.exp -> unit
+  method add_decl : Query_engine.qe_decl -> unit
   method add_condition : Vine.exp -> unit
   method push : unit
   method pop : unit

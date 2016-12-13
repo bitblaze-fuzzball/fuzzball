@@ -73,6 +73,13 @@ class stp_external_engine fname = object(self)
   method assert_eq var rhs =
     eqns <- (var, rhs) :: eqns;
 
+  method add_decl d =
+    match d with
+      | InputVar(v) -> free_vars <- v :: free_vars
+      | TempVar(v, e) -> eqns <- (v, e) :: eqns
+      | TempArray(v, el) -> failwith
+	  "-solver stp-external does not support -tables-as-arrays yet"
+
   method add_condition e =
     conds <- e :: conds
 

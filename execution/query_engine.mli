@@ -15,20 +15,28 @@ val ce_from_list : (string * int64) list -> sat_assign
 val ce_lookup_nf : sat_assign -> string -> int64
 val ce_iter : sat_assign -> (string -> int64 -> unit) -> unit
 
+(* Each one of these represents one named object we want to tell a
+   solver about. They're in one data-type so that we can have a list
+   of them in a dependency-respecting order. *)
+type qe_decl =
+  | InputVar of Vine.var (* variable with no particular known value *)
+  | TempVar of Vine.var * Vine.exp
+      (* variable used as shorthand for an expression *)
+  | TempArray of Vine.var * (Vine.exp list) (* like TempVar, but array type *)
+
 class virtual query_engine : object
   method virtual start_query : unit
   method virtual add_free_var : Vine.var -> unit
   method virtual add_temp_var : Vine.var -> unit
   method virtual add_table : Vine.var -> Vine.exp list -> unit
-  method prepare : Vine.var list -> Vine.var list -> unit
   method virtual assert_eq : Vine.var -> Vine.exp -> unit
+  method virtual add_decl : qe_decl -> unit
   method virtual add_condition : Vine.exp -> unit
   method virtual push : unit
   method virtual pop : unit
   method virtual query : Vine.exp -> (bool option) * sat_assign
   method virtual after_query : bool -> unit
   method virtual reset : unit
-  method unprepare : bool -> unit
 end
 
 class dummy_query_engine : object
@@ -38,6 +46,7 @@ class dummy_query_engine : object
   method add_temp_var : Vine.var -> unit
   method add_table : Vine.var -> Vine.exp list -> unit
   method assert_eq : Vine.var -> Vine.exp -> unit
+  method add_decl : qe_decl -> unit
   method add_condition : Vine.exp -> unit
   method push : unit
   method pop : unit
@@ -55,6 +64,7 @@ class parallel_check_engine : query_engine -> query_engine -> object
   method add_temp_var : Vine.var -> unit
   method add_table : Vine.var -> Vine.exp list -> unit
   method assert_eq : Vine.var -> Vine.exp -> unit
+  method add_decl : qe_decl -> unit
   method add_condition : Vine.exp -> unit
   method push : unit
   method pop : unit

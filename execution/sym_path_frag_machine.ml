@@ -236,14 +236,12 @@ struct
 	  | _ -> None 
 
     method private push_cond_to_qe cond =
-      let (decls, assigns, cond_e, new_vars, tables) =
+      let (qdecls, cond_e, new_vars) =
 	form_man#one_cond_for_solving cond var_seen_hash
       in
-	List.iter query_engine#add_free_var decls;
-	List.iter (fun (v,el) -> query_engine#add_table v el) tables;
-	List.iter (fun (v,_) -> query_engine#add_temp_var v) assigns;
-	List.iter (fun (v,e) -> query_engine#assert_eq v e) assigns;
-	query_engine#add_condition cond_e
+	List.iter query_engine#add_decl qdecls;
+	query_engine#add_condition cond_e;
+	ignore(new_vars)
 
     method add_to_path_cond cond =
       self#ensure_extra_conditions;
@@ -303,15 +301,12 @@ struct
 	       self#print_ce ce');
 	    (true, ce')
 	| _ ->
-	    let (decls, assigns, cond_e, new_vars, tables) =
+	    let (qdecls, cond_e, new_vars) =
 	      form_man#one_cond_for_solving cond var_seen_hash
 	    in
 	      query_engine#push;
 	      query_engine#start_query;
-	      List.iter query_engine#add_free_var decls;
-	      List.iter (fun (v,el) -> query_engine#add_table v el) tables;
-	      List.iter (fun (v,_) -> query_engine#add_temp_var v) assigns;
-	      List.iter (fun (v,e) -> query_engine#assert_eq v e) assigns;
+	      List.iter query_engine#add_decl qdecls;
 	      let time_before = get_time () in
 	      let (result_o, ce') = query_engine#query cond_e in
 	      let is_sat' = match result_o with

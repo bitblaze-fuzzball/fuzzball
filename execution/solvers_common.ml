@@ -101,32 +101,35 @@ let parse_cvc4_ce line =
      let trimmed2 = String.sub trimmed1 (var_end + 4)
        ((String.length trimmed1) - (var_end + 4))
      in
-       assert(((String.sub trimmed2 0 4) = "Bool") ||
-		 ((String.sub trimmed2 0 10) = "(_ BitVec "));
-       let trimmed3 =
-	 if (String.sub trimmed2 0 4) = "Bool" then
-	   String.sub trimmed2 5 ((String.length trimmed2) - 5)
-	 else
-	   let type_end = String.index trimmed2 ')' in
-	     String.sub trimmed2 (type_end + 2)
-	       ((String.length trimmed2) - (type_end + 2))
-       in
-         assert(((String.sub trimmed3 0 4) = "true") ||
-		   ((String.sub trimmed3 0 5) = "false") ||
-		   ((String.sub trimmed3 0 5) = "(_ bv"));
-	 let value = Int64.of_string
-	   (if (String.sub trimmed3 0 4) = "true" then
-	      "1"
-	    else if (String.sub trimmed3 0 5) = "false" then
-	      "0"
+       if String.sub trimmed2 0 6 = "(Array" then
+	 No_CE_here (* array values unhandled *)
+       else
+	 (assert(((String.sub trimmed2 0 4) = "Bool") ||
+		   ((String.sub trimmed2 0 10) = "(_ BitVec "));
+	  let trimmed3 =
+	    if (String.sub trimmed2 0 4) = "Bool" then
+	      String.sub trimmed2 5 ((String.length trimmed2) - 5)
 	    else
-              let trimmed4 = String.sub trimmed3 5
-		((String.length trimmed3) - 5)
-	      in
-	      let val_end = String.index trimmed4 ' ' in
-	        String.sub trimmed4 0 val_end)
-	 in
-	   Assignment ((smtlib_rename_var varname), value, false))
+	      let type_end = String.index trimmed2 ')' in
+		String.sub trimmed2 (type_end + 2)
+		  ((String.length trimmed2) - (type_end + 2))
+	  in
+            assert(((String.sub trimmed3 0 4) = "true") ||
+		     ((String.sub trimmed3 0 5) = "false") ||
+		     ((String.sub trimmed3 0 5) = "(_ bv"));
+	    let value = Int64.of_string
+	      (if (String.sub trimmed3 0 4) = "true" then
+		 "1"
+	       else if (String.sub trimmed3 0 5) = "false" then
+		 "0"
+	       else
+		 let trimmed4 = String.sub trimmed3 5
+		   ((String.length trimmed3) - 5)
+		 in
+		 let val_end = String.index trimmed4 ' ' in
+	           String.sub trimmed4 0 val_end)
+	    in
+	      Assignment ((smtlib_rename_var varname), value, false)))
 
 let parse_btor_ce line =
   let sp = String.index line ' ' in
@@ -163,38 +166,45 @@ let parse_z3_ce_line s v =
     | (s, Some varname) ->
 	let l = String.length s in
 	  assert(l > 4 && String.sub s 0 4 = "    ");
-	  assert(String.sub s (l - 1) 1 = ")");
-	  let trim = String.sub s 4 (l - 5) in
-	  let vo =
-	    match trim with
-	      | "false" -> Some 0L
-	      | "true" -> Some 1L
-	      | "#b0" -> Some 0L
-	      | "#b1" -> Some 1L
-	      | t when String.length t > 2 && String.sub t 0 2 = "#x" ->
-		  let l2 = (String.length t) in
-		    Some (Int64.of_string ("0x" ^ (String.sub t 2 (l2 - 2))))
-	      (* Ignore FP assignments. *)
-	      | t when String.length t > 4 && String.sub t 0 4 = "(fp " ->
-		  None
-	      | t when String.length t > 6 &&
-		  (String.sub t 0 6 = "(_ +oo"
-		      || String.sub t 0 6 = "(_ -oo"
-		      || String.sub t 0 6 = "(_ NaN")
-		  ->
-		  None
-	      | t when String.length t > 8 &&
-		  (String.sub t 0 8 = "(_ +zero"
-		      || String.sub t 0 8 = "(_ -zero")
-		  ->
-		  None
-	      | _ ->
-		  Printf.printf "Value parse failure on <%s>\n" trim;
-		  failwith "Unhandled value case in parse_z3_ce_lines"
-	  in
-	    (match vo with
-	       | None -> (No_CE_here, None)
-	       | Some v -> (Assignment (varname, v, false), None))
+	  if String.sub s (l - 1) 1 <> ")" then
+	    (* More than two lines, unhandled *)
+	    (No_CE_here, None)
+	  else
+	    let trim = String.sub s 4 (l - 5) in
+	    let vo =
+	      match trim with
+		| "false" -> Some 0L
+		| "true" -> Some 1L
+		| "#b0" -> Some 0L
+		| "#b1" -> Some 1L
+		| t when String.length t > 2 && String.sub t 0 2 = "#x" ->
+		    let l2 = (String.length t) in
+		      Some (Int64.of_string ("0x" ^ (String.sub t 2 (l2 - 2))))
+			(* Ignore FP assignments. *)
+		| t when String.length t > 4 && String.sub t 0 4 = "(fp " ->
+		    None
+		| t when String.length t > 6 &&
+		    (String.sub t 0 6 = "(_ +oo"
+			|| String.sub t 0 6 = "(_ -oo"
+			|| String.sub t 0 6 = "(_ NaN")
+		    ->
+		    None
+		| t when String.length t > 8 &&
+		    (String.sub t 0 8 = "(_ +zero"
+			|| String.sub t 0 8 = "(_ -zero")
+		    ->
+		    None
+		      (* Ignore array assingments we can't yet parse *)
+		| t when String.length t > 11 &&
+		    String.sub t 0 11 = "(_ as-array" ->
+		    None
+		| _ ->
+		    Printf.printf "Value parse failure on <%s>\n" trim;
+		    failwith "Unhandled value case in parse_z3_ce_lines"
+	    in
+	      (match vo with
+		 | None -> (No_CE_here, None)
+		 | Some v -> (Assignment (varname, v, false), None))
     (* Ignore comments *)
     | (s, _) when String.length s > 4 &&
 	String.sub s 0 4 = "  ;;" ->
@@ -218,6 +228,12 @@ let parse_z3_ce_line s v =
 	(No_CE_here, None)
     | (s, _) when String.length s > 32 &&
 	String.sub s 0 32 = "              (= x FloatingPoint" ->
+	(No_CE_here, None)
+    (* Continuations of array assingments, unhandled *)
+    | (s, _) when String.length s > 8 && String.sub s 0 8 = "    (ite" ->
+	(No_CE_here, None)
+    | (s, _) when String.length s > 8 &&
+	(String.sub s 0 8 = "      #x" || String.sub s 0 8 = "      #b") ->
 	(No_CE_here, None)
     | (s, _) ->
 	  Printf.printf "Parse failure on <%s>\n" s;
@@ -266,6 +282,10 @@ let parse_mathsat_ce_line s v =
 		String.sub s 0 9 = " (_ -zero") ->
 	    (* Skip FP values *)
 	    (No_CE_here, None)
+	| (s, Some varname) when len > 9 &&
+	    String.sub s 0 8 = " (store " ->
+	    (* Skip array values *)
+	    (No_CE_here, None)
 	| (")", None) -> (No_CE_here, None)
 	| (") )", None) -> (End_of_CE, None)
 	| ("(  )", None) -> (End_of_CE, None)
@@ -282,6 +302,13 @@ let parse_ce e_s_t =
     | Z3 -> failwith "Z3 unsupported in parse_ce"
     | MATHSAT -> failwith "MathSAT unsupported in parse_ce"
     | BOOLECTOR -> parse_btor_ce
+
+let choose_smtlib_logic e_s_t =
+  match (e_s_t, !Exec_options.opt_tables_as_arrays) with
+    | (STP_SMTLIB2, true) -> Some "QF_AUFBV"
+    | ((Z3|MATHSAT), false) -> Some "QF_FPBV"
+    | (_, false) -> Some "QF_BV"
+    | (_, true) -> Some "QF_AUFBV"
 
 let create_temp_dir prefix =
   let rec loop num =

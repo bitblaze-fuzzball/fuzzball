@@ -12,9 +12,10 @@ open Query_engine;;
 open Solvers_common;;
 open Smt_lib2;;
 
-let output_string_log log_file channel str =
-  if !opt_save_solver_files then
-    output_string log_file str;
+let output_string_log log_file_opt channel str =
+  (match log_file_opt with
+     | Some log_file -> output_string log_file str;
+     | None -> ());
   output_string channel str
 
 let parse_counterex e_s_t line =
@@ -69,7 +70,7 @@ let start_solver solver =
     Unix.open_process cmd
 
 
-class smtlib_external_engine solver = object(self)
+class smtlib_external_engine solver fname = object(self)
   inherit query_engine
 
   val mutable visitor = None
@@ -77,11 +78,35 @@ class smtlib_external_engine solver = object(self)
 
   val mutable solver_chans = start_solver solver
 
-  val mutable log_file =
-    if !opt_save_solver_files then
-      open_out "solver_input.smt2"
-    else
-      stdout
+  val mutable temp_dir = None
+  val mutable filenum = 0
+  val mutable curr_fname = fname
+
+  method private get_temp_dir =
+    match temp_dir with
+      | Some t -> t
+      | None ->
+	  let t = create_temp_dir "fuzzball-solver-log" in
+	    temp_dir <- Some t;
+	    t
+
+  method private get_fresh_fname =
+    let dir = self#get_temp_dir in
+      filenum <- filenum + 1;
+      curr_fname <- pick_fresh_fname dir fname filenum;
+      if !opt_trace_solver then
+	Printf.printf "Creating SMTLIB2 log file: %s.smt2\n" curr_fname;
+      curr_fname
+
+  val mutable log_chan = None
+
+  method private puts out_chan s =
+    output_string_log log_chan out_chan s
+
+  method private flush_log =
+    match log_chan with
+      | Some chan -> flush chan
+      | None -> ()
 
   method private visitor =
     match visitor with
@@ -102,7 +127,8 @@ class smtlib_external_engine solver = object(self)
     ()
 
   method add_table var el =
-    failwith "-solver smtlib does not support -tables-as-arrays yet"
+    if first_query then self#real_prepare;
+    self#real_add_table var el
 
   method assert_eq var rhs =
     if first_query then self#real_prepare;
@@ -112,14 +138,21 @@ class smtlib_external_engine solver = object(self)
     if first_query then self#real_prepare;
     self#visitor#assert_exp e
 
+  method add_decl d =
+    if first_query then self#real_prepare;
+    match d with
+      | InputVar(v) -> self#real_add_free_var v
+      | TempVar(v, e) -> self#real_assert_eq (v, e)
+      | TempArray(v, el) -> self#real_add_table v el
+
   method push =
     let (solver_in, solver_out) = solver_chans in
       if first_query then self#real_prepare;
-      output_string_log log_file solver_out "\n(push 1)\n"
+      self#puts solver_out "\n(push 1)\n"
 
   method pop =
     let (solver_in, solver_out) = solver_chans in
-      output_string_log log_file solver_out "(pop 1)\n\n"
+      self#puts solver_out "(pop 1)\n\n"
 
   method private real_assert_eq (var, rhs) =
     try
@@ -130,20 +163,25 @@ class smtlib_external_engine solver = object(self)
 	    (V.exp_to_string rhs) err;
 	  failwith "Typecheck failure in assert_eq"
 
+  method private real_add_table var el =
+    self#visitor#declare_var var;
+    self#visitor#assert_array_contents var el
+
   method private real_prepare =
     let (solver_in, solver_out) = solver_chans in
-    let logic = match solver with
-      | (Z3|MATHSAT) -> "QF_FPBV"
-      | _ -> "QF_BV"
-    in
       visitor <- Some(new Smt_lib2.vine_smtlib_printer
-			(output_string_log log_file solver_out));
-      output_string_log log_file solver_out ("(set-logic " ^ logic ^ ")\n");
-      output_string_log log_file solver_out
-	"(set-info :smt-lib-version 2.0)\n\n";
+			(self#puts solver_out));
+      if !opt_save_solver_files then
+	(let log_fname = self#get_fresh_fname in
+	   log_chan <- Some(open_out (log_fname ^ ".smt2")));
+      (match choose_smtlib_logic solver with
+	 | Some logic ->
+	     self#puts solver_out
+	       ("(set-logic "^logic^")\n");
+	 | None -> ());
+      self#puts solver_out "(set-info :smt-lib-version 2.0)\n\n";
       if solver = MATHSAT then
-	output_string_log log_file solver_out
-	  "(set-option :produce-models true)\n\n";
+	self#puts solver_out "(set-option :produce-models true)\n\n";
       first_query <- false
 
   method query qe =
@@ -151,13 +189,13 @@ class smtlib_external_engine solver = object(self)
       self#real_prepare;
     let (solver_in, solver_out) = solver_chans in
       self#visitor#assert_exp qe;
-      output_string_log log_file solver_out "(check-sat)\n";
+      self#puts solver_out "(check-sat)\n";
       if solver = MATHSAT then
 	for i = 1 to 8192 do
 	  output_char solver_out ' '
 	done;
       flush solver_out;
-      if !opt_save_solver_files then flush log_file;
+      self#flush_log;
       let result_s = input_line solver_in in
       let first_assert = (String.sub result_s 0 3) = "ASS" in
       let result = match result_s with
@@ -179,13 +217,13 @@ class smtlib_external_engine solver = object(self)
 	else if (result = Some false) &&
 	  (solver = CVC4 || solver = Z3 || solver = MATHSAT)
 	then
-	  (output_string_log log_file solver_out "(get-model)\n";
+	  (self#puts solver_out "(get-model)\n";
 	   if solver = MATHSAT then
 	     for i = 1 to 8192 do
 	       output_char solver_out ' '
 	     done;
 	   flush solver_out;
-	   if !opt_save_solver_files then flush log_file;
+	   self#flush_log;
 	   if solver = Z3 then
 	     parse_z3_ce solver_in
 	   else if solver = MATHSAT then
@@ -199,14 +237,17 @@ class smtlib_external_engine solver = object(self)
 
   method after_query save_results =
     if save_results then
-      Printf.printf "Solver queries are in solver_input.smt\n"
+      if !opt_save_solver_files then
+	Printf.printf "Solver queries are in %s\n" curr_fname
+      else
+	Printf.printf "Turn on -save-solver-files to save the query\n"
 
   method private reset_solver_chans =
     solver_chans <- start_solver solver
 
   method reset =
     let (solver_in, solver_out) = solver_chans in
-      output_string_log log_file solver_out "(exit)\n\n\n\n\n";
+      self#puts solver_out "(exit)\n\n\n\n\n";
       ignore(Unix.close_process solver_chans);
       self#reset_solver_chans;
       first_query <- true;
