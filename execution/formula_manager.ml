@@ -324,11 +324,50 @@ struct
 	      al;
 	    assert(V.VarHash.mem mem_axioms var);
 
+    (* State about "tables" of values, as used for loads from memory
+       when -table-limit has a positive value. A table is a list of
+       symbolic expressions that occurred sequentially in memory; its
+       length is always a power of two. (A common case is for all the
+       values to be concrete, like a character translation table.) The
+       way tables are translated for the SMT solver depends on the
+       -tables-as-arrays option. If it's off, each access to a table is
+       expanded into a tree of if-then-else choices on the bits of the
+       index. If -tables-as-arrays is set, a table is translated into an
+       SMT variable with an array type, and any access can be translated
+       symbolically. In this latter case, the table is represented by a
+       Vine variable with Array type. We keep track of all the unique
+       tables we've seen, and number them sequentially starting from 0.
+       We also use lists to keep track of information about tables, which
+       is reasonable because we generally don't create very many.
+    *)
+
+    (* The i-th entry in this list is the Vine variable that
+       represents the i-th table. It has a name like "table5", and its
+       type tells you the length of the table (currently always a power
+       of two) and the element type (REG_8/16/32/64). *)
     val mutable table_vars = []
+    (* The i-th entry in this list gives the contents of the i-th table
+       as a list of Vine expressions. *)
     val mutable tables_by_idx : V.exp list list = []
+    (* This hash table maps from the contents of a table to its number;
+       it's how we avoid creating the same table more than once. It's
+       roughly the inverse mapping to tables_by_idx, though the contents
+       are stored as domain elements because that is more convenient for
+       the fragment machine code that creates them. *)
     val tables : (D.t list, int) Hashtbl.t = Hashtbl.create 101
     val tables_cache_limit = 1000000L
 
+    (* The Vine expression memory-access syntax is used for two
+       slightly different purposes is FuzzBALL symbolic expressions:
+       representing indexing into tables, and representing accesses to
+       variable-granularity memory. You can tell you are in the former
+       case if the memory variable is in table_vars. Variable-granularity
+       memory is translated by the formula manager into scalar variables
+       of various granularities which are related to each other by
+       constraints called "mem_axioms" here. Table indexing is kept
+       distinct until the solver interface when it is translated into an
+       SMTLIB "select" array operator or the equivalent for other
+       solvers. *)
     method private rewrite_mem_expr e =
       match e with
 	| V.Lval(V.Mem(table_var, idx, elt_ty))
