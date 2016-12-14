@@ -236,6 +236,7 @@ struct
 	  | _ -> None 
 
     method private push_cond_to_qe cond =
+      assert(Vine_typecheck.infer_type_fast cond = V.REG_1);
       let (qdecls, cond_e, new_vars) =
 	form_man#one_cond_for_solving cond var_seen_hash
       in
