@@ -444,6 +444,8 @@ let cmdline_opts =
      " Enable several common trace and stats options");
     ("-trace-binary-paths", Arg.Set(opt_trace_binary_paths),
      " Print decision paths as bit strings");
+    ("-trace-client-reqs", Arg.Set(opt_trace_client_reqs),
+     " Print Valgrind-style client requests");
     ("-trace-conditions", Arg.Set(opt_trace_conditions),
      " Print branch conditions");
     ("-trace-decisions", Arg.Set(opt_trace_decisions),
@@ -619,6 +621,9 @@ let apply_cmdline_opts_early (fm : Fragment_machine.fragment_machine) dl =
     fm#make_regs_symbolic
   else
     fm#make_regs_zero;
+  fm#add_special_handler
+    ((new Special_handlers.vg_client_req_special_handler fm)
+     :> Fragment_machine.special_handler);
   fm#add_special_handler
     ((new Special_handlers.trap_special_nonhandler fm)
      :> Fragment_machine.special_handler);

@@ -2672,6 +2672,10 @@ Stmt *translate_jumpkind( IRSB *irbb, vector<Stmt *> *irout )
       result = new Jmp(dest);
       break;
 #endif
+    case Ijk_ClientReq:
+      irout->push_back( new Special("Valgrind client request") );
+      result = new Jmp(dest);
+      break;
     default:
       assert(0);
     }
