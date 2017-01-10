@@ -26,8 +26,6 @@ sig
     method get_eip : int64
     method set_eip : int64 -> unit
 
-    method eval_addr_exp_region : Vine.exp -> int -> (int option * int64 * bool * Vine.exp * int64)
-		  
     method eval_addr_exp : Vine.exp -> int64
 
     method get_word_var_concretize : Fragment_machine.register_name ->
