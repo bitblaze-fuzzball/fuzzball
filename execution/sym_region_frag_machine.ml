@@ -24,6 +24,9 @@ struct
   module GM = GranularMemoryFunctor(D)
   module SPFM = SymPathFragMachineFunctor(D)
 
+  type region_location = SingleLocation of int option * int64
+			 | TableLocation of int option * V.exp * int64
+
   let reg_addr () = match !opt_arch with
     | (X86|ARM) -> V.REG_32
     | X64 -> V.REG_64
@@ -636,7 +639,7 @@ struct
 	       ignore(b));
 	!choices
 
-    method private region_expr e ident =
+    method private region_expr e ident decide_fn =
       if !opt_check_for_null then
 	(match
 	   self#check_cond (V.BinOp(V.EQ, e, addr_const 0L))
@@ -668,8 +671,11 @@ struct
 	let cbase = List.fold_left Int64.add 0L cbases in
 	let (base, off_syms) = match (cbase, syms, ambig) with
 	  | (0L, [], []) -> raise NullDereference
-	  | (0L, [], el) -> (Some 0, el)
+	  (* The following two cases are applicable when applying table treatment 
+	     for symbolic regions *)
+	  | (0L, [], [e]) -> (Some(self#region_for e), [])
 	  | (0L, [v], _) -> (Some(self#region_for v), ambig)
+	  | (0L, [], el) -> (Some 0, el)
 	  | (0L, vl, _) ->
 	      let (bvar, rest_vars) =
 		(* We used to have logic here that checked whether one
@@ -696,38 +702,49 @@ struct
 	  | (off, vl, _) ->
 	      (Some 0, vl @ ambig)
 	in
-	let (region, offset) =
-	  (match base with
-	     | Some r
-		 when List.exists (fun (r', _) -> r = r') sink_regions ->
-		 let (r', size) =
-		   List.find (fun (r', _) -> r = r') sink_regions in
-		   Printf.printf "Ignoring access to sink region\n";
-		   (let sat_dir = ref false in
-		      self#restore_path_cond
-			(fun () ->
-			   sat_dir := self#extend_pc_random
-			     (V.BinOp(V.LT, e, addr_const size))
-			     false (ident + 0x600));
-		      if !sat_dir = true then
-			Printf.printf "Can be in bounds.\n"
-		      else
-			Printf.printf "Can be out of bounds.\n");
-		   sink_read_count <- Int64.add sink_read_count 0x10L;
-		   (None, sink_read_count)
-	     | _ ->
-		 let coff = List.fold_left Int64.add 0L coffs in
-		 let offset = Int64.add (Int64.add cbase coff)
-		   (match (eoffs, off_syms) with
-		      | ([], []) -> 0L
-		      | (el, vel) -> 
-			  (self#concretize_inner (reg_addr())
-			     (simplify_fp (sum_list (el @ vel))))
-			    (ident + 0x200)) in
-		   (base, (fix_u32 offset)))
-	in
-	  dt#count_query;
-	  (region, offset)
+	let cloc = Int64.add cbase (List.fold_left Int64.add 0L coffs) in
+	(* return a SingleLocation(region, offset)
+	   or a TableLocation(region, off_expr, cloc) *)
+	match base with
+	| Some r
+	    when List.exists (fun (r', _) -> r = r') sink_regions ->
+	  let (r', size) =
+	    List.find (fun (r', _) -> r = r') sink_regions in
+	  Printf.printf "Ignoring access to sink region\n";
+	  (let sat_dir = ref false in
+	   self#restore_path_cond
+	     (fun () ->
+	       sat_dir := self#extend_pc_random
+		 (V.BinOp(V.LT, e, addr_const size))
+		 false (ident + 0x600));
+	   if !sat_dir = true then
+	     Printf.printf "Can be in bounds.\n"
+	   else
+	     Printf.printf "Can be out of bounds.\n");
+	  sink_read_count <- Int64.add sink_read_count 0x10L;
+	  SingleLocation(None, sink_read_count)
+	| _ ->
+	  let off_expr = (sum_list (eoffs @ off_syms)) in
+	  match decide_fn off_expr 0L with
+	  | Some wd ->
+	    if !opt_trace_tables then
+	      Printf.printf 
+		"Table treatment for sym region with base = %s and offset expr = %s\n"
+		(V.exp_to_string (List.hd ambig))
+		(V.exp_to_string off_expr);
+	    TableLocation(base, off_expr, cloc)
+	  | None -> 
+	    let coff = List.fold_left Int64.add 0L coffs in
+	    let offset = Int64.add (Int64.add cbase coff)
+	      (match (eoffs, off_syms) with
+	      | ([], []) -> 0L
+	      | (el, vel) -> 
+		dt#start_new_query;
+		(self#concretize_inner (reg_addr())
+		   (simplify_fp (sum_list (el @ vel))))
+		  (ident + 0x200)) in
+	    dt#count_query;
+	    SingleLocation(base, (fix_u32 offset))
 
     method private eval_addr_exp_region_conc_path e ident =
       let term_is_known_base = function
@@ -768,14 +785,14 @@ struct
 	  | [_] -> failwith "known_base invariant failure"
 	  | _ -> failwith "multiple bases"
 
-    method eval_addr_exp_region exp ident =
+    method private eval_addr_exp_region exp ident decide_fn =
       let (to_concrete, to_symbolic) = match !opt_arch with
 	| (X86|ARM) -> (D.to_concrete_32, D.to_symbolic_32)
 	| X64       -> (D.to_concrete_64, D.to_symbolic_64)
       in
       let v = self#eval_int_exp_simplify exp in
 	try
-	  (Some 0, to_concrete v)
+	  SingleLocation(Some 0, to_concrete v)
 	with NotConcrete _ ->
 	  let e = to_symbolic v in
 	  let eip = self#get_eip in
@@ -783,15 +800,17 @@ struct
 	      Printf.printf "Symbolic address %s @ (0x%Lx)\n"
 		(V.exp_to_string e) eip;
 	    if !opt_concrete_path then
-	      self#eval_addr_exp_region_conc_path e ident
+	      let (r, addr) = self#eval_addr_exp_region_conc_path e ident in
+	      SingleLocation(r, addr)
 	    else
-	      self#region_expr e ident
+	      self#region_expr e ident decide_fn
 		  
     (* Because we override handle_{load,store}, this should only be
        called for jumps. *)
     method eval_addr_exp exp =
-      let (r, addr) = self#eval_addr_exp_region exp 0xa000 in
-	match r with
+      match (self#eval_addr_exp_region exp 0xa000 (fun _ _ -> None)) with
+      | SingleLocation(r, addr) ->
+	(match r with
 	  | Some 0 -> addr
 	  | Some r_num ->
 	      if !opt_trace_stopping then
@@ -808,7 +827,9 @@ struct
 	  | None ->
 	      if !opt_trace_stopping then
 		Printf.printf "Unsupported jump into sink region\n";
-	      raise SymbolicJump
+	      raise SymbolicJump)
+      | TableLocation(r, off_expr, cloc) -> 
+	failwith "no table support for jumps, panic!"
 
     method private register_num reg =
       match reg with
@@ -995,9 +1016,9 @@ struct
 		   op_name cloc (V.exp_to_string off_exp) slow_wd;
 	       None)
 	    else
-	      Some slow_wd
+	      Some (Int64.of_int slow_wd)
 	else
-	  Some fast_wd
+	  Some (Int64.of_int fast_wd)
       in
 	if fast_wd = 0 then
 	  None
@@ -1007,13 +1028,13 @@ struct
 	      let wd = Hashtbl.find bitwidth_cache key in
 		if !opt_trace_tables then
 		  Printf.printf "Reusing cached width %d for %s at [%s]\n%!"
-		    (match wd with Some w -> w | None -> -1)
+		    (match wd with Some w -> (Int64.to_int w) | None -> -1)
 		    (V.exp_to_string off_exp) dt#get_hist_str;
 		wd
 	    with Not_found ->
 	      let wd = compute_wd off_exp in
 		Hashtbl.replace bitwidth_cache key wd;
-		if wd = Some 0 then
+		if wd = Some 0L then
 		  None
 		else
 		  wd
@@ -1153,7 +1174,7 @@ struct
 		    Hashtbl.replace maxval_offset_cache key limit;
 		    limit
 		      
-    method private table_load cloc off_exp wd ty =
+    method private table_load cloc region_num off_exp wd ty =
       let stride = stride form_man off_exp in
       let shift = floor_log2 (Int64.of_int stride) in
       let idx_wd = wd - shift in
@@ -1168,13 +1189,13 @@ struct
       in
       let load_ent addr = match ty with
 	| V.REG_8  -> form_man#simplify8
-	    ((self#region (Some 0))#load_byte  addr)
+	    ((self#region region_num)#load_byte  addr)
 	| V.REG_16 -> form_man#simplify16
-	    ((self#region (Some 0))#load_short addr)
+	    ((self#region region_num)#load_short addr)
 	| V.REG_32 -> form_man#simplify32
-	    ((self#region (Some 0))#load_word  addr)
+	    ((self#region region_num)#load_word  addr)
 	| V.REG_64 -> form_man#simplify64
-	    ((self#region (Some 0))#load_long  addr)
+	    ((self#region region_num)#load_long  addr)
 	| _ -> failwith "Unexpected type in table_load"
       in
       let table = map_n
@@ -1253,35 +1274,56 @@ struct
 	else 
 	  match self#decide_wd "Load" off_exp cloc with
 	    | None -> None
-	    | Some wd -> self#table_load cloc off_exp wd ty
+	    | Some wd -> self#table_load cloc (Some 0) off_exp (Int64.to_int wd) ty
 	    
     method private handle_load addr_e ty =
       if !opt_trace_offset_limit then
 	Printf.printf "Loading from... %s\n" (V.exp_to_string addr_e);
       match self#maybe_table_or_concrete_load addr_e ty with
-        | Some v -> (v, ty)
-        | None ->
-      let (r, addr) = self#eval_addr_exp_region addr_e 0x8000 in
-      let v =
-	(match ty with
-	   | V.REG_8  -> form_man#simplify8  (self#load_byte_region  r addr)
-	   | V.REG_16 -> form_man#simplify16 (self#load_short_region r addr)
-	   | V.REG_32 -> form_man#simplify32 (self#load_word_region  r addr)
-	   | V.REG_64 -> form_man#simplify64 (self#load_long_region  r addr)
-	   | _ -> failwith "Unsupported memory type") in
+      | Some v -> (v, ty)
+      | None ->
+	let location = 
+	  self#eval_addr_exp_region addr_e 0x8000 (self#decide_wd "Load") in
+	let r' = ref None in
+	let addr' = ref 0L in
+	let sym_region_table_v = 
+	  match location with
+	  | TableLocation(r, off_expr, _) ->
+	    (match self#decide_wd "Load" off_expr 0L with
+	    | None -> None
+	    | Some wd ->
+	      if !opt_trace_tables then
+		Printf.printf 
+		  "SRFM#handle_load table load for sym region with offset expr = %s\n"
+		  (V.exp_to_string off_expr);
+	      self#table_load 0L r off_expr (Int64.to_int wd) ty)
+	  | SingleLocation(r, addr) -> 
+	    r' := r; addr' := addr; None
+	in 
+	let v =
+	  match sym_region_table_v with
+	  | (Some value) -> value
+	  | None ->
+	    (match ty with
+	    | V.REG_8  -> form_man#simplify8  (self#load_byte_region  !r' !addr')
+	    | V.REG_16 -> form_man#simplify16 (self#load_short_region !r' !addr')
+	    | V.REG_32 -> form_man#simplify32 (self#load_word_region  !r' !addr')
+	    | V.REG_64 -> form_man#simplify64 (self#load_long_region  !r' !addr')
+	    | _ -> failwith "Unsupported memory type") 
+	in
 	(if !opt_trace_loads then
 	  (if !opt_trace_eval then
 	       Printf.printf "    "; (* indent to match other details *)
 	   Printf.printf "Load from %s "
-	     (match r with
+	     (match !r' with
 		| None -> "sink"
 		| Some 0 -> "conc. mem"
 		| Some r_num -> "region " ^ (string_of_int r_num));
-	   Printf.printf "%08Lx = %s" addr (D.to_string_32 v);
+	   Printf.printf "%08Lx = %s" !addr' (D.to_string_32 v);
 	   (if !opt_use_tags then
 	      Printf.printf " (%Ld @ %08Lx)" (D.get_tag v) location_id);
 	   Printf.printf "\n"));
-	if r = Some 0 && (Int64.abs (fix_s32 addr)) < 4096L then
+	if !r' = Some 0 && (Int64.abs (fix_s32 !addr')) < 4096L then
 	  raise NullDereference;
 	(v, ty)
 
@@ -1459,23 +1501,23 @@ struct
 	    if !opt_finish_on_target_match then
 	      self#finish_fuzz "target full match"
 
-    method private table_store cloc off_exp e maxval ty value =
+    method private table_store cloc region_num off_exp e maxval ty value =
       let load_ent addr = match ty with
 	| V.REG_8  -> form_man#simplify8
-	    ((self#region (Some 0))#load_byte  addr)
+	    ((self#region region_num)#load_byte  addr)
 	| V.REG_16 -> form_man#simplify16
-	    ((self#region (Some 0))#load_short addr)
+	    ((self#region region_num)#load_short addr)
 	| V.REG_32 -> form_man#simplify32
-	    ((self#region (Some 0))#load_word  addr)
+	    ((self#region region_num)#load_word  addr)
 	| V.REG_64 -> form_man#simplify64
-	    ((self#region (Some 0))#load_long  addr)
+	    ((self#region region_num)#load_long  addr)
 	| _ -> failwith "Unexpected type in table_store" 
       in
       let store_ent addr v = match ty with
-	| V.REG_8  -> (self#region (Some 0))#store_byte  addr v
-	| V.REG_16 -> (self#region (Some 0))#store_short addr v
-	| V.REG_32 -> (self#region (Some 0))#store_word  addr v
-	| V.REG_64 -> (self#region (Some 0))#store_long  addr v
+	| V.REG_8  -> (self#region region_num)#store_byte  addr v
+	| V.REG_16 -> (self#region region_num)#store_short addr v
+	| V.REG_32 -> (self#region region_num)#store_word  addr v
+	| V.REG_64 -> (self#region region_num)#store_long  addr v
 	| _ -> failwith "Unexpected store type in table_store"
       in
       let stride = stride form_man off_exp in
@@ -1486,7 +1528,8 @@ struct
         for i = 0 to num_ents - 1 do
 	  let addr = Int64.add cloc (Int64.of_int (i * stride)) in
 	  let old_v = load_ent addr in
-	  let cond_e = (V.BinOp(V.EQ, e, addr_const addr)) in
+	  let cond_e = (V.BinOp(V.EQ, off_exp, 
+				addr_const (Int64.of_int (i*stride)))) in
 	  let cond_v = D.from_symbolic cond_e in
 	  let ite_v = form_man#make_ite cond_v ty value old_v in
 	    store_ent addr ite_v;
@@ -1546,7 +1589,7 @@ struct
 	else
 	  match self#decide_maxval "Store" off_exp cloc with
 	    | None -> false
-	    | Some maxval -> self#table_store cloc off_exp e maxval ty value
+	    | Some maxval -> self#table_store cloc (Some 0) off_exp e maxval ty value
 	  
     method private handle_store addr_e ty rhs_e =
       if !opt_trace_offset_limit then
@@ -1555,35 +1598,51 @@ struct
       if (!opt_no_table_store) ||
 	not (self#maybe_table_or_concrete_store addr_e ty value)
       then
-      let (r, addr) = self#eval_addr_exp_region addr_e 0x9000 in
-	if r = Some 0 && (Int64.abs (fix_s32 addr)) < 4096L then
+	let location = 
+	  self#eval_addr_exp_region addr_e 0x9000 (self#decide_maxval "Store") in
+	let r = ref None in
+	let addr = ref 0L in
+	let table_store_status =
+	  match location with
+	  | TableLocation(r, off_exp, cloc) ->
+	    (match self#decide_maxval "Store" off_exp 0L with
+	    | None -> false
+	    | Some maxval -> 
+	      self#table_store cloc r off_exp 
+		(D.to_symbolic_32 (self#eval_int_exp_simplify addr_e)) 
+		maxval ty value)
+	  | SingleLocation(r', addr') -> r := r'; addr := addr'; false
+	in
+	if !r = Some 0 && (Int64.abs (fix_s32 !addr)) < 4096L then
 	  raise NullDereference;
 	if !opt_trace_stores then
-	  if not (ty = V.REG_8 && r = None) then
+	  if not (ty = V.REG_8 && !r = None) then
 	    (if !opt_trace_eval then
 	       Printf.printf "    "; (* indent to match other details *)
 	     Printf.printf "Store to %s "
-	       (match r with
+	       (match !r with
 		  | None -> "sink"
 		  | Some 0 -> "conc. mem"
 		  | Some r_num -> "region " ^ (string_of_int r_num));
-	     Printf.printf "%08Lx = %s" addr (D.to_string_32 value);
+	     Printf.printf "%08Lx = %s" !addr (D.to_string_32 value);
 	     (if !opt_use_tags then
 		Printf.printf " (%Ld @ %08Lx)" (D.get_tag value) location_id);
 	     Printf.printf "\n");
-	(match (self#started_symbolic, !opt_target_region_start, r) with
+	(match (self#started_symbolic, !opt_target_region_start, !r) with
 	   | (true, Some from, Some 0) ->
-	       (match self#target_store_condition addr from value ty with
+	       (match self#target_store_condition !addr from value ty with
 		  | Some (offset, cond_v, wd) ->
 		      self#target_solve_single offset cond_v wd
 		  | None -> ())
 	   | _ -> ());
-	(match ty with
-	   | V.REG_8 -> self#store_byte_region r addr value
-	   | V.REG_16 -> self#store_short_region r addr value
-	   | V.REG_32 -> self#store_word_region r addr value
-	   | V.REG_64 -> self#store_long_region r addr value
-	   | _ -> failwith "Unsupported type in memory move")
+	if not table_store_status then
+	  (match ty with
+	  | V.REG_8 -> self#store_byte_region !r !addr value
+	  | V.REG_16 -> self#store_short_region !r !addr value
+	  | V.REG_32 -> self#store_word_region !r !addr value
+	  | V.REG_64 -> self#store_long_region !r !addr value
+	  | _ -> failwith "Unsupported type in memory move")
+	else ()
 
     method concretize_misc =
       if !opt_arch = X86 then
