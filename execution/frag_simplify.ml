@@ -148,11 +148,12 @@ let rec simplify_rec e =
     | V.BinOp(V.EQ, V.BinOp(V.PLUS, e1, (V.Constant(_) as k1)),
 	      (V.Constant(_) as k2)) ->
 	simplify_rec (V.BinOp(V.EQ, e1, (V.BinOp(V.MINUS, k2, k1))))
-    (* cast(-x + y)H:reg1_t => y - x < 0 => y < x *)
-    | V.Cast(V.CAST_HIGH, V.REG_1,
-	     V.BinOp(V.PLUS, V.UnOp(V.NEG, x), y))
-      ->
-	V.BinOp(V.LT, y, x)
+    (* We previously had a rule here like: *)
+    (* cast(-x + y)H:reg1_t ===> y <$ x *)
+    (* This transformation seems correct when x and y aren't too big, *)
+    (* but it gives the wrong result when the subtraction has signed *)
+    (* overflow. Now that we translate overflow flags using <$, *)
+    (* the need to introduce it with rewriting should be less. *)
     | V.BinOp(op, e1, e2) ->
 	Vine_opt.constant_fold_more (fun _ -> None)
 	  (V.BinOp(op, simplify_rec e1, simplify_rec e2))
