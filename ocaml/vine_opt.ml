@@ -466,6 +466,32 @@ let rec constant_fold ctx e =
 	    Constant(Int(ty2, s2)))
 	when ty1 = ty2 && s1 >= 0L && s2 >= 0L ->
 	BinOp(ARSHIFT, x, (Constant(Int(ty1, (Int64.add s1 s2)))))
+    (* Common compiler optimization of x /u 10 *)
+    | BinOp(RSHIFT,
+	    Cast(CAST_HIGH, REG_32,
+		 BinOp(TIMES, Cast(CAST_UNSIGNED, REG_64, x),
+		       Constant(Int(_, 0xcccccccdL)))),
+	    Constant(Int(_, 3L)))
+	when (Vine_typecheck.infer_type None x) = REG_32 ->
+	BinOp(DIVIDE, x, Constant(Int(REG_32, 10L)))
+
+    (* Left shift combined with multiplication *)
+    | BinOp(LSHIFT,
+	    BinOp(TIMES, x, Constant(Int(ty, factor))),
+	    Constant(Int(_, shift)))
+	when let factor2 = Int64.shift_left factor (Int64.to_int shift) in
+	  Constant(Int(ty, factor2)) = to_val ty factor2
+      ->
+	let factor2 = Int64.shift_left factor (Int64.to_int shift) in
+	  BinOp(TIMES, x, Constant(Int(ty, factor2)))
+
+    (* Modulo as the remainder after integer division *)
+    | BinOp(PLUS, x1, UnOp(NEG, BinOp(TIMES, BinOp(DIVIDE, x2, k1), k2)))
+	when x1 = x2 && k1 = k2 ->
+	BinOp(MOD, x1, k1)
+    | BinOp(PLUS, UnOp(NEG, BinOp(TIMES, BinOp(DIVIDE, x2, k1), k2)), x1)
+	when x1 = x2 && k1 = k2 ->
+	BinOp(MOD, x1, k1)
     (* byte & 0xffffff00 = 0 *)
     | BinOp(BITAND,
 	    Cast(CAST_UNSIGNED, REG_32, e),
