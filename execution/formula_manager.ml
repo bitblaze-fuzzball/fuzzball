@@ -720,10 +720,102 @@ struct
 		Printf.printf "%s = %s\n" s (V.exp_to_string e);
 	      var
 
+    (* Expand the definitions of all the temporaries that occur directly
+       in an expression, including occurrences of those temporaries inside
+       the definitions of other expanded temporaries. For instance if
+       t3 is defined in terms of t1 and t2, and "e" contains t3 and t2,
+       both the direct occurrence of t2 in e and the occurrence inside
+       t3 will be expanded, but t1 will not be expanded. The motivation
+       for this is to expand just enough to let simplification rules
+       consistently apply. *)
+    method private expand_temps_1level e =
+      let to_expand = V.VarHash.create 21 in
+      let rec collect e = match e with
+	| V.BinOp(_, e1, e2) -> collect e1; collect e2
+	| V.FBinOp(_, rm, e1, e2) -> collect e1; collect e2
+	| V.UnOp(_, e1) -> collect e1
+	| V.FUnOp(_, _, e1) -> collect e1
+	| V.Constant(_) -> ()
+	| V.Lval(V.Temp(var)) ->
+	    if_expr_temp self var
+	      (fun e' -> V.VarHash.replace to_expand var e')
+	      ()
+	      (fun _ -> ())
+	| V.Lval(V.Mem(_, e1, _)) -> collect e1
+	| V.Name(_) -> ()
+	| V.Cast(_, _, e1) -> collect e1
+	| V.FCast(_, _, _, e1) -> collect e1
+	| V.Unknown(_) -> ()
+	| V.Let(_, e1, e2) -> collect e1; collect e2
+	| V.Ite(ce, te, fe) -> collect ce; collect te; collect fe
+      in
+      let rec replace e = match e with
+	| V.BinOp(op, e1, e2) -> V.BinOp(op, (replace e1), (replace e2))
+	| V.FBinOp(op, rm, e1, e2) ->
+	    V.FBinOp(op, rm, (replace e1), (replace e2))
+	| V.UnOp(op, e1) -> V.UnOp(op, (replace e1))
+	| V.FUnOp(op, rm, e1) -> V.FUnOp(op, rm, (replace e1))
+	| V.Constant(_) -> e
+	| V.Lval(V.Temp(var)) ->
+	    (try
+	       let (e':Vine.exp) = V.VarHash.find to_expand var in
+		 replace e'
+	     with Not_found -> e)
+	| V.Lval(V.Mem(v, e1, ty)) -> V.Lval(V.Mem(v, (replace e1), ty))
+	| V.Name(_) -> e
+	| V.Cast(kind, ty, e1) -> V.Cast(kind, ty, (replace e1))
+	| V.FCast(kind, rm, ty, e1) -> V.FCast(kind, rm, ty, (replace e1))
+	| V.Unknown(_) -> e
+	| V.Let(V.Temp(v), e1, e2) ->
+	    V.Let(V.Temp(v), (replace e1), (replace e2))
+	| V.Let(V.Mem(v, e1, ty), e2, e3) ->
+	    V.Let(V.Mem(v, (replace e1), ty), (replace e2), (replace e3))
+	| V.Ite(ce, te, fe) ->
+	    V.Ite((replace ce), (replace te), (replace fe))
+      in
+	collect e;
+	replace e
+
+    method private collapse_temps e =
+      let rec loop e =
+	let e' = match e with
+	  | V.BinOp(op, e1, e2) -> V.BinOp(op, (loop e1), (loop e2))
+	  | V.FBinOp(op, rm, e1, e2) -> V.FBinOp(op, rm, (loop e1), (loop e2))
+	  | V.UnOp(op, e1) -> V.UnOp(op, (loop e1))
+	  | V.FUnOp(op, rm, e1) -> V.FUnOp(op, rm, (loop e1))
+	  | V.Constant(_) -> e
+	  | V.Lval(V.Temp(_)) -> e
+	  | V.Lval(V.Mem(v, e1, ty)) -> V.Lval(V.Mem(v, (loop e1), ty))
+	  | V.Name(_) -> e
+	  | V.Cast(kind, ty, e1) -> V.Cast(kind, ty, (loop e1))
+	  | V.FCast(kind, rm, ty, e1) -> V.FCast(kind, rm, ty, (loop e1))
+	  | V.Unknown(_) -> e
+	  | V.Let(V.Temp(v), e1, e2) ->
+	      V.Let(V.Temp(v), (loop e1), (loop e2))
+	  | V.Let(V.Mem(v, e1, ty), e2, e3) ->
+	      V.Let(V.Mem(v, (loop e1), ty), (loop e2), (loop e3))
+	  | V.Ite(ce, te, fe) ->
+	      V.Ite((loop ce), (loop te), (loop fe))
+	in
+	let (e_enc, _) = encode_exp e' in
+	  try
+	    let v = self#lookup_temp_var
+	      (Hashtbl.find subexpr_to_temp_var_info e_enc)
+	    in
+	      V.Lval(V.Temp(v))
+	  with Not_found -> e'
+      in
+	loop e
+
+    method private simplify_exp e =
+      let e2 = self#expand_temps_1level e in
+      let e3 = Frag_simplify.simplify_fp e2 in
+	self#collapse_temps e3
+
     method private simplify (v:D.t) ty =
       D.inside_symbolic
 	(fun e ->
-	   let e' = simplify_fp e in
+	   let e' = self#simplify_exp e in
 	     (* if e <> e' then
 		Printf.printf "Simplifying %s -> %s\n"
 		(V.exp_to_string e) (V.exp_to_string e'); *)
@@ -740,7 +832,7 @@ struct
     method private tempify (v:D.t) ty =
       D.inside_symbolic
 	(fun e ->
-	   let e' = simplify_fp e in
+	   let e' = self#simplify_exp e in
 	     V.Lval(V.Temp(self#make_temp_var e' ty))
 	) v
 
@@ -753,7 +845,7 @@ struct
     method simplify_with_callback f (v:D.t) ty =
       D.inside_symbolic
 	(fun e ->
-	   let e2 = simplify_fp e in
+	   let e2 = self#simplify_exp e in
 	     match e2 with
 	       | V.Constant(_) -> e2
 	       | _ -> 

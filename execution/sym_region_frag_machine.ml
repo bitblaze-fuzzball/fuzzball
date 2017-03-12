@@ -434,18 +434,25 @@ struct
 	) else ExprOffset(e)
 	  
   let classify_terms e form_man =
-    let l = List.map (classify_term form_man) (split_terms e form_man) in
-    let (cbases, coffs, eoffs, ambig, syms) =
-      (ref [], ref [], ref [], ref [], ref []) in
-      List.iter
-	(function
-	   | ConstantBase(o) ->  cbases := o :: !cbases
-	   | ConstantOffset(o) -> coffs := o :: !coffs
-	   | ExprOffset(e) ->     eoffs := e :: !eoffs
-	   | AmbiguousExpr(e) ->  ambig := e :: !ambig
-	   | Symbol(v) ->          syms := v :: !syms)
-	l;
-      (!cbases, !coffs, !eoffs, !ambig, !syms)
+    match e with
+      | V.Constant(V.Int(_, k)) ->
+	  (* Most common case: all concrete is a concrete base *)
+	  ([k], [], [], [], [])
+      | _ ->
+	  if !opt_trace_sym_addr_details then
+	    Printf.printf "Analyzing addr expr %s\n" (V.exp_to_string e);
+	  let l = List.map (classify_term form_man) (split_terms e form_man) in
+	  let (cbases, coffs, eoffs, ambig, syms) =
+	    (ref [], ref [], ref [], ref [], ref []) in
+	    List.iter
+	      (function
+		 | ConstantBase(o) ->  cbases := o :: !cbases
+		 | ConstantOffset(o) -> coffs := o :: !coffs
+		 | ExprOffset(e) ->     eoffs := e :: !eoffs
+		 | AmbiguousExpr(e) ->  ambig := e :: !ambig
+		 | Symbol(v) ->          syms := v :: !syms)
+	      l;
+	    (!cbases, !coffs, !eoffs, !ambig, !syms)
 
   let select_one l rand_func =
     let split_list l =

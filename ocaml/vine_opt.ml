@@ -492,6 +492,10 @@ let rec constant_fold ctx e =
     | BinOp(PLUS, UnOp(NEG, BinOp(TIMES, BinOp(DIVIDE, x2, k1), k2)), x1)
 	when x1 = x2 && k1 = k2 ->
 	BinOp(MOD, x1, k1)
+    | BinOp(PLUS, UnOp(NEG, BinOp(TIMES, BinOp(DIVIDE, x2, k1), k2)),
+	    BinOp(PLUS, x1, y))
+	when x1 = x2 && k1 = k2 ->
+	BinOp(PLUS, BinOp(MOD, x1, k1), y)
     (* byte & 0xffffff00 = 0 *)
     | BinOp(BITAND,
 	    Cast(CAST_UNSIGNED, REG_32, e),
