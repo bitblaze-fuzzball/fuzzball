@@ -2436,8 +2436,11 @@ object(self)
   method sys_stat path buf_addr =
     try
       let oc_buf = Unix.stat (chroot path) in
-	self#write_oc_statbuf_as_stat buf_addr oc_buf;
-	put_return 0L (* success *)
+      (match !opt_arch with
+      | X86 -> self#write_oc_statbuf_as_stat buf_addr oc_buf;
+      | X64 -> self#write_oc_statbuf_as_x64_stat buf_addr oc_buf
+      | ARM -> failwith "Unimplemented: ARM 32-bit fstat");
+      put_return 0L (* success *)
     with
       | Unix.Unix_error(err, _, _) -> self#put_errno err
 
@@ -3384,7 +3387,8 @@ object(self)
 	 | ((X86|ARM), 105) -> (* getitimer *)
 	     uh "Unhandled Linux system call getitimer (105)"
 	 | (ARM, 106) -> uh "Check whether ARM stat (106) syscall matches x86"
-	 | (X86, 106) -> (* stat *)
+	 | (X86, 106) 
+	 | (X64, 4) -> (* stat *)
 	     let (ebx, ecx) = read_2_regs () in
 	     let path_buf = ebx and
 		 buf_addr = ecx in
