@@ -432,13 +432,38 @@ struct
       | _ -> if (!opt_fail_offset_heuristic) then (
 	  failwith ("Strange term "^(V.exp_to_string e)^" in address")
 	) else ExprOffset(e)
-	  
+
+  (* When we're not going to try for symbolic regions, just separate
+     the concrete terms from everything else; they should be the base *)
+  let classify_terms_simple e form_man =
+    let constants = ref 0L in
+    let rec loop e =
+      match e with
+	| V.BinOp(V.PLUS, e1, e2) -> (loop e1) @ (loop e2)
+	| V.Lval(V.Temp(var)) ->
+	    FormMan.if_expr_temp form_man var
+	      (fun e' -> loop e') [e] (fun v -> ())
+	| V.Constant(V.Int(V.REG_32, n)) ->
+	    constants := Int64.add !constants n;
+	    []
+	| e -> [e]
+    in
+    let terms = loop e in
+      (!constants, terms)
+
   let classify_terms e form_man =
-    match e with
-      | V.Constant(V.Int(_, k)) ->
+    match (e, !opt_no_sym_regions) with
+      | (V.Constant(V.Int(_, k)), _) ->
 	  (* Most common case: all concrete is a concrete base *)
 	  ([k], [], [], [], [])
-      | _ ->
+      | (e, true) ->
+	  let (cbase, terms) = classify_terms_simple e form_man in
+	  let cbases = if cbase = 0L then [] else [cbase] in
+	    if !opt_trace_sym_addr_details then
+	      Printf.printf "Extracted base address 0x%0Lx from %s\n"
+		cbase (V.exp_to_string e);
+	    (cbases, [], terms, [], [])
+      | (_, _) ->
 	  if !opt_trace_sym_addr_details then
 	    Printf.printf "Analyzing addr expr %s\n" (V.exp_to_string e);
 	  let l = List.map (classify_term form_man) (split_terms e form_man) in

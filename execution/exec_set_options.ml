@@ -202,6 +202,8 @@ let symbolic_state_cmdline_opts =
     ("-sink-region", Arg.String
        (add_delimited_str_num_pair opt_sink_regions '+'),
      "var+size Range-check but ignore writes to a region");
+    ("-no-sym-regions", Arg.Set(opt_no_sym_regions),
+     " Do not attempt to make symbolic regions");
     ("-skip-call-ret-symbol", Arg.String
        (add_delimited_num_str_pair opt_skip_call_addr_symbol '='),
      "addr=symname Like -s-c-r, but return a fresh symbol");
