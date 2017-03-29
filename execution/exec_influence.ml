@@ -348,7 +348,16 @@ struct
 	rm_xors_loop num_xors
 
     method private influence_strategies target_eq target_e ty =
-      (let unsign_min = self#find_bound target_eq target_e false false and
+      let searchmc_path = "/home/smkim/Desktop/tools/SearchMC-umn/" in
+      let fuzzball_path = "/home/smkim/Desktop/tools/fuzzball/exec_utils/" in
+      let file_name = qe#get_file_name in
+      let cmd = "./SearchMC.pl -cl=0.9 -thres=2 -output_name=influence-target -input_type=smt -solver=cryptominisat4 -verbose=1 " ^ fuzzball_path ^ file_name ^ ".smt2" in
+      ignore(Unix.chdir searchmc_path);
+      ignore(Sys.command cmd);
+      ignore(Unix.chdir fuzzball_path);
+    0.0
+    
+      (* (let unsign_min = self#find_bound target_eq target_e false false and
 	   unsign_max = self#find_bound target_eq target_e false true and
 	   signed_min = self#find_bound target_eq target_e true false and
 	   signed_max = self#find_bound target_eq target_e true true
@@ -393,7 +402,8 @@ struct
 	       self#xor_walk_simple target_eq target_e 50
 	       (* self#xor_then_enum target_eq target_e 50 *)
 	  )
-
+	  *)
+    
     method measure_influence_common decls assigns cond_e target_e =
       Printf.printf "In measure_influence_common\n";
       if not qe_ready then

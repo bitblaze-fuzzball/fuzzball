@@ -17,4 +17,5 @@ object
   method query : Vine.exp -> (bool option) * Query_engine.sat_assign
   method after_query : bool -> unit
   method reset : unit
+  method get_file_name : string
 end

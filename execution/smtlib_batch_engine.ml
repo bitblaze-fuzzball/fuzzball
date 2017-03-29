@@ -245,7 +245,10 @@ class smtlib_batch_engine e_s_t fname = object(self)
     else if not !opt_save_solver_files then
       (Sys.remove (curr_fname ^ ".smt2");
        Sys.remove (curr_fname ^ ".smt2.out"))
-
+  
+  method get_file_name =
+    curr_fname
+   
   method reset =
     visitor <- None;
     free_vars <- [];

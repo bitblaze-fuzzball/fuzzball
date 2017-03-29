@@ -13,6 +13,7 @@ class stpvc_engine : object
   method query : Vine.exp -> (bool option) * Query_engine.sat_assign
   method after_query : bool -> unit
   method reset : unit
+  method get_file_name : string
 
   method push_vc : unit
   method get_vc : Stpvc.vc
