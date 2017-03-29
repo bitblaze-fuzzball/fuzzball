@@ -35,6 +35,7 @@ class virtual query_engine = object(self)
   method virtual query : V.exp -> (bool option) * sat_assign
   method virtual after_query : bool -> unit
   method virtual reset : unit
+  method virtual get_file_name : string
 end
 
 let no s = failwith (s ^ " called on dummy_query_engine")
@@ -50,6 +51,7 @@ class dummy_query_engine = object(self)
   method query e = no "query"
   method after_query b = no "after_query"
   method reset = no "reset"
+  method get_file_name = no "get_file_name"
 end
 
 let print_ce ce =
@@ -141,5 +143,7 @@ class parallel_check_engine (e1:query_engine) (e2:query_engine) = object(self)
     e1#reset;
     e2#reset;
     eqns <- [];
-    conds <- []
+    conds <- []  
+  method get_file_name =
+    ""
 end

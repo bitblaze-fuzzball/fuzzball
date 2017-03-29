@@ -190,4 +190,6 @@ class stp_external_engine fname = object(self)
     eqns <- [];
     conds <- [];
     tables <- []
+  method get_file_name =
+    ""
 end
