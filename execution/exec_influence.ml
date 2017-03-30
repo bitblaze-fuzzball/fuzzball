@@ -349,7 +349,7 @@ struct
 
     method private influence_strategies target_eq target_e ty =
       let searchmc_path = "/home/smkim/Desktop/tools/SearchMC-umn/" in
-      let fuzzball_path = "/home/smkim/Desktop/tools/fuzzball/exec_utils/" in
+      let fuzzball_path = Sys.getcwd () in
       let file_name = qe#get_file_name in
       let cmd = "./SearchMC.pl -cl=0.9 -thres=2 -output_name=influence-target -input_type=smt -solver=cryptominisat4 -verbose=1 " ^ fuzzball_path ^ file_name ^ ".smt2" in
       ignore(Unix.chdir searchmc_path);
