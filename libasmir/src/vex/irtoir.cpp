@@ -1464,14 +1464,16 @@ Exp *translate_simple_unop( IRExpr *expr, IRSB *irbb, vector<Stmt *> *irout )
 	    return new Cast(arg_low, REG_32, CAST_LOW);
 	}
 
-        case Iop_V128to64: {
+        case Iop_V128to64:
+        case Iop_128to64: {
 	    Exp *arg_high, *arg_low;
 	    split_vector(arg, &arg_high, &arg_low);
 	    Exp::destroy(arg_high);
 	    return arg_low;
 	}
 
-        case Iop_V128HIto64: {
+        case Iop_V128HIto64:
+        case Iop_128HIto64: {
 	    Exp *arg_high, *arg_low;
 	    split_vector(arg, &arg_high, &arg_low);
 	    Exp::destroy(arg_low);
@@ -2120,7 +2122,7 @@ Exp *translate_load( IRExpr *expr, IRSB *irbb, vector<Stmt *> *irout )
     if (type == Ity_I128 || type == Ity_V128) {
 	// Split into two adjacent 64-bit loads
 	Exp *addr_l = translate_expr(expr->Iex.Load.addr, irbb, irout);
-	Exp *addr_h = _ex_add(ecl(addr_l), ex_const(8));
+	Exp *addr_h = _ex_add(ecl(addr_l), ex_addr_const(8));
 	Mem *mem_l = new Mem(addr_l, REG_64);
 	Mem *mem_h = new Mem(addr_h, REG_64);
 	return new Vector(mem_h, mem_l);

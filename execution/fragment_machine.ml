@@ -2085,11 +2085,15 @@ struct
 	   | V.PLUS | V.MINUS | V.TIMES
 	   | V.DIVIDE | V.SDIVIDE | V.MOD | V.SMOD
 	   | V.BITAND | V.BITOR | V.XOR
-	       -> g_assert(ty1 = ty2) 100 "Fragment_machine.eval_binop"; ty1
+	       -> g_assert(ty1 = ty2) 100
+	       "Fragment_machine.eval_binop arith same type";
+		 ty1
 	   | V.LSHIFT | V.RSHIFT | V.ARSHIFT
 	       -> ty1
 	   | V.EQ | V.NEQ | V.LT | V.LE | V.SLT | V.SLE
-	       -> g_assert(ty1 = ty2) 100 "Fragment_machine.eval_binop"; V.REG_1) in
+	       -> g_assert(ty1 = ty2) 100
+	       "Fragment_machine.eval_binop compare same type";
+		 V.REG_1) in
       let func =
 	(match (op, ty1) with
 	   | (V.PLUS, V.REG_1)  -> D.plus1 
