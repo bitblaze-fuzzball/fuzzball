@@ -158,7 +158,7 @@ let concrete_state_cmdline_opts =
      "addr=val Set 16-bit location to a concrete value");
     ("-store-word", Arg.String
        (add_delimited_pair opt_store_words '='),
-     "addr=val Set a memory word to a concrete value");
+     "addr=val Set a 32-bit memory word to a concrete value");
     ("-store-long", Arg.String
        (add_delimited_pair opt_store_longs '='),
      "addr=val Set 64-bit location to a concrete value");
@@ -204,6 +204,8 @@ let symbolic_state_cmdline_opts =
     ("-sink-region", Arg.String
        (add_delimited_str_num_pair opt_sink_regions '+'),
      "var+size Range-check but ignore writes to a region");
+    ("-no-sym-regions", Arg.Set(opt_no_sym_regions),
+     " Do not attempt to make symbolic regions");
     ("-skip-call-ret-symbol", Arg.String
        (add_delimited_num_str_pair opt_skip_call_addr_symbol '='),
      "addr=symname Like -s-c-r, but return a fresh symbol");
@@ -389,10 +391,14 @@ let explore_cmdline_opts =
      " Print offset width information");
     ("-no-table-store", Arg.Set(opt_no_table_store),
      " Disable symbolic treatment of table stores");
+    ("-tables-as-arrays", Arg.Set(opt_tables_as_arrays),
+     " Use SMT array theory for table loads");
     ("-implied-value-conc", Arg.Set(opt_implied_value_conc),
      " Concretize based on path condition");
     ("-trace-ivc", Arg.Set(opt_trace_ivc),
      " Print operations of -implied-value-conc");
+    ("-ite-ivc", Arg.Set(opt_ite_ivc),
+     " Do implied-value-conc on if-then-else conditions");
     ("-trace-working-ce-cache", Arg.Set(opt_trace_working_ce_cache),
      " Print working cache after each query");
     ("-trace-global-ce-cache", Arg.Set(opt_trace_global_ce_cache),
@@ -415,6 +421,12 @@ let explore_cmdline_opts =
      " Set an integer limit on total assert-avoiding weirdness before ending run.");
     ("-single-weird-threshold", Arg.Set_int(opt_max_weirdness),
      " Set an integer limit on weirdness in single event before issuing failure.");
+    ("-narrow-bitwidth-cutoff", Arg.String
+       (fun s -> opt_narrow_bitwidth_cutoff := Some (int_of_string s)),
+     "BITS Treat values narrower than width as non-pointers");
+    ("-t-expr-size", Arg.String
+       (fun s -> opt_t_expr_size := int_of_string s),
+     "SIZE Introduce temporaries for exprs of size or larger");
   ]
 
 
@@ -475,6 +487,8 @@ let cmdline_opts =
      " Enable several common trace and stats options");
     ("-trace-binary-paths", Arg.Set(opt_trace_binary_paths),
      " Print decision paths as bit strings");
+    ("-trace-client-reqs", Arg.Set(opt_trace_client_reqs),
+     " Print Valgrind-style client requests");
     ("-trace-conditions", Arg.Set(opt_trace_conditions),
      " Print branch conditions");
     ("-trace-decisions", Arg.Set(opt_trace_decisions),
@@ -686,6 +700,9 @@ let apply_cmdline_opts_early (fm : Fragment_machine.fragment_machine) dl =
     fm#make_regs_symbolic
   else
     fm#make_regs_zero;
+  fm#add_universal_special_handler
+    ((new Special_handlers.vg_client_req_special_handler fm)
+     :> Fragment_machine.special_handler);
   fm#add_universal_special_handler
     ((new Special_handlers.trap_special_nonhandler fm)
      :> Fragment_machine.special_handler);

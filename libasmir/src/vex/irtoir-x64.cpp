@@ -37,8 +37,13 @@
 
 #define OFFB_RIP       offsetof(VexGuestAMD64State,guest_RIP)
 
-#define OFFB_FS_ZERO   offsetof(VexGuestAMD64State,guest_FS_ZERO)
-#define OFFB_GS_0x60   offsetof(VexGuestAMD64State,guest_GS_0x60)
+#if VEX_VERSION < 3043
+#define OFFB_FS_CONST   offsetof(VexGuestAMD64State,guest_FS_ZERO)
+#define OFFB_GS_CONST   offsetof(VexGuestAMD64State,guest_GS_0x60)
+#else
+#define OFFB_FS_CONST   offsetof(VexGuestAMD64State,guest_FS_CONST)
+#define OFFB_GS_CONST   offsetof(VexGuestAMD64State,guest_GS_CONST)
+#endif
 
 #define OFFB_CC_OP     offsetof(VexGuestAMD64State,guest_CC_OP)
 #define OFFB_CC_DEP1   offsetof(VexGuestAMD64State,guest_CC_DEP1)
@@ -75,9 +80,35 @@
 #define OFFB_YMM14     offsetof(VexGuestAMD64State,guest_YMM14)
 #define OFFB_YMM15     offsetof(VexGuestAMD64State,guest_YMM15)
 #define OFFB_YMM16     offsetof(VexGuestAMD64State,guest_YMM16)
+#else
+/* Older versions of VEX only modeled the SSE state as 128-bit
+   XMM registers, like x86-32. We'll try to cover up for this
+   difference, but the YMM-style code path is better tested. */
+#define OFFB_XMM0      offsetof(VexGuestAMD64State,guest_XMM0)
+#define OFFB_XMM1      offsetof(VexGuestAMD64State,guest_XMM1)
+#define OFFB_XMM2      offsetof(VexGuestAMD64State,guest_XMM2)
+#define OFFB_XMM3      offsetof(VexGuestAMD64State,guest_XMM3)
+#define OFFB_XMM4      offsetof(VexGuestAMD64State,guest_XMM4)
+#define OFFB_XMM5      offsetof(VexGuestAMD64State,guest_XMM5)
+#define OFFB_XMM6      offsetof(VexGuestAMD64State,guest_XMM6)
+#define OFFB_XMM7      offsetof(VexGuestAMD64State,guest_XMM7)
+#define OFFB_XMM8      offsetof(VexGuestAMD64State,guest_XMM8)
+#define OFFB_XMM9      offsetof(VexGuestAMD64State,guest_XMM9)
+#define OFFB_XMM10     offsetof(VexGuestAMD64State,guest_XMM10)
+#define OFFB_XMM11     offsetof(VexGuestAMD64State,guest_XMM11)
+#define OFFB_XMM12     offsetof(VexGuestAMD64State,guest_XMM12)
+#define OFFB_XMM13     offsetof(VexGuestAMD64State,guest_XMM13)
+#define OFFB_XMM14     offsetof(VexGuestAMD64State,guest_XMM14)
+#define OFFB_XMM15     offsetof(VexGuestAMD64State,guest_XMM15)
+#define OFFB_XMM16     offsetof(VexGuestAMD64State,guest_XMM16)
 #endif
 
+#if VEX_VERSION < 2484
+#define OFFB_EMNOTE    offsetof(VexGuestAMD64State,guest_EMWARN)
+#else
 #define OFFB_EMNOTE    offsetof(VexGuestAMD64State,guest_EMNOTE)
+#endif
+
 #define OFFB_TISTART   offsetof(VexGuestAMD64State,guest_TISTART)
 #define OFFB_TILEN     offsetof(VexGuestAMD64State,guest_TILEN)
 
@@ -211,8 +242,8 @@ vector<VarDecl *> x64_get_reg_decls()
   ret.push_back(new VarDecl("R_OF", r1));  
 
   // VEX represetations of segment information
-  ret.push_back(new VarDecl("R_FS_ZERO", r64));
-  ret.push_back(new VarDecl("R_GS_0x60", r64));
+  ret.push_back(new VarDecl("R_FS_CONST", r64));
+  ret.push_back(new VarDecl("R_GS_CONST", r64));
 
   // SIMD registers. We don't yet support 256-bit registers, so break
   // them up a 4x64. 
@@ -373,12 +404,13 @@ static string reg_offset_to_name( int offset, bool *is_good )
         case OFFB_NRADDR:   name = "NRADDR";    good=true; break;
 
 #if VEX_VERSION >= 919
-        case OFFB_FS_ZERO:  name = "FS_BASE";   good=true; break;
+        case OFFB_FS_CONST: name = "FS_BASE";   good=true; break;
 #endif
 #if VEX_VERSION >= 1874
-        case OFFB_GS_0x60:  name = "GS_BASE";   good=true; break;
+        case OFFB_GS_CONST: name = "GS_BASE";   good=true; break;
 #endif
 
+#if VEX_VERSION >= 2330
         case OFFB_YMM0:     name = "YMM0_0";    good=true; break;
         case OFFB_YMM1:     name = "YMM1_0";    good=true; break;
         case OFFB_YMM2:     name = "YMM2_0";    good=true; break;
@@ -412,6 +444,50 @@ static string reg_offset_to_name( int offset, bool *is_good )
         case OFFB_YMM13+8:  name = "YMM13_1";   good=true; break;
         case OFFB_YMM14+8:  name = "YMM14_1";   good=true; break;
         case OFFB_YMM15+8:  name = "YMM15_1";   good=true; break;
+#else
+        case OFFB_XMM0:     name = "YMM0_0";    good=true; break;
+        case OFFB_XMM1:     name = "YMM1_0";    good=true; break;
+        case OFFB_XMM2:     name = "YMM2_0";    good=true; break;
+        case OFFB_XMM3:     name = "YMM3_0";    good=true; break;
+        case OFFB_XMM4:     name = "YMM4_0";    good=true; break;
+        case OFFB_XMM5:     name = "YMM5_0";    good=true; break;
+        case OFFB_XMM6:     name = "YMM6_0";    good=true; break;
+        case OFFB_XMM7:     name = "YMM7_0";    good=true; break;
+        case OFFB_XMM8:     name = "YMM8_0";    good=true; break;
+        case OFFB_XMM9:     name = "YMM9_0";    good=true; break;
+        case OFFB_XMM10:    name = "YMM10_0";   good=true; break;
+        case OFFB_XMM11:    name = "YMM11_0";   good=true; break;
+        case OFFB_XMM12:    name = "YMM12_0";   good=true; break;
+        case OFFB_XMM13:    name = "YMM13_0";   good=true; break;
+        case OFFB_XMM14:    name = "YMM14_0";   good=true; break;
+        case OFFB_XMM15:    name = "YMM15_0";   good=true; break;
+
+        case OFFB_XMM0+8:   name = "YMM0_1";    good=true; break;
+        case OFFB_XMM1+8:   name = "YMM1_1";    good=true; break;
+        case OFFB_XMM2+8:   name = "YMM2_1";    good=true; break;
+        case OFFB_XMM3+8:   name = "YMM3_1";    good=true; break;
+        case OFFB_XMM4+8:   name = "YMM4_1";    good=true; break;
+        case OFFB_XMM5+8:   name = "YMM5_1";    good=true; break;
+        case OFFB_XMM6+8:   name = "YMM6_1";    good=true; break;
+        case OFFB_XMM7+8:   name = "YMM7_1";    good=true; break;
+        case OFFB_XMM8+8:   name = "YMM8_1";    good=true; break;
+        case OFFB_XMM9+8:   name = "YMM9_1";    good=true; break;
+        case OFFB_XMM10+8:  name = "YMM10_1";   good=true; break;
+        case OFFB_XMM11+8:  name = "YMM11_1";   good=true; break;
+        case OFFB_XMM12+8:  name = "YMM12_1";   good=true; break;
+        case OFFB_XMM13+8:  name = "YMM13_1";   good=true; break;
+        case OFFB_XMM14+8:  name = "YMM14_1";   good=true; break;
+        case OFFB_XMM15+8:  name = "YMM15_1";   good=true; break;
+#endif
+
+        case OFFB_FPREGS:       name = "FPREG0";good=true; break;
+        case OFFB_FPREGS+(1*8): name = "FPREG1";good=true; break;
+        case OFFB_FPREGS+(2*8): name = "FPREG2";good=true; break;
+        case OFFB_FPREGS+(3*8): name = "FPREG3";good=true; break;
+        case OFFB_FPREGS+(4*8): name = "FPREG4";good=true; break;
+        case OFFB_FPREGS+(5*8): name = "FPREG5";good=true; break;
+        case OFFB_FPREGS+(6*8): name = "FPREG6";good=true; break;
+        case OFFB_FPREGS+(7*8): name = "FPREG7";good=true; break;
 
         default:            
             panic("Unrecognized register name");
@@ -447,6 +523,22 @@ static Exp *translate_get_reg_8( unsigned int offset )
 	return new Unknown("Unhandled 8-bit YMM lane");
     }
 #endif
+
+    if (offset >= OFFB_FPTAGS && offset <= OFFB_FPTAGS + 7) {
+        switch (offset) {
+        case OFFB_FPTAGS+0: name = "FPTAG0"; break;
+        case OFFB_FPTAGS+1: name = "FPTAG1"; break;
+        case OFFB_FPTAGS+2: name = "FPTAG2"; break;
+        case OFFB_FPTAGS+3: name = "FPTAG3"; break;
+        case OFFB_FPTAGS+4: name = "FPTAG4"; break;
+        case OFFB_FPTAGS+5: name = "FPTAG5"; break;
+        case OFFB_FPTAGS+6: name = "FPTAG6"; break;
+        case OFFB_FPTAGS+7: name = "FPTAG7"; break;
+        default:
+            assert(0);
+        }
+        return mk_reg(name, REG_8);
+    }
 
     // Determine which 64-bit register this 8-bit sub
     // register is a part of
@@ -547,56 +639,203 @@ static Exp *translate_get_reg_16( unsigned int offset )
     return value;
 }
 
+#if VEX_VERSION >= 2330
+static bool lookup_32_in_ymm(unsigned int offset, string &name, int &lane) {
+    bool is_good = false;
+    switch (offset) {
+    case OFFB_YMM0:     name =  "YMM0_0"; lane = 0; is_good = true; break;
+    case OFFB_YMM1:     name =  "YMM1_0"; lane = 0; is_good = true; break;
+    case OFFB_YMM2:     name =  "YMM2_0"; lane = 0; is_good = true; break;
+    case OFFB_YMM3:     name =  "YMM3_0"; lane = 0; is_good = true; break;
+    case OFFB_YMM4:     name =  "YMM4_0"; lane = 0; is_good = true; break;
+    case OFFB_YMM5:     name =  "YMM5_0"; lane = 0; is_good = true; break;
+    case OFFB_YMM6:     name =  "YMM6_0"; lane = 0; is_good = true; break;
+    case OFFB_YMM7:     name =  "YMM7_0"; lane = 0; is_good = true; break;
+    case OFFB_YMM8:     name =  "YMM8_0"; lane = 0; is_good = true; break;
+    case OFFB_YMM9:     name =  "YMM9_0"; lane = 0; is_good = true; break;
+    case OFFB_YMM10:    name = "YMM10_0"; lane = 0; is_good = true; break;
+    case OFFB_YMM11:    name = "YMM11_0"; lane = 0; is_good = true; break;
+    case OFFB_YMM12:    name = "YMM12_0"; lane = 0; is_good = true; break;
+    case OFFB_YMM13:    name = "YMM13_0"; lane = 0; is_good = true; break;
+    case OFFB_YMM14:    name = "YMM14_0"; lane = 0; is_good = true; break;
+    case OFFB_YMM15:    name = "YMM15_0"; lane = 0; is_good = true; break;
+    case OFFB_YMM0+4:   name =  "YMM0_0"; lane = 1; is_good = true; break;
+    case OFFB_YMM1+4:   name =  "YMM1_0"; lane = 1; is_good = true; break;
+    case OFFB_YMM2+4:   name =  "YMM2_0"; lane = 1; is_good = true; break;
+    case OFFB_YMM3+4:   name =  "YMM3_0"; lane = 1; is_good = true; break;
+    case OFFB_YMM4+4:   name =  "YMM4_0"; lane = 1; is_good = true; break;
+    case OFFB_YMM5+4:   name =  "YMM5_0"; lane = 1; is_good = true; break;
+    case OFFB_YMM6+4:   name =  "YMM6_0"; lane = 1; is_good = true; break;
+    case OFFB_YMM7+4:   name =  "YMM7_0"; lane = 1; is_good = true; break;
+    case OFFB_YMM8+4:   name =  "YMM8_0"; lane = 1; is_good = true; break;
+    case OFFB_YMM9+4:   name =  "YMM9_0"; lane = 1; is_good = true; break;
+    case OFFB_YMM10+4:  name = "YMM10_0"; lane = 1; is_good = true; break;
+    case OFFB_YMM11+4:  name = "YMM11_0"; lane = 1; is_good = true; break;
+    case OFFB_YMM12+4:  name = "YMM12_0"; lane = 1; is_good = true; break;
+    case OFFB_YMM13+4:  name = "YMM13_0"; lane = 1; is_good = true; break;
+    case OFFB_YMM14+4:  name = "YMM14_0"; lane = 1; is_good = true; break;
+    case OFFB_YMM15+4:  name = "YMM15_0"; lane = 1; is_good = true; break;
+
+    case OFFB_YMM0+8:   name =  "YMM0_1"; lane = 0; is_good = true; break;
+    case OFFB_YMM1+8:   name =  "YMM1_1"; lane = 0; is_good = true; break;
+    case OFFB_YMM2+8:   name =  "YMM2_1"; lane = 0; is_good = true; break;
+    case OFFB_YMM3+8:   name =  "YMM3_1"; lane = 0; is_good = true; break;
+    case OFFB_YMM4+8:   name =  "YMM4_1"; lane = 0; is_good = true; break;
+    case OFFB_YMM5+8:   name =  "YMM5_1"; lane = 0; is_good = true; break;
+    case OFFB_YMM6+8:   name =  "YMM6_1"; lane = 0; is_good = true; break;
+    case OFFB_YMM7+8:   name =  "YMM7_1"; lane = 0; is_good = true; break;
+    case OFFB_YMM8+8:   name =  "YMM8_1"; lane = 0; is_good = true; break;
+    case OFFB_YMM9+8:   name =  "YMM9_1"; lane = 0; is_good = true; break;
+    case OFFB_YMM10+8:  name = "YMM10_1"; lane = 0; is_good = true; break;
+    case OFFB_YMM11+8:  name = "YMM11_1"; lane = 0; is_good = true; break;
+    case OFFB_YMM12+8:  name = "YMM12_1"; lane = 0; is_good = true; break;
+    case OFFB_YMM13+8:  name = "YMM13_1"; lane = 0; is_good = true; break;
+    case OFFB_YMM14+8:  name = "YMM14_1"; lane = 0; is_good = true; break;
+    case OFFB_YMM15+8:  name = "YMM15_1"; lane = 0; is_good = true; break;
+    case OFFB_YMM0+12:  name =  "YMM0_1"; lane = 1; is_good = true; break;
+    case OFFB_YMM1+12:  name =  "YMM1_1"; lane = 1; is_good = true; break;
+    case OFFB_YMM2+12:  name =  "YMM2_1"; lane = 1; is_good = true; break;
+    case OFFB_YMM3+12:  name =  "YMM3_1"; lane = 1; is_good = true; break;
+    case OFFB_YMM4+12:  name =  "YMM4_1"; lane = 1; is_good = true; break;
+    case OFFB_YMM5+12:  name =  "YMM5_1"; lane = 1; is_good = true; break;
+    case OFFB_YMM6+12:  name =  "YMM6_1"; lane = 1; is_good = true; break;
+    case OFFB_YMM7+12:  name =  "YMM7_1"; lane = 1; is_good = true; break;
+    case OFFB_YMM8+12:  name =  "YMM8_1"; lane = 1; is_good = true; break;
+    case OFFB_YMM9+12:  name =  "YMM9_1"; lane = 1; is_good = true; break;
+    case OFFB_YMM10+12: name = "YMM10_1"; lane = 1; is_good = true; break;
+    case OFFB_YMM11+12: name = "YMM11_1"; lane = 1; is_good = true; break;
+    case OFFB_YMM12+12: name = "YMM12_1"; lane = 1; is_good = true; break;
+    case OFFB_YMM13+12: name = "YMM13_1"; lane = 1; is_good = true; break;
+    case OFFB_YMM14+12: name = "YMM14_1"; lane = 1; is_good = true; break;
+    case OFFB_YMM15+12: name = "YMM15_1"; lane = 1; is_good = true; break;
+
+    case OFFB_YMM0+16:  name =  "YMM0_2"; lane = 0; is_good = true; break;
+    case OFFB_YMM1+16:  name =  "YMM1_2"; lane = 0; is_good = true; break;
+    case OFFB_YMM2+16:  name =  "YMM2_2"; lane = 0; is_good = true; break;
+    case OFFB_YMM3+16:  name =  "YMM3_2"; lane = 0; is_good = true; break;
+    case OFFB_YMM4+16:  name =  "YMM4_2"; lane = 0; is_good = true; break;
+    case OFFB_YMM5+16:  name =  "YMM5_2"; lane = 0; is_good = true; break;
+    case OFFB_YMM6+16:  name =  "YMM6_2"; lane = 0; is_good = true; break;
+    case OFFB_YMM7+16:  name =  "YMM7_2"; lane = 0; is_good = true; break;
+    case OFFB_YMM8+16:  name =  "YMM8_2"; lane = 0; is_good = true; break;
+    case OFFB_YMM9+16:  name =  "YMM9_2"; lane = 0; is_good = true; break;
+    case OFFB_YMM10+16: name = "YMM10_2"; lane = 0; is_good = true; break;
+    case OFFB_YMM11+16: name = "YMM11_2"; lane = 0; is_good = true; break;
+    case OFFB_YMM12+16: name = "YMM12_2"; lane = 0; is_good = true; break;
+    case OFFB_YMM13+16: name = "YMM13_2"; lane = 0; is_good = true; break;
+    case OFFB_YMM14+16: name = "YMM14_2"; lane = 0; is_good = true; break;
+    case OFFB_YMM15+16: name = "YMM15_2"; lane = 0; is_good = true; break;
+    case OFFB_YMM0+20:  name =  "YMM0_2"; lane = 1; is_good = true; break;
+    case OFFB_YMM1+20:  name =  "YMM1_2"; lane = 1; is_good = true; break;
+    case OFFB_YMM2+20:  name =  "YMM2_2"; lane = 1; is_good = true; break;
+    case OFFB_YMM3+20:  name =  "YMM3_2"; lane = 1; is_good = true; break;
+    case OFFB_YMM4+20:  name =  "YMM4_2"; lane = 1; is_good = true; break;
+    case OFFB_YMM5+20:  name =  "YMM5_2"; lane = 1; is_good = true; break;
+    case OFFB_YMM6+20:  name =  "YMM6_2"; lane = 1; is_good = true; break;
+    case OFFB_YMM7+20:  name =  "YMM7_2"; lane = 1; is_good = true; break;
+    case OFFB_YMM8+20:  name =  "YMM8_2"; lane = 1; is_good = true; break;
+    case OFFB_YMM9+20:  name =  "YMM9_2"; lane = 1; is_good = true; break;
+    case OFFB_YMM10+20: name = "YMM10_2"; lane = 1; is_good = true; break;
+    case OFFB_YMM11+20: name = "YMM11_2"; lane = 1; is_good = true; break;
+    case OFFB_YMM12+20: name = "YMM12_2"; lane = 1; is_good = true; break;
+    case OFFB_YMM13+20: name = "YMM13_2"; lane = 1; is_good = true; break;
+    case OFFB_YMM14+20: name = "YMM14_2"; lane = 1; is_good = true; break;
+    case OFFB_YMM15+20: name = "YMM15_2"; lane = 1; is_good = true; break;
+
+    case OFFB_YMM0+24:  name =  "YMM0_3"; lane = 0; is_good = true; break;
+    case OFFB_YMM1+24:  name =  "YMM1_3"; lane = 0; is_good = true; break;
+    case OFFB_YMM2+24:  name =  "YMM2_3"; lane = 0; is_good = true; break;
+    case OFFB_YMM3+24:  name =  "YMM3_3"; lane = 0; is_good = true; break;
+    case OFFB_YMM4+24:  name =  "YMM4_3"; lane = 0; is_good = true; break;
+    case OFFB_YMM5+24:  name =  "YMM5_3"; lane = 0; is_good = true; break;
+    case OFFB_YMM6+24:  name =  "YMM6_3"; lane = 0; is_good = true; break;
+    case OFFB_YMM7+24:  name =  "YMM7_3"; lane = 0; is_good = true; break;
+    case OFFB_YMM8+24:  name =  "YMM8_3"; lane = 0; is_good = true; break;
+    case OFFB_YMM9+24:  name =  "YMM9_3"; lane = 0; is_good = true; break;
+    case OFFB_YMM10+24: name = "YMM10_3"; lane = 0; is_good = true; break;
+    case OFFB_YMM11+24: name = "YMM11_3"; lane = 0; is_good = true; break;
+    case OFFB_YMM12+24: name = "YMM12_3"; lane = 0; is_good = true; break;
+    case OFFB_YMM13+24: name = "YMM13_3"; lane = 0; is_good = true; break;
+    case OFFB_YMM14+24: name = "YMM14_3"; lane = 0; is_good = true; break;
+    case OFFB_YMM15+24: name = "YMM15_3"; lane = 0; is_good = true; break;
+    case OFFB_YMM0+28:  name =  "YMM0_3"; lane = 1; is_good = true; break;
+    case OFFB_YMM1+28:  name =  "YMM1_3"; lane = 1; is_good = true; break;
+    case OFFB_YMM2+28:  name =  "YMM2_3"; lane = 1; is_good = true; break;
+    case OFFB_YMM3+28:  name =  "YMM3_3"; lane = 1; is_good = true; break;
+    case OFFB_YMM4+28:  name =  "YMM4_3"; lane = 1; is_good = true; break;
+    case OFFB_YMM5+28:  name =  "YMM5_3"; lane = 1; is_good = true; break;
+    case OFFB_YMM6+28:  name =  "YMM6_3"; lane = 1; is_good = true; break;
+    case OFFB_YMM7+28:  name =  "YMM7_3"; lane = 1; is_good = true; break;
+    case OFFB_YMM8+28:  name =  "YMM8_3"; lane = 1; is_good = true; break;
+    case OFFB_YMM9+28:  name =  "YMM9_3"; lane = 1; is_good = true; break;
+    case OFFB_YMM10+28: name = "YMM10_3"; lane = 1; is_good = true; break;
+    case OFFB_YMM11+28: name = "YMM11_3"; lane = 1; is_good = true; break;
+    case OFFB_YMM12+28: name = "YMM12_3"; lane = 1; is_good = true; break;
+    case OFFB_YMM13+28: name = "YMM13_3"; lane = 1; is_good = true; break;
+    case OFFB_YMM14+28: name = "YMM14_3"; lane = 1; is_good = true; break;
+    case OFFB_YMM15+28: name = "YMM15_3"; lane = 1; is_good = true; break;
+    }
+    return is_good;
+}
+#endif
+
 static Exp *translate_get_reg_32( unsigned int offset )
 {
     string name;
-    bool sub;
+    bool sub, is_good = false;
+    int lane = -1;
 
 #if VEX_VERSION >= 2330
-    if (offset >= OFFB_YMM0 && offset < OFFB_YMM16+64) {
-	// SSE sub-register: not supported.
-	return new Unknown("Unhandled 32-bit YMM lane");
+    is_good = lookup_32_in_ymm(offset, name, lane);
+    if (is_good)
+	sub = true;
+
+    if (!is_good && offset >= OFFB_YMM0 && offset < OFFB_YMM15+64) {
+	// unsupported SSE sub-register?
+	return new Unknown("Unhandled (misaligned?) 32-bit YMM lane");
     }
 #endif
 
-    switch ( offset )
-    {
-        //
-        // These are 32-bit sub registers
-        //
-        case OFFB_EAX:  name = "RAX";   sub = true; break;
-        case OFFB_EBX:  name = "RBX";   sub = true; break;
-        case OFFB_ECX:  name = "RCX";   sub = true; break;
-        case OFFB_EDX:  name = "RDX";   sub = true; break;
-        case OFFB_EDI:  name = "RDI";   sub = true; break;
-        case OFFB_ESI:  name = "RSI";   sub = true; break;
-        case OFFB_EBP:  name = "RBP";   sub = true; break;
-        case OFFB_ESP:  name = "RSP";   sub = true; break;
-        case OFFB_R8D:  name = "R8";    sub = true; break;
-        case OFFB_R9D:  name = "R9";    sub = true; break;
-        case OFFB_R10D: name = "R10";   sub = true; break;
-        case OFFB_R11D: name = "R11";   sub = true; break;
-        case OFFB_R12D: name = "R12";   sub = true; break;
-        case OFFB_R13D: name = "R13";   sub = true; break;
-        case OFFB_R14D: name = "R14";   sub = true; break;
-        case OFFB_R15D: name = "R15";   sub = true; break;
+    if (!is_good)
+	switch ( offset )
+	    {
+		//
+		// These are 32-bit sub registers
+		//
+	    case OFFB_EAX:  name = "RAX";   sub = true; lane = 0; break;
+	    case OFFB_EBX:  name = "RBX";   sub = true; lane = 0; break;
+	    case OFFB_ECX:  name = "RCX";   sub = true; lane = 0; break;
+	    case OFFB_EDX:  name = "RDX";   sub = true; lane = 0; break;
+	    case OFFB_EDI:  name = "RDI";   sub = true; lane = 0; break;
+	    case OFFB_ESI:  name = "RSI";   sub = true; lane = 0; break;
+	    case OFFB_EBP:  name = "RBP";   sub = true; lane = 0; break;
+	    case OFFB_ESP:  name = "RSP";   sub = true; lane = 0; break;
+	    case OFFB_R8D:  name = "R8";    sub = true; lane = 0; break;
+	    case OFFB_R9D:  name = "R9";    sub = true; lane = 0; break;
+	    case OFFB_R10D: name = "R10";   sub = true; lane = 0; break;
+	    case OFFB_R11D: name = "R11";   sub = true; lane = 0; break;
+	    case OFFB_R12D: name = "R12";   sub = true; lane = 0; break;
+	    case OFFB_R13D: name = "R13";   sub = true; lane = 0; break;
+	    case OFFB_R14D: name = "R14";   sub = true; lane = 0; break;
+	    case OFFB_R15D: name = "R15";   sub = true; lane = 0; break;
 
-        case OFFB_EMNOTE:
-	    name = "EMNOTE";
-	    sub = false;
-	    break;
+	    case OFFB_EMNOTE: name = "EMNOTE"; sub = false; break;
+	    case OFFB_FTOP:   name = "FTOP";   sub = false; break;
 
-        default:
-	    assert(0);
-    }
+	    default:
+		assert(0);
+	    }
 
     Exp *value = NULL;
 
     if ( sub )
     {
+	assert(lane >= 0 && lane < 2);
         Temp *reg = mk_reg(name, REG_64);
-
-        value = new Cast(reg, REG_32, CAST_LOW);
+        switch (lane) {
+        case 0: value = _ex_l_cast(reg, REG_32); break;
+        case 1: value = _ex_h_cast(reg, REG_32); break;
+        }
     }
     else
     {
@@ -630,6 +869,7 @@ static Exp *translate_get_reg_128( unsigned int offset )
 
     switch ( offset )
     {
+#if VEX_VERSION >= 2330
     case OFFB_YMM0: name = "YMM0"; break;
     case OFFB_YMM1: name = "YMM1"; break;
     case OFFB_YMM2: name = "YMM2"; break;
@@ -646,6 +886,24 @@ static Exp *translate_get_reg_128( unsigned int offset )
     case OFFB_YMM13: name = "YMM13"; break;
     case OFFB_YMM14: name = "YMM14"; break;
     case OFFB_YMM15: name = "YMM15"; break;
+#else
+    case OFFB_XMM0: name = "YMM0"; break;
+    case OFFB_XMM1: name = "YMM1"; break;
+    case OFFB_XMM2: name = "YMM2"; break;
+    case OFFB_XMM3: name = "YMM3"; break;
+    case OFFB_XMM4: name = "YMM4"; break;
+    case OFFB_XMM5: name = "YMM5"; break;
+    case OFFB_XMM6: name = "YMM6"; break;
+    case OFFB_XMM7: name = "YMM7"; break;
+    case OFFB_XMM8: name = "YMM8"; break;
+    case OFFB_XMM9: name = "YMM9"; break;
+    case OFFB_XMM10: name = "YMM10"; break;
+    case OFFB_XMM11: name = "YMM11"; break;
+    case OFFB_XMM12: name = "YMM12"; break;
+    case OFFB_XMM13: name = "YMM13"; break;
+    case OFFB_XMM14: name = "YMM14"; break;
+    case OFFB_XMM15: name = "YMM15"; break;
+#endif
     default:
         assert(0);
     }
@@ -707,6 +965,72 @@ Exp *x64_translate_get( IRExpr *expr, IRSB *irbb, vector<Stmt *> *irout )
     return result;
 }
 
+Exp *x64_translate_geti( IRExpr *expr, IRSB *irbb, vector<Stmt *> *irout )
+{
+    assert(expr);
+    assert(irbb);
+    assert(irout);
+
+    IRType type = typeOfIRExpr(irbb->tyenv, expr);
+    IRRegArray* descr = expr->Iex.GetI.descr;
+    IRExpr *ix = expr->Iex.GetI.ix;
+    int bias = expr->Iex.GetI.bias;
+    int elt_size;
+    reg_t elt_t;
+
+    assert(type == descr->elemTy);
+    if (descr->base == OFFB_FPREGS && descr->elemTy == Ity_F64 &&
+        descr->nElems == 8) {
+        /* x87 FP registers, in VEX's 64-bit simulation */
+        elt_size = 8;
+        elt_t = REG_64;
+    } else if (descr->base == OFFB_FPTAGS && descr->elemTy == Ity_I8 &&
+        descr->nElems == 8) {
+        /* In-use tags for x87 FP registers */
+        elt_size = 1;
+        elt_t = REG_8;
+    } else {
+        return new Unknown("Unrecognized GetI region");
+    }
+
+    int mask = descr->nElems - 1; /* NB must be a power of two */
+    Exp *ix_e = translate_expr(ix, irbb, irout);
+    Exp *index_e = _ex_and(_ex_add(ix_e, ex_const(bias)), ex_const(mask));
+
+    Exp **gets = (Exp **)malloc(descr->nElems * sizeof(Exp *));
+    for (int i = 0; i < descr->nElems; i++) {
+        if (elt_size == 1) {
+            gets[i] = translate_get_reg_8(descr->base + i * elt_size);
+        } else if (elt_size == 8) {
+            gets[i] = translate_get_reg_64(descr->base + i * elt_size);
+        }
+    }
+
+    /* Generate a tree of if-then-else choices */
+    assert(descr->nElems == 8);
+    Temp *cond_temp = mk_temp(REG_32, irout);
+    irout->push_back(new Move(cond_temp, index_e));
+    Exp *sel0_exp = ex_l_cast(cond_temp, REG_1);
+    Temp *sel0_temp = mk_temp(REG_1, irout);
+    irout->push_back(new Move(sel0_temp, sel0_exp));
+    Exp *sel1_exp = ex_get_bit(cond_temp, 1);
+    Temp *sel1_temp = mk_temp(REG_1, irout);
+    irout->push_back(new Move(sel1_temp, sel1_exp));
+    Exp *sel2_exp = ex_get_bit(cond_temp, 2);
+    Exp *choice01 = emit_ite(irout, elt_t, ecl(sel0_temp), gets[1], gets[0]);
+    Exp *choice23 = emit_ite(irout, elt_t, ecl(sel0_temp), gets[3], gets[2]);
+    Exp *choice45 = emit_ite(irout, elt_t, ecl(sel0_temp), gets[5], gets[4]);
+    Exp *choice67 = emit_ite(irout, elt_t, ecl(sel0_temp), gets[7], gets[6]);
+    Exp *choice03 = emit_ite(irout, elt_t, ecl(sel1_temp), choice23, choice01);
+    Exp *choice47 = emit_ite(irout, elt_t, ecl(sel1_temp), choice67, choice45);
+    Exp *choice = emit_ite(irout, elt_t, sel2_exp, choice47, choice03);
+
+    free(gets);
+
+    return choice;
+}
+
+
 Stmt *x64_translate_dirty( IRStmt *stmt, IRSB *irbb, vector<Stmt *> *irout )
 {
     assert(stmt);
@@ -728,6 +1052,12 @@ Stmt *x64_translate_dirty( IRStmt *stmt, IRSB *irbb, vector<Stmt *> *irout )
 	IRTemp lhs = dirty->tmp;
         assert(lhs != IRTemp_INVALID);
         result = mk_assign_tmp(lhs, new Unknown("rdtsc"), irbb, irout);
+    } else if (func == "amd64g_dirtyhelper_loadF80le") {
+	IRTemp lhs = dirty->tmp;
+        assert(lhs != IRTemp_INVALID);
+        result = mk_assign_tmp(lhs, new Unknown("loadF80"), irbb, irout);
+    } else if (func == "amd64g_dirtyhelper_storeF80le") {
+        result = new ExpStmt(new Unknown("Unknown: storeF80"));
     } else
     {
         result = new ExpStmt(new Unknown("Unknown: Dirty"));
@@ -744,12 +1074,28 @@ static Stmt *translate_put_reg_8( unsigned int offset, Exp *data, IRSB *irbb )
     Temp *reg;
 
 #if VEX_VERSION >= 2330
-    if (offset >= OFFB_YMM0 && offset < OFFB_YMM16+64) {
+    if (offset >= OFFB_YMM0 && offset < OFFB_YMM15+64) {
 	// SSE sub-register: not supported.
 	Exp::destroy(data);
 	return new Special("Unhandled store to 8-bit YMM lane");
     }
 #endif
+
+    if (offset >= OFFB_FPTAGS && offset <= OFFB_FPTAGS + 7) {
+        switch (offset) {
+        case OFFB_FPTAGS+0: name = "FPTAG0"; break;
+        case OFFB_FPTAGS+1: name = "FPTAG1"; break;
+        case OFFB_FPTAGS+2: name = "FPTAG2"; break;
+        case OFFB_FPTAGS+3: name = "FPTAG3"; break;
+        case OFFB_FPTAGS+4: name = "FPTAG4"; break;
+        case OFFB_FPTAGS+5: name = "FPTAG5"; break;
+        case OFFB_FPTAGS+6: name = "FPTAG6"; break;
+        case OFFB_FPTAGS+7: name = "FPTAG7"; break;
+        default:
+            assert(0);
+        }
+        return new Move(mk_reg(name, REG_8), data);
+    }
 
     // Determine which 32 bit register this 8 bit sub
     // register is a part of
@@ -870,57 +1216,79 @@ static Stmt *translate_put_reg_16( unsigned int offset, Exp *data, IRSB *irbb )
     return new Move( reg, value );
 }
 
+// Basically the same as translate_32HLto64
+static Exp *assemble64(Exp *arg1, Exp *arg2) {
+    Exp *high = new Cast(arg1, REG_64, CAST_UNSIGNED);
+    Exp *low = new Cast(arg2, REG_64, CAST_UNSIGNED);
+    Exp *high_s = new BinOp(LSHIFT, high, ex_const(32));
+    return new BinOp(BITOR, high_s, low);
+}
+
 static Stmt *translate_put_reg_32( unsigned int offset, Exp *data, IRSB *irbb )
 {
     assert(data);
 
     string name;
-    bool sub;
+    bool sub, is_good = false;
+    int lane = -1;
     Temp *reg;
 
 #if VEX_VERSION >= 2330
-    if (offset >= OFFB_YMM0 && offset < OFFB_YMM7+64) {
-	// SSE sub-register: not supported.
+    is_good = lookup_32_in_ymm(offset, name, lane);
+    if (is_good)
+	sub = true;
+
+    if (!is_good && offset >= OFFB_YMM0 && offset < OFFB_YMM7+64) {
 	Exp::destroy(data);
-	return new Special("Unhandled store to 32-bit YMM lane");
+	return new Special("Unhandled store to (unaligned?) 32-bit YMM lane");
     }
 #endif
 
-    switch ( offset )
-    {
-        case OFFB_EAX:  name = "RAX";   sub = true; break;
-        case OFFB_EBX:  name = "RBX";   sub = true; break;
-        case OFFB_ECX:  name = "RCX";   sub = true; break;
-        case OFFB_EDX:  name = "RDX";   sub = true; break;
-        case OFFB_EDI:  name = "RDI";   sub = true; break;
-        case OFFB_ESI:  name = "RSI";   sub = true; break;
-        case OFFB_EBP:  name = "RBP";   sub = true; break;
-        case OFFB_ESP:  name = "RSP";   sub = true; break;
-        case OFFB_R8D:  name = "R8";    sub = true; break;
-        case OFFB_R9D:  name = "R9";    sub = true; break;
-        case OFFB_R10D: name = "R10";   sub = true; break;
-        case OFFB_R11D: name = "R11";   sub = true; break;
-        case OFFB_R12D: name = "R12";   sub = true; break;
-        case OFFB_R13D: name = "R13";   sub = true; break;
-        case OFFB_R14D: name = "R14";   sub = true; break;
-        case OFFB_R15D: name = "R15";   sub = true; break;
+    if (!is_good)
+	switch ( offset )
+	    {
+	    case OFFB_EAX:  name = "RAX";   sub = true; lane = 0; break;
+	    case OFFB_EBX:  name = "RBX";   sub = true; lane = 0; break;
+	    case OFFB_ECX:  name = "RCX";   sub = true; lane = 0; break;
+	    case OFFB_EDX:  name = "RDX";   sub = true; lane = 0; break;
+	    case OFFB_EDI:  name = "RDI";   sub = true; lane = 0; break;
+	    case OFFB_ESI:  name = "RSI";   sub = true; lane = 0; break;
+	    case OFFB_EBP:  name = "RBP";   sub = true; lane = 0; break;
+	    case OFFB_ESP:  name = "RSP";   sub = true; lane = 0; break;
+	    case OFFB_R8D:  name = "R8";    sub = true; lane = 0; break;
+	    case OFFB_R9D:  name = "R9";    sub = true; lane = 0; break;
+	    case OFFB_R10D: name = "R10";   sub = true; lane = 0; break;
+	    case OFFB_R11D: name = "R11";   sub = true; lane = 0; break;
+	    case OFFB_R12D: name = "R12";   sub = true; lane = 0; break;
+	    case OFFB_R13D: name = "R13";   sub = true; lane = 0; break;
+	    case OFFB_R14D: name = "R14";   sub = true; lane = 0; break;
+	    case OFFB_R15D: name = "R15";   sub = true; lane = 0; break;
 
-        default:
-	    assert(0);
-    }
+	    case OFFB_EMNOTE: name = "EMNOTE"; sub = false; break;
+	    case OFFB_FTOP:   name = "FTOP";   sub = false; break;
 
-    Exp *masked;
+	    default:
+		Exp::destroy(data);
+		return new Special("Unhandled 32-bit register");
+	    }
+
     Exp *value;
     
     if ( sub )
     {
-        reg = mk_reg(name, REG_64);
-
-        masked = new BinOp(BITAND, new Temp(*reg),\
-			   ex_const64(0xffffffff00000000ULL));
-        value = new Cast(data, REG_64, CAST_UNSIGNED);
-
-        value = new BinOp(BITOR, masked, value);
+	assert(lane >= 0 && lane < 2);
+	reg = mk_reg(name, REG_64);
+        Exp *old_val = ecl(reg);
+	Exp *high, *low;
+        if (lane == 0) {
+            high = _ex_h_cast(old_val, REG_32);
+            low = data;
+        } else {
+            high = data;
+            low = _ex_l_cast(old_val, REG_32);
+        }
+        Exp *new_val = assemble64(high, low);
+	value = new_val;
     }
     else
     {
@@ -964,6 +1332,7 @@ static Stmt *translate_put_reg_128(unsigned int offset, Exp *data, IRSB *irbb,
 
     switch ( offset )
     {
+#if VEX_VERSION >= 2330
     case OFFB_YMM0: name = "YMM0"; break;
     case OFFB_YMM1: name = "YMM1"; break;
     case OFFB_YMM2: name = "YMM2"; break;
@@ -980,6 +1349,24 @@ static Stmt *translate_put_reg_128(unsigned int offset, Exp *data, IRSB *irbb,
     case OFFB_YMM13: name = "YMM13"; break;
     case OFFB_YMM14: name = "YMM14"; break;
     case OFFB_YMM15: name = "YMM15"; break;
+#else
+    case OFFB_XMM0: name = "YMM0"; break;
+    case OFFB_XMM1: name = "YMM1"; break;
+    case OFFB_XMM2: name = "YMM2"; break;
+    case OFFB_XMM3: name = "YMM3"; break;
+    case OFFB_XMM4: name = "YMM4"; break;
+    case OFFB_XMM5: name = "YMM5"; break;
+    case OFFB_XMM6: name = "YMM6"; break;
+    case OFFB_XMM7: name = "YMM7"; break;
+    case OFFB_XMM8: name = "YMM8"; break;
+    case OFFB_XMM9: name = "YMM9"; break;
+    case OFFB_XMM10: name = "YMM10"; break;
+    case OFFB_XMM11: name = "YMM11"; break;
+    case OFFB_XMM12: name = "YMM12"; break;
+    case OFFB_XMM13: name = "YMM13"; break;
+    case OFFB_XMM14: name = "YMM14"; break;
+    case OFFB_XMM15: name = "YMM15"; break;
+#endif
         default:
             assert(0);
     }
@@ -1056,6 +1443,77 @@ Stmt *x64_translate_put( IRStmt *stmt, IRSB *irbb, vector<Stmt *> *irout )
     }
 
     return result;
+}
+
+#if VEX_VERSION >= 2361
+#define PutI_details(x) PutI.details->x
+#else
+#define PutI_details(x) PutI.x
+#endif
+
+Stmt *x64_translate_puti( IRStmt *stmt, IRSB *irbb, vector<Stmt *> *irout )
+{
+    assert(stmt);
+    assert(irbb);
+    assert(irout);
+
+    IRRegArray* descr = stmt->Ist.PutI_details(descr);
+    IRExpr *ix = stmt->Ist.PutI_details(ix);
+    int bias = stmt->Ist.PutI_details(bias);
+    int elt_size;
+    reg_t elt_t;
+
+    Exp *data = translate_expr(stmt->Ist.PutI_details(data), irbb, irout);
+
+    if (descr->base == OFFB_FPREGS && descr->elemTy == Ity_F64 &&
+        descr->nElems == 8) {
+        /* x87 FP registers, in VEX's 64-bit simulation */
+        elt_size = 8;
+        elt_t = REG_64;
+    } else if (descr->base == OFFB_FPTAGS && descr->elemTy == Ity_I8 &&
+        descr->nElems == 8) {
+        /* In-use tags for x87 FP registers */
+        elt_size = 1;
+        elt_t = REG_8;
+    } else {
+        return new ExpStmt(new Unknown("Unrecognized PutI region"));
+    }
+
+    int mask = descr->nElems - 1;
+    Exp *ix_e = translate_expr(ix, irbb, irout);
+    Exp *index_e = _ex_and(_ex_add(ix_e, ex_const(bias)), ex_const(mask));
+    Temp *index_temp = mk_temp(REG_32, irout);
+    irout->push_back(new Move(index_temp, index_e));
+
+    Stmt *last_stmt = 0;
+    for (int i = 0; i < descr->nElems; i++) {
+        if (last_stmt) {
+            irout->push_back(last_stmt);
+        }
+        Exp *get = 0;
+        int offset = descr->base + i * elt_size;
+        if (elt_size == 1) {
+            get = translate_get_reg_8(offset);
+        } else if (elt_size == 8) {
+            get = translate_get_reg_64(offset);
+        } else {
+            assert(0);
+        }
+        Exp *sel = _ex_eq(ecl(index_temp), ex_const(i));
+        Exp *data_clone = last_stmt ? ecl(data) : data;
+        Exp *maybe_up = emit_ite(irout, elt_t, sel, data_clone, get);
+        Stmt *put;
+        if (elt_size == 1) {
+            put = translate_put_reg_8(offset, maybe_up, irbb);
+        } else if (elt_size == 8) {
+            put = translate_put_reg_64(offset, maybe_up, irbb);
+        } else {
+            assert(0);
+        }
+        last_stmt = put;
+    }
+    assert(last_stmt);
+    return last_stmt;
 }
 
 //======================================================================
@@ -1411,6 +1869,38 @@ Exp *x64_translate_ccall( IRExpr *expr, IRSB *irbb, vector<Stmt *> *irout )
 	    Exp::destroy(carry_out_pos); /* slightly wasteful */
 	    result = emit_ite(irout, REG_64, amt_zero, ecl(arg), answer_e);
 	}
+
+    } else if ( func == "amd64g_create_mxcsr" ) {
+	Exp *arg = translate_expr(expr->Iex.CCall.args[0], irbb, irout);
+	result = _ex_or(ex_const64(0x1f80),
+			_ex_shl(arg, ex_const64(13)));
+    } else if ( func == "amd64g_create_fpucw" ) {
+	Exp *arg = translate_expr(expr->Iex.CCall.args[0], irbb, irout);
+	result = _ex_or(ex_const64(0x037f),
+			_ex_shl(arg, ex_const64(10)));
+    } else if ( func == "amd64g_check_ldmxcsr" ) {
+	Exp *arg = translate_expr(expr->Iex.CCall.args[0], irbb, irout);
+	/* Extract the rounding mode */
+	Exp *rmode = _ex_and(_ex_shr(arg, ex_const64(13)),
+			     ex_const64(3));
+	/* The high word is for emulation warnings: skip it */
+	result = rmode;
+    } else if ( func == "amd64g_check_fldcw" ) {
+	Exp *arg = translate_expr(expr->Iex.CCall.args[0], irbb, irout);
+	/* Extract the rounding mode */
+	Exp *rmode = _ex_and(_ex_shr(arg, ex_const64(10)),
+			     ex_const64(3));
+	/* The high word is for emulation warnings: skip it */
+	result = rmode;
+    } else if ( func == "amd64g_calculate_sse_pmovmskb" ) {
+	Exp *arg_hi = translate_expr(expr->Iex.CCall.args[0], irbb, irout);
+	Exp *arg_lo = translate_expr(expr->Iex.CCall.args[1], irbb, irout);
+	Exp *hi_b = translate_GetMSBs8x8(arg_hi);
+	Exp *lo_b = translate_GetMSBs8x8(arg_lo);
+	Exp *hi_16 = _ex_u_cast(hi_b, REG_16);
+	Exp *lo_16 = _ex_u_cast(lo_b, REG_16);
+	Exp *res_16 = _ex_or(_ex_shl(hi_16, 8), lo_16);
+	result = _ex_u_cast(res_16, REG_64);
     } else {
         result = new Unknown("CCall: " + func);
     }

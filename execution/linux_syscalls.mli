@@ -31,9 +31,6 @@ object
 
   method oc_kind_to_mode : Unix.file_kind -> int
   method flags_to_oc_flags : int -> Unix.open_flag list
-  method write_fake_statfs_buf : int64 -> unit
-  method write_fake_statfs64buf : int64 -> unit
-  method write_ftime_as_words : float -> int64 -> float -> unit
 
   method add_symbolic_file : string -> bool -> unit
   method make_snap : unit
@@ -108,8 +105,8 @@ object
   method sys__llseek : int -> int64 -> int64 -> int -> unit
   method sys_mincore : int64 -> int -> int64 -> unit
   method sys_mkdir : string -> Unix.file_perm -> unit
-  method sys_mmap : int64 -> int64 -> int64 -> int64 -> int64 -> int -> unit
-  method sys_mmap2 : int64 -> int64 -> int64 -> int64 -> int64 -> int -> unit
+  method sys_mmap : int64 -> int64 -> int -> int -> int -> int64 -> unit
+  method sys_mmap2 : int64 -> int64 -> int -> int -> int -> int64 -> unit
   method sys_mprotect : int64 -> int64 -> int64 -> unit
   method sys_munmap : int64 -> int64 -> unit
   method sys_open : string -> int -> Unix.file_perm -> unit
@@ -153,6 +150,7 @@ object
   method sys_rt_sigaction : int -> int64 -> int64 -> int -> unit
   method sys_sigaltstack : int64 -> int64 -> unit
   method sys_rt_sigprocmask : int -> int64 -> int64 -> int -> unit
+  method sys_nanosleep : int64 -> int64 -> unit
   method sys_socket : int -> int -> int -> unit
   method sys_stat : string -> int64 -> unit
   method sys_lstat : string -> int64 -> unit

@@ -61,6 +61,7 @@ val opt_iteration_limit : int64 ref
 val opt_rare_delims : (int, float) Hashtbl.t
 val opt_varying_rare_delims : (int, unit) Hashtbl.t
 val opt_auto_rare_delims : bool ref
+val opt_iteration_limit_enforced : int64 option ref
 val opt_insn_limit : int64 ref
 val opt_watch_expr_str : string option ref
 val opt_watch_expr : Vine.exp option ref
@@ -104,6 +105,7 @@ val opt_concrete_path : bool ref
 val opt_concrete_path_simulate : bool ref
 val opt_concolic_prob : float option ref
 val opt_solve_path_conditions : bool ref
+val opt_no_sym_regions : bool ref
 val opt_trace_regions : bool ref
 val opt_check_for_null : bool ref
 val opt_finish_on_null_deref : bool ref
@@ -170,13 +172,17 @@ val opt_table_limit : int ref
 val opt_offset_limit : int ref
 val opt_trace_offset_limit : bool ref
 val opt_no_table_store : bool ref
+val opt_tables_as_arrays : bool ref
 val opt_implied_value_conc : bool ref
 val opt_trace_ivc : bool ref
+val opt_ite_ivc : bool ref
 val opt_periodic_stats : int64 option ref
 val opt_trace_global_ce_cache : bool ref
 val opt_trace_working_ce_cache : bool ref
 val opt_global_ce_cache_limit : int ref
 val opt_disable_ce_cache : bool ref
+val opt_narrow_bitwidth_cutoff : int option ref
+val opt_t_expr_size : int ref
 
 val opt_symbolic_memory : bool ref
 val opt_zero_memory : bool ref
@@ -213,6 +219,7 @@ val opt_one_random : bool ref
 val opt_skip_timeouts : bool ref
 val opt_trace_stmts : bool ref
 val opt_trace_eval : bool ref
+val opt_trace_client_reqs : bool ref
 
 val asmir_arch : unit -> Asmir.arch
 

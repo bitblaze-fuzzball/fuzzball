@@ -1,0 +1,138 @@
+Index: Makefile-gcc
+===================================================================
+--- Makefile-gcc	(revision 3206)
++++ Makefile-gcc	(working copy)
+@@ -12,6 +12,7 @@
+ 		pub/libvex_guest_s390x.h		\
+ 		pub/libvex_s390x_common.h		\
+ 		pub/libvex_guest_mips32.h		\
++		pub/libvex_guest_tilegx.h		\
+ 		pub/libvex_guest_offsets.h
+ 
+ PRIV_HEADERS = 	priv/host_x86_defs.h			\
+@@ -20,6 +21,7 @@
+ 		priv/host_ppc_defs.h			\
+ 		priv/host_s390_defs.h			\
+ 		priv/host_mips_defs.h			\
++		priv/host_tilegx_defs.h			\
+ 		priv/host_generic_maddf.h	        \
+ 		priv/host_generic_regs.h	        \
+ 		priv/host_generic_simd64.h	        \
+@@ -34,8 +36,10 @@
+ 		priv/guest_arm_defs.h			\
+ 		priv/guest_ppc_defs.h			\
+ 		priv/guest_mips_defs.h			\
++		priv/guest_tilegx_defs.h		\
+ 		priv/s390_disasm.h		        \
+ 		priv/s390_defs.h		        \
++		priv/tilegx_disasm.h			\
+ 		priv/ir_match.h			        \
+ 		priv/ir_opt.h
+ 
+@@ -43,10 +47,11 @@
+ 		priv/ir_match.o			        \
+ 		priv/ir_opt.o				\
+ 		priv/ir_inject.o			\
+-		priv/main_main.o			\
++		priv/multiarch_main_main.o		\
+ 		priv/main_globals.o			\
+ 		priv/main_util.o			\
+ 		priv/s390_disasm.o			\
++		priv/tilegx_disasm.o			\
+ 		priv/host_x86_defs.o			\
+ 		priv/host_amd64_defs.o			\
+ 		priv/host_arm_defs.o			\
+@@ -54,6 +59,7 @@
+ 		priv/host_ppc_defs.o			\
+ 		priv/host_s390_defs.o			\
+ 		priv/host_mips_defs.o			\
++		priv/host_tilegx_defs.o			\
+ 		priv/host_x86_isel.o			\
+ 		priv/host_amd64_isel.o			\
+ 		priv/host_arm_isel.o			\
+@@ -61,6 +67,7 @@
+ 		priv/host_ppc_isel.o			\
+ 		priv/host_s390_isel.o			\
+ 		priv/host_mips_isel.o			\
++		priv/host_tilegx_isel.o			\
+ 		priv/host_generic_maddf.o	        \
+ 		priv/host_generic_regs.o	        \
+ 		priv/host_generic_simd64.o	        \
+@@ -76,6 +83,7 @@
+ 		priv/guest_ppc_helpers.o		\
+ 		priv/guest_s390_helpers.o		\
+ 		priv/guest_mips_helpers.o		\
++		priv/guest_tilegx_helpers.o		\
+ 		priv/guest_x86_toIR.o			\
+ 		priv/guest_amd64_toIR.o			\
+ 		priv/guest_arm_toIR.o			\
+@@ -82,7 +90,8 @@
+ 		priv/guest_arm64_toIR.o			\
+ 		priv/guest_ppc_toIR.o                   \
+ 		priv/guest_s390_toIR.o			\
+-		priv/guest_mips_toIR.o
++		priv/guest_mips_toIR.o			\
++		priv/guest_tilegx_toIR.o
+ 
+ PUB_INCLUDES = -Ipub
+ 
+@@ -119,10 +128,6 @@
+ # (the above are for icc 8.0 -- 8.0.0.55 I think)
+ # 186: pointless comparison of unsigned integer with zero
+ 
+-# kludge: stops V biarch builds screwing up at -j 2 or above
+-# The Right fix is to autoconf/automake-ise vex.
+-.NOTPARALLEL:
+-
+ all: vex
+ 
+ # Empty, needed for Valgrind
+@@ -254,6 +259,10 @@
+ 	$(CC) $(CCFLAGS) $(ALL_INCLUDES) -o priv/ir_opt.o \
+ 					 -c priv/ir_opt.c
+ 
++priv/multiarch_main_main.o: $(ALL_HEADERS) priv/multiarch_main_main.c
++	$(CC) $(CCFLAGS) $(ALL_INCLUDES) -o priv/multiarch_main_main.o \
++					 -c priv/multiarch_main_main.c
++
+ priv/main_main.o: $(ALL_HEADERS) priv/main_main.c
+ 	$(CC) $(CCFLAGS) $(ALL_INCLUDES) -o priv/main_main.o \
+ 					 -c priv/main_main.c
+@@ -294,6 +303,10 @@
+ 	$(CC) $(CCFLAGS) $(ALL_INCLUDES) -o priv/host_mips_defs.o \
+ 					 -c priv/host_mips_defs.c
+ 
++priv/host_tilegx_defs.o: $(ALL_HEADERS) priv/host_tilegx_defs.c
++	$(CC) $(CCFLAGS) $(ALL_INCLUDES) -o priv/host_tilegx_defs.o \
++					 -c priv/host_tilegx_defs.c
++
+ priv/host_x86_isel.o: $(ALL_HEADERS) priv/host_x86_isel.c
+ 	$(CC) $(CCFLAGS) $(ALL_INCLUDES) -o priv/host_x86_isel.o \
+ 					 -c priv/host_x86_isel.c
+@@ -322,6 +335,10 @@
+ 	$(CC) $(CCFLAGS) $(ALL_INCLUDES) -o priv/host_mips_isel.o \
+ 					 -c priv/host_mips_isel.c
+ 
++priv/host_tilegx_isel.o: $(ALL_HEADERS) priv/host_tilegx_isel.c
++	$(CC) $(CCFLAGS) $(ALL_INCLUDES) -o priv/host_tilegx_isel.o \
++					 -c priv/host_tilegx_isel.c
++
+ priv/host_generic_maddf.o: $(ALL_HEADERS) priv/host_generic_maddf.c
+ 	$(CC) $(CCFLAGS) $(ALL_INCLUDES) -o priv/host_generic_maddf.o \
+ 					 -c priv/host_generic_maddf.c
+@@ -413,3 +430,15 @@
+ priv/guest_mips_toIR.o: $(ALL_HEADERS) priv/guest_mips_toIR.c
+ 	$(CC) $(CCFLAGS) $(ALL_INCLUDES) -o priv/guest_mips_toIR.o \
+ 					 -c priv/guest_mips_toIR.c
++
++priv/tilegx_disasm.o: $(ALL_HEADERS) priv/tilegx_disasm.c
++	$(CC) $(CCFLAGS) $(ALL_INCLUDES) -o priv/tilegx_disasm.o \
++					 -c priv/tilegx_disasm.c
++
++priv/guest_tilegx_helpers.o: $(ALL_HEADERS) priv/guest_tilegx_helpers.c
++	$(CC) $(CCFLAGS) $(ALL_INCLUDES) -o priv/guest_tilegx_helpers.o \
++					 -c priv/guest_tilegx_helpers.c
++
++priv/guest_tilegx_toIR.o: $(ALL_HEADERS) priv/guest_tilegx_toIR.c
++	$(CC) $(CCFLAGS) $(ALL_INCLUDES) -o priv/guest_tilegx_toIR.o \
++					 -c priv/guest_tilegx_toIR.c

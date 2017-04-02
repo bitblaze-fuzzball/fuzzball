@@ -39,25 +39,27 @@ sig
 
     method follow_or_random : bool 
 
-    method query_with_pc_choice : Vine.exp -> bool -> (unit -> bool)
+    method query_with_pc_choice : Vine.exp -> bool -> int -> (unit -> bool)
       -> (bool * Vine.exp)
 
-    method extend_pc_random : Vine.exp -> bool -> bool
+    method extend_pc_random : Vine.exp -> bool -> int -> bool
 
-    method extend_pc_known : Vine.exp -> bool -> bool -> bool 
+    method extend_pc_known : Vine.exp -> bool -> int -> bool -> bool
 
-    method extend_pc_pref : Vine.exp -> bool -> bool -> bool
+    method extend_pc_pref : Vine.exp -> bool -> int -> bool -> bool
 
-    method random_case_split : bool -> bool
+    method random_case_split : bool -> int -> bool
 
     method set_cjmp_heuristic :
       (int64 -> int64 -> int64 -> float -> bool option -> bool option) -> unit
 
     method eval_cjmp : Vine.exp -> int64 -> int64 -> bool
 
-    method eval_bool_exp : Vine.exp -> bool
+    method eval_bool_exp : Vine.exp ->  bool
 
     method eval_addr_exp : Vine.exp -> int64
+
+    method eval_ite : D.t -> D.t -> D.t -> Vine.typ -> (D.t * Vine.typ)
 
     method on_missing_random : unit
 
@@ -101,6 +103,8 @@ sig
     method make_regs_symbolic : unit
     method load_x86_user_regs : Temu_state.userRegs -> unit
     method print_regs : unit
+    method printable_word_reg : Fragment_machine.register_name -> string
+    method printable_long_reg : Fragment_machine.register_name -> string
     method store_byte  : ?prov:Interval_tree.provenance -> int64 -> D.t -> unit
     method store_short : ?prov:Interval_tree.provenance -> int64 -> D.t -> unit
     method store_word  : ?prov:Interval_tree.provenance -> int64 -> D.t -> unit
@@ -171,9 +175,13 @@ sig
     method set_word_reg_concolic :
       Fragment_machine.register_name -> string -> int64 -> unit
     method set_word_reg_fresh_symbolic :
+      Fragment_machine.register_name -> string -> string
+    method set_reg_fresh_region :
       Fragment_machine.register_name -> string -> unit
-    method set_word_reg_fresh_region : 
+    method set_long_reg_symbolic :
       Fragment_machine.register_name -> string -> unit
+    method set_long_reg_fresh_symbolic :
+      Fragment_machine.register_name -> string -> string
     method private handle_load : Vine.exp -> Vine.typ -> (D.t * Vine.typ)
     method private handle_store : Vine.exp -> Vine.typ -> Vine.exp -> unit
     method private maybe_concretize_binop :
@@ -238,6 +246,7 @@ sig
     method watchpoint : unit
     method mem_val_as_string : int64 -> Vine.typ -> string
     method get_loop_cnt : int64
+    method private get_stmt_num : int
     val form_man : Formula_manager.FormulaManagerFunctor(D).formula_manager
     method get_form_man :
       Formula_manager.FormulaManagerFunctor(D).formula_manager
@@ -254,6 +263,7 @@ sig
     method load_byte_concretize  : int64 -> bool -> string -> int
     method load_short_concretize : int64 -> bool -> string -> int
     method load_word_concretize  : int64 -> bool -> string -> int64
+    method load_long_concretize  : int64 -> bool -> string -> int64
     method make_sink_region : string -> int64 -> unit
 
     method add_extra_store_hook : (int64 -> int -> unit) -> unit

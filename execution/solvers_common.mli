@@ -30,6 +30,8 @@ val parse_mathsat_ce_line : string -> string option
 
 val parse_ce : external_solver_type -> string -> maybe_ce_result
 
+val choose_smtlib_logic : external_solver_type -> string option
+
 val create_temp_dir : string -> string
 
 val pick_fresh_fname : string -> string -> int -> string

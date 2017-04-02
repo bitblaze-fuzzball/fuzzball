@@ -7,6 +7,7 @@ open Exec_options;;
 
 let opt_load_base = ref None
 let opt_linux_syscalls = ref false
+let opt_noop_syscalls = ref false
 let opt_setup_initial_proc_state = ref None
 let opt_load_data = ref true
 let opt_tls_base = ref None
@@ -51,8 +52,13 @@ let linux_cmdline_opts =
     ("-tls-base", Arg.String
        (fun s -> opt_tls_base := Some (Int64.of_string s)),
      "addr Use a Linux TLS (%gs) segment at the given address");
+    ("-hwcap", Arg.String
+       (fun s-> Linux_loader.opt_hwcap := Some (Int64.of_string s)),
+     "bits Specify CPU features to use in auxv (default: minimal)");
     ("-linux-syscalls", Arg.Set(opt_linux_syscalls),
      " Simulate Linux system calls on the real system");
+    ("-noop-syscalls", Arg.Set(opt_noop_syscalls),
+     " Simulate Linux system calls as having no effect");
     ("-trace-syscalls", Arg.Set(opt_trace_syscalls),
      " Print systems calls (like strace)");
     ("-prefix-out", Arg.String
@@ -127,7 +133,7 @@ let apply_linux_cmdline_opts (fm : Fragment_machine.fragment_machine) =
 	(match !opt_arch with
 	   | X86 -> 0x08048000L
 	   | X64 -> 0x00400000L
-	   | ARM -> 0x8000L
+	   | ARM -> 0x00010000L (* previously common: 0x8000 *)
 	)
   in
   let do_setup = match !opt_setup_initial_proc_state with
@@ -159,6 +165,9 @@ let apply_linux_cmdline_opts (fm : Fragment_machine.fragment_machine) =
 	Linux_syscalls.linux_set_up_arm_kuser_page fm;
 	lsh#set_the_break linux_break;
 	fm#add_special_handler (lsh :> Fragment_machine.special_handler)
+    else if !opt_noop_syscalls then
+      let nsh = new Noop_syscalls.noop_linux_special_handler fm in
+	fm#add_special_handler (nsh :> Fragment_machine.special_handler)
     else
       fm#add_special_handler
 	((new Special_handlers.linux_special_nonhandler fm)

@@ -93,6 +93,10 @@ class linux_special_handler (fm : fragment_machine) =
        | X64 -> fm#set_long_var R_RAX
        | ARM -> put_reg R0)
   in
+  let load_long addr =
+    fm#load_long_concretize addr !opt_measure_influence_syscall_args
+      "syscall arg"
+  in
   let load_word addr =
     fm#load_word_concretize addr !opt_measure_influence_syscall_args
       "syscall arg"
@@ -579,7 +583,7 @@ object(self)
       | X64 -> failwith "64-bit syscalls not supported"
       | ARM -> self#write_oc_statbuf_as_arm_stat64 addr oc_buf
 
-  method write_fake_statfs_buf addr =
+  method private write_fake_statfs_buf addr =
     (* OCaml's Unix module doesn't provide an interface for this
        information, so we just make it up. *)
     let f_type   = 0x52654973L (* REISERFS_SUPER_MAGIC *) and
@@ -606,7 +610,7 @@ object(self)
       store_word addr 36 f_namelen;
       store_word addr 40 f_frsize
 
-  method write_fake_statfs64buf addr =
+  method private write_fake_statfs64buf addr =
     (* OCaml's Unix module doesn't provide an interface for this
        information, so we just make it up. *)
     let f_type   = 0x52654973L (* REISERFS_SUPER_MAGIC *) and
@@ -641,12 +645,26 @@ object(self)
 
   (* This works for either a struct timeval or a struct timespec,
      depending on the resolution *)
-  method write_ftime_as_words ftime addr resolution =
+  method private write_ftime_as_words ftime addr resolution =
     let fsecs = floor ftime in
     let secs = Int64.of_float fsecs and
 	fraction = Int64.of_float (resolution *. (ftime -. fsecs)) in
-      store_word addr 0 secs;
-      store_word addr 4 fraction
+      match !opt_arch with
+	| (X86|ARM) ->
+	    store_word addr 0 secs;
+	    store_word addr 4 fraction
+	| X64 ->
+	    store_long addr 0 secs;
+	    store_long addr 8 fraction
+
+  method private read_words_as_ftime addr resolution =
+    let (secs, frac) = match !opt_arch with
+      | (X86|ARM) ->
+	  (load_word (lea addr 0 0 0)), (load_word (lea addr 0 0 4))
+      | X64 ->
+	  (load_word (lea addr 0 0 0)), (load_long (lea addr 0 0 8))
+    in
+      (Int64.to_float secs) +. (Int64.to_float frac) /. resolution
 
   val mutable proc_identities = None
 
@@ -828,10 +846,10 @@ object(self)
 	     changing the system's clock while running the program.
 	     Pretend we were booted on 2010-03-18. *)
 	  (self#write_ftime_as_words (Unix.gettimeofday () -. 1268959142.0)
-	     timep 1000000000.0);
+	     timep 1e9);
 	  put_return 0L
       | 0 -> (* CLOCK_REALTIME *)
-	  self#write_ftime_as_words (Unix.gettimeofday ()) timep 1000000000.0;
+	  self#write_ftime_as_words (Unix.gettimeofday ()) timep 1e9;
 	  put_return 0L
       | _ -> self#put_errno Unix.EINVAL (* unsupported clock type *)
 
@@ -1219,7 +1237,7 @@ object(self)
 
   method sys_gettimeofday timep zonep =
     if timep <> 0L then
-      self#write_ftime_as_words (Unix.gettimeofday ()) timep 1000000.0;
+      self#write_ftime_as_words (Unix.gettimeofday ()) timep 1e6;
     if zonep <> 0L then
       (* Simulate a modern system where the kernel knows nothing about
 	 the timezone: *)
@@ -1434,15 +1452,16 @@ object(self)
       | Unix.Unix_error(err, _, _) -> self#put_errno err
 	  
   method private mmap_common addr length prot flags fd offset =
-    let fdi = Int64.to_int fd in
-    compare_fds !netlink_sim_sockfd fdi
+    compare_fds !netlink_sim_sockfd fd
       Unix.ENOSYS "mmap(2) for netlink socket fd not implemented";
+    let offset_i = Int64.to_int offset in
     let do_read addr = 
       let len = Int64.to_int length in
-      let old_loc = Unix.lseek (self#get_fd fdi) 0 Unix.SEEK_CUR in
-      let _ = Unix.lseek (self#get_fd fdi) offset Unix.SEEK_SET in
-      let _ = self#do_unix_read (self#get_fd fdi) addr len in
-      let _ = Unix.lseek (self#get_fd fdi) old_loc Unix.SEEK_SET in
+      let fd_oc = self#get_fd fd in
+      let old_loc = Unix.lseek fd_oc 0 Unix.SEEK_CUR in
+	ignore(Unix.lseek fd_oc offset_i Unix.SEEK_SET);
+	ignore(self#do_unix_read fd_oc addr len);
+	ignore(Unix.lseek fd_oc old_loc Unix.SEEK_SET);
 	(* g_assert(nr = len) 100 "Linux_syscalls.mmap_common"; *)
 	addr
     in
@@ -1451,32 +1470,32 @@ object(self)
 	| (_, length, _, _, _) when
 	    length < 0L || length > 1073741824L ->
 	    raise (Unix.Unix_error(Unix.ENOMEM, "Too large in mmap", ""))
-	| (0L, _, 0x3L (* PROT_READ|PROT_WRITE *),
-	   0x22L (* MAP_PRIVATE|MAP_ANONYMOUS *), 0xffffffffL) ->
+	| (0L, _, 0x3 (* PROT_READ|PROT_WRITE *),
+	   0x22 (* MAP_PRIVATE|MAP_ANONYMOUS *), -1) ->
 	    let fresh = self#fresh_addr length in
 	      zero_region fresh (Int64.to_int length);
 	      fresh
-	| (0L, _, 0x0L (* PROT_NONE *),
-	   0x4022L (* MAP_NORESERVE|MAP_PRIVATE|MAP_ANONYMOUS *),
-	   0xffffffffL) ->
+	| (0L, _, 0x0 (* PROT_NONE *),
+	   0x4022 (* MAP_NORESERVE|MAP_PRIVATE|MAP_ANONYMOUS *),
+	   -1) ->
 	    let fresh = self#fresh_addr length in
 	      zero_region fresh (Int64.to_int length);
 	      fresh	    
-	| (_, _, (0x3L|0x7L) (* PROT_READ|PROT_WRITE|PROT_EXEC) *),
-	   0x32L (* MAP_PRIVATE|FIXED|ANONYMOUS *), 0xffffffffL) ->
+	| (_, _, (0x3|0x7) (* PROT_READ|PROT_WRITE|PROT_EXEC) *),
+	   0x32 (* MAP_PRIVATE|FIXED|ANONYMOUS *), -1) ->
 	    zero_region addr (Int64.to_int length);
 	    addr
 	| (0L, _, 
-	   (0x1L|0x5L) (* PROT_READ|PROT_EXEC *),
-	   (0x802L|0x2L|0x1L) (* MAP_PRIVATE|MAP_DENYWRITE|MAP_SHARED *), _) ->
+	   (0x1|0x5) (* PROT_READ|PROT_EXEC *),
+	   (0x802|0x2|0x1) (* MAP_PRIVATE|MAP_DENYWRITE|MAP_SHARED *), _) ->
 	    let dest_addr = self#fresh_addr length in
 	      do_read dest_addr
 	| (_, _,
-	   (0x1L|0x5L) (* PROT_READ|PROT_EXEC *),
-	   (0x802L|0x2L|0x1L) (* MAP_PRIVATE|MAP_DENYWRITE|MAP_SHARED *), _) ->
+	   (0x1|0x5) (* PROT_READ|PROT_EXEC *),
+	   (0x802|0x2|0x1) (* MAP_PRIVATE|MAP_DENYWRITE|MAP_SHARED *), _) ->
 	    do_read addr
-	| (_, _, (0x3L|0x7L) (* PROT_READ|PROT_WRITE|PROT_EXEC *),
-	   0x812L (* MAP_DENYWRITE|PRIVATE|FIXED *), _) ->
+	| (_, _, (0x3|0x7) (* PROT_READ|PROT_WRITE|PROT_EXEC *),
+	   0x812 (* MAP_DENYWRITE|PRIVATE|FIXED *), _) ->
 	    do_read addr
 	| _ -> failwith "Unhandled mmap operation"
     in
@@ -1490,7 +1509,7 @@ object(self)
 
   method sys_mmap2 addr length prot flags fd pgoffset =
     try
-      self#mmap_common addr length prot flags fd (4096*pgoffset)
+      self#mmap_common addr length prot flags fd (Int64.mul 4096L pgoffset)
     with
       | Unix.Unix_error(err, _, _) -> self#put_errno err
 
@@ -1815,21 +1834,6 @@ object(self)
   method sys_sched_yield =
     put_return 0L;
     fm#schedule_proc
-
-  method sys_nanosleep req rem =
-    (* This is closely related to the signal handling..
-       but assume we always sleep for as long as we wanted *) 
-    if not !opt_skip_timeouts then (
-      (* I don't know what the difference between the 
-	 load_word_* functions are *)
-      let seconds = fm#load_word_conc req in
-      (* ignore nanoseconds because ocaml only deals with second resolution *)
-      
-      Unix.sleep (Int64.to_int seconds)
-    );
-    store_word rem 0 0L;
-    store_word rem 4 0L;
-    put_return 0L
 
   method sys_sched_getscheduler pid =
     ignore(pid);
@@ -2392,6 +2396,13 @@ object(self)
 	   | _ -> failwith "Unexpected set size in (rt_)sigprocmask"));
     put_return 0L (* success *)
 
+  method sys_nanosleep req_addr rem_addr =
+    let req_time = self#read_words_as_ftime req_addr 1e9 in
+      (* Unix.sleepf req_time; (* not added until 4.03 *) *)
+      ignore(Unix.select [] [] [] req_time);
+      self#write_ftime_as_words 0.0 rem_addr 1e9;
+      put_return 0L (* success *)
+
   method sys_socket dom_i typ_i prot_i =
     try
       let netlink_flag = ref false in
@@ -2433,8 +2444,11 @@ object(self)
   method sys_stat path buf_addr =
     try
       let oc_buf = Unix.stat (chroot path) in
-	self#write_oc_statbuf_as_stat buf_addr oc_buf;
-	put_return 0L (* success *)
+      (match !opt_arch with
+      | X86 -> self#write_oc_statbuf_as_stat buf_addr oc_buf;
+      | X64 -> self#write_oc_statbuf_as_x64_stat buf_addr oc_buf
+      | ARM -> failwith "Unimplemented: ARM 32-bit fstat");
+      put_return 0L (* success *)
     with
       | Unix.Unix_error(err, _, _) -> self#put_errno err
 
@@ -2653,12 +2667,17 @@ object(self)
       done
 
   method private gather_iovec iov cnt =
-    Array.concat
-      (Vine_util.mapn
-	 (fun i -> read_buf
-	    (load_word (lea iov i 8 0)) (* iov_base *)
-	    (Int64.to_int (load_word (lea iov i 8 4)))) (* iov_len *)
-	 (cnt - 1))
+    let read_vec = match !opt_arch with
+      | X86|ARM ->
+	  (fun i -> read_buf
+	     (load_word (lea iov i 8 0)) (* iov_base *)
+	     (Int64.to_int (load_word (lea iov i 8 4)))) (* iov_len *)
+      | X64 ->
+	  (fun i -> read_buf
+	     (load_long (lea iov i 16 0)) (* iov_base *)
+	     (Int64.to_int (load_long (lea iov i 16 8)))) (* iov_len *)
+    in
+      Array.concat (Vine_util.mapn read_vec (cnt - 1))
 
   method sys_writev fd iov cnt =
     let bytes = self#gather_iovec iov cnt in
@@ -2796,9 +2815,10 @@ object(self)
 		 Printf.eprintf "chdir(\"%s\")" path;
 	       self#sys_chdir path
 	 | (ARM, 13) -> uh "Check whether ARM time syscall matches x86"
-	 | (X86, 13) -> (* time *)
-	     let ebx = read_1_reg () in
-	     let addr = ebx in
+	 | (X86, 13) (* time *)
+	 | (X64, 201) ->
+	     let arg1 = read_1_reg () in
+	     let addr = arg1 in
 	       if !opt_trace_syscalls then
 		 Printf.eprintf "time(0x%08Lx)" addr;
 	       self#sys_time addr
@@ -2820,7 +2840,8 @@ object(self)
 	 | (X86, 18) -> (* oldstat *)
 	     uh "Unhandled Linux system call oldstat (18)"
 	 | (ARM, 19) -> uh "Check whether ARM lseek syscall matches x86"
-	 | (X86, 19) -> (* lseek *)
+	 | (X86, 19) (* lseek *)
+	 | (X64,  8) ->
 	     let (ebx, ecx, edx) = read_3_regs () in
 	     let (fd: int) = Int64.to_int ebx and
 		 offset = ecx and
@@ -3075,6 +3096,7 @@ object(self)
 	       if !opt_trace_syscalls then
 		 Printf.eprintf "getrusage(%d, 0x%08Lx)" who buf;
 	       self#sys_getrusage who buf
+	 | (X64, 96)
 	 | ((X86|ARM), 78) -> (* gettimeofday *)
 	     let (arg1, arg2) = read_2_regs () in
 	     let timep = arg1 and
@@ -3124,25 +3146,25 @@ object(self)
 	     let ebx = read_1_reg () in
 	     let addr   = load_word ebx and
 		 length = load_word (lea ebx 0 0 4) and
-		 prot   = load_word (lea ebx 0 0 8) and
-		 flags  = load_word (lea ebx 0 0 12) and
-		 fd     = load_word (lea ebx 0 0 16) and
-		 offset = Int64.to_int (load_word (lea ebx 0 0 20)) in
+		 prot   = Int64.to_int (load_word (lea ebx 0 0 8)) and
+		 flags  = Int64.to_int (load_word (lea ebx 0 0 12)) and
+		 fd     = Int64.to_int (load_word (lea ebx 0 0 16)) and
+		 offset = load_word (lea ebx 0 0 20) in
 	       if !opt_trace_syscalls then
-		 Printf.eprintf "mmap(0x%08Lx, %Ld, 0x%Lx, 0x%0Lx, %Ld, %d)"
+		 Printf.eprintf "mmap(0x%08Lx, %Ld, 0x%x, 0x%0x, %d, %Ld)"
 		   addr length prot flags fd offset;
 	       self#sys_mmap addr length prot flags fd offset
 	 | (X64, 9) -> (* mmap *)
 	     let (arg1, arg2, arg3, arg4, arg5, arg6) = read_6_regs () in
 	     let addr     = arg1 and
 		 length   = arg2 and
-		 prot     = arg3 and
-		 flags    = arg4 and
-		 fd       = arg5 and
-		 offset = Int64.to_int arg6 in
+		 prot     = Int64.to_int arg3 and
+		 flags    = Int64.to_int arg4 and
+		 fd       = Int64.to_int (fix_s32 arg5) and
+		 offset   = arg6 in
 	       if !opt_trace_syscalls then
-		 Printf.printf "mmap(0x%08Lx, %Ld, 0x%Lx, 0x%0Lx, %Ld, %d)"
-		   addr length prot flags (fix_s32 fd) offset;
+		 Printf.printf "mmap(0x%08Lx, %Ld, 0x%x, 0x%x, %d, %Ld)"
+		   addr length prot flags fd offset;
 	       self#sys_mmap addr length prot flags fd offset
 	 | ((X86|ARM), 91) (* munmap *)
 	 | (X64, 11) ->
@@ -3373,7 +3395,8 @@ object(self)
 	 | ((X86|ARM), 105) -> (* getitimer *)
 	     uh "Unhandled Linux system call getitimer (105)"
 	 | (ARM, 106) -> uh "Check whether ARM stat (106) syscall matches x86"
-	 | (X86, 106) -> (* stat *)
+	 | (X86, 106) 
+	 | (X64, 4) -> (* stat *)
 	     let (ebx, ecx) = read_2_regs () in
 	     let path_buf = ebx and
 		 buf_addr = ecx in
@@ -3559,7 +3582,8 @@ object(self)
 	       if !opt_trace_syscalls then
 		 Printf.eprintf "readv(%d, 0x%08Lx, %d)" fd iov cnt;
 	       self#sys_readv fd iov cnt
-	 | ((X86|ARM), 146) -> (* writev *)
+	 | ((X86|ARM), 146) (* writev *)
+	 | (X64, 20) ->
 	     let (arg1, arg2, arg3) = read_3_regs () in
 	     let fd  = Int64.to_int arg1 and
 		 iov = arg2 and
@@ -3623,12 +3647,13 @@ object(self)
 	       self#sys_sched_get_priority_min policy
 	 | ((X86|ARM), 161) -> (* sched_rr_get_interval *)
 	     uh "Unhandled Linux system call sched_rr_get_interval (161)"
-	 | ((X86|ARM), 162) -> (* nanosleep *)
-	   let (req, rem) = read_2_regs () in
-	   if !opt_trace_syscalls then
-	     Printf.eprintf "nanosleep(%s, %s)"
-	       (Int64.to_string req) (Int64.to_string rem);
-	   self#sys_nanosleep req rem
+	 | ((X86|ARM), 162)
+	 | (X64, 35) -> (* nanosleep *)
+	     let (req_addr, rem_addr) = read_2_regs () in
+	       if !opt_trace_syscalls then
+		 Printf.eprintf "nanosleep(0x%08Lx, 0x%08Lx)"
+		   req_addr rem_addr;
+	       self#sys_nanosleep req_addr rem_addr
 	 | ((X86|ARM), 163) -> (* mremap *)
 	     uh "Unhandled Linux system call mremap (163)"
 	 | ((X86|ARM), 164) -> (* setresuid *)
@@ -3757,12 +3782,12 @@ object(self)
 	     let (arg1, arg2, arg3, arg4, arg5, arg6) = read_6_regs () in
 	     let addr     = arg1 and
 		 length   = arg2 and
-		 prot     = arg3 and
-		 flags    = arg4 and
-		 fd       = arg5 and
-		 pgoffset = Int64.to_int arg6 in
+		 prot     = Int64.to_int arg3 and
+		 flags    = Int64.to_int arg4 and
+		 fd       = Int64.to_int (fix_s32 arg5) and
+		 pgoffset = arg6 in
 	       if !opt_trace_syscalls then
-		 Printf.eprintf "mmap2(0x%08Lx, %Ld, 0x%Lx, 0x%0Lx, %Ld, %d)"
+		 Printf.eprintf "mmap2(0x%08Lx, %Ld, 0x%x, 0x%0x, %d, %Ld)"
 		   addr length prot flags fd pgoffset;
 	       self#sys_mmap2 addr length prot flags fd pgoffset
 	 | ((X86|ARM), 193) -> (* truncate64 *)
@@ -3991,7 +4016,8 @@ object(self)
 	     uh "Unhandled Linux system call tkill (238)"
 	 | ((X86|ARM), 239) -> (* sendfile64 *)
 	     uh "Unhandled Linux system call sendfile64 (239)"
-	 | ((X86|ARM), 240) -> (* futex *)
+	 | ((X86|ARM), 240) (* futex *)
+	 | (X64, 202) ->
 	     let (arg1, arg2, arg3, arg4, arg5, arg6) = read_6_regs () in
 	     let uaddr    = arg1 and
 		 op       = Int64.to_int arg2 and
@@ -4034,6 +4060,16 @@ object(self)
 	     uh "Unhandled Linux system call io_cancel"
 	 | (X86, 250) -> (* fadvise64 *)
 	     uh "Unhandled Linux system call fadvise64 (250)"
+	 | (X64, 221) -> (* fadvise64 *)
+	     let (arg1, arg2, arg3, arg4) = read_4_regs () in
+	     let fd = Int64.to_int arg1 and
+		 offset = arg2 and
+		 len = arg3 and
+		 advice = Int64.to_int arg4 in
+	       if !opt_trace_syscalls then
+		 Printf.printf "fadvise64(%d, %Ld, %Ld, %d)"
+		   fd offset len advice;
+	       self#sys_fadvise64_64 fd offset len advice
 	 | (ARM, 248)    (* exit_group *)
 	 | (X86, 252)    (* exit_group *)
 	 | (X64, 231) -> (* exit_group *)
@@ -4086,6 +4122,7 @@ object(self)
 	 | (X86, 264) -> (* clock_settime *)
 	     uh "Unhandled Linux system call clock_settime"
 	 | (ARM, 263)
+	 | (X64, 228)
 	 | (X86, 265) -> (* clock_gettime *)
 	     let (arg1, arg2) = read_2_regs () in
 	     let clkid = Int64.to_int arg1 and
@@ -4526,6 +4563,36 @@ object(self)
 	Printf.eprintf " = %Ld (0x%08Lx)\n" (fix_s32 ret_val) ret_val;
 	flush stdout
 
+  (* The address to which a sysenter-based syscall will return is
+     controlled by MSRs which are set by the kernel and not visible from
+     user space, so this has to be somewhat of a guess. It also seems
+     to have changed between kernel versions. So match some features of
+     layouts we've seen, otherwise die.  *)
+  method private guess_sysexit_addr enter =
+    assert(Int64.logand enter 0xfL = 5L);
+    let next = Int64.add enter 2L in
+    match load_byte next with
+      | 0x90 ->
+	  (* Older layout:
+	     sysenter (0f 34)
+             nop x 7 (90 90 90 90 90 90 90)
+             int 0x80 (cd 80)
+             <return_point> *)
+	  assert(load_byte (Int64.add next 1L) = 0x90);
+	  assert(load_byte (Int64.add next 2L) = 0x90);
+	  assert(load_byte (Int64.add next 3L) = 0x90);
+	  assert(load_byte (Int64.add next 4L) = 0x90);
+	  assert(load_byte (Int64.add next 5L) = 0x90);
+	  assert(load_byte (Int64.add next 6L) = 0x90);
+	  assert(load_byte (Int64.add next 7L) = 0xcd);
+	  assert(load_byte (Int64.add next 8L) = 0x80);
+	  Int64.add next 9L (* in this layout, 16-byte aligned *)
+      | 0xcd ->
+	  (* Newer layout: similar to above, but with the nops *)
+	  assert(load_byte (Int64.add next 1L) = 0x80);
+	  Int64.add next 2L
+      | _ -> failwith "Unhandled sysenter call layout"
+
   method handle_special str =
     let handle_catch () =
       try
@@ -4546,8 +4613,7 @@ object(self)
 	    Some []	    
 	| "sysenter" ->
 	    let sysenter_eip = fm#get_word_var R_EIP in
-	    let sysexit_eip = (Int64.logor 0x430L
-				 (Int64.logand 0xfffff000L sysenter_eip)) in
+	    let sysexit_eip = self#guess_sysexit_addr sysenter_eip in
 	    let label = "pc_0x" ^ (Printf.sprintf "%08Lx" sysexit_eip) in
 	      handle_catch ();
 	      Some [V.Jmp(V.Name(label))]

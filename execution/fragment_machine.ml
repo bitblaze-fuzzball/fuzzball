@@ -341,6 +341,8 @@ class virtual fragment_machine = object
   method virtual make_regs_symbolic : unit
   method virtual load_x86_user_regs : Temu_state.userRegs -> unit
   method virtual print_regs : unit
+  method virtual printable_word_reg : register_name -> string
+  method virtual printable_long_reg : register_name -> string
 
   method virtual store_byte_conc  : ?prov:Interval_tree.provenance -> int64 -> int   -> unit
   method virtual store_short_conc : ?prov:Interval_tree.provenance -> int64 -> int   -> unit
@@ -404,8 +406,13 @@ class virtual fragment_machine = object
   method virtual set_word_reg_symbolic : register_name -> string -> unit
   method virtual set_word_reg_concolic :
     register_name -> string -> int64 -> unit
-  method virtual set_word_reg_fresh_symbolic : register_name -> string -> unit
-  method virtual set_word_reg_fresh_region : register_name -> string -> unit
+  method virtual set_word_reg_fresh_symbolic : register_name -> string
+    -> string
+  method virtual set_reg_fresh_region : register_name -> string -> unit
+
+  method virtual set_long_reg_symbolic : register_name -> string -> unit
+  method virtual set_long_reg_fresh_symbolic : register_name -> string
+    -> string
 
   method virtual run_sl : (string -> bool) -> Vine.stmt list -> string
 		  
@@ -518,6 +525,7 @@ class virtual fragment_machine = object
   method virtual load_byte_concretize  : int64 -> bool -> string -> int
   method virtual load_short_concretize : int64 -> bool -> string -> int
   method virtual load_word_concretize  : int64 -> bool -> string -> int64
+  method virtual load_long_concretize  : int64 -> bool -> string -> int64
 
   method virtual make_sink_region : string -> int64 -> unit
 
@@ -1022,7 +1030,8 @@ struct
 	reg R_CC_DEP1 (D.from_concrete_32 0L);
 	reg R_CC_DEP2 (D.from_concrete_32 0L);
 	reg R_CC_NDEP (D.from_concrete_32 0L);
-	reg R_SSEROUND (D.from_concrete_32 0L);
+	reg R_FPROUND (D.from_concrete_32 0L); (* to nearest *)
+	reg R_SSEROUND (D.from_concrete_32 0L); (* to nearest *)
 	reg R_XMM0L (D.from_concrete_64 0L);
 	reg R_XMM0H (D.from_concrete_64 0L);
 	reg R_XMM1L (D.from_concrete_64 0L);
@@ -1079,7 +1088,72 @@ struct
 	reg R_CC_DEP1 (D.from_concrete_64 0L);
 	reg R_CC_DEP2 (D.from_concrete_64 0L);
 	reg R_CC_NDEP (D.from_concrete_64 0L);
-	reg R_SSEROUND (D.from_concrete_64 0L);
+	reg R_FPROUND (D.from_concrete_64 0L); (* to nearest *)
+	reg R_YMM0_0 (D.from_concrete_64 0L);
+	reg R_YMM0_1 (D.from_concrete_64 0L);
+	reg R_YMM0_2 (D.from_concrete_64 0L);
+	reg R_YMM0_3 (D.from_concrete_64 0L);
+	reg R_YMM1_0 (D.from_concrete_64 0L);
+	reg R_YMM1_1 (D.from_concrete_64 0L);
+	reg R_YMM1_2 (D.from_concrete_64 0L);
+	reg R_YMM1_3 (D.from_concrete_64 0L);
+	reg R_YMM2_0 (D.from_concrete_64 0L);
+	reg R_YMM2_1 (D.from_concrete_64 0L);
+	reg R_YMM2_2 (D.from_concrete_64 0L);
+	reg R_YMM2_3 (D.from_concrete_64 0L);
+	reg R_YMM3_0 (D.from_concrete_64 0L);
+	reg R_YMM3_1 (D.from_concrete_64 0L);
+	reg R_YMM3_2 (D.from_concrete_64 0L);
+	reg R_YMM3_3 (D.from_concrete_64 0L);
+	reg R_YMM4_0 (D.from_concrete_64 0L);
+	reg R_YMM4_1 (D.from_concrete_64 0L);
+	reg R_YMM4_2 (D.from_concrete_64 0L);
+	reg R_YMM4_3 (D.from_concrete_64 0L);
+	reg R_YMM5_0 (D.from_concrete_64 0L);
+	reg R_YMM5_1 (D.from_concrete_64 0L);
+	reg R_YMM5_2 (D.from_concrete_64 0L);
+	reg R_YMM5_3 (D.from_concrete_64 0L);
+	reg R_YMM6_0 (D.from_concrete_64 0L);
+	reg R_YMM6_1 (D.from_concrete_64 0L);
+	reg R_YMM6_2 (D.from_concrete_64 0L);
+	reg R_YMM6_3 (D.from_concrete_64 0L);
+	reg R_YMM7_0 (D.from_concrete_64 0L);
+	reg R_YMM7_1 (D.from_concrete_64 0L);
+	reg R_YMM7_2 (D.from_concrete_64 0L);
+	reg R_YMM7_3 (D.from_concrete_64 0L);
+	reg R_YMM8_0 (D.from_concrete_64 0L);
+	reg R_YMM8_1 (D.from_concrete_64 0L);
+	reg R_YMM8_2 (D.from_concrete_64 0L);
+	reg R_YMM8_3 (D.from_concrete_64 0L);
+	reg R_YMM9_0 (D.from_concrete_64 0L);
+	reg R_YMM9_1 (D.from_concrete_64 0L);
+	reg R_YMM9_2 (D.from_concrete_64 0L);
+	reg R_YMM9_3 (D.from_concrete_64 0L);
+	reg R_YMM10_0 (D.from_concrete_64 0L);
+	reg R_YMM10_1 (D.from_concrete_64 0L);
+	reg R_YMM10_2 (D.from_concrete_64 0L);
+	reg R_YMM10_3 (D.from_concrete_64 0L);
+	reg R_YMM11_0 (D.from_concrete_64 0L);
+	reg R_YMM11_1 (D.from_concrete_64 0L);
+	reg R_YMM11_2 (D.from_concrete_64 0L);
+	reg R_YMM11_3 (D.from_concrete_64 0L);
+	reg R_YMM12_0 (D.from_concrete_64 0L);
+	reg R_YMM12_1 (D.from_concrete_64 0L);
+	reg R_YMM12_2 (D.from_concrete_64 0L);
+	reg R_YMM12_3 (D.from_concrete_64 0L);
+	reg R_YMM13_0 (D.from_concrete_64 0L);
+	reg R_YMM13_1 (D.from_concrete_64 0L);
+	reg R_YMM13_2 (D.from_concrete_64 0L);
+	reg R_YMM13_3 (D.from_concrete_64 0L);
+	reg R_YMM14_0 (D.from_concrete_64 0L);
+	reg R_YMM14_1 (D.from_concrete_64 0L);
+	reg R_YMM14_2 (D.from_concrete_64 0L);
+	reg R_YMM14_3 (D.from_concrete_64 0L);
+	reg R_YMM15_0 (D.from_concrete_64 0L);
+	reg R_YMM15_1 (D.from_concrete_64 0L);
+	reg R_YMM15_2 (D.from_concrete_64 0L);
+	reg R_YMM15_3 (D.from_concrete_64 0L);
+	reg R_SSEROUND (D.from_concrete_64 0L); (* to nearest *)
 	()
 
     method private make_arm_regs_zero =
@@ -1288,6 +1362,88 @@ struct
 	reg R_ZF (D.from_concrete_1 0);
 	reg R_FTOP (D.from_concrete_32 0L);
 	reg R_FC3210 (D.from_concrete_32 0L);
+	reg R_YMM0_0 (form_man#fresh_symbolic_64 "initial_ymm0_0");
+	reg R_YMM0_1 (form_man#fresh_symbolic_64 "initial_ymm0_1");
+	reg R_YMM0_2 (form_man#fresh_symbolic_64 "initial_ymm0_2");
+	reg R_YMM0_3 (form_man#fresh_symbolic_64 "initial_ymm0_3");
+	reg R_YMM1_0 (form_man#fresh_symbolic_64 "initial_ymm1_0");
+	reg R_YMM1_1 (form_man#fresh_symbolic_64 "initial_ymm1_1");
+	reg R_YMM1_2 (form_man#fresh_symbolic_64 "initial_ymm1_2");
+	reg R_YMM1_3 (form_man#fresh_symbolic_64 "initial_ymm1_3");
+	reg R_YMM2_0 (form_man#fresh_symbolic_64 "initial_ymm2_0");
+	reg R_YMM2_1 (form_man#fresh_symbolic_64 "initial_ymm2_1");
+	reg R_YMM2_2 (form_man#fresh_symbolic_64 "initial_ymm2_2");
+	reg R_YMM2_3 (form_man#fresh_symbolic_64 "initial_ymm2_3");
+	reg R_YMM3_0 (form_man#fresh_symbolic_64 "initial_ymm3_0");
+	reg R_YMM3_1 (form_man#fresh_symbolic_64 "initial_ymm3_1");
+	reg R_YMM3_2 (form_man#fresh_symbolic_64 "initial_ymm3_2");
+	reg R_YMM3_3 (form_man#fresh_symbolic_64 "initial_ymm3_3");
+	reg R_YMM4_0 (form_man#fresh_symbolic_64 "initial_ymm4_0");
+	reg R_YMM4_1 (form_man#fresh_symbolic_64 "initial_ymm4_1");
+	reg R_YMM4_2 (form_man#fresh_symbolic_64 "initial_ymm4_2");
+	reg R_YMM4_3 (form_man#fresh_symbolic_64 "initial_ymm4_3");
+	reg R_YMM5_0 (form_man#fresh_symbolic_64 "initial_ymm5_0");
+	reg R_YMM5_1 (form_man#fresh_symbolic_64 "initial_ymm5_1");
+	reg R_YMM5_2 (form_man#fresh_symbolic_64 "initial_ymm5_2");
+	reg R_YMM5_3 (form_man#fresh_symbolic_64 "initial_ymm5_3");
+	reg R_YMM6_0 (form_man#fresh_symbolic_64 "initial_ymm6_0");
+	reg R_YMM6_1 (form_man#fresh_symbolic_64 "initial_ymm6_1");
+	reg R_YMM6_2 (form_man#fresh_symbolic_64 "initial_ymm6_2");
+	reg R_YMM6_3 (form_man#fresh_symbolic_64 "initial_ymm6_3");
+	reg R_YMM7_0 (form_man#fresh_symbolic_64 "initial_ymm7_0");
+	reg R_YMM7_1 (form_man#fresh_symbolic_64 "initial_ymm7_1");
+	reg R_YMM7_2 (form_man#fresh_symbolic_64 "initial_ymm7_2");
+	reg R_YMM7_3 (form_man#fresh_symbolic_64 "initial_ymm7_3");
+	reg R_YMM8_0 (form_man#fresh_symbolic_64 "initial_ymm8_0");
+	reg R_YMM8_1 (form_man#fresh_symbolic_64 "initial_ymm8_1");
+	reg R_YMM8_2 (form_man#fresh_symbolic_64 "initial_ymm8_2");
+	reg R_YMM8_3 (form_man#fresh_symbolic_64 "initial_ymm8_3");
+	reg R_YMM9_0 (form_man#fresh_symbolic_64 "initial_ymm9_0");
+	reg R_YMM9_1 (form_man#fresh_symbolic_64 "initial_ymm9_1");
+	reg R_YMM9_2 (form_man#fresh_symbolic_64 "initial_ymm9_2");
+	reg R_YMM9_3 (form_man#fresh_symbolic_64 "initial_ymm9_3");
+	reg R_YMM10_0 (form_man#fresh_symbolic_64 "initial_ymm10_0");
+	reg R_YMM10_1 (form_man#fresh_symbolic_64 "initial_ymm10_1");
+	reg R_YMM10_2 (form_man#fresh_symbolic_64 "initial_ymm10_2");
+	reg R_YMM10_3 (form_man#fresh_symbolic_64 "initial_ymm10_3");
+	reg R_YMM11_0 (form_man#fresh_symbolic_64 "initial_ymm11_0");
+	reg R_YMM11_1 (form_man#fresh_symbolic_64 "initial_ymm11_1");
+	reg R_YMM11_2 (form_man#fresh_symbolic_64 "initial_ymm11_2");
+	reg R_YMM11_3 (form_man#fresh_symbolic_64 "initial_ymm11_3");
+	reg R_YMM12_0 (form_man#fresh_symbolic_64 "initial_ymm12_0");
+	reg R_YMM12_1 (form_man#fresh_symbolic_64 "initial_ymm12_1");
+	reg R_YMM12_2 (form_man#fresh_symbolic_64 "initial_ymm12_2");
+	reg R_YMM12_3 (form_man#fresh_symbolic_64 "initial_ymm12_3");
+	reg R_YMM13_0 (form_man#fresh_symbolic_64 "initial_ymm13_0");
+	reg R_YMM13_1 (form_man#fresh_symbolic_64 "initial_ymm13_1");
+	reg R_YMM13_2 (form_man#fresh_symbolic_64 "initial_ymm13_2");
+	reg R_YMM13_3 (form_man#fresh_symbolic_64 "initial_ymm13_3");
+	reg R_YMM14_0 (form_man#fresh_symbolic_64 "initial_ymm14_0");
+	reg R_YMM14_1 (form_man#fresh_symbolic_64 "initial_ymm14_1");
+	reg R_YMM14_2 (form_man#fresh_symbolic_64 "initial_ymm14_2");
+	reg R_YMM14_3 (form_man#fresh_symbolic_64 "initial_ymm14_3");
+	reg R_YMM15_0 (form_man#fresh_symbolic_64 "initial_ymm15_0");
+	reg R_YMM15_1 (form_man#fresh_symbolic_64 "initial_ymm15_1");
+	reg R_YMM15_2 (form_man#fresh_symbolic_64 "initial_ymm15_2");
+	reg R_YMM15_3 (form_man#fresh_symbolic_64 "initial_ymm15_3");
+	reg R_FTOP (D.from_concrete_32 0L);
+	reg R_FC3210 (D.from_concrete_32 0L);
+	reg R_FPREG0 (D.from_concrete_64 0L);
+	reg R_FPREG1 (D.from_concrete_64 0L);
+	reg R_FPREG2 (D.from_concrete_64 0L);
+	reg R_FPREG3 (D.from_concrete_64 0L);
+	reg R_FPREG4 (D.from_concrete_64 0L);
+	reg R_FPREG5 (D.from_concrete_64 0L);
+	reg R_FPREG6 (D.from_concrete_64 0L);
+	reg R_FPREG7 (D.from_concrete_64 0L);
+	reg R_FPTAG0 (D.from_concrete_8 0);
+	reg R_FPTAG1 (D.from_concrete_8 0);
+	reg R_FPTAG2 (D.from_concrete_8 0);
+	reg R_FPTAG3 (D.from_concrete_8 0);
+	reg R_FPTAG4 (D.from_concrete_8 0);
+	reg R_FPTAG5 (D.from_concrete_8 0);
+	reg R_FPTAG6 (D.from_concrete_8 0);
+	reg R_FPTAG7 (D.from_concrete_8 0);
 
     method private make_arm_regs_symbolic =
       let reg r v =
@@ -1347,11 +1503,15 @@ struct
       self#set_short_var R_GS (Int32.to_int regs.Temu_state.xgs);
       self#set_short_var R_SS (Int32.to_int regs.Temu_state.xss)
 
+    method printable_word_reg r =
+      D.to_string_32 (self#get_int_var (Hashtbl.find reg_to_var r))
+
+    method printable_long_reg r =
+      D.to_string_64 (self#get_int_var (Hashtbl.find reg_to_var r))
+
     method private print_reg32 str r = 
 	Printf.eprintf "%s: " str;
-	Printf.eprintf "%s\n"
-	  (D.to_string_32 
-	     (self#get_int_var (Hashtbl.find reg_to_var r)))
+	Printf.eprintf "%s\n" (self#printable_word_reg r)
      
     method private print_reg1 str r = 
 	Printf.eprintf "%s: " str;
@@ -1361,9 +1521,7 @@ struct
 
     method private print_reg64 str r =
 	Printf.eprintf "%s: " str;
-	Printf.eprintf "%s\n"
-	  (D.to_string_64
-	     (self#get_int_var (Hashtbl.find reg_to_var r)))
+	Printf.eprintf "%s\n" (self#printable_long_reg r)
 
     method private print_x87_fpreg idx reg tag =
       let val_d = self#get_int_var (Hashtbl.find reg_to_var reg) in
@@ -1864,6 +2022,10 @@ struct
       self#set_int_var (Hashtbl.find reg_to_var reg)
 	(form_man#fresh_symbolic_32 s);
 
+    method set_long_reg_symbolic reg s =
+      self#set_int_var (Hashtbl.find reg_to_var reg)
+	(form_man#fresh_symbolic_64 s);
+
     method set_word_reg_concolic reg s i64 =
       self#set_int_var (Hashtbl.find reg_to_var reg)
 	(form_man#make_concolic_32 s i64)
@@ -1871,10 +2033,18 @@ struct
     val mutable symbol_uniq = 0
       
     method set_word_reg_fresh_symbolic reg s =
-      self#set_word_reg_symbolic reg (s ^ "_" ^ (string_of_int symbol_uniq)); 
-      symbol_uniq <- symbol_uniq + 1
+      let s' = (s ^ "_" ^ (string_of_int symbol_uniq)) in
+	self#set_word_reg_symbolic reg s';
+	symbol_uniq <- symbol_uniq + 1;
+	s' ^ ":reg32_t"
 
-    method set_word_reg_fresh_region reg s =
+    method set_long_reg_fresh_symbolic reg s : string =
+      let s' = (s ^ "_" ^ (string_of_int symbol_uniq)) in
+	self#set_long_reg_symbolic reg s';
+	symbol_uniq <- symbol_uniq + 1;
+	s' ^ ":reg64_t"
+
+    method set_reg_fresh_region reg s =
       let name = s ^ "_" ^ (string_of_int symbol_uniq) in
       (* Make up a fake value for things like null and alignment checks,
 	 in case this run is concolic. *)
@@ -2181,7 +2351,7 @@ struct
       in
 	((func rm v1), ty)
 
-    method private eval_ite v_c v_t v_f ty_t =
+    method eval_ite v_c v_t v_f ty_t =
       let func =
 	match ty_t with
 	  | V.REG_1  -> D.ite1
@@ -2290,7 +2460,9 @@ struct
 	  | st :: rest -> find_label lab rest 
       in
 	loop_cnt <- Int64.succ loop_cnt;
-	if loop_cnt > !opt_iteration_limit then raise TooManyIterations;
+        (match !opt_iteration_limit_enforced with
+	| Some lim -> if loop_cnt > lim then raise TooManyIterations;
+	| _ -> ());
 	let (_, sl) = frag in
 	  match find_label lab sl with
 	    | None -> lab
@@ -2301,6 +2473,9 @@ struct
     val mutable last_insn = "none"
     val mutable saw_jump = false
 
+    val mutable stmt_num = -1
+    method private get_stmt_num = stmt_num
+
     method run_sl do_jump sl =
       let jump lab =
 	saw_jump <- true;
@@ -2309,7 +2484,6 @@ struct
 	else
 	  lab
       in
-      let stmt_num = ref (-1) in
       let rec loop =
 	function
 	  | [] -> "fallthrough"
@@ -2317,12 +2491,12 @@ struct
 	      if !opt_trace_stmts then
 		(Printf.printf "  %08Lx."
 		   (try self#get_eip with NotConcrete(_) -> 0L);
-		 (if !stmt_num = -1 then
+		 (if stmt_num = -1 then
 		    Printf.printf "   "
 		  else
-		    (Printf.printf "%03d" !stmt_num;
-		     stmt_num := !stmt_num + 1));
+		    Printf.printf "%03d" stmt_num);
 		 Printf.printf " %s\n" (stmt_to_string_compact st));
+	      stmt_num <- stmt_num + 1;
 	      (match st with
 		 | V.Jmp(l) -> jump (self#eval_label_exp l)
 		 | V.CJmp(cond, V.Name(l1), V.Name(l2))
@@ -2379,7 +2553,7 @@ struct
 			  if saw_jump then
 			      self#run_jump_hooks last_insn last_eip eip;
 			  self#run_eip_hooks;
-			  stmt_num := 1;
+			  stmt_num <- 1;
 			  last_eip <- eip;
 			  saw_jump <- false);
 		     loop rest
@@ -2404,6 +2578,7 @@ struct
 		     let v = D.to_concrete_32 (self#eval_int_exp e) in
 		       Printf.sprintf "halt_%Ld" v)
       in
+	stmt_num <- -1;
 	loop sl
 
     method run () =
@@ -2759,6 +2934,8 @@ struct
       = self#load_short_conc addr
     method load_word_concretize  addr (b:bool) (s:string)
       = self#load_word_conc addr
+    method load_long_concretize  addr (b:bool) (s:string)
+      = self#load_long_conc addr
     method make_sink_region (s:string) (i:int64) = ()
   end
 end

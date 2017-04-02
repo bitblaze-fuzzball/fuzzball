@@ -19,7 +19,7 @@ type decision_tree_node = {
   mutable heur_min : int;
   mutable heur_max : int;
   mutable ident : int;
-  mutable eip : int64 }
+  mutable eip_loc : int64 }
 and
   dt_node_ref = int
 
@@ -56,16 +56,16 @@ let dt_node_to_string n =
   let flags_int = (if n.all_seen then 1 else 0) +
     (if n.query_counted then 2 else 0)
   in
-  let s = Printf.sprintf "%08x%c%08x%08x%08x%08x%04x%08Lx"
+  let s = Printf.sprintf "%08x%c%08x%08x%08x%08x%04x%016Lx"
     (parent_int land mask_32bits_int) (Char.chr (0x40 + flags_int))
     (f_child_int land mask_32bits_int) (t_child_int land mask_32bits_int)
     (n.heur_min land mask_32bits_int) (n.heur_max land mask_32bits_int)
-    (query_children_int land 0xffff) (Int64.logand n.eip 0xffffffffL) in
-  g_assert (String.length s = 53) 100 "Binary_decision_tree.dt_node_to_string";
+    (query_children_int land 0xffff) n.eip_loc in
+  g_assert (String.length s = 61) 100 "Binary_decision_tree.dt_node_to_string";
     s
 
 let string_to_dt_node ident_arg s =
-  g_assert(String.length s = 53) 100 "Binary_decision_tree.string_to_dt_node";
+  g_assert(String.length s = 61) 100 "Binary_decision_tree.string_to_dt_node";
   let parent_str = String.sub s 0 8 and
       flags_char = s.[8] and
       f_child_str = String.sub s 9 8 and
@@ -73,7 +73,7 @@ let string_to_dt_node ident_arg s =
       heur_min_str = String.sub s 25 8 and
       heur_max_str = String.sub s 33 8 and
       query_children_str = String.sub s 41 4 and
-      eip_str = String.sub s 45 8
+      eip_loc_str = String.sub s 45 16
   in
   let int_of_hex_string s = int_of_string ("0x" ^ s) in
   let parent_int = int_of_hex_string parent_str and
@@ -83,7 +83,7 @@ let string_to_dt_node ident_arg s =
       heur_min_int = int_of_hex_string heur_min_str and
       heur_max_int = int_of_hex_string heur_max_str and
       query_children_int = int_of_hex_string query_children_str and
-      eip_i64 = Int64.of_string ("0x" ^ eip_str)
+      eip_loc_i64 = Int64.of_string ("0x" ^ eip_loc_str)
   in
   let parent_o = match parent_int with
     | 0 -> None
@@ -113,7 +113,7 @@ let string_to_dt_node ident_arg s =
      query_children = query_children_o; query_counted = query_counted_bool;
      heur_min = maybe_negative_one heur_min_int;
      heur_max = maybe_negative_one heur_max_int;
-     all_seen = all_seen_bool; ident = ident_arg; eip = eip_i64}
+     all_seen = all_seen_bool; ident = ident_arg; eip_loc = eip_loc_i64}
 
 let next_dt_ident = ref 0
 
@@ -193,7 +193,7 @@ let print_node chan n =
       Printf.fprintf chan "(%d %d) " n.heur_min n.heur_max
     else
       Printf.fprintf chan "(X) ";
-    Printf.fprintf chan "at 0x%08Lx " n.eip;
+    Printf.fprintf chan "at 0x%08Lx " n.eip_loc;
     Printf.fprintf chan "%s\n"
       (match n.query_children with
 	 | None -> "[]"
@@ -252,7 +252,7 @@ let new_dt_node the_parent =
        f_child = None; t_child = None;
        query_children = None; query_counted = false;
        heur_min = 0x3fffffff; heur_max = -1;
-       all_seen = false; ident = i; eip = 0L}
+       all_seen = false; ident = i; eip_loc = 0L}
     in
       update_dt_node node;
       node
@@ -280,8 +280,8 @@ let put_t_child n k =
        | Some (Some k') -> Some (Some (ref_dt_node k')));
   update_dt_node n
 
-let put_eip n addr =
-  n.eip <- addr;
+let put_eip_loc n loc =
+  n.eip_loc <- loc;
   update_dt_node n
 
 (* This hash algorithm is FNV-1a,
@@ -310,7 +310,7 @@ class binary_decision_tree = object(self)
       root.query_children <- Some 0;
       update_dt_node root;
       cur <- root;
-      Hashtbl.replace seen cur.eip cur;
+      Hashtbl.replace seen cur.eip_loc cur;
       cur_query <- root;
       if !opt_trace_decision_tree then
 	Printf.eprintf "DT: Initialized.\n";
@@ -330,7 +330,7 @@ class binary_decision_tree = object(self)
 
   method reset =
     cur <- get_dt_node root_ident;
-    Hashtbl.replace seen cur.eip cur;
+    Hashtbl.replace seen cur.eip_loc cur;
     cur_query <- get_dt_node root_ident;
     cur_heur <- -1;
     depth <- 0;
@@ -552,7 +552,7 @@ class binary_decision_tree = object(self)
        | (false, Some None, _)
        | (true,  _, Some None) ->
 	 failwith "Add_kid failed in extend");
-    Hashtbl.replace seen cur.eip cur;
+    Hashtbl.replace seen cur.eip_loc cur;
     depth <- depth + 1;
     if (Int64.of_int depth) > !opt_path_depth_limit then
       raise DeepPath
@@ -592,7 +592,7 @@ class binary_decision_tree = object(self)
 
   method try_extend (trans_func : bool -> V.exp)
     try_func (non_try_func : bool -> unit) (random_bit_gen : unit -> bool)
-    both_fail_func eip =
+    both_fail_func eip_loc =
     let known b = 
       non_try_func b;
       self#extend b;
@@ -637,22 +637,22 @@ class binary_decision_tree = object(self)
 	       (b', trans_func b'))
     in
       g_assert(not cur.all_seen) 100 "Binary_decision_tree.try_extend";
-    (* cur is the node being dealt with.
-      if cur.eip <> the eip we're examining, then the tree has become de-synced.
-      this is apparently only called from sym_path_frag_machine's query_with_pc_choice and random_case_split.
-       In both cases, the eip is self#eip *)
-    (* JTT - TODO -- this needs rolled back into its old assert form
-       and done up with g_assert *)
-      if cur.eip <> 0L && cur.eip <> eip then
-	(let estring = Printf.sprintf
-	  "Decision tree inconsistency: node %d was 0x%08Lx and then %08Lx"
-	  cur.ident cur.eip eip in
-	 Printf.eprintf "%s\n" estring;
-	 if Hashtbl.mem seen eip then
-	   Printf.eprintf "However, I have previously seen a node with that eip.\n" else
-	   Printf.eprintf "And I've never seen a node with that eip.\n";
-	 failwith estring);
-      put_eip cur eip;
+      if cur.eip_loc <> 0L && cur.eip_loc <> eip_loc then
+	(* For a discussion of why we have this check, and how to interpret
+	   the .%04Lx values, see the comment before SPFM.eip_ident *)
+	(Printf.eprintf
+	   ("Decision tree inconsistency: node " ^^
+	      "%d was 0x%08Lx.%04Lx and then %08Lx.%04Lx\n")
+	   cur.ident
+	   (Int64.shift_right cur.eip_loc 16) (Int64.logand cur.eip_loc 0xffffL)
+	   (Int64.shift_right eip_loc 16) (Int64.logand eip_loc 0xffffL);
+	 if Hashtbl.mem seen eip_loc then
+	   Printf.eprintf "However, I have previously seen a node with that eip.\n"
+	 else
+	   Printf.eprintf "And I've never seen a node with that eip.\n");
+      g_assert (cur.eip_loc = 0L || cur.eip_loc = eip_loc) 100
+	"Binary_decision_tree.try_extend 2";
+      put_eip_loc cur eip_loc;
       let limited = match cur_query.query_children with 
 	| Some k when k >= !opt_query_branch_limit -> true
 	| _ -> false

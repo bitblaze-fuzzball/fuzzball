@@ -304,17 +304,17 @@ let rec constant_fold ctx e =
 
     | Cast(ct2, w2, Cast(ct1, w1, e1)) when ct1 = ct2 ->
 	Cast(ct1, w2, e1) (* no redundant double casts *)
-    (* Redundant widening inside narrowing *)
-    | Cast(CAST_LOW, t2, Cast((CAST_SIGNED|CAST_UNSIGNED), t1, e))
-	when (let w_e = bits_of_width (Vine_typecheck.infer_type None e) and
-		  w_2 = bits_of_width t2 in
-		w_2 <= w_e) ->
-	Cast(CAST_LOW, t2, e)
     (* Widening cast followed by narrowing cast with same type *)
     | Cast(CAST_LOW,t2,Cast(CAST_UNSIGNED,_,e)) 
 	when ((Vine_typecheck.infer_type None e) = t2) -> e
     | Cast(CAST_LOW,t2,Cast(CAST_SIGNED,_,e)) 
 	when ((Vine_typecheck.infer_type None e) = t2) -> e
+    (* Redundant widening inside narrowing *)
+    | Cast(CAST_LOW, t2, Cast((CAST_SIGNED|CAST_UNSIGNED), t1, e))
+	when (let w_e = bits_of_width (Vine_typecheck.infer_type None e) and
+		  w_2 = bits_of_width t2 in
+		w_2 < w_e) ->
+	Cast(CAST_LOW, t2, e)
     (* Widening followed by narrowing equivalent to narrower widening *)
     | Cast(CAST_LOW, t1, Cast((CAST_SIGNED|CAST_UNSIGNED) as cast_ty, t2, e))
 	when (let w1 = bits_of_width t1 and
@@ -331,6 +331,12 @@ let rec constant_fold ctx e =
     (* High bit preserved by CAST_SIGNED *)
     | Cast(CAST_HIGH, REG_1, Cast(CAST_SIGNED, t2, e1))
       -> Cast(CAST_HIGH, REG_1, e1) 
+    (* U widen then S widen same as single U widen *)
+    | Cast(CAST_SIGNED, t1, Cast(CAST_UNSIGNED, t2, e3))
+	when (let w2 = bits_of_width t2 and
+		  w3 = bits_of_width (Vine_typecheck.infer_type None e3) in
+		w3 < w2)
+	-> Cast(CAST_UNSIGNED, t1, e3)
     (* Boolean -> integer -> boolean conversion with == 0 *)
     | BinOp(EQ, Cast((CAST_SIGNED|CAST_UNSIGNED), _, e),
 	    Constant(Int(_, 0L)))
@@ -372,6 +378,29 @@ let rec constant_fold ctx e =
 	Cast(CAST_LOW, REG_16, e)
     | Cast(CAST_LOW, REG_32, BinOp(BITAND, e, Constant(Int(_,0xffffffffL)))) ->
 	Cast(CAST_LOW, REG_32, e)
+    (* Low cast gets only 0 due to left shift *)
+    | Cast(CAST_LOW, cty, BinOp(LSHIFT, e, Constant(Int(_, amt))))
+	when amt >= Int64.of_int (bits_of_width cty) ->
+	Constant(Int(cty, 0L))
+    (* A different way a mask can be redundant with a cast *)
+    | BinOp(BITAND,
+	    (Cast(CAST_UNSIGNED, (REG_16|REG_32|REG_64), e) as thecast),
+            Constant(Int(_, mask)))
+	when ((Vine_typecheck.infer_type None e) = REG_8) &&
+          (Int64.logand mask 0xffL) = 0xffL ->
+	thecast
+    | BinOp(BITAND,
+	    (Cast(CAST_UNSIGNED, (REG_32|REG_64), e) as thecast),
+            Constant(Int(_, mask)))
+	when ((Vine_typecheck.infer_type None e) = REG_16) &&
+          (Int64.logand mask 0xffffL) = 0xffffL ->
+	thecast
+    | BinOp(BITAND,
+	    (Cast(CAST_UNSIGNED, REG_64, e) as thecast),
+            Constant(Int(_, mask)))
+	when ((Vine_typecheck.infer_type None e) = REG_32) &&
+          (Int64.logand mask 0xffffffffL) = 0xffffffffL ->
+	thecast
     (* A more complex way of writing sign extension *)
     | BinOp(BITOR, Cast(CAST_UNSIGNED, REG_64, e1),
 	    BinOp(LSHIFT,
@@ -420,6 +449,17 @@ let rec constant_fold ctx e =
 	if (bool_of_const cond) then e1 else e2
     | Ite(cond, e1, e1') when e1 = e1' -> e1
     | Ite(UnOp(NOT, c), x, y) -> Ite(c, y, x)
+    | Ite(cond, Constant(Int(REG_1, 1L)), Constant(Int(REG_1, 0L))) -> cond
+    | Ite(cond, Constant(Int(REG_1, 0L)), Constant(Int(REG_1, 1L))) ->
+        UnOp(NOT, cond)
+    | Ite(cond, Constant(Int(REG_1, 1L)), cond2) ->
+        BinOp(BITOR, cond, cond2)
+    | Ite(cond, cond2, Constant(Int(REG_1, 0L))) ->
+        BinOp(BITAND, cond, cond2)
+    | Cast(ct, ty, Ite(cond, e1, e2)) ->
+        Ite(cond, Cast(ct, ty, e1), Cast(ct, ty, e2))
+    | BinOp(op, Ite(cond, e1, e2), (Constant(_) as k)) ->
+        Ite(cond, BinOp(op, e1, k), BinOp(op, e2, k))
     (* AND / OR with itself *)
     | BinOp(BITOR, x, y)
     | BinOp(BITAND, x, y)
@@ -444,6 +484,36 @@ let rec constant_fold ctx e =
 	    Constant(Int(ty2, s2)))
 	when ty1 = ty2 && s1 >= 0L && s2 >= 0L ->
 	BinOp(ARSHIFT, x, (Constant(Int(ty1, (Int64.add s1 s2)))))
+    (* Common compiler optimization of x /u 10 *)
+    | BinOp(RSHIFT,
+	    Cast(CAST_HIGH, REG_32,
+		 BinOp(TIMES, Cast(CAST_UNSIGNED, REG_64, x),
+		       Constant(Int(_, 0xcccccccdL)))),
+	    Constant(Int(_, 3L)))
+	when (Vine_typecheck.infer_type None x) = REG_32 ->
+	BinOp(DIVIDE, x, Constant(Int(REG_32, 10L)))
+
+    (* Left shift combined with multiplication *)
+    | BinOp(LSHIFT,
+	    BinOp(TIMES, x, Constant(Int(ty, factor))),
+	    Constant(Int(_, shift)))
+	when let factor2 = Int64.shift_left factor (Int64.to_int shift) in
+	  Constant(Int(ty, factor2)) = to_val ty factor2
+      ->
+	let factor2 = Int64.shift_left factor (Int64.to_int shift) in
+	  BinOp(TIMES, x, Constant(Int(ty, factor2)))
+
+    (* Modulo as the remainder after integer division *)
+    | BinOp(PLUS, x1, UnOp(NEG, BinOp(TIMES, BinOp(DIVIDE, x2, k1), k2)))
+	when x1 = x2 && k1 = k2 ->
+	BinOp(MOD, x1, k1)
+    | BinOp(PLUS, UnOp(NEG, BinOp(TIMES, BinOp(DIVIDE, x2, k1), k2)), x1)
+	when x1 = x2 && k1 = k2 ->
+	BinOp(MOD, x1, k1)
+    | BinOp(PLUS, UnOp(NEG, BinOp(TIMES, BinOp(DIVIDE, x2, k1), k2)),
+	    BinOp(PLUS, x1, y))
+	when x1 = x2 && k1 = k2 ->
+	BinOp(PLUS, BinOp(MOD, x1, k1), y)
     (* byte & 0xffffff00 = 0 *)
     | BinOp(BITAND,
 	    Cast(CAST_UNSIGNED, REG_32, e),
@@ -528,6 +598,21 @@ let rec constant_fold ctx e =
     | BinOp(EQ, BinOp(PLUS, x, (Constant(_) as c)),
 	    Constant(Int(ty, 0L))) ->
 	BinOp(EQ, x, (constant_fold ctx (UnOp(NEG, c))))
+    (* a + -b = 0 ==> a == b *)
+    | BinOp(EQ, BinOp(PLUS, a, UnOp(NEG, b)),
+	    Constant(Int(ty, 0L))) ->
+	BinOp(EQ, a, b)
+    (* a ^ b = 0 ==> a == b *)
+    | BinOp(EQ, BinOp(XOR, a, b), Constant(Int(ty, 0L))) ->
+	BinOp(EQ, a, b)
+    (* a < b | a == b ==> a <= b*)
+    | BinOp(BITOR, BinOp(LT, a1, b1), BinOp(EQ, a2, b2))
+	 when a1 = a2 && b1 = b2 ->
+	BinOp(LE, a1, b1)
+    (* a <$ b | a == b ==> a <=$ b*)
+    | BinOp(BITOR, BinOp(SLT, a1, b1), BinOp(EQ, a2, b2))
+	 when a1 = a2 && b1 = b2 ->
+	BinOp(SLE, a1, b1)
     | _ -> e (* leave other expressions as they are *)
 
 

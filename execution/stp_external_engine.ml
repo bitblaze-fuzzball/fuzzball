@@ -54,21 +54,16 @@ class stp_external_engine fname = object(self)
   val mutable free_vars = []
   val mutable eqns = []
   val mutable conds = []
+  val mutable tables = []
 
   method start_query =
     ()
 
-  method add_free_var var =
-    free_vars <- var :: free_vars
- 
-  method private real_add_free_var var =
-    self#visitor#declare_var var
-
-  method add_temp_var var =
-    ()
-
-  method assert_eq var rhs =
-    eqns <- (var, rhs) :: eqns;
+  method add_decl d =
+    match d with
+      | InputVar(v) -> free_vars <- v :: free_vars
+      | TempVar(v, e) -> eqns <- (v, e) :: eqns
+      | TempArray(v, el) -> tables <- (v, el) :: tables
 
   method add_condition e =
     conds <- e :: conds
@@ -76,14 +71,15 @@ class stp_external_engine fname = object(self)
   val mutable ctx_stack = []
 
   method push =
-    ctx_stack <- (free_vars, eqns, conds) :: ctx_stack
+    ctx_stack <- (free_vars, eqns, conds, tables) :: ctx_stack
 
   method pop =
     match ctx_stack with
-      | (free_vars', eqns', conds') :: rest ->
+      | (free_vars', eqns', conds', tables') :: rest ->
 	  free_vars <- free_vars';
 	  eqns <- eqns';
 	  conds <- conds';
+	  tables <- tables';
 	  ctx_stack <- rest
       | [] -> failwith "Context underflow in stp_external_engine#pop"
 
@@ -96,13 +92,23 @@ class stp_external_engine fname = object(self)
 	    (V.exp_to_string rhs) err;
 	  failwith "Typecheck failure in assert_eq"
 
+  method private real_add_table var el =
+    self#visitor#declare_var var;
+    self#visitor#assert_array_contents var el
+
   method private real_prepare =
     let fname = self#get_fresh_fname in
       chan <- Some(open_out (fname ^ ".stp"));
       visitor <- Some(new Stp.vine_cvcl_print_visitor
 			(output_string self#chan));
-      List.iter self#real_add_free_var (List.rev free_vars);
+      List.iter self#visitor#declare_var (List.rev free_vars);
+      List.iter (fun (v,_) ->
+		   self#visitor#declare_var v) (List.rev tables);
       List.iter self#real_assert_eq (List.rev eqns);
+      List.iter
+	(fun (v, el) ->
+	   self#visitor#assert_array_contents v el)
+	(List.rev tables);
 
   method query qe =
     self#real_prepare;
@@ -182,5 +188,6 @@ class stp_external_engine fname = object(self)
     visitor <- None;
     free_vars <- [];
     eqns <- [];
-    conds <- []
+    conds <- [];
+    tables <- []
 end

@@ -25,6 +25,15 @@ struct
   module GM = GranularMemoryFunctor(D)
   module SPFM = SymPathFragMachineFunctor(D)
 
+  type region_location = SingleLocation of int option * int64
+			 | TableLocation of int option * V.exp * int64
+
+  let reg_addr () = match !opt_arch with
+    | (X86|ARM) -> V.REG_32
+    | X64 -> V.REG_64
+
+  let addr_const addr = V.Constant(V.Int(reg_addr(), addr))
+
   (* Sign extend a typed constant to a 64-bit constant *)
   let fix_s ty v =
     match ty with
@@ -41,19 +50,7 @@ struct
     in
       is_power_of_2_or_zero (Int64.succ (Int64.lognot (fix_s ty v)))
 
-  let floor_log2 i =
-    let rec loop = function
-      | 0L -> -1
-      | 1L -> 0
-      | 2L|3L -> 1
-      | 4L|5L|6L|7L -> 2
-      | i when i < 16L -> 2 + loop(Int64.shift_right_logical i 2)
-      | i when i < 256L -> 4 + loop(Int64.shift_right_logical i 4)
-      | i when i < 65536L -> 8 + loop(Int64.shift_right_logical i 8)
-      | i when i < 0x100000000L -> 16 + loop(Int64.shift_right_logical i 16)
-      | _ -> 32 + loop(Int64.shift_right_logical i 32)
-    in
-      loop i
+  let floor_log2 = Vine_util.int64_floor_log2
 
   (* Conservatively anayze the smallest number of non-zero
      least-significant bits into which a value will fit. This is a fairly
@@ -70,6 +67,8 @@ struct
 	| V.BinOp(V.PLUS, e1, e2) -> 1 + (max (loop e1) (loop e2))
 	| V.BinOp(V.TIMES, e1, e2) -> (loop e1) + (loop e2)
 	| V.BinOp(V.MOD, e1, e2) -> min (loop e1) (loop e2)
+	| V.Cast(V.CAST_UNSIGNED, V.REG_64, e1)
+	  -> min 64 (loop e1)
 	| V.Cast((V.CAST_UNSIGNED|V.CAST_LOW), V.REG_32, e1)
 	  -> min 32 (loop e1)
 	| V.Cast((V.CAST_UNSIGNED|V.CAST_LOW), V.REG_16, e1)
@@ -134,6 +133,8 @@ struct
       | V.BinOp(V.TIMES, e1, e2) -> (loop e1) + (loop e2)
       | V.BinOp(V.MOD, e1, e2) -> min (loop e1) (loop e2)
       | V.BinOp(V.SMOD, e1, e2) -> min (loop e1) (loop e2)
+      | V.Cast((V.CAST_UNSIGNED|V.CAST_SIGNED), V.REG_64, e1)
+	-> min 64 (loop e1)
       | V.Cast((V.CAST_UNSIGNED|V.CAST_LOW|V.CAST_SIGNED), V.REG_32, e1)
 	-> min 32 (loop e1)
       | V.Cast((V.CAST_UNSIGNED|V.CAST_LOW|V.CAST_SIGNED), V.REG_16, e1)
@@ -173,6 +174,14 @@ struct
 	  failwith "Unhandled unknown in narrow_bitwidth_signed"
     in
       FormMan.map_expr_temp form_man e f combine
+
+  let narrow_bitwidth_cutoff () =
+    match (!opt_narrow_bitwidth_cutoff, (reg_addr ())) with
+      | ((Some i), _) -> i
+      | (_, V.REG_32) -> 23
+      | (_, V.REG_64) -> 23 (* also experimented with 40,
+			       not clear what's best *)
+      | (_, _) -> 23
 
   let ctz i =
     let rec loop = function
@@ -313,12 +322,14 @@ struct
 	  -> ExprOffset(e)
       | V.BinOp(V.TIMES, _, _)
 	  -> ExprOffset(e)
-      | e when (narrow_bitwidth form_man e) < 23
+      | e when (narrow_bitwidth form_man e)
+	  < (narrow_bitwidth_cutoff ())
 	  -> ExprOffset(e)
       | V.Cast(V.CAST_SIGNED, _, x)
-	  when (narrow_bitwidth form_man x) < 23
+	  when (narrow_bitwidth form_man x) < (narrow_bitwidth_cutoff ())
 	    -> ExprOffset(e)
-      | e when (narrow_bitwidth_signed form_man e) < 23
+      | e when (narrow_bitwidth_signed form_man e)
+	  < (narrow_bitwidth_cutoff ())
 	  -> ExprOffset(e)
       | V.BinOp(V.ARSHIFT, _, _)
 	  -> ExprOffset(e)
@@ -382,6 +393,11 @@ struct
 	  when (fix_u32 off) >= 0xffffff00L
 	    ->
 	  (classify_term form_man if_weird x)
+      | V.BinOp(V.BITAND, x, V.Constant(V.Int(V.REG_64, off)))
+	  when off >= 0xffffffffffffff00L
+	    ->
+	  (classify_term form_man if_weird x)
+
       (* Addition inside another operation (top-level addition should
 	 be handled by split_terms) *)
       | V.BinOp(V.PLUS, e1, e2)
@@ -400,21 +416,52 @@ struct
       | V.Lval(_) -> Symbol(e)
       | e -> if_weird e
 	  
-  let classify_terms e form_man if_weird =
-    let l = List.map (classify_term form_man if_weird)
-      (split_terms e form_man)
+  (* When we're not going to try for symbolic regions, just separate
+     the concrete terms from everything else; they should be the base *)
+  let classify_terms_simple e form_man =
+    let constants = ref 0L in
+    let rec loop e =
+      match e with
+	| V.BinOp(V.PLUS, e1, e2) -> (loop e1) @ (loop e2)
+	| V.Lval(V.Temp(var)) ->
+	    FormMan.if_expr_temp form_man var
+	      (fun e' -> loop e') [e] (fun v -> ())
+	| V.Constant(V.Int(V.REG_32, n)) ->
+	    constants := Int64.add !constants n;
+	    []
+	| e -> [e]
     in
-    let (cbases, coffs, eoffs, ambig, syms) =
-      (ref [], ref [], ref [], ref [], ref []) in
-      List.iter
-	(function
-	   | ConstantBase(o) ->  cbases := o :: !cbases
-	   | ConstantOffset(o) -> coffs := o :: !coffs
-	   | ExprOffset(e) ->     eoffs := e :: !eoffs
-	   | AmbiguousExpr(e) ->  ambig := e :: !ambig
-	   | Symbol(v) ->          syms := v :: !syms)
-	l;
-      (!cbases, !coffs, !eoffs, !ambig, !syms)
+    let terms = loop e in
+      (!constants, terms)
+
+  let classify_terms e form_man if_weird =
+    match (e, !opt_no_sym_regions) with
+      | (V.Constant(V.Int(_, k)), _) ->
+	  (* Most common case: all concrete is a concrete base *)
+	  ([k], [], [], [], [])
+      | (e, true) ->
+	  let (cbase, terms) = classify_terms_simple e form_man in
+	  let cbases = if cbase = 0L then [] else [cbase] in
+	    if !opt_trace_sym_addr_details then
+	      Printf.printf "Extracted base address 0x%0Lx from %s\n"
+		cbase (V.exp_to_string e);
+	    (cbases, [], terms, [], [])
+      | (_, _) ->
+	  if !opt_trace_sym_addr_details then
+	    Printf.printf "Analyzing addr expr %s\n" (V.exp_to_string e);
+	  let l = List.map (classify_term form_man if_weird)
+	    (split_terms e form_man) in
+	  let (cbases, coffs, eoffs, ambig, syms) =
+	    (ref [], ref [], ref [], ref [], ref []) in
+	    List.iter
+	      (function
+		 | ConstantBase(o) ->  cbases := o :: !cbases
+		 | ConstantOffset(o) -> coffs := o :: !coffs
+		 | ExprOffset(e) ->     eoffs := e :: !eoffs
+		 | AmbiguousExpr(e) ->  ambig := e :: !ambig
+		 | Symbol(v) ->          syms := v :: !syms)
+	      l;
+	    (!cbases, !coffs, !eoffs, !ambig, !syms)
 
   let select_one l rand_func =
     let split_list l =
@@ -441,7 +488,7 @@ struct
 
   let sum_list l = 
     match l with 
-      | [] -> V.Constant(V.Int(V.REG_32, 0L))
+      | [] -> addr_const 0L
       | [a] -> a
       | e :: r -> List.fold_left (fun a b -> V.BinOp(V.PLUS, a, b))
 	  e r
@@ -497,7 +544,7 @@ struct
       self#on_missing_symbol_m sink_mem "sink";
       sink_regions <- ((self#region_for e), size) :: sink_regions
 
-    method private choose_conc_offset_uniform ty e =
+    method private choose_conc_offset_uniform ty e ident =
       let byte x = V.Constant(V.Int(V.REG_8, (Int64.of_int x))) in
       let bits = ref 0L in
 	self#restore_path_cond
@@ -506,28 +553,29 @@ struct
 	       (* This special case avoids shifting REG_1s, which appears
 		  to be legal in Vine IR but tickles bugs in multiple of
 		  our solver backends. *)		  
-	       let bit = self#extend_pc_random e false in
+	       let bit = self#extend_pc_random e false ident in
 		 bits := (if bit then 1L else 0L)
 	     else
 	       for b = (V.bits_of_width ty) - 1 downto 0 do
 		 let bit = self#extend_pc_random
 		   (V.Cast(V.CAST_LOW, V.REG_1,
 			   (V.BinOp(V.ARSHIFT, e,
-				    (byte b))))) false
+				    (byte b))))) false (ident + b)
 		 in
 		   bits := (Int64.logor (Int64.shift_left !bits 1)
 			      (if bit then 1L else 0L));
 	       done);
 	!bits
 
-    method private choose_conc_offset_biased ty e =
+    method private choose_conc_offset_biased ty e ident =
       let const x = V.Constant(V.Int(ty, x)) in
       let rec try_list l =
 	match l with
-	  | [] -> self#choose_conc_offset_uniform ty e
+	  | [] -> self#choose_conc_offset_uniform ty e ident
 	  | v :: r ->
-	      if self#extend_pc_random (V.BinOp(V.EQ, e, (const v))) false then
-		v
+	      if self#extend_pc_random (V.BinOp(V.EQ, e, (const v))) false
+		(ident + 0x80 + (Int64.to_int v)) then
+		  v
 	      else
 		try_list r
       in
@@ -540,7 +588,7 @@ struct
 
     val mutable concrete_cache = Hashtbl.create 101
 
-    method private choose_conc_offset_cached ty e =
+    method private choose_conc_offset_cached ty e ident =
       let const x = V.Constant(V.Int(ty, x)) in
       let (bits, verb) = 
 	if Hashtbl.mem concrete_cache e then
@@ -552,7 +600,9 @@ struct
 	       | None -> *)
 		   match !opt_offset_strategy with
 		     | UniformStrat -> self#choose_conc_offset_uniform ty e
+			 ident
 		     | BiasedSmallStrat -> self#choose_conc_offset_biased ty e
+			 ident
 	   in
 	     Hashtbl.replace concrete_cache e bits;
 	     (bits, "Picked")) in
@@ -562,12 +612,15 @@ struct
 	self#add_to_path_cond (V.BinOp(V.EQ, e, (const bits)));
 	bits
 
-    method private concretize_inner ty e =
+    method private concretize_inner ty e ident =
       match e with 
 	| V.Cast((V.CAST_UNSIGNED|V.CAST_SIGNED) as ckind, cty, e2) ->
+	    if cty <> ty then
+	      Printf.printf "Cast type is not %s in concretize_inner of %s\n"
+		(V.type_to_string ty) (V.exp_to_string e);
 	    g_assert(cty = ty) 100 "Sym_region_frag_machine.concretize_inner";
 	    let ty2 = Vine_typecheck.infer_type None e2 in
-	    let bits = self#choose_conc_offset_cached ty2 e2 in
+	    let bits = self#choose_conc_offset_cached ty2 e2 ident in
 	    let expand =
 	      match (ckind, ty2) with
 		| (V.CAST_UNSIGNED, V.REG_32) -> fix_u32
@@ -581,15 +634,15 @@ struct
 		| _ -> failwith "unhandled cast kind in concretize_inner"
 	    in
 	      expand bits
-	| _ -> self#choose_conc_offset_cached ty e
+	| _ -> self#choose_conc_offset_cached ty e ident
 
-    method private concretize ty e =
+    method private concretize ty e ident =
       if !opt_concrete_path then
 	form_man#eval_expr e
       else
 	(dt#start_new_query;
 	 self#note_first_branch;
-	 let v = self#concretize_inner ty e in
+	 let v = self#concretize_inner ty e ident in
 	   dt#count_query;
 	   v)
 
@@ -679,7 +732,7 @@ struct
 
     val check_cond_cache = Hashtbl.create 101
 
-    method private check_cond cond_e =
+    method private check_cond cond_e ident =
       let tristate_str = function
 	| None -> "?"
 	| Some true -> "T"
@@ -734,10 +787,11 @@ struct
       else
 	ExprOffset(e)
 
-    method private region_expr e =
+    method private region_expr e ident decide_fn =
       if !opt_check_for_null then
 	(match
-	   self#check_cond (V.BinOp(V.EQ, e, V.Constant(V.Int(V.REG_32, 0L))))
+	   self#check_cond (V.BinOp(V.EQ, e, addr_const 0L))
+	     (0x3100 + self#get_stmt_num)
 	 with
 	   | Some false -> Printf.eprintf "Cannot be null.\n"
 	   | (Some true|None) as maybe ->
@@ -761,6 +815,7 @@ struct
       let (cbases, coffs, eoffs, ambig, syms) =
 	classify_terms e form_man self#handle_weird_addr_expr
       in
+      let eoffs = List.map simplify_fp eoffs in
 	if !opt_trace_sym_addr_details then
 	  (Printf.eprintf "Concrete base terms: %s\n"
 	     (String.concat " "
@@ -784,19 +839,29 @@ struct
 	       { eip_of_deref = self#get_eip;
 		 last_set_to_null = Int64.sub Int64.zero Int64.one;
 		 addr_derefed =  Int64.sub Int64.zero Int64.one; })
-	  | (0L, [], el) -> (Some 0, el)
+	  (* The following two cases are applicable when applying table treatment 
+	     for symbolic regions *)
+	  | (0L, [], [e]) -> (Some(self#region_for e), [])
 	  | (0L, [v], _) -> (Some(self#region_for v), ambig)
+	  | (0L, [], el) -> (Some 0, el)
 	  | (0L, vl, _) ->
 	      let (bvar, rest_vars) =
-		let (known_regions, not_known) =
-		  List.partition (fun e -> self#is_region_base e) vl
-		in
-		  match known_regions with
-		    | [v] -> (v, not_known)
-		    | _ -> 
-			select_one vl
-			  (fun () -> self#random_case_split
-			     !opt_trace_decisions)
+		(* We used to have logic here that checked whether one
+		   of the symbols was known to have already been used as
+		   a region base, and if so selected it. But the set of
+		   region base variables expands during a run, so this
+		   lead to decision tree inconsistencies. If we wanted
+		   this heuristic, we need to do something more
+		   complicated like always choose from among the same
+		   set, but with preferences based on seen regions. For
+		   now, omit that logic and always choose randomly from
+		   among all the possibilties.  *)
+		let split_count = ref (-1) in
+		  select_one vl
+		    (fun () ->
+		       split_count := !split_count + 1;
+		       self#random_case_split !opt_trace_decisions
+			 (!split_count + 0x100 + ident))
 	      in
 		if !opt_trace_sym_addrs then
 		  Printf.eprintf "Choosing %s as the base address\n"
@@ -805,40 +870,51 @@ struct
 	  | (off, vl, _) ->
 	      (Some 0, vl @ ambig)
 	in
-	let (region, offset) =
-	  (match base with
-	     | Some r
-		 when List.exists (fun (r', _) -> r = r') sink_regions ->
-		 let (r', size) =
-		   List.find (fun (r', _) -> r = r') sink_regions in
-		   Printf.eprintf "Ignoring access to sink region\n";
-		   (let sat_dir = ref false in
-		      self#restore_path_cond
-			(fun () ->
-			   sat_dir := self#extend_pc_random
-			     (V.BinOp(V.LT, e,
-				      V.Constant(V.Int(V.REG_32, size))))
-			     false);
-		      if !sat_dir = true then
-			Printf.eprintf "Can be in bounds.\n"
-		      else
-			Printf.eprintf "Can be out of bounds.\n");
-		   sink_read_count <- Int64.add sink_read_count 0x10L;
-		   (None, sink_read_count)
-	     | _ ->
-		 let coff = List.fold_left Int64.add 0L coffs in
-		 let offset = Int64.add (Int64.add cbase coff)
-		   (match (eoffs, off_syms) with
-		      | ([], []) -> 0L
-		      | (el, vel) -> 
-			  (self#concretize_inner V.REG_32
-			     (sum_list (el @ vel)))) in
-		   (base, (fix_u32 offset)))
-	in
-	  dt#count_query;
-	  (region, offset)
+	let cloc = Int64.add cbase (List.fold_left Int64.add 0L coffs) in
+	(* return a SingleLocation(region, offset)
+	   or a TableLocation(region, off_expr, cloc) *)
+	match base with
+	| Some r
+	    when List.exists (fun (r', _) -> r = r') sink_regions ->
+	  let (r', size) =
+	    List.find (fun (r', _) -> r = r') sink_regions in
+	  Printf.eprintf "Ignoring access to sink region\n";
+	  (let sat_dir = ref false in
+	   self#restore_path_cond
+	     (fun () ->
+	       sat_dir := self#extend_pc_random
+		 (V.BinOp(V.LT, e, addr_const size))
+		 false (ident + 0x600));
+	   if !sat_dir = true then
+	     Printf.eprintf "Can be in bounds.\n"
+	   else
+	     Printf.eprintf "Can be out of bounds.\n");
+	  sink_read_count <- Int64.add sink_read_count 0x10L;
+	  SingleLocation(None, sink_read_count)
+	| _ ->
+	  let off_expr = (sum_list (eoffs @ off_syms)) in
+	  match decide_fn off_expr 0L with
+	  | Some wd ->
+	    if !opt_trace_tables then
+	      Printf.eprintf 
+		"Table treatment for sym region with base = %s and offset expr = %s\n"
+		(V.exp_to_string (List.hd ambig))
+		(V.exp_to_string off_expr);
+	    TableLocation(base, off_expr, cloc)
+	  | None -> 
+	    let coff = List.fold_left Int64.add 0L coffs in
+	    let offset = Int64.add (Int64.add cbase coff)
+	      (match (eoffs, off_syms) with
+	      | ([], []) -> 0L
+	      | (el, vel) -> 
+		dt#start_new_query;
+		(self#concretize_inner (reg_addr())
+		   (simplify_fp (sum_list (el @ vel))))
+		  (ident + 0x200)) in
+	    dt#count_query;
+	    SingleLocation(base, (fix_u32 offset))
 
-    method private eval_addr_exp_region_conc_path e =
+    method private eval_addr_exp_region_conc_path e ident =
       let term_is_known_base = function
 	| V.Lval(V.Temp(var)) -> form_man#known_region_base var
 	| _ -> false
@@ -852,16 +928,15 @@ struct
 		if !opt_trace_sym_addrs then
 		  Printf.eprintf "Computed concrete value 0x%08Lx\n" a;
 		if !opt_solve_path_conditions then
-		  (let cond = V.BinOp(V.EQ, e,
-				      V.Constant(V.Int(V.REG_32, a)))
+		  (let cond = V.BinOp(V.EQ, e, addr_const a)
 		   in
-		   let sat = self#extend_pc_known cond false true in
+		   let sat = self#extend_pc_known cond false ident true in
 		     g_assert(sat) 100 "Sym_region_frag_machine.eval_addr_exp_region_conc_path");
 		(Some 0, a)
 	  | [V.Lval(V.Temp(var)) as vexp] ->
 	      let sum = sum_list rest in
 	      let a = form_man#eval_expr sum in
-	      let a_const = V.Constant(V.Int(V.REG_32, a)) in
+	      let a_const = addr_const a in
 		if !opt_trace_sym_addrs then
 		  Printf.eprintf
 		    "Computed concrete offset %s + 0x%08Lx\n" 
@@ -870,20 +945,22 @@ struct
 		  (sum <> a_const)
 		then
 		  (let cond = V.BinOp(V.EQ, sum, a_const) in
-		   let sat = self#extend_pc_known cond false true in
+		   let sat = self#extend_pc_known cond false
+		     (ident + 0x400) true
+		   in
 		     g_assert(sat) 100 "Sym_region_frag_machine.eval_addr_exp_region_conc_path");
 		(Some(self#region_for vexp), a)
 	  | [_] -> failwith "known_base invariant failure"
 	  | _ -> failwith "multiple bases"
 
-    method eval_addr_exp_region exp =
+    method private eval_addr_exp_region exp ident decide_fn =
       let (to_concrete, to_symbolic) = match !opt_arch with
 	| (X86|ARM) -> (D.to_concrete_32, D.to_symbolic_32)
 	| X64       -> (D.to_concrete_64, D.to_symbolic_64)
       in
       let v = self#eval_int_exp_simplify exp in
 	try
-	  (Some 0, to_concrete v)
+	  SingleLocation(Some 0, to_concrete v)
 	with NotConcrete _ ->
 	  let e = to_symbolic v in
 	  let eip = self#get_eip in
@@ -891,18 +968,23 @@ struct
 	      Printf.eprintf "Symbolic address %s @ (0x%Lx)\n"
 		(V.exp_to_string e) eip;
 	    if !opt_concrete_path then
-	      self#eval_addr_exp_region_conc_path e
+	      let (r, addr) = self#eval_addr_exp_region_conc_path e ident in
+	      SingleLocation(r, addr)
 	    else
-	      self#region_expr e
+	      self#region_expr e ident decide_fn
 		  
     (* Because we override handle_{load,store}, this should only be
        called for jumps. *)
     method eval_addr_exp exp =
       let v = self#eval_int_exp_simplify exp in
+      let (to_concrete, to_symbolic) = match !opt_arch with
+	| (X86|ARM) -> (D.to_concrete_32, D.to_symbolic_32)
+	| X64       -> (D.to_concrete_64, D.to_symbolic_64)
+      in
 	try
-	  D.to_concrete_32 v
+	  to_concrete v
 	with NotConcrete _ ->
-	  let e = D.to_symbolic_32 v in
+	  let e = to_symbolic v in
 	  let eip = self#get_eip in
 	    if !opt_trace_sym_addrs then
 	      Printf.eprintf "Symbolic jump address %s @ (0x%Lx)\n"
@@ -911,7 +993,7 @@ struct
 	      (fun target ->
 		 match
 		   let targ_c = V.Constant(V.Int(V.REG_32, target)) in
-		     self#check_cond (V.BinOp(V.EQ, e, targ_c))
+		     self#check_cond (V.BinOp(V.EQ, e, targ_c)) 0xa000
 		 with
 		   | (None|Some true) ->
 		       Printf.eprintf "Symbolic jump can be 0x%Lx.\n" target;
@@ -932,9 +1014,12 @@ struct
 	      !opt_check_for_jump_to;
 	    let (r, addr) = 
 	      if !opt_concrete_path then
-		self#eval_addr_exp_region_conc_path e
+		self#eval_addr_exp_region_conc_path e 0xa000
 	      else
-		self#region_expr e
+		match self#region_expr e 0xa000 (fun _ _ -> None) with
+		  | SingleLocation(r, addr) -> (r, addr)
+		  | TableLocation(_,_,_) ->
+		      failwith "no table support for jumps, panic!"
 	    in
 	      match r with
 		| Some 0 -> addr
@@ -943,7 +1028,7 @@ struct
 		      (Printf.eprintf
 			 "Unsupported jump into symbolic region %d\n" r_num;
                        if !opt_trace_end_jump = (Some self#get_eip) then
-                         let e = D.to_symbolic_32 (self#eval_int_exp_simplify exp) in
+                         let e = to_symbolic (self#eval_int_exp_simplify exp) in
                          let (cbases, coffs, eoffs, ambig, syms) =
                            classify_terms e form_man self#handle_weird_addr_expr in
 	                   if cbases = [] && coffs = [] && eoffs = [] &&
@@ -955,6 +1040,26 @@ struct
 		      Printf.eprintf "Unsupported jump into sink region\n";
 		    raise SymbolicJump
 
+    method private register_num reg =
+      match reg with
+	| R_RAX | R_EAX | R0 -> 0
+	| R_RBX | R_EBX | R1 -> 1
+	| R_RCX | R_ECX | R2 -> 2
+	| R_RDX | R_EDX | R3 -> 3
+	| R_RSI | R_ESI | R4 -> 4
+	| R_RDI | R_EDI | R5 -> 5
+	| R_RBP | R_EBP | R6 -> 6
+	| R_RSP | R_ESP | R7 -> 7
+	| R_R8  | R8  ->  8
+	| R_R9  | R9  ->  9
+	| R_R10 | R10 -> 10
+	| R_R11 | R11 -> 11
+	| R_R12 | R12 -> 12
+	| R_R13 | R13 -> 13
+	| R_R14 | R14 -> 14
+	| R_R15 | R15 -> 15
+	| _ -> 15
+
     method get_word_var_concretize reg do_influence name : int64 =
       let v = self#get_int_var (Hashtbl.find reg_to_var reg) in
       try (D.to_concrete_32 v)
@@ -963,7 +1068,7 @@ struct
 	  if do_influence then 
 	    (Printf.eprintf "Measuring symbolic %s influence..." name;
 	     infl_man#measure_point_influence name e);
-	  self#concretize V.REG_32 e
+	  self#concretize V.REG_32 e (0x5000 + 0x100 * (self#register_num reg))
 
     method get_long_var_concretize reg do_influence name : int64 =
       let v = self#get_int_var (Hashtbl.find reg_to_var reg) in
@@ -973,7 +1078,17 @@ struct
 	  if do_influence then
 	    (Printf.printf "Measuring symbolic %s influence..." name;
 	     infl_man#measure_point_influence name e);
-	  self#concretize V.REG_64 e
+	  self#concretize V.REG_64 e (0x5000 + 0x100 * (self#register_num reg))
+
+    method load_long_concretize addr do_influence name =
+      let v = self#load_long addr in
+      try (D.to_concrete_64 v)
+      with NotConcrete _ ->
+	let e = D.to_symbolic_64 v in
+	  if do_influence then
+	    (Printf.printf "Measuring symbolic %s influence..." name;
+	     infl_man#measure_point_influence name e);
+	  self#concretize V.REG_64 e 0x6800
 
     method load_word_concretize addr do_influence name =
       let v = self#load_word addr in
@@ -983,7 +1098,7 @@ struct
 	  if do_influence then 
 	    (Printf.eprintf "Measuring symbolic %s influence..." name;
 	     infl_man#measure_point_influence name e);
-	  self#concretize V.REG_32 e
+	  self#concretize V.REG_32 e 0x6400
 
     method load_short_concretize addr do_influence name =
       let v = self#load_short addr in
@@ -993,7 +1108,7 @@ struct
 	  if do_influence then 
 	    (Printf.eprintf "Measuring symbolic %s influence..." name;
 	     infl_man#measure_point_influence name e);
-	  Int64.to_int (self#concretize V.REG_16 e)
+	  Int64.to_int (self#concretize V.REG_16 e 0x6200)
 
     method load_byte_concretize addr do_influence name =
       let v = self#load_byte addr in
@@ -1003,7 +1118,7 @@ struct
 	  if do_influence then 
 	    (Printf.eprintf "Measuring symbolic %s influence..." name;
 	     infl_man#measure_point_influence name e);
-	  Int64.to_int (self#concretize V.REG_8 e)
+	  Int64.to_int (self#concretize V.REG_8 e 0x6100)
 
     method private maybe_concretize_binop op v1 v2 ty1 ty2 =
       let conc t v =
@@ -1013,29 +1128,29 @@ struct
 	       with NotConcrete _ ->
 		 (D.from_concrete_1
 		    (Int64.to_int
-		       (self#concretize t (D.to_symbolic_1 v)))))
+		       (self#concretize t (D.to_symbolic_1 v) 0x6b00))))
 	  | V.REG_8 ->
 	      (try ignore(D.to_concrete_8 v); v
 	       with NotConcrete _ ->
 		 (D.from_concrete_8
 		    (Int64.to_int
-		       (self#concretize t (D.to_symbolic_8 v)))))
+		       (self#concretize t (D.to_symbolic_8 v) 0x6b00))))
 	  | V.REG_16 ->
 	      (try ignore(D.to_concrete_16 v); v
 	       with NotConcrete _ ->
 		 (D.from_concrete_16
 		    (Int64.to_int
-		       (self#concretize t (D.to_symbolic_16 v)))))
+		       (self#concretize t (D.to_symbolic_16 v) 0x6b00))))
 	  | V.REG_32 ->
 	      (try ignore(D.to_concrete_32 v); v
 	       with NotConcrete _ ->
 		 (D.from_concrete_32
-		    (self#concretize t (D.to_symbolic_32 v))))
+		    (self#concretize t (D.to_symbolic_32 v) 0x6b00)))
 	  | V.REG_64 ->
 	      (try ignore(D.to_concrete_64 v); v
 	       with NotConcrete _ ->
 		 (D.from_concrete_64
-		    (self#concretize t (D.to_symbolic_64 v))))
+		    (self#concretize t (D.to_symbolic_64 v) 0x6b00)))
 	  | _ -> failwith "Bad type in maybe_concretize_binop"
       in
 	match op with
@@ -1073,7 +1188,7 @@ struct
 	    try (D.to_concrete_32 w) = Int64.zero
 	    with NotConcrete e ->
 	      match self#check_cond
-		(V.BinOp(V.EQ, e, V.Constant(V.Int(V.REG_32, 0L)))) with
+		(V.BinOp(V.EQ, e, V.Constant(V.Int(V.REG_32, 0L)))) 0x0000 with
 		| Some false -> false 
 		| Some true
 		| None -> true in
@@ -1093,10 +1208,12 @@ struct
     method private load_long_region  r addr = (self#region r)#load_long  addr
 
     method private query_valid e =
-      let (is_sat, _) = 
-	self#query_with_path_cond (V.UnOp(V.NOT, e)) false
-      in
-	not is_sat
+      let is_sat_r = ref false in
+	self#restore_path_cond
+	  (fun _ -> let (is_sat, _) =
+	     self#query_with_path_cond (V.UnOp(V.NOT, e)) false in
+	     is_sat_r := is_sat);
+	not !is_sat_r
 
     method private query_bitwidth e ty =
       let rec loop min max =
@@ -1105,11 +1222,12 @@ struct
 	  min
 	else
 	  let mid = (min + max) / 2 in
-	  let mask = Int64.shift_right_logical (-1L) (64-mid) in
+	  let mask = if mid = 0 then 0L 
+	    else (Int64.shift_right_logical (-1L) (64-mid)) in
 	  let cond_e = V.BinOp(V.LE, e, V.Constant(V.Int(ty, mask))) in
 	  let in_bounds = self#query_valid cond_e in
 	    if !opt_trace_tables then
-	      Printf.eprintf "(%s) < 2**%d: %s\n" (V.exp_to_string e) mid
+	      Printf.eprintf "(%s) <= 2**%d: %s\n" (V.exp_to_string e) mid
 		(if in_bounds then "valid" else "invalid");
 	    if in_bounds then
 	      loop min mid
@@ -1131,7 +1249,7 @@ struct
 	if !opt_table_limit = 0 then
 	  None
 	else if fast_wd > !opt_table_limit then
-	  let slow_wd = self#query_bitwidth off_exp V.REG_32 in
+	  let slow_wd = self#query_bitwidth off_exp (reg_addr()) in
 	    g_assert(slow_wd <= fast_wd) 100 "Sym_region_frag_machine.decide_wd";
 	    if slow_wd > !opt_table_limit then
 	      (if !opt_trace_tables then
@@ -1141,9 +1259,9 @@ struct
 		   op_name cloc (V.exp_to_string off_exp) slow_wd;
 	       None)
 	    else
-	      Some slow_wd
+	      Some (Int64.of_int slow_wd)
 	else
-	  Some fast_wd
+	  Some (Int64.of_int fast_wd)
       in
 	if fast_wd = 0 then
 	  None
@@ -1153,13 +1271,13 @@ struct
 	      let wd = Hashtbl.find bitwidth_cache key in
 		if !opt_trace_tables then
 		  Printf.eprintf "Reusing cached width %d for %s at [%s]\n%!"
-		    (match wd with Some w -> w | None -> -1)
+		    (match wd with Some w -> (Int64.to_int w) | None -> -1)
 		    (V.exp_to_string off_exp) dt#get_hist_str;
 		wd
 	    with Not_found ->
 	      let wd = compute_wd off_exp in
 		Hashtbl.replace bitwidth_cache key wd;
-		if wd = Some 0 then
+		if wd = Some 0L then
 		  None
 		else
 		  wd
@@ -1172,7 +1290,7 @@ struct
 	     Printf.eprintf "opt_offset_limit = 0\n";
 	  Some 0)
 	else if fast_wd > !opt_offset_limit then
-	  let slow_wd = self#query_bitwidth off_exp V.REG_32 in
+	  let slow_wd = self#query_bitwidth off_exp (reg_addr()) in
 	    assert(slow_wd <= fast_wd);
 	    if slow_wd > !opt_offset_limit then
 	      (if !opt_trace_offset_limit then
@@ -1221,7 +1339,7 @@ struct
 	  let cond_e = V.BinOp(V.LE, e, V.Constant(V.Int(ty, mid))) in
 	  let in_bounds = self#query_valid cond_e in
 	    if !opt_trace_tables then
-	      Printf.eprintf "(%s) < %Ld: %s\n" (V.exp_to_string e) mid
+	      Printf.eprintf "(%s) <= %Ld: %s\n" (V.exp_to_string e) mid
 		(if in_bounds then "valid" else "invalid");
 	    if in_bounds then
 	      loop min mid
@@ -1247,7 +1365,7 @@ struct
 	if !opt_table_limit = 0 then
 	  None
 	else
-	  let maxval = self#query_maxval off_exp V.REG_32 in
+	  let maxval = self#query_maxval off_exp (reg_addr()) in
 	    if maxval > Int64.shift_left 1L !opt_table_limit then
 	      (if !opt_trace_tables then
 		 Printf.eprintf
@@ -1281,7 +1399,7 @@ struct
 	if !opt_offset_limit = 0 then
 	  Some 0L
 	else
-	  let maxval = self#query_maxval off_exp V.REG_32 in
+	  let maxval = self#query_maxval off_exp (reg_addr()) in
 	    if maxval > Int64.shift_left 1L !opt_offset_limit then
 	      None
 	    else
@@ -1299,7 +1417,7 @@ struct
 		    Hashtbl.replace maxval_offset_cache key limit;
 		    limit
 		      
-    method private table_load cloc off_exp wd ty =
+    method private table_load cloc region_num off_exp wd ty =
       let stride = stride form_man off_exp in
       let shift = floor_log2 (Int64.of_int stride) in
       let idx_wd = wd - shift in
@@ -1309,18 +1427,18 @@ struct
 	  let shift_amt = V.Constant(V.Int(V.REG_8, (Int64.of_int shift))) in
 	    V.BinOp(V.RSHIFT, off_exp, shift_amt)
 	else
-	  let stride_amt = V.Constant(V.Int(V.REG_32, (Int64.of_int stride))) in
+	  let stride_amt = addr_const (Int64.of_int stride) in
 	    V.BinOp(V.DIVIDE, off_exp, stride_amt)
       in
       let load_ent addr = match ty with
 	| V.REG_8  -> form_man#simplify8
-	    ((self#region (Some 0))#load_byte  addr)
+	    ((self#region region_num)#load_byte  addr)
 	| V.REG_16 -> form_man#simplify16
-	    ((self#region (Some 0))#load_short addr)
+	    ((self#region region_num)#load_short addr)
 	| V.REG_32 -> form_man#simplify32
-	    ((self#region (Some 0))#load_word  addr)
+	    ((self#region region_num)#load_word  addr)
 	| V.REG_64 -> form_man#simplify64
-	    ((self#region (Some 0))#load_long  addr)
+	    ((self#region region_num)#load_long  addr)
 	| _ -> failwith "Unexpected type in table_load"
       in
       let table = map_n
@@ -1367,7 +1485,7 @@ struct
       let (is_sat, ce) = self#query_with_path_cond taut false in
         assert(is_sat);
         let addr = form_man#eval_expr_from_ce ce addr_e in
-        let cond = V.BinOp(V.EQ, addr_e, V.Constant(V.Int(V.REG_32, addr))) in
+        let cond = V.BinOp(V.EQ, addr_e, (addr_const addr)) in
 	let value =
 	  if Hashtbl.mem used_addr_cache addr then
 	    load_ent addr
@@ -1399,45 +1517,66 @@ struct
 	else 
 	  match self#decide_wd "Load" off_exp cloc with
 	    | None -> None
-	    | Some wd -> self#table_load cloc off_exp wd ty
+	    | Some wd -> self#table_load cloc (Some 0) off_exp (Int64.to_int wd) ty
 	    
     method private handle_load addr_e ty =
       if !opt_trace_offset_limit then
 	Printf.eprintf "Loading from... %s\n" (V.exp_to_string addr_e);
       match self#maybe_table_or_concrete_load addr_e ty with
-        | Some v -> (v, ty)
-        | None ->
-      let (r, addr) = self#eval_addr_exp_region addr_e in
-      let v =
-	(match ty with
-	   | V.REG_8  -> form_man#simplify8  (self#load_byte_region  r addr)
-	   | V.REG_16 -> form_man#simplify16 (self#load_short_region r addr)
-	   | V.REG_32 -> form_man#simplify32 (self#load_word_region  r addr)
-	   | V.REG_64 -> form_man#simplify64 (self#load_long_region  r addr)
-	   | _ -> failwith "Unsupported memory type") in
+      | Some v -> (v, ty)
+      | None ->
+	let location = 
+	  self#eval_addr_exp_region addr_e 0x8000 (self#decide_wd "Load") in
+	let r' = ref None in
+	let addr' = ref 0L in
+	let sym_region_table_v = 
+	  match location with
+	  | TableLocation(r, off_expr, _) ->
+	    (match self#decide_wd "Load" off_expr 0L with
+	    | None -> None
+	    | Some wd ->
+	      if !opt_trace_tables then
+		Printf.printf 
+		  "SRFM#handle_load table load for sym region with offset expr = %s\n"
+		  (V.exp_to_string off_expr);
+	      self#table_load 0L r off_expr (Int64.to_int wd) ty)
+	  | SingleLocation(r, addr) -> 
+	    r' := r; addr' := addr; None
+	in 
+	let v =
+	  match sym_region_table_v with
+	  | (Some value) -> value
+	  | None ->
+	    (match ty with
+	    | V.REG_8  -> form_man#simplify8  (self#load_byte_region  !r' !addr')
+	    | V.REG_16 -> form_man#simplify16 (self#load_short_region !r' !addr')
+	    | V.REG_32 -> form_man#simplify32 (self#load_word_region  !r' !addr')
+	    | V.REG_64 -> form_man#simplify64 (self#load_long_region  !r' !addr')
+	    | _ -> failwith "Unsupported memory type") 
+	in
 	(if !opt_trace_loads then
 	  (if !opt_trace_eval then
 	       Printf.eprintf "    "; (* indent to match other details *)
-	   Printf.printf "eLoad from %s "
-	     (match r with
+	   Printf.eprintf "Load from %s "
+	     (match !r' with
 		| None -> "sink"
 		| Some 0 -> "conc. mem"
 		| Some r_num -> "region " ^ (string_of_int r_num));
-	   Printf.eprintf "%08Lx = %s" addr (D.to_string_32 v);
+	   Printf.eprintf "%08Lx = %s" !addr' (D.to_string_32 v);
 	   (if !opt_use_tags then
 	      Printf.eprintf " (%Ld @ %08Lx)" (D.get_tag v) location_id);
 	   Printf.eprintf "\n"));
-      if r = Some 0 && (Int64.abs (fix_s32 addr)) < 4096L then
-	raise (NullDereference
+	if !r' = Some 0 && (Int64.abs (fix_s32 !addr')) < 4096L then
+	  raise (NullDereference
 		 { eip_of_deref = self#get_eip;
 		   last_set_to_null =
 		     (try
-		       Hashtbl.find last_set_null addr
+		       Hashtbl.find last_set_null !addr'
 		      with Not_found -> Int64.sub Int64.zero Int64.one);
-		   addr_derefed = addr;});
+		   addr_derefed = !addr';});
 	(v, ty)
 
-    method private push_cond_prefer_true cond_v = 
+    method private push_cond_prefer_true cond_v ident =
       try
 	if (D.to_concrete_1 cond_v) = 1 then
 	  (true, Some true)
@@ -1448,7 +1587,7 @@ struct
 	    let e = D.to_symbolic_1 cond_v in
 	      (dt#start_new_query_binary;
 	       self#note_first_branch;
-	       let b = self#extend_pc_pref e true true in
+	       let b = self#extend_pc_pref e true ident true in
 	       let choices = dt#check_last_choices in
 		 dt#count_query;
 		 (b, choices))
@@ -1556,8 +1695,8 @@ struct
 		Some (offset, cond0, 1)
 	  | _ -> None
 
-    method private target_solve cond_v =
-      let (b, choices) = self#push_cond_prefer_true cond_v in
+    method private target_solve cond_v ident =
+      let (b, choices) = self#push_cond_prefer_true cond_v ident in
 	if !opt_trace_target then
 	  Printf.eprintf "%s, %b\n"
 	    (match choices with
@@ -1572,7 +1711,7 @@ struct
 	true
 
     method private target_solve_single offset cond_v wd =
-      if self#target_solve cond_v then
+      if self#target_solve cond_v 0x9300 then
 	((if !opt_target_guidance <> 0.0 then
 	    let depth = self#input_depth in
 	    let score = if depth = 0 then offset else
@@ -1592,7 +1731,7 @@ struct
       if !opt_trace_target then
 	Printf.eprintf "Checking for full match: ";
       match
-	self#push_cond_prefer_true (D.from_symbolic all_match)
+	self#push_cond_prefer_true (D.from_symbolic all_match) 0x9130
       with
 	| (_, Some true) ->
 	    if !opt_trace_target then
@@ -1612,34 +1751,35 @@ struct
 	    if !opt_finish_on_target_match then
 	      self#finish_fuzz "target full match"
 
-    method private table_store cloc off_exp e maxval ty value =
+    method private table_store cloc region_num off_exp e maxval ty value =
       let load_ent addr = match ty with
 	| V.REG_8  -> form_man#simplify8
-	    ((self#region (Some 0))#load_byte  addr)
+	    ((self#region region_num)#load_byte  addr)
 	| V.REG_16 -> form_man#simplify16
-	    ((self#region (Some 0))#load_short addr)
+	    ((self#region region_num)#load_short addr)
 	| V.REG_32 -> form_man#simplify32
-	    ((self#region (Some 0))#load_word  addr)
+	    ((self#region region_num)#load_word  addr)
 	| V.REG_64 -> form_man#simplify64
-	    ((self#region (Some 0))#load_long  addr)
+	    ((self#region region_num)#load_long  addr)
 	| _ -> failwith "Unexpected type in table_store" 
       in
       let store_ent addr v = match ty with
-	| V.REG_8  -> (self#region (Some 0))#store_byte  addr v
-	| V.REG_16 -> (self#region (Some 0))#store_short addr v
-	| V.REG_32 -> (self#region (Some 0))#store_word  addr v
-	| V.REG_64 -> (self#region (Some 0))#store_long  addr v
+	| V.REG_8  -> (self#region region_num)#store_byte  addr v
+	| V.REG_16 -> (self#region region_num)#store_short addr v
+	| V.REG_32 -> (self#region region_num)#store_word  addr v
+	| V.REG_64 -> (self#region region_num)#store_long  addr v
 	| _ -> failwith "Unexpected store type in table_store"
       in
       let stride = stride form_man off_exp in
       let stride64 = Int64.of_int stride in
-      let num_ents64 = Int64.div (Int64.succ maxval) stride64 in
+      let num_ents64 = Int64.succ (Int64.div maxval stride64) in
       let num_ents = Int64.to_int num_ents64 in
       let target_conds = ref [] in
         for i = 0 to num_ents - 1 do
 	  let addr = Int64.add cloc (Int64.of_int (i * stride)) in
 	  let old_v = load_ent addr in
-	  let cond_e = (V.BinOp(V.EQ, e, V.Constant(V.Int(V.REG_32, addr)))) in
+	  let cond_e = (V.BinOp(V.EQ, off_exp, 
+				addr_const (Int64.of_int (i*stride)))) in
 	  let cond_v = D.from_symbolic cond_e in
 	  let ite_v = form_man#make_ite cond_v ty value old_v in
 	    store_ent addr ite_v;
@@ -1661,7 +1801,7 @@ struct
 	     all_match = conjoin !target_conds in
 	   if !opt_trace_target then
 	     Printf.eprintf "Checking for any match to target: ";
-	   ignore(self#target_solve (D.from_symbolic any_match));
+	   ignore(self#target_solve (D.from_symbolic any_match) 0x9320);
 	   self#table_check_full_match all_match cloc maxval);
 	true
 
@@ -1677,7 +1817,7 @@ struct
       let (is_sat, ce) = self#query_with_path_cond taut false in
         assert(is_sat);
         let addr = form_man#eval_expr_from_ce ce addr_e in
-        let cond = V.BinOp(V.EQ, addr_e, V.Constant(V.Int(V.REG_32, addr))) in
+        let cond = V.BinOp(V.EQ, addr_e, addr_const addr) in
 	  if !opt_trace_offset_limit then
 	    Printf.eprintf "Concretized store once to 0x%08Lx\n" addr;
           store_ent addr value;
@@ -1699,7 +1839,7 @@ struct
 	else
 	  match self#decide_maxval "Store" off_exp cloc with
 	    | None -> false
-	    | Some maxval -> self#table_store cloc off_exp e maxval ty value
+	    | Some maxval -> self#table_store cloc (Some 0) off_exp e maxval ty value
 
     method jump_hook last_insn last_eip eip =
       spfm#jump_hook last_insn last_eip eip;
@@ -1763,7 +1903,7 @@ struct
 					      bound_c)
 		   in
 		     match 
-		       self#check_cond overlap_cond
+		       self#check_cond overlap_cond 0x0000
 		     with
 		       | (None|Some true) ->
 			   Printf.eprintf
@@ -1797,41 +1937,57 @@ struct
       if (!opt_no_table_store) ||
 	not (self#maybe_table_or_concrete_store addr_e ty value)
       then
-      let (r, addr) = self#eval_addr_exp_region addr_e in
-	if r = Some 0 && (Int64.abs (fix_s32 addr)) < 4096L then
-	raise (NullDereference
-		 { eip_of_deref = self#get_eip;
-		   last_set_to_null =
-		     (try
-		       Hashtbl.find last_set_null addr
-		      with Not_found -> Int64.sub Int64.zero Int64.one);
-		   addr_derefed = addr;});
+	let location = 
+	  self#eval_addr_exp_region addr_e 0x9000 (self#decide_maxval "Store") in
+	let r = ref None in
+	let addr = ref 0L in
+	let table_store_status =
+	  match location with
+	  | TableLocation(r, off_exp, cloc) ->
+	    (match self#decide_maxval "Store" off_exp 0L with
+	    | None -> false
+	    | Some maxval -> 
+	      self#table_store cloc r off_exp 
+		(D.to_symbolic_32 (self#eval_int_exp_simplify addr_e)) 
+		maxval ty value)
+	  | SingleLocation(r', addr') -> r := r'; addr := addr'; false
+	in
+	if !r = Some 0 && (Int64.abs (fix_s32 !addr)) < 4096L then
+	  raise (NullDereference
+		   { eip_of_deref = self#get_eip;
+		     last_set_to_null =
+		       (try
+			  Hashtbl.find last_set_null !addr
+			with Not_found -> Int64.sub Int64.zero Int64.one);
+		     addr_derefed = !addr;});
 	if !opt_trace_stores then
-	  if not (ty = V.REG_8 && r = None) then
+	  if not (ty = V.REG_8 && !r = None) then
 	    (if !opt_trace_eval then
 	       Printf.eprintf "    "; (* indent to match other details *)
 	     Printf.eprintf "Store to %s "
-	       (match r with
+	       (match !r with
 		  | None -> "sink"
 		  | Some 0 -> "conc. mem"
 		  | Some r_num -> "region " ^ (string_of_int r_num));
-	     Printf.eprintf "%08Lx = %s" addr (D.to_string_32 value);
+	     Printf.eprintf "%08Lx = %s" !addr (D.to_string_32 value);
 	     (if !opt_use_tags then
 		Printf.eprintf " (%Ld @ %08Lx)" (D.get_tag value) location_id);
 	     Printf.eprintf "\n");
-	(match (self#started_symbolic, !opt_target_region_start, r) with
+	(match (self#started_symbolic, !opt_target_region_start, !r) with
 	   | (true, Some from, Some 0) ->
-	       (match self#target_store_condition addr from value ty with
+	       (match self#target_store_condition !addr from value ty with
 		  | Some (offset, cond_v, wd) ->
 		      self#target_solve_single offset cond_v wd
 		  | None -> ())
 	   | _ -> ());
-	(match ty with
-	   | V.REG_8 -> self#store_byte_region r addr value
-	   | V.REG_16 -> self#store_short_region r addr value
-	   | V.REG_32 -> self#store_word_region r addr value
-	   | V.REG_64 -> self#store_long_region r addr value
-	   | _ -> failwith "Unsupported type in memory move")
+	if not table_store_status then
+	  (match ty with
+	  | V.REG_8 -> self#store_byte_region !r !addr value
+	  | V.REG_16 -> self#store_short_region !r !addr value
+	  | V.REG_32 -> self#store_word_region !r !addr value
+	  | V.REG_64 -> self#store_long_region !r !addr value
+	  | _ -> failwith "Unsupported type in memory move")
+	else ()
 
     method concretize_misc =
       if !opt_arch = X86 then
@@ -1843,7 +1999,7 @@ struct
 	      if e <> V.Unknown("uninit") then
 		self#set_int_var var
 		  (D.from_concrete_32 
-		     (self#concretize V.REG_32 e))
+		     (self#concretize V.REG_32 e 0x6a00))
 
     method make_sink_region varname size =
       self#add_sink_region

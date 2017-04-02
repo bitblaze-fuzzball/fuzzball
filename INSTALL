@@ -79,20 +79,28 @@ changes incompatibly from time to time, requiring matching updates in
 our interface code (look for "#if VEX_VERSION > xxxx" in
 libasmir/src).
 
-The most recent version of VEX we've checked to work correctly out of
-the box is r2737. Typical commands to check out and compile it look
-like:
+The most recent version of VEX we've tested with is r3206. However it
+doesn't work out of the box because the Valgrind developers have
+broken their Makefile. A patch for this is in vex-r3206.patch. You'll
+want to use this version if you're running x86-64 binaries new enough
+to contain MPX instructions, since VEX versions before r2858 can't
+deal with them. However ARM support hasn't been tested in this version
+yet.
+
+The more recent stable version of VEX we recommend is r2737. For x86
+and x86-64 it works out of the box. Typical commands to check out and
+compile it look like:
 
    % svn co -r2737 svn://svn.valgrind.org/vex/trunk vex-r2737
    % cd vex-r2737
    % make -f Makefile-gcc
 
-For many uses of FuzzBALL, especially on x86, any version of VEX will
-work just fine. If you want to run on ARM code it's more important to
-use a more recent version. Some changes to VEX to make it work better
-for our purposes are in vex-r????.patch. For x86, these only affect a
-few obscure instructions. But for ARM they also disable a Thumb
-instruction optimization that tries to peek directly at other
+For many uses of FuzzBALL, and especially on x86-32, any version of
+VEX will work just fine. If you want to run on ARM code it's more
+important to use a more recent version. Some changes to VEX to make it
+work better for our purposes are in vex-r????.patch. For x86, these
+only affect a few obscure instructions. But for ARM they also disable
+a Thumb instruction optimization that tries to peek directly at other
 instruction bytes in a way that usually crashes FuzzBALL.
 
 The oldest version we've traditionally used is r1856. Back then the
@@ -106,19 +114,26 @@ build steps instead looked like:
 You need a version of the Binutils library suitable for development;
 for instance, the "binutils-dev" package in Debian or Ubuntu.
 
-If you want cross-architecture support, you'll probably need to
-compile your own version of the Binutils. (Debian has a
-binutils-multiarch, but no binutils-multiarch-dev.) You can get the
-source at:
+If you want cross-architecture support, you may want to compile your
+own version of the Binutils. (Debian has a binutils-multiarch, but for
+a long time there was no binutils-multiarch-dev, and we haven't done
+much testing with it.) You can get the source at:
 
 http://www.gnu.org/s/binutils/
 
-and compile it with:
+and compile it with, for instance:
 
-../configure --disable-werror --enable-targets=arm-linux-gnueabi,i486-linux-gnu,x86_64-linux-gnu --prefix=<wherever>/binutils-multiarch
+../configure --disable-werror --disable-shared --enable-targets=arm-linux-gnueabi,i486-linux-gnu,x86_64-linux-gnu --prefix=<wherever>/binutils-multiarch
 
 and then pass --with-binutils=<wherever>/binutils-multiarch to
-Vine's ./configure.
+Vine's ./configure. In this case where you're using the Binutils
+compiled in a non-system location, the choice that will make later
+steps easiest is to compile only a static version of the Binutils
+libraries, which is what --disable-shared does. Shared libraries save
+space, but they make the build process more complicated because they
+need to be found both at compile time and at runtime. (FuzzBALL's
+build process doesn't currently incorporate libtool, which would be
+the most standard way to automate the linking decisions.)
 
 4. STP
 

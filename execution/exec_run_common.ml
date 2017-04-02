@@ -156,15 +156,11 @@ let known_unknowns = (
     Hashtbl.replace h "Floating point binop" ();
     Hashtbl.replace h "Floating point triop" ();
     Hashtbl.replace h "floatcast" ();
-    Hashtbl.replace h "CCall: x86g_create_fpucw" ();
+    Hashtbl.replace h "CCall: x86g_create_fpucw" (); (* s/b handled now *)
     Hashtbl.replace h "CCall: x86g_calculate_FXAM" ();
-    Hashtbl.replace h "CCall: x86g_check_fldcw" ();
-    Hashtbl.replace h "register type (I64)" ();
-    Hashtbl.replace h "register type (F32)" ();
-    Hashtbl.replace h "register type (F64)" ();
-    Hashtbl.replace h "register type (I128)" ();
-    Hashtbl.replace h "register type (V128)" ();
-    Hashtbl.replace h "Unrecognized binary op" ();
+    Hashtbl.replace h "CCall: x86g_check_fldcw" (); (* s/b handled now *)
+    Hashtbl.replace h "Unrecognized binary op" (); (* XXX not known *)
+    Hashtbl.replace h "loadF80" ();
     h)
 
 (* Disable "unknown" statments it seems safe to ignore *)

@@ -46,6 +46,7 @@ export SOURCES = \
 	sym_region_frag_machine.mli sym_region_frag_machine.ml \
 	special_handlers.mli special_handlers.ml \
 	cgc_syscalls.mli cgc_syscalls.ml \
+	noop_syscalls.mli noop_syscalls.ml \
 	linux_syscalls.mli linux_syscalls.ml \
 	linux_loader.mli linux_loader.ml \
 	decree_loader.mli decree_loader.ml \

@@ -58,6 +58,8 @@ val int64_urandom : int64 -> int64
 val int64_u_to_float : int64 -> float
 val int64_u_of_float : float -> int64
 val int64_u_of_string : string -> int64
+val int64_floor_log2 : int64 -> int
+val int64_ceil_log2 : int64 -> int
 
 val run_with_remapped_fd :
   Unix.file_descr -> Unix.file_descr -> (unit -> 'a) -> 'a

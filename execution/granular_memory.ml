@@ -445,7 +445,7 @@ struct
 	| Some l -> l
 	| None ->
 	    let l = missing 64 addr in
-	      self#store_word ~prov:Interval_tree.Internal addr l;
+	      self#store_long ~prov:Interval_tree.Internal addr l;
 	      l
 
     method private virtual store_common_fast : int64 ->

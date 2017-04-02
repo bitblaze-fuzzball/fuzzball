@@ -373,6 +373,34 @@ IRCAS* vx_emptyIRCAS ( void ) {
 }
 #endif
 
+#if VEX_VERSION >= 2642
+/* Constructors -- IRStoreG and IRLoadG */
+
+IRStoreG* mkIRStoreG ( IREndness end,
+                       IRExpr* addr, IRExpr* data, IRExpr* guard )
+{
+   IRStoreG* sg = (IRStoreG*)vx_Alloc(sizeof(IRStoreG));
+   sg->end      = end;
+   sg->addr     = addr;
+   sg->data     = data;
+   sg->guard    = guard;
+   return sg;
+}
+
+IRLoadG* mkIRLoadG ( IREndness end, IRLoadGOp cvt,
+                     IRTemp dst, IRExpr* addr, IRExpr* alt, IRExpr* guard )
+{
+   IRLoadG* lg = (IRLoadG*)vx_Alloc(sizeof(IRLoadG));
+   lg->end     = end;
+   lg->cvt     = cvt;
+   lg->dst     = dst;
+   lg->addr    = addr;
+   lg->alt     = alt;
+   lg->guard   = guard;
+   return lg;
+}
+#endif
+
 /* Constructors -- IRStmt */
 
 IRStmt* vx_IRStmt_NoOp ( void )
@@ -492,6 +520,23 @@ IRStmt* vx_IRStmt_LLSC ( IREndness end, IRTemp result, IRExpr* addr,
    s->Ist.LLSC.result    = result;
    s->Ist.LLSC.addr      = addr;
    s->Ist.LLSC.storedata = storedata;
+   return s;
+}
+#endif
+
+#if VEX_VERSION >= 2642
+IRStmt* vx_IRStmt_StoreG ( IREndness end, IRExpr* addr, IRExpr* data,
+			   IRExpr* guard ) {
+   IRStmt* s             = (IRStmt *)vx_Alloc(sizeof(IRStmt));
+   s->tag                = Ist_StoreG;
+   s->Ist.StoreG.details = mkIRStoreG(end, addr, data, guard);
+   return s;
+}
+IRStmt* vx_IRStmt_LoadG ( IREndness end, IRLoadGOp cvt, IRTemp dst,
+			  IRExpr* addr, IRExpr* alt, IRExpr* guard ) {
+   IRStmt* s            = (IRStmt *)vx_Alloc(sizeof(IRStmt));
+   s->tag               = Ist_LoadG;
+   s->Ist.LoadG.details = mkIRLoadG(end, cvt, dst, addr, alt, guard);
    return s;
 }
 #endif
@@ -775,6 +820,22 @@ IRStmt* vx_dopyIRStmt ( IRStmt* s )
 	    return vx_IRStmt_LLSC(s->Ist.LLSC.end, s->Ist.LLSC.result,
 				  addr2, storedata2);
 	 }
+#endif
+#if VEX_VERSION >= 2642
+      case Ist_StoreG: {
+         const IRStoreG* sg = s->Ist.StoreG.details;
+         return vx_IRStmt_StoreG(sg->end,
+				 vx_dopyIRExpr(sg->addr),
+				 vx_dopyIRExpr(sg->data),
+				 vx_dopyIRExpr(sg->guard));
+      }
+      case Ist_LoadG: {
+         const IRLoadG* lg = s->Ist.LoadG.details;
+         return vx_IRStmt_LoadG(lg->end, lg->cvt, lg->dst,
+				vx_dopyIRExpr(lg->addr),
+				vx_dopyIRExpr(lg->alt),
+				vx_dopyIRExpr(lg->guard));
+      }
 #endif
       default: 
          vx_panic("vx_dopyIRStmt");

@@ -119,6 +119,29 @@ object (self)
     ignore(exp_accept (self :> vine_visitor) e);
     puts ";\n"
 
+  method assert_array_contents ((vn, vs, vt) as v) el =
+    let len = List.length el in
+    let len64 = Int64.of_int len in
+    let idx_ty = index_type vt in
+    let v_s = var2s v in
+    let idx = ref 0 in
+      (match vt with
+         | Array(_, size) when size = len64
+             -> () (* as expected *)
+         | _ -> failwith "Unexpected variable type in assert_array_contents");
+      List.iter
+        (fun e ->
+	   let idx_e = Constant(Int(idx_ty, (Int64.of_int !idx))) in
+	     puts "ASSERT(";
+	     puts v_s;
+	     puts "[";
+	     ignore(exp_accept (self :> vine_visitor) idx_e);
+	     puts "] = ";
+	     ignore(exp_accept (self :> vine_visitor) e);
+	     puts ");\n";
+	     incr idx
+	) el
+
   method declare_freevars e =
     let () = puts "% free variables: \n" in
     let fvs = get_req_ctx e in 

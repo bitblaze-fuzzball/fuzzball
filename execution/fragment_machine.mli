@@ -103,6 +103,8 @@ class virtual fragment_machine : object
   method virtual make_regs_symbolic : unit
   method virtual load_x86_user_regs : Temu_state.userRegs -> unit
   method virtual print_regs : unit
+  method virtual printable_word_reg : register_name -> string
+  method virtual printable_long_reg : register_name -> string
 
   method virtual store_byte_conc  : ?prov:Interval_tree.provenance -> int64 -> int   -> unit
   method virtual store_short_conc : ?prov:Interval_tree.provenance -> int64 -> int   -> unit
@@ -166,8 +168,13 @@ class virtual fragment_machine : object
   method virtual set_word_reg_symbolic : register_name -> string -> unit
   method virtual set_word_reg_concolic :
     register_name -> string -> int64 -> unit
-  method virtual set_word_reg_fresh_symbolic : register_name -> string -> unit
-  method virtual set_word_reg_fresh_region : register_name -> string -> unit
+  method virtual set_word_reg_fresh_symbolic : register_name -> string
+    -> string
+  method virtual set_reg_fresh_region : register_name -> string -> unit
+
+  method virtual set_long_reg_symbolic : register_name -> string -> unit
+  method virtual set_long_reg_fresh_symbolic : register_name -> string
+    -> string
 
   method virtual run_sl : (string -> bool) -> Vine.stmt list -> string
 		  
@@ -279,6 +286,7 @@ class virtual fragment_machine : object
   method virtual load_byte_concretize  : int64 -> bool -> string -> int
   method virtual load_short_concretize : int64 -> bool -> string -> int
   method virtual load_word_concretize  : int64 -> bool -> string -> int64
+  method virtual load_long_concretize  : int64 -> bool -> string -> int64
 
   method virtual make_sink_region : string -> int64 -> unit
 
@@ -329,6 +337,8 @@ sig
     method make_regs_symbolic : unit
     method load_x86_user_regs : Temu_state.userRegs -> unit
     method print_regs : unit
+    method printable_word_reg : register_name -> string
+    method printable_long_reg : register_name -> string
 
     method store_byte  : ?prov:Interval_tree.provenance -> int64 -> D.t -> unit
     method store_short : ?prov:Interval_tree.provenance ->  int64 -> D.t -> unit
@@ -413,8 +423,11 @@ sig
 
     method set_word_reg_symbolic : register_name -> string -> unit
     method set_word_reg_concolic : register_name -> string -> int64 -> unit
-    method set_word_reg_fresh_symbolic : register_name -> string -> unit
-    method set_word_reg_fresh_region : register_name -> string -> unit
+    method set_word_reg_fresh_symbolic : register_name -> string -> string
+    method set_reg_fresh_region : register_name -> string -> unit
+
+    method set_long_reg_symbolic : register_name -> string -> unit
+    method set_long_reg_fresh_symbolic : register_name -> string -> string
 
     method private handle_load : Vine.exp -> Vine.typ -> (D.t * Vine.typ)
     method private handle_store : Vine.exp -> Vine.typ -> Vine.exp -> unit
@@ -433,6 +446,7 @@ sig
     method eval_bool_exp : Vine.exp -> bool
     method eval_addr_exp : Vine.exp -> int64
     method eval_label_exp : Vine.exp -> string
+    method eval_ite : D.t -> D.t -> D.t -> Vine.typ -> (D.t * Vine.typ)
 
     method jump : (string -> bool) -> string -> string
 
@@ -517,6 +531,8 @@ sig
 
     method get_loop_cnt : int64
 
+    method private get_stmt_num : int
+
     val form_man : Formula_manager.FormulaManagerFunctor(D).formula_manager
     method get_form_man :
       Formula_manager.FormulaManagerFunctor(D).formula_manager
@@ -544,6 +560,7 @@ sig
     method load_byte_concretize  : int64 -> bool -> string -> int
     method load_short_concretize : int64 -> bool -> string -> int
     method load_word_concretize  : int64 -> bool -> string -> int64
+    method load_long_concretize  : int64 -> bool -> string -> int64
     method make_sink_region : string -> int64 -> unit
 
     method add_extra_store_hook : (int64 -> int -> unit) -> unit

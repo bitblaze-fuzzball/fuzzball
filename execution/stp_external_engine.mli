@@ -7,9 +7,7 @@ class stp_external_engine : string -> object
   inherit Query_engine.query_engine
 
   method start_query : unit
-  method add_free_var : Vine.var -> unit
-  method add_temp_var : Vine.var -> unit
-  method assert_eq : Vine.var -> Vine.exp -> unit
+  method add_decl : Query_engine.qe_decl -> unit
   method add_condition : Vine.exp -> unit
   method push : unit
   method pop : unit

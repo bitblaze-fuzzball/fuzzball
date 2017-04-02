@@ -82,6 +82,7 @@ let opt_iteration_limit = ref 1000000000000L
 let opt_rare_delims = Hashtbl.create 11
 let opt_varying_rare_delims = Hashtbl.create 11
 let opt_auto_rare_delims = ref false
+let opt_iteration_limit_enforced = ref None
 let opt_insn_limit = ref Int64.minus_one
 let opt_watch_expr_str = ref None
 let opt_watch_expr = ref None
@@ -127,6 +128,7 @@ let opt_concrete_path = ref false
 let opt_concrete_path_simulate = ref false
 let opt_concolic_prob = ref None
 let opt_solve_path_conditions = ref false
+let opt_no_sym_regions = ref false
 let opt_trace_regions = ref false
 let opt_check_for_null = ref false
 let opt_finish_on_null_deref = ref false
@@ -193,13 +195,17 @@ let opt_table_limit = ref 0
 let opt_offset_limit = ref 0
 let opt_trace_offset_limit = ref false
 let opt_no_table_store = ref false
+let opt_tables_as_arrays = ref false
 let opt_implied_value_conc = ref false
 let opt_trace_ivc = ref false
+let opt_ite_ivc = ref false
 let opt_periodic_stats = ref None
 let opt_trace_working_ce_cache = ref false
 let opt_trace_global_ce_cache = ref false
-let opt_global_ce_cache_limit = ref 10000
+let opt_global_ce_cache_limit = ref 100
 let opt_disable_ce_cache = ref false
+let opt_narrow_bitwidth_cutoff = ref None
+let opt_t_expr_size = ref 10
 
 let opt_symbolic_memory = ref false
 let opt_zero_memory = ref false
@@ -276,6 +282,7 @@ let set_opt_veritesting str =
 
 let opt_trace_stmts = ref false
 let opt_trace_eval = ref false
+let opt_trace_client_reqs = ref false
 
 let asmir_arch () =
   asmir_arch_of_execution_arch !opt_arch

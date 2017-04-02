@@ -105,7 +105,13 @@ FILE *change_vex_debug_out(FILE *new_fp) {
     return old_fp;
 }
 
-void log_bytes( HChar* bytes, Int nbytes )
+void log_bytes(
+#if VEX_VERSION < 3047
+		HChar* bytes, Int nbytes
+#else
+		const HChar* bytes, SizeT nbytes
+#endif
+		)
 {
     if (vex_debug_fp) {
 	fwrite(bytes, 1, nbytes, vex_debug_fp);
@@ -115,7 +121,13 @@ void log_bytes( HChar* bytes, Int nbytes )
     }
 }
 
-Bool chase_into_ok( void *closureV, Addr64 addr64 )
+Bool chase_into_ok( void *closureV,
+#if VEX_VERSION < 3050
+		    Addr64 addr
+#else
+		    Addr addr
+#endif
+		    )
 {
     return False;
 }
@@ -128,12 +140,17 @@ void *dispatch( void )
 //----------------------------------------------------------------------
 // This is where we copy out the IRSB
 //----------------------------------------------------------------------
+#if VEX_VERSION > 2958
+#define const_r2958 const
+#else
+#define const_r2958 /* not const */
+#endif
 IRSB *instrument1(  void *callback_opaque, 
                     IRSB *irbb,
-                    VexGuestLayout *vgl,
-                    VexGuestExtents *vge,
+                    const_r2958 VexGuestLayout *vgl,
+                    const_r2958 VexGuestExtents *vge,
 #if VEX_VERSION >= 2549
-		    VexArchInfo *archinfo_host_unused,
+		    const_r2958 VexArchInfo *archinfo_host_unused,
 #endif
                     IRType gWordTy,
                     IRType hWordTy )
@@ -180,7 +197,11 @@ int count_bb_insns( asm_bb_t *bb, asm_function_t *func )
 }
 
 #if VEX_VERSION >= 2158
-static UInt dont_need_self_check ( void* opaque, VexGuestExtents* vge ) {
+static UInt dont_need_self_check ( void* opaque,
+#if VEX_VERSION >= 3084
+				   VexRegisterUpdates* pxControl,
+#endif
+				   const_r2958 VexGuestExtents* vge ) {
    return 0;
 }
 #endif
@@ -206,8 +227,10 @@ void translate_init()
     vc.iropt_level                  = 2;
 #if VEX_VERSION < 2454
     vc.iropt_precise_memory_exns    = False;
-#else
+#elif VEX_VERSION < 3084
     vc.iropt_register_updates       = VexRegUpdUnwindregsAtMemAccess;
+#else
+    vc.iropt_register_updates_default=VexRegUpdUnwindregsAtMemAccess;
 #endif
     vc.iropt_unroll_thresh          = 0;
     vc.guest_max_insns              = 1;    // By default, we translate 1 instruction at a time
@@ -219,7 +242,9 @@ void translate_init()
     LibVEX_Init(&failure_exit, 
                 &log_bytes, 
                 0,              // Debug level
+#if VEX_VERSION < 2955
                 False,          // Valgrind support
+#endif
                 &vc );
 
     // Setup the translation args
@@ -233,6 +258,9 @@ void translate_init()
     case VexArchARM:   vai_host.hwcaps = ARM_HWCAPS;   break;
     default:           assert(0); /* unsupported arch. */
     }
+#if VEX_VERSION >= 2910
+    vai_host.endness = VexEndnessLE;
+#endif
     vta.archinfo_host       = vai_host;
     vta.guest_bytes         = NULL;             // Set in translate_insns
     vta.guest_bytes_addr    = 0;                // Set in translate_insns
@@ -306,6 +334,9 @@ IRSB *translate_insn( VexArch guest,
       break;
     default:           assert(0); /* unsupported arch. */
     }
+#if VEX_VERSION >= 2910
+    vai_guest.endness = VexEndnessLE;
+#endif
 
     vta.arch_guest = guest;
     vta.archinfo_guest = vai_guest;
@@ -330,11 +361,16 @@ IRSB *translate_insn( VexArch guest,
 
 #if VEX_VERSION >= 1875
       // Allow both %fs and %gs overrides. This doesn't really assume
-      // the partuclar values implied by the field names, just that we
-      // will always be able to get the base address out of the guest
-      // state.
+      // the partuclar values implied by the (original) field names,
+      // just that we will always be able to get the base address out
+      // of the guest state.
+#if VEX_VERSION < 3043
       vta.abiinfo_both.guest_amd64_assume_fs_is_zero = 1;
       vta.abiinfo_both.guest_amd64_assume_gs_is_0x60 = 1;
+#else
+      vta.abiinfo_both.guest_amd64_assume_fs_is_const = 1;
+      vta.abiinfo_both.guest_amd64_assume_gs_is_const = 1;
+#endif
 #endif
     }
 #endif

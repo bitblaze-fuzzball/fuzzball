@@ -80,21 +80,23 @@ class smtlib_batch_engine e_s_t fname = object(self)
   val mutable free_vars = []
   val mutable eqns = []
   val mutable conds = []
+  val mutable tables = []
 
   method start_query =
     ()
 
-  method add_free_var var =
-    free_vars <- var :: free_vars
-
   method private real_add_free_var var =
     self#visitor#declare_var var
 
-  method add_temp_var var =
-    ()
+  method private real_add_table var el =
+    self#visitor#declare_var var;
+    self#visitor#assert_array_contents var el
 
-  method assert_eq var rhs =
-    eqns <- (var, rhs) :: eqns;
+  method add_decl d =
+    match d with
+      | InputVar(v) -> free_vars <- v :: free_vars
+      | TempVar(v, e) -> eqns <- (v, e) :: eqns
+      | TempArray(v, el) -> tables <- (v, el) :: tables
 
   method add_condition e =
     conds <- e :: conds
@@ -102,14 +104,15 @@ class smtlib_batch_engine e_s_t fname = object(self)
   val mutable ctx_stack = []
 
   method push =
-    ctx_stack <- (free_vars, eqns, conds) :: ctx_stack
+    ctx_stack <- (free_vars, eqns, conds, tables) :: ctx_stack
 
   method pop =
     match ctx_stack with
-      | (free_vars', eqns', conds') :: rest ->
+      | (free_vars', eqns', conds', tables') :: rest ->
 	  free_vars <- free_vars';
 	  eqns <- eqns';
 	  conds <- conds';
+	  tables <- tables';
 	  ctx_stack <- rest
       | [] -> failwith "Context underflow in smtlib_batch_engine#pop"
 
@@ -124,16 +127,16 @@ class smtlib_batch_engine e_s_t fname = object(self)
 
   method private real_prepare =
     let fname = self#get_fresh_fname in
-    let logic = match e_s_t with
-      | (Z3|MATHSAT) -> "QF_FPBV"
-      | _ -> "QF_BV"
-    in
       chan <- Some(open_out (fname ^ ".smt2"));
       visitor <- Some(new Smt_lib2.vine_smtlib_printer
 			(output_string self#chan));
-      output_string self#chan
-	("(set-logic "^logic^")\n(set-info :smt-lib-version 2.0)\n\n");
+      (match choose_smtlib_logic e_s_t with
+	| Some logic ->
+	    output_string self#chan ("(set-logic "^logic^")\n");
+	| None -> ());
+      output_string self#chan "(set-info :smt-lib-version 2.0)\n\n";
       List.iter self#real_add_free_var (List.rev free_vars);
+      List.iter (fun (v,el) -> self#real_add_table v el) (List.rev tables);
       List.iter self#real_assert_eq (List.rev eqns);
 
   method query qe =
@@ -248,5 +251,6 @@ class smtlib_batch_engine e_s_t fname = object(self)
     visitor <- None;
     free_vars <- [];
     eqns <- [];
-    conds <- []
+    conds <- [];
+    tables <- []
 end

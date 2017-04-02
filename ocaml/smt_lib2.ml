@@ -23,14 +23,33 @@ let smtlib2_rm = function
   | Vine_util.ROUND_NEGATIVE          -> "RTN"
   | Vine_util.ROUND_ZERO              -> "RTZ"
 
+let binary_str x len =
+  let rec loop x l =
+    if l <= 0 then
+      []
+    else
+      (if Int64.logand x 1L <> 0L then "1" else "0") ::
+	(loop (Int64.shift_right x 1) (l - 1))
+  in
+    String.concat "" (List.rev (loop x len))
+
+let bvconst_str x len =
+  if len mod 4 = 0 then
+    let fmt_str = "#x%0" ^ (string_of_int (len / 4)) ^ "x" in
+      sprintf (Scanf.format_from_string fmt_str "#x%0Lx") x
+  else
+    "#b" ^ (binary_str x len)
+
 (** Class for printing out SMT-LIB2 syntax for an expression. *)
 class vine_smtlib_printer puts =
   let rec type2s = function
     | REG_1 -> "Bool"
     | t when is_integer_type t ->
 	"(_ BitVec "^string_of_int(Vine.bits_of_width t)^")"
-    | Array(t2,i) ->
-        failwith("Bitvector arrays not supported for SMT-LIB2 translation")
+    | Array(elt_ty, size) ->
+	let elt_ty_s = type2s elt_ty in
+	let idx_wd = Vine_util.int64_ceil_log2 size in
+	  "(Array (_ BitVec "^(string_of_int idx_wd)^") " ^ elt_ty_s ^ ")"
     | x ->
 	failwith("Unsupported type for SMT-LIB translation: "^type_to_string x)
 
@@ -92,6 +111,25 @@ object (self)
       puts(sprintf "(assert (= %s " (var2s v));
       puts(def);
       puts "))\n"
+
+  method assert_array_contents ((vn, vs, vt) as v) el =
+    let len = List.length el in
+    let len64 = Int64.of_int len in
+    let idx_wd = Vine_util.int64_ceil_log2 len64 in
+    let v_s = var2s v in
+    let idx = ref 0 in
+      (match vt with
+	 | Array(_, size) when size = len64
+	     -> () (* as expected *)
+	 | _ -> failwith "Unexpected variable type in assert_array_contents");
+      assert(len = 1 lsl idx_wd); (* all contents should be present *)
+      List.iter
+	(fun e ->
+	   let e_s = self#translate_exp e in
+	   let idx_s = bvconst_str (Int64.of_int !idx) idx_wd in
+	     puts(sprintf "(assert (= (select %s %s) %s))\n" v_s idx_s e_s);
+	     incr idx
+	) el
 
   method private declare_freevars e =
     let fvs = get_req_ctx e in
@@ -157,13 +195,28 @@ object (self)
 	  )
       | Lval(Temp v) ->
 	  self#tr_var v
-      | Lval(Mem(((_,_,m_ty)), idx,t)) when is_not_memory t ->
-	  failwith "Memory access translation to SMT-LIB2 not supported"
+      | Lval(Mem(((_,_,Array(elt_ty, size)) as var), idx, load_ty))
+	  when elt_ty = load_ty ->
+	  let idx_wide = tr_exp idx and
+	      ary_wd = Vine_util.int64_ceil_log2 size and
+	      idx_ty = Vine_typecheck.infer_type_fast idx in
+	  let idx_exp =
+	    if ary_wd = (bits_of_width idx_ty) then
+	      idx_wide
+	    else
+	      let high_pos = string_of_int (ary_wd - 1) in
+		"((_ extract " ^ high_pos ^ " 0) " ^ idx_wide ^ ")"
+	  in
+	    "(select " ^ (self#tr_var var) ^ " " ^ idx_exp ^ ")"
       | Lval(Mem _) ->
 	  raise (Invalid_argument "Memory type not handled")
-
-      | Let(_,_,_) ->
-	  failwith "Let expression translation to SMT-LIB2 not supported"
+      | Let(Temp(v), rhs, body) ->
+	  let v_s = self#tr_var v and
+	      rhs_s = tr_exp rhs and
+	      body_s = tr_exp body in
+	    "(let ((" ^ v_s ^ " " ^ rhs_s ^ ")) " ^ body_s ^ ")"
+      | Let(Mem(_,_,_), _, _) ->
+	  failwith "Memory let expression translation to SMT-LIB2 not supported"
       | UnOp(uop, e1) ->
 	  let pre = match (uop, (Vine_typecheck.infer_type_fast e1)) with
 	    | (_, REG_1) -> "(not "
