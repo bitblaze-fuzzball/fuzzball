@@ -2991,7 +2991,8 @@ object(self)
 		 Printf.printf "ioctl(%d, 0x%Lx, 0x%08Lx)" fd req argp;
 	       self#sys_ioctl fd req argp;
 	 | (ARM, 55) -> uh "Check whether ARM fcntl syscall matches x86"
-	 | (X86, 55) -> (* fcntl *)
+	 | (X86, 55) (* fcntl *)
+	 | (X64, 72) ->
 	     let (ebx, ecx, edx) = read_3_regs () in
 	     let fd = Int64.to_int ebx and
 		 cmd = Int64.to_int ecx and
