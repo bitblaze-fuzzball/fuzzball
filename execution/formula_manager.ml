@@ -374,10 +374,11 @@ struct
 	    when List.mem table_var table_vars ->
 	    e
 	| V.Lval(V.Mem((_,region_str,ty1),
-		       V.Constant(V.Int(V.REG_32, addr)), ty2))
+		       V.Constant(V.Int((V.REG_32|V.REG_64), addr)), ty2))
 	  -> (self#add_mem_axioms region_str ty2 addr;
 	      V.Lval(V.Temp(self#mem_var region_str ty2 addr)))
-	| _ -> failwith "Bad expression in rewrite_mem_expr"
+	| _ -> failwith ("Bad expression " ^ (V.exp_to_string e) ^
+			   " in rewrite_mem_expr")
 
     method rewrite_for_solver e =
       let rec loop e =
