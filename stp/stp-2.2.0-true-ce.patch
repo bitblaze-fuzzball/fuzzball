@@ -1,0 +1,122 @@
+--- include/stp/c_interface.h	1970-01-01 01:00:01.000000000 +0100
++++ include/stp/c_interface.h	2017-06-15 18:04:30.766665708 +0100
+@@ -384,6 +384,11 @@
+ // Free the return value of vc_getWholeCounterExample
+ void vc_deleteWholeCounterExample(WholeCounterExample cc);
+ 
++// Counterexample as a Vine-style pair of ASTNode * arrays.
++// Free these with free() when you're done with them.
++Expr * vc_getTrueCounterExampleFst(VC vc);
++Expr * vc_getTrueCounterExampleSnd(VC vc);
++
+ // Kinds of Expr
+ enum exprkind_t
+ {
+--- lib/Interface/c_interface.cpp	1970-01-01 01:00:01.000000000 +0100
++++ lib/Interface/c_interface.cpp	2017-06-15 18:05:32.703061515 +0100
+@@ -1980,3 +1980,13 @@
+   }
+   return 1;
+ }
++
++Expr * vc_getTrueCounterExampleFst(VC vc) {
++  Expr * es = (Expr *)(((stpstar)vc)->Ctr_Example->GetTrueCounterExampleFst());
++  return es;
++}
++
++Expr * vc_getTrueCounterExampleSnd(VC vc) {
++  Expr * es = (Expr *)(((stpstar)vc)->Ctr_Example->GetTrueCounterExampleSnd());
++  return es;
++}
+--- include/stp/AbsRefineCounterExample/AbsRefine_CounterExample.h	1970-01-01 01:00:01.000000000 +0100
++++ include/stp/AbsRefineCounterExample/AbsRefine_CounterExample.h	2017-06-15 18:11:52.001486635 +0100
+@@ -117,6 +117,11 @@
+   // counter-examples in their own data structures.
+   ASTNodeMap GetCompleteCounterExample() { return CounterExampleMap; }
+ 
++  // Yet another counterexample format, this one as used by the
++  // Vine project's old OCaml interface.
++  ASTNode **GetTrueCounterExampleFst(void);
++  ASTNode **GetTrueCounterExampleSnd(void);
++
+   // Computes the truth value of a formula w.r.t counter_example
+   ASTNode ComputeFormulaUsingModel(const ASTNode& form);
+ 
+--- lib/AbsRefineCounterExample/CounterExample.cpp	1970-01-01 01:00:01.000000000 +0100
++++ lib/AbsRefineCounterExample/CounterExample.cpp	2017-06-15 18:07:12.119696979 +0100
+@@ -1009,4 +1009,75 @@
+   }
+ }
+ 
++  // The following two functions produce a counter example data
++  // structure that should exactly match the text output, in the form
++  // of two malloced, null-terminated arrays of ASTNode pointers. For
++  // compatiblity with Vine's old OCaml interface, but we should
++  // figure out whether STP standard interfaces can now be used
++  // instead. -SMcC
++  ASTNode **AbsRefine_CounterExample::GetTrueCounterExampleFst() {
++    // Take a copy of the counterexample map, 'cause TermToConstTermUsingModel
++    // changes it. Which breaks the iterator otherwise.
++    const ASTNodeMap c(CounterExampleMap);
++    
++    ASTNode** trueCEFst = (ASTNode**)malloc(sizeof(ASTNode*) * c.size());
++
++    ASTNodeMap::const_iterator it = c.begin();
++    ASTNodeMap::const_iterator itend = c.end();
++    int i=0;
++    for (; it != itend; it++)
++      {
++        const ASTNode& f = it->first;
++        const ASTNode& se = it->second;
++
++        //skip over introduced variables
++        if (f.GetKind() == SYMBOL && (bm->FoundIntroducedSymbolSet(f)))
++          {
++            continue;
++          }
++        if (f.GetKind() == SYMBOL     || 
++            (f.GetKind() == READ      && 
++             f[0].GetKind() == SYMBOL && 
++             f[1].GetKind() == BVCONST))
++          {
++           trueCEFst[i++] = new ASTNode(f);
++          }
++      }
++    trueCEFst[i] = 0; // null terminate
++    return trueCEFst;
++  }
++
++  ASTNode **AbsRefine_CounterExample::GetTrueCounterExampleSnd() {
++    // Take a copy of the counterexample map, 'cause TermToConstTermUsingModel
++    // changes it. Which breaks the iterator otherwise.
++    const ASTNodeMap c(CounterExampleMap);
++    
++    ASTNode** trueCESnd = (ASTNode**)malloc(sizeof(ASTNode*) * c.size());
++
++    ASTNodeMap::const_iterator it = c.begin();
++    ASTNodeMap::const_iterator itend = c.end();
++    int i=0;
++    for (; it != itend; it++)
++      {
++        const ASTNode& f = it->first;
++        const ASTNode& se = it->second;
++
++       assert(ARRAY_TYPE != se.GetType());
++
++        //skip over introduced variables
++        if (f.GetKind() == SYMBOL && (bm->FoundIntroducedSymbolSet(f)))
++          {
++            continue;
++          }
++        if (f.GetKind() == SYMBOL     || 
++            (f.GetKind() == READ      && 
++             f[0].GetKind() == SYMBOL && 
++             f[1].GetKind() == BVCONST))
++          {
++           trueCESnd[i++] = new ASTNode(se);
++          }
++      }
++    trueCESnd[i] = 0; // null terminate
++    return trueCESnd;
++  }
+ }
