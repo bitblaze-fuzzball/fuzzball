@@ -518,7 +518,7 @@ struct
       | Some x -> construct x
     in
     let o0 = D.extract_8_from_16 d 0 and
-	o1 = D.extract_8_from_16 d 1in
+	o1 = D.extract_8_from_16 d 1 in
     let b0 = select o0 bytes.(0) and
 	b1 = select o1 bytes.(1) in
       form_man#simplify16 (D.reassemble16 b0 b1)

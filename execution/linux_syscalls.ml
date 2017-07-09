@@ -294,7 +294,7 @@ object(self)
 
   method string_create len =
     try String.create len
-    with Invalid_argument("String.create")
+    with Invalid_argument(_ (* "String.create" *) )
 	-> raise (Unix.Unix_error(Unix.EFAULT, "String.create", ""))
 
   (* Right now we always redirect the program's FDs 1 and 2 (stdout

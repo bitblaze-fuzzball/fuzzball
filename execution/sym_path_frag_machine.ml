@@ -66,7 +66,7 @@ struct
 	    None
       with
 	| Not_found -> None
-	| Failure "int_of_string" -> None
+	| Failure _ (* "int_of_string" *) -> None
 
     method private ce_to_input_str ce =
       (* Ideally, I'd like to turn high characters into \\u1234 escapes *)
