@@ -173,12 +173,13 @@ struct
       FormMan.map_expr_temp form_man e f combine
 
   let narrow_bitwidth_cutoff () =
-    match (!opt_narrow_bitwidth_cutoff, (reg_addr ())) with
-      | ((Some i), _) -> i
-      | (_, V.REG_32) -> 23
-      | (_, V.REG_64) -> 23 (* also experimented with 40,
-			       not clear what's best *)
-      | (_, _) -> 23
+    match (!opt_narrow_bitwidth_cutoff, !opt_arch, (reg_addr ())) with
+      | ((Some i), _, _) -> i
+      | (_, ARM, V.REG_32) -> 15 (* ARM often uses lower memory regions *)
+      | (_, _, V.REG_32) -> 23
+      | (_, _, V.REG_64) -> 23 (* also experimented with 40,
+			          not clear what's best *)
+      | (_, _, _) -> 23
 
   let ctz i =
     let rec loop = function
