@@ -2589,7 +2589,7 @@ object(self)
 	   | (false, ARM) ->
 	       ["Linux"; (* sysname *)
 		nodename; (* nodename *)
-		"2.6.32-5-versatile"; (* release *)
+		"3.2.0-1-ARCH"; (* release *)
 		"#1 Wed Jun 15 07:34:48 UTC 2011"; (* version *)
 		"armv5tejl"; (* machine *)
 		"example.com" (* domain *)
