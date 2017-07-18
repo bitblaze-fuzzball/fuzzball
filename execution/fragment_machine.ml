@@ -2107,12 +2107,21 @@ struct
 	    let (v1, ty1) = self#eval_int_exp_ty e in
 	      self#eval_fcast kind rm ty v1 ty1
 	| V.Ite(cond, true_e, false_e) ->
-	    let (v_c, ty_c) = self#eval_int_exp_ty cond and
-		(v_t, ty_t) = self#eval_int_exp_ty true_e and
-		(v_f, ty_f) = self#eval_int_exp_ty false_e in
-	      assert(ty_c = V.REG_1);
-	      assert(ty_t = ty_f);
-	      self#eval_ite v_c v_t v_f ty_t
+           let (v_c, ty_c) = self#eval_int_exp_ty cond in
+           (try
+              (* short-circuit evaluation if the condition is concrete *)
+              let v_c_conc = D.to_concrete_1 v_c in
+              if v_c_conc = 1 then
+                self#eval_int_exp_ty true_e
+              else
+                self#eval_int_exp_ty false_e
+            with NotConcrete _ ->
+              (* symbolic execution evaluates both sides *)
+	         let (v_t, ty_t) = self#eval_int_exp_ty true_e and
+		     (v_f, ty_f) = self#eval_int_exp_ty false_e in
+	         assert(ty_c = V.REG_1);
+	         assert(ty_t = ty_f);
+	         self#eval_ite v_c v_t v_f ty_t)
 	(* XXX move this to something like a special handler: *)
 	| V.Unknown("rdtsc") -> ((D.from_concrete_64 1L), V.REG_64) 
 	| V.Unknown(_) ->
