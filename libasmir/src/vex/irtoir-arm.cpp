@@ -964,17 +964,17 @@ void arm_modify_flags(asm_program_t *prog, vine_block_t *block)
 	matched = match_ite(ir, dep1_st - 2, &cond, &exp_t, &exp_f, &res);
 	assert(matched != -1);
 	assert(exp_f);
-	dep1_expr = exp_f;
+	dep1_expr = exp_t;
 
 	matched = match_ite(ir, dep2_st - 2, &cond, &exp_t, &exp_f, &res);
 	assert(matched != -1);
 	assert(exp_f);
-	dep2_expr = exp_f;
+	dep2_expr = exp_t;
 
 	matched = match_ite(ir, ndep_st - 2, &cond, &exp_t, &exp_f, &res);
 	assert(matched != -1);
 	assert(exp_f);
-	ndep_expr = exp_f;
+	ndep_expr = exp_t;
     }
 
     Temp *NF = new Temp(REG_1, "R_NF");
@@ -1094,13 +1094,13 @@ void arm_modify_flags(asm_program_t *prog, vine_block_t *block)
 	    for (int i = start; i <= ndep_st; i++)
 		Stmt::destroy(ir->at(i));
 	    ir->erase(ir->begin() + start, ir->begin() + ndep_st + 1);
-	    Exp *ite = emit_ite(&new_ir, REG_1, cond, ecl(NF), nf);
+	    Exp *ite = emit_ite(&new_ir, REG_1, cond, nf, ecl(NF));
 	    new_ir.push_back(new Move(NF, ite));
-	    ite = emit_ite(&new_ir, REG_1, ecl(cond), ecl(ZF), zf);
+	    ite = emit_ite(&new_ir, REG_1, ecl(cond), zf, ecl(ZF));
 	    new_ir.push_back(new Move(ZF, ite));
-	    ite = emit_ite(&new_ir, REG_1, ecl(cond), ecl(CF), cf);
+	    ite = emit_ite(&new_ir, REG_1, ecl(cond), cf, ecl(CF));
 	    new_ir.push_back(new Move(CF, ite));
-	    ite = emit_ite(&new_ir, REG_1, ecl(cond), ecl(VF), vf);
+	    ite = emit_ite(&new_ir, REG_1, ecl(cond), vf, ecl(VF));
 	    new_ir.push_back(new Move(VF, ite));
 	    ir->insert(ir->begin() + start, new_ir.begin(), new_ir.end());
 	} else {
