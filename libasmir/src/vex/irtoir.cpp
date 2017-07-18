@@ -2606,8 +2606,25 @@ Stmt *translate_storeg( IRStmt *stmt, IRSB *irbb, vector<Stmt *> *irout ) {
     reg_t rtype = IRType_to_reg_type(itype);
 
     Mem *mem = new Mem(addr, rtype);
+#ifdef STOREG_ITE
+    // This translation is elegant and convenient in some ways for
+    // symbolic execution, but making it look like the store happens
+    // every time has problems with side-effects. For instance it
+    // looks like a problem if the address is null, but sometimes
+    // that's exactly what the guard checked.
     Exp *choice = _ex_ite(guard, data, ecl(mem));
     return new Move(mem, choice);
+#else
+    // Use a CJmp and a label, so there's no store if the guard is
+    // false.
+    Label *skip_store = mk_label();
+    Label *do_store = mk_label();
+    irout->push_back(new CJmp(guard, new Name(do_store->label),
+			      new Name(skip_store->label)));
+    irout->push_back(do_store);
+    irout->push_back(new Move(mem, data));
+    return skip_store;
+#endif
 }
 #endif
 
