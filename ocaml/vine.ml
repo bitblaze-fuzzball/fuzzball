@@ -434,8 +434,8 @@ let rec tattr_to_string at =
 let rec format_name ft (vid,name,typ) =
   let pp = Format.pp_print_string ft in
     pp name;
-    pp "_";
-    pp (string_of_int vid)
+    () (* pp "_";
+    pp (string_of_int vid) *)
 
 and format_var ?(print_type=true) ft ((vid,name,typ) as var) =
   let pp = Format.pp_print_string ft in
