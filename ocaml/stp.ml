@@ -523,6 +523,7 @@ object (self)
 	    | (SLT, _)         -> ("BVSLT(", ", ", ")", false)
 	    | (SLE, REG_1)     -> ("(", " OR (NOT ", "))", false)
 	    | (SLE, _)         -> ("BVSLE(", ", ", ")", false)
+	    | (CONCAT, _)      -> ("(", " @ ", ")", true)
 	    | (LSHIFT, _)
 	    | (ARSHIFT, _)
 	    | (RSHIFT, _) ->

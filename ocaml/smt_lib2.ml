@@ -468,6 +468,7 @@ object (self)
 	    | (LSHIFT, _)      -> ("(bvshl ", " ", ")")
 	    | (ARSHIFT, _)     -> ("(bvashr ", " ", ")")
 	    | (RSHIFT, _)      -> ("(bvlshr ", " ", ")")
+	    | (CONCAT, _)      -> ("(concat ", " ", ")")
 	  and e2 = match bop with
 	    | LSHIFT | ARSHIFT | RSHIFT ->
 	      (* SMT-LIB requires both shift operands to have the same size *)

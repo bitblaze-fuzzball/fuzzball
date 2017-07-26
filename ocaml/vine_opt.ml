@@ -56,6 +56,9 @@ let to_val t v =
   let mask = Int64.shift_right_logical (-1L) (64-bits_of_width t) in
     Constant(Int(t,Int64.logand mask v))
 
+(* Combine two bitvectors into a longer one. *)
+let bv_concat t v1 v2 =
+  Int64.logor v2 (Int64.shift_left v1 (bits_of_width t))
 
 (* flatten an expression to make it easier to rearange binops
  * Note: Should only be used with associative binops. *)
@@ -139,6 +142,8 @@ let rec constant_fold ctx e =
 	    | SDIVIDE -> to_val t (Int64.div (tos64 v1) (tos64  v2))
 	    | MOD -> to_val t (int64_urem (tos64 v1) (tos64 v2))
 	    | SMOD -> to_val t (Int64.rem (tos64 v1) (tos64 v2))
+	    | CONCAT -> to_val (double_width t)
+		(bv_concat t (to64 v1) (to64 v2))
 	    | SLT -> exp_bool(tos64  v1 < tos64 v2)
 	    | SLE -> exp_bool(tos64  v1 <= tos64  v2)
 	    | LT -> exp_bool(int64_ucompare (to64 v1) (to64 v2) < 0)

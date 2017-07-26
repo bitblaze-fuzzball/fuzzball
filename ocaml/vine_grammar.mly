@@ -26,7 +26,7 @@
 %token CJMP NAME JMP CAST INIT VAR LET IN TRUE FALSE LABEL
 %token ATTR CALL ASSERT HALT
 %token SPECIAL UNKNOWN STATE TVOID RETURN EXTERN 
-%token PLUS MINUS  DIVIDE MOD SMOD TIMES 
+%token PLUS MINUS CONCAT DIVIDE MOD SMOD TIMES
 %token SDIVIDE LSHIFT RSHIFT ARSHIFT XOR NEQ
 %token SLT SLE AND OR 
 %token EQUAL LT  LE NOT ASSIGN 
@@ -47,7 +47,7 @@
 %left EQUAL NEQ
 %left LT SLT SLE LE   GT GE SGT SGE
 %left LSHIFT RSHIFT ARSHIFT
-%left PLUS MINUS
+%left PLUS MINUS CONCAT
 %left TIMES DIVIDE SDIVIDE MOD SMOD
 %left UMINUS 
 %left NOT
@@ -286,6 +286,7 @@ expr:
 | expr GE expr       { BinOp(Vine.LE,  $3, $1) }
 | expr SGT expr      { BinOp(Vine.SLT, $3, $1) }
 | expr SGE expr      { BinOp(Vine.SLE, $3, $1) }
+| expr CONCAT expr   { BinOp(Vine.CONCAT, $1, $3) }
 | NOT expr           { UnOp(Vine.NOT, $2) }
 | MINUS expr %prec UMINUS  { UnOp(Vine.NEG, $2) }
 | constexp           { $1 } 

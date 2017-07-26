@@ -1826,6 +1826,7 @@ struct
 	       -> assert(ty1 = ty2); ty1
 	   | V.LSHIFT | V.RSHIFT | V.ARSHIFT
 	       -> ty1
+	   | V.CONCAT -> assert(ty1 = ty2); V.double_width ty1
 	   | V.EQ | V.NEQ | V.LT | V.LE | V.SLT | V.SLE
 	       -> assert(ty1 = ty2); V.REG_1) in
       let func =
@@ -1895,6 +1896,9 @@ struct
 	   | (V.XOR, V.REG_16) -> D.xor16
 	   | (V.XOR, V.REG_32) -> D.xor32
 	   | (V.XOR, V.REG_64) -> D.xor64
+	   | (V.CONCAT, V.REG_8)  -> (fun e1 e2 -> D.assemble16 e2 e1)
+	   | (V.CONCAT, V.REG_16) -> (fun e1 e2 -> D.assemble16 e2 e1)
+	   | (V.CONCAT, V.REG_32) -> (fun e1 e2 -> D.assemble16 e2 e1)
 	   | (V.EQ, V.REG_1)  -> D.eq1 
 	   | (V.EQ, V.REG_8)  -> D.eq8 
 	   | (V.EQ, V.REG_16) -> D.eq16
@@ -2167,14 +2171,21 @@ struct
       let (v, _) = self#eval_int_exp_ty exp in
 	v
 
-    method eval_int_exp_simplify exp =
-      match self#eval_int_exp_ty exp with
+    method private eval_int_exp_simplify_ty exp =
+      let (v, ty) = self#eval_int_exp_ty exp in
+      let v' =  match (v, ty) with
 	| (v, V.REG_1) -> form_man#simplify1 v
 	| (v, V.REG_8) -> form_man#simplify8 v
 	| (v, V.REG_16) -> form_man#simplify16 v
 	| (v, V.REG_32) -> form_man#simplify32 v
 	| (v, V.REG_64) -> form_man#simplify64 v
 	| _ -> failwith "Unexpected type in eval_int_exp_simplify"
+      in
+	(v', ty)
+
+    method eval_int_exp_simplify exp =
+      let (v, _) = self#eval_int_exp_simplify_ty exp in
+	v
 
     method eval_bool_exp exp =
       let v = self#eval_int_exp exp in
@@ -2603,7 +2614,7 @@ struct
 	loop (self#get_word_var R_EBP)
 
     method private eval_expr_to_string e =
-      match self#eval_int_exp_ty e with
+      match self#eval_int_exp_simplify_ty e with
 	| (v, V.REG_1) -> D.to_string_1 v
 	| (v, V.REG_8) -> D.to_string_8 v
 	| (v, V.REG_16) -> D.to_string_16 v
