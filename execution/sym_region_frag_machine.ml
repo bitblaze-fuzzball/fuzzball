@@ -890,7 +890,7 @@ struct
 	let e = D.to_symbolic_32 v in
 	  if do_influence then 
 	    (Printf.printf "Measuring symbolic %s influence..." name;
-	     infl_man#measure_point_influence name e);
+	     infl_man#measure_point_influence name [e]);
 	  self#concretize V.REG_32 e (0x5000 + 0x100 * (self#register_num reg))
 
     method get_long_var_concretize reg do_influence name : int64 =
@@ -900,7 +900,7 @@ struct
 	let e = D.to_symbolic_64 v in
 	  if do_influence then
 	    (Printf.printf "Measuring symbolic %s influence..." name;
-	     infl_man#measure_point_influence name e);
+	     infl_man#measure_point_influence name [e]);
 	  self#concretize V.REG_64 e (0x5000 + 0x100 * (self#register_num reg))
 
     method load_long_concretize addr do_influence name =
@@ -910,7 +910,7 @@ struct
 	let e = D.to_symbolic_64 v in
 	  if do_influence then
 	    (Printf.printf "Measuring symbolic %s influence..." name;
-	     infl_man#measure_point_influence name e);
+	     infl_man#measure_point_influence name [e]);
 	  self#concretize V.REG_64 e 0x6800
 
     method load_word_concretize addr do_influence name =
@@ -920,7 +920,7 @@ struct
 	let e = D.to_symbolic_32 v in
 	  if do_influence then 
 	    (Printf.printf "Measuring symbolic %s influence..." name;
-	     infl_man#measure_point_influence name e);
+	     infl_man#measure_point_influence name [e]);
 	  self#concretize V.REG_32 e 0x6400
 
     method load_short_concretize addr do_influence name =
@@ -930,7 +930,7 @@ struct
 	let e = D.to_symbolic_16 v in
 	  if do_influence then 
 	    (Printf.printf "Measuring symbolic %s influence..." name;
-	     infl_man#measure_point_influence name e);
+	     infl_man#measure_point_influence name [e]);
 	  Int64.to_int (self#concretize V.REG_16 e 0x6200)
 
     method load_byte_concretize addr do_influence name =
@@ -940,7 +940,7 @@ struct
 	let e = D.to_symbolic_8 v in
 	  if do_influence then 
 	    (Printf.printf "Measuring symbolic %s influence..." name;
-	     infl_man#measure_point_influence name e);
+	     infl_man#measure_point_influence name [e]);
 	  Int64.to_int (self#concretize V.REG_8 e 0x6100)
 
     method private maybe_concretize_binop op v1 v2 ty1 ty2 =

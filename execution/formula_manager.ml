@@ -1164,12 +1164,16 @@ struct
 	walk exp;
 	((List.rev !nontemps), (List.rev !temps))
 
-    method collect_for_solving u_temps conds val_e =
-      let val_expr = self#rewrite_for_solver val_e in
+    method collect_for_solving u_temps conds val_es = 
+      let val_exprs = (List.map self#rewrite_for_solver val_es) in
       let cond_expr = self#rewrite_for_solver
 	(conjoin (List.rev conds)) in
       let (nts1, ts1) = self#walk_temps cond_expr in
-      let (nts2, ts2) = self#walk_temps val_expr in
+      let (nts2, ts2) = List.fold_left
+	(fun (ntl, tl) val_e ->
+	   let (nt, t) = self#walk_temps val_e in
+	     (nt @ ntl, t @ tl))
+	([], []) val_exprs in
       let (nts3, ts3) = List.fold_left 
 	(fun (ntl, tl) (lhs, rhs) ->
 	   let (nt, t) = self#walk_temps rhs in
@@ -1184,9 +1188,9 @@ struct
       let m_vars = List.map (fun (v, _) -> v) m_axioms in
       let assigns = m_axioms @ temps in
       let decls = Vine_util.list_difference i_vars m_vars in
-      let inputs_in_val_expr = i_vars 
+      let inputs_in_val_exprs = i_vars 
       in
-	(decls, assigns, cond_expr, val_expr, inputs_in_val_expr)
+	(decls, assigns, cond_expr, val_exprs, inputs_in_val_exprs)
 
     (* Recursively traverse all the t variables and tables that are
        transitively referenced from an expression (typically a branch

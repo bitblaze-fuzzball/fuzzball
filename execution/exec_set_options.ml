@@ -36,7 +36,7 @@ let opt_symbolic_regions = ref []
 let opt_concolic_cstrings = ref []
 let opt_concolic_strings = ref []
 let opt_sink_regions = ref []
-let opt_measure_expr_influence_at_strings = ref None
+let opt_measure_expr_influence_at_strings = ref []
 let opt_check_condition_at_strings = ref []
 let opt_extra_condition_strings = ref []
 let opt_tracepoint_strings = ref []
@@ -80,7 +80,7 @@ let influence_cmdline_opts =
     ("-measure-expr-influence-at", Arg.String
        (fun s -> let (eip_s, expr_s) = split_string ':' s in
 	  opt_measure_expr_influence_at_strings :=
-	    Some (eip_s, expr_s)),
+	    (eip_s, expr_s) :: !opt_measure_expr_influence_at_strings),           
      "eip:expr Measure influence of value at given code address");
     ("-periodic-influence", Arg.String
        (fun s ->
@@ -600,12 +600,11 @@ let apply_cmdline_opts_early (fm : Fragment_machine.fragment_machine) dl =
      | Some s -> opt_watch_expr :=
 	 Some (Vine_parser.parse_exp_from_string dl s)
      | None -> ());
-  (match !opt_measure_expr_influence_at_strings with
-     | Some (eip_s, expr_s) ->
-	 opt_measure_expr_influence_at :=
-	   Some ((Int64.of_string eip_s),
-		 (Vine_parser.parse_exp_from_string dl expr_s))
-     | None -> ());
+  opt_measure_expr_influence_at :=
+        List.map (fun (eip_s, expr_s) ->
+	   ((Int64.of_string eip_s),
+	   (Vine_parser.parse_exp_from_string dl expr_s)))
+      !opt_measure_expr_influence_at_strings;
   opt_check_condition_at :=
     List.map (fun (eip_s, expr_s) ->
 		((Int64.of_string eip_s),

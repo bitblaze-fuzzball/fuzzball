@@ -50,7 +50,7 @@ val opt_trace_randomness : bool ref
 val opt_measure_influence_derefs : bool ref
 val opt_measure_influence_reploops : bool ref
 val opt_measure_deref_influence_at : int64 option ref
-val opt_measure_expr_influence_at : (int64 * Vine.exp) option ref
+val opt_measure_expr_influence_at : (int64 * Vine.exp) list ref
 val opt_multipath_influence_only : bool ref
 val opt_stop_at_measurement : bool ref
 val opt_periodic_influence : int option ref

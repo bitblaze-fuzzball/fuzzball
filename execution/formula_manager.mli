@@ -75,9 +75,9 @@ sig
     method if_expr_temp_unit : Vine.var -> (Vine.exp option -> unit) -> unit
 
     method collect_for_solving : (Vine.var * Vine.exp) list ->
-      Vine.exp list -> Vine.exp ->
+      Vine.exp list -> Vine.exp list ->
       (Vine.var list * (Vine.var * Vine.exp) list * Vine.exp * 
-	 Vine.exp * Vine.var list)
+	 Vine.exp list * Vine.var list)
 
     method one_cond_for_solving : Vine.exp -> unit Vine.VarHash.t ->
       Query_engine.qe_decl list * Vine.exp * Vine.var list

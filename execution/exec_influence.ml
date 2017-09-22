@@ -101,19 +101,19 @@ struct
 
     val measured_values = Hashtbl.create 30
       
-    method private take_measure key e =
+    method private take_measure key sym_exprs =
       let old = (try Hashtbl.find measured_values key
 		 with Not_found -> []) in
-	Hashtbl.replace measured_values key ((fm#get_path_cond, e) :: old)
+	Hashtbl.replace measured_values key ((fm#get_path_cond, sym_exprs) :: old)
 
-    method take_measure_eip e =
+    method take_measure_eip sym_exprs =
       let eip = fm#get_eip in
       let str = Printf.sprintf "eip 0x%08Lx" eip in
-	self#take_measure str e
+	self#take_measure str sym_exprs
 
     method take_measure_expr key_expr e =
       let str = Printf.sprintf "expr %s" (V.exp_to_string key_expr) in
-	self#take_measure str e
+	self#take_measure str [e]
 
     method private check_sat target_eq cond =
       qe#push;
@@ -347,17 +347,40 @@ struct
 	Printf.printf "Reached unsat after %d constraints\n" num_xors;
 	rm_xors_loop num_xors
 
-    method private influence_strategies target_eq target_e ty =
+    method private influence_strategies target_eq target_es tys =
+      let rename_var name =
+            let need_bars = ref false
+            and new_name = ref "" in
+              for i = 0 to (String.length name) - 1 do
+	        match name.[i] with
+	          | '_' -> new_name := !new_name ^ "-"
+	          | '-' -> new_name := !new_name ^ "_"; need_bars := true
+	          | _ -> new_name := !new_name ^ (Char.escaped name.[i])
+              done;
+              if !need_bars then
+	        "|" ^ !new_name ^ "|"
+              else
+	        !new_name
+      in
       let searchmc_path = "/home/smkim/Desktop/tools/SearchMC-umn/" in
       let fuzzball_path = Sys.getcwd () in
       let file_name = qe#get_file_name in
-      let cmd = "./SearchMC.pl -cl=0.9 -thres=2 -output_name=influence-target -input_type=smt -solver=cryptominisat4 -verbose=1 " ^ fuzzball_path ^ file_name ^ ".smt2" in
+      let vars = List.map (fun exp -> match exp with 
+         | V.Lval(V.Temp(var)) -> var
+         | _ -> failwith "Unexpected expression in target expressions") target_es in
+      let var_names = List.map (fun (_, var_name, _) -> rename_var var_name) vars in
+      let output_names = List.map (fun s -> "-output_name="^s) var_names in
+      let output_name_str = String.concat " " output_names in
+      
+      
+      let cmd = "./SearchMC.pl -cl=0.9 -thres=2 " ^ output_name_str ^ " -input_type=smt -solver=cryptominisat5 -verbose=1 " ^ fuzzball_path ^ "/" ^ file_name ^ ".smt2" in
+      Printf.printf "%s\n" cmd;
       ignore(Unix.chdir searchmc_path);
       ignore(Sys.command cmd);
       ignore(Unix.chdir fuzzball_path);
     0.0
-    
-      (* (let unsign_min = self#find_bound target_eq target_e false false and
+    (*
+       (let unsign_min = self#find_bound target_eq target_e false false and
 	   unsign_max = self#find_bound target_eq target_e false true and
 	   signed_min = self#find_bound target_eq target_e true false and
 	   signed_max = self#find_bound target_eq target_e true true
@@ -372,7 +395,7 @@ struct
 	   unsign_min unsign_max unsign_range_i;
 	 Printf.printf "Upper bound from signed range [0x%Lx, 0x%Lx]: %f\n"
 	   signed_min signed_max signed_range_i);
-      let points_bits = 6 in
+      let points_bits = 7 in
       let points_max = (1 lsl points_bits) + 1 in
       let points = self#pointwise_enum target_eq target_e [] points_max in
       let num_points = List.length points in
@@ -402,25 +425,25 @@ struct
 	       self#xor_walk_simple target_eq target_e 50
 	       (* self#xor_then_enum target_eq target_e 50 *)
 	  )
-	  *)
+*)	  
     
-    method measure_influence_common decls assigns cond_e target_e =
+    method measure_influence_common decls assigns cond_e target_es = (* target_e list*)
       Printf.printf "In measure_influence_common\n";
       if not qe_ready then
 	(qe <- construct_solver "-influence";
 	 qe_ready <- true);
-      let ty = Vine_typecheck.infer_type None target_e in
+      let tys = List.map (fun target_e -> Vine_typecheck.infer_type None target_e) target_es in (*list*)
       let temp_vars = List.map (fun (var, e) -> var) assigns in
-      let let_vars = (collect_let_vars target_e) @
+      let let_vars = List.concat (List.map collect_let_vars target_es) @
 	List.concat (List.map (fun (var, e) -> collect_let_vars e) assigns) in
-      let target_var = V.newvar "influence_target" ty in
+      let target_vars = List.mapi (fun i ty -> V.newvar ("influence_target_"^(string_of_int i)) ty) tys in (*naming*)
       let free_decls =
-	target_var :: Vine_util.list_difference
+	target_vars @ Vine_util.list_difference
 	  (Vine_util.list_difference decls temp_vars)
 	  let_vars
       in
-      let target_eq = V.BinOp(V.EQ, V.Lval(V.Temp(target_var)), target_e) in
-      let target_e' = V.Lval(V.Temp(target_var)) in
+      let target_eqs = List.map2 (fun target_var target_e -> V.BinOp(V.EQ, V.Lval(V.Temp(target_var)), target_e)) target_vars target_es in (*list*)
+      let target_es' = List.map (fun target_var -> V.Lval(V.Temp(target_var))) target_vars in
 	Printf.printf "Free variables are";
 	List.iter (fun v -> Printf.printf " %s" (V.var_to_string v))
 	  free_decls;
@@ -434,20 +457,22 @@ struct
 	List.iter (fun (v, exp) -> qe#add_decl (TempVar(v, exp))) assigns;
 	Printf.printf "Conditional expr is %s\n" (V.exp_to_string cond_e);
 	qe#add_condition cond_e;
-	Printf.printf "Target expr is %s\n" (V.exp_to_string target_e);
+	List.iter (fun target_e -> Printf.printf "Target expr is %s\n" (V.exp_to_string target_e))
+	  target_es;
 	flush stdout;
-	assert(self#check_sat target_eq V.exp_true <> None);
-	let i = self#influence_strategies target_eq target_e' ty in
+	assert(self#check_sat (conjoin target_eqs) V.exp_true <> None);
+	let i = self#influence_strategies (conjoin target_eqs) target_es' tys in
 	  qe#reset;
 	  i
 
-    method measure_influence (target_expr : V.exp) =
-      let (decls, assigns, cond_e, target_e, inputs_influencing) =
-	form_man#collect_for_solving [] fm#get_path_cond target_expr in
+    method measure_influence (target_exprs : V.exp list) =
+      let (decls, assigns, cond_e, target_es, inputs_influencing) =
+	form_man#collect_for_solving [] fm#get_path_cond target_exprs in
       let i =
-	self#measure_influence_common decls assigns cond_e target_e in
-	Printf.printf "Estimated influence on %s is %f\n"
-	  (V.exp_to_string target_expr) i;
+	self#measure_influence_common decls assigns cond_e target_es in
+	List.iter (fun target_expr -> Printf.printf "Estimated influence on %s\n" (V.exp_to_string target_expr) )
+	  target_exprs;
+        Printf.printf " is %f\n" i;
 	Printf.printf "Inputs contributing to this target expression: %s\n" 
 	  (List.fold_left
 	     (fun a varble ->
@@ -472,28 +497,28 @@ struct
 	 reversals odd we reverse it one more time here. *)
       let measurements = List.rev (try Hashtbl.find measured_values loc
 				   with Not_found -> []) in
-      let vtype = match measurements with
-	| (_, e) :: rest  -> Vine_typecheck.infer_type None e
-	| _ -> V.REG_32 in
+      let vtypes = match measurements with
+	| (_, es) :: rest  -> List.map (fun e -> Vine_typecheck.infer_type None e) es
+	| _ -> [] in
       let conjoined = List.map
-	(fun (pc, e) -> (fresh_cond_var (), conjoin pc, e))
+	(fun (pc, es) -> (fresh_cond_var (), conjoin pc, es))
 	measurements in
       let cond_assigns =
 	List.map (fun (lhs, rhs, _) -> (lhs, rhs)) conjoined in
       let cond_vars = List.map (fun (v, _) -> v) cond_assigns in
       let cond_var_exps = List.map (fun v -> V.Lval(V.Temp(v))) cond_vars in
       let cond = disjoin cond_var_exps in
-      let expr = List.fold_left
-	(fun e (cond_v, _, v_e) ->
-	   V.exp_ite (V.Lval(V.Temp(cond_v))) vtype v_e e)
-	(V.Constant(V.Int(vtype, 0L))) conjoined in
-      let (free_decls, t_assigns, cond_e, target_e, inputs_influencing) =
-	form_man#collect_for_solving cond_assigns [cond] expr in
+      let exprs = List.fold_left
+	(fun es (cond_v, _, v_es) ->
+	   List.map2 (fun e (v_e, vtype) -> V.exp_ite (V.Lval(V.Temp(cond_v))) vtype v_e e) es (List.combine v_es vtypes))
+	(List.map (fun vtype -> (V.Constant(V.Int(vtype, 0L)))) vtypes) conjoined in
+      let (free_decls, t_assigns, cond_e, target_es, inputs_influencing) =
+	form_man#collect_for_solving cond_assigns [cond] exprs in
 	if measurements = [] then
 	  Printf.printf "No influence measurements at %s\n" loc
 	else
 	  let i = (self#measure_influence_common free_decls t_assigns
-		     cond_e target_e)
+		     cond_e target_es)
 	  in
 	    Printf.printf "Estimated multipath influence at %s is %f\n"
 	      loc i;
@@ -539,7 +564,7 @@ struct
 	    next_periodic_influence := fm#get_depth + period;
 	    let num_bounded = ref 0 in
 	      List.iter
-		(fun e -> let i = self#measure_influence e in
+		(fun e -> let i = self#measure_influence [e] in
 		   if i <= !opt_influence_bound then
 		     incr num_bounded)
 		periodic_influence_exprs;
@@ -554,7 +579,7 @@ struct
 
     val unique_measurements = Hashtbl.create 30
 
-    method measure_point_influence name e = 
+    method measure_point_influence name sym_exprs = 
       let eip = fm#get_eip in
       let loc = Printf.sprintf "%s %s:%08Lx:%Ld" name
 		(fm#get_hist_str) eip fm#get_loop_cnt in
@@ -564,36 +589,36 @@ struct
 	       "Skipping redundant influence measurement at %s\n" loc)
 	else
 	  (Hashtbl.replace unique_measurements loc ();
-	   self#take_measure_eip e;
+	   self#take_measure_eip sym_exprs;
 	   if !opt_trace_sym_addrs then
 	     Printf.printf "Took influence measurement at %s\n" loc;
 	   if not !opt_multipath_influence_only then
-	     ignore(self#measure_influence e))
+	     ignore(self#measure_influence sym_exprs)) (* should be changed*)
 
     method maybe_measure_influence_deref e =
       let eip = fm#get_eip in
 	match !opt_measure_deref_influence_at with
 	  | Some addr when addr = eip ->
-	      self#take_measure_eip e;
+	      self#take_measure_eip [e];
 	      if !opt_trace_sym_addrs then
 		Printf.printf "Took influence measurement at eip %08Lx\n" eip;
 	      if not !opt_multipath_influence_only then
-		ignore(self#measure_influence e);
+		ignore(self#measure_influence [e]);
 	      if !opt_stop_at_measurement then
 		raise ReachedMeasurePoint
 	  | _ -> if !opt_measure_influence_derefs then
-	      self#measure_point_influence "deref" e
+	      self#measure_point_influence "deref" [e]
 
     method measure_influence_rep =
       assert(!opt_arch = X86);
       let count = fm#get_word_var_d R_ECX in
 	try ignore(D.to_concrete_32 count)
 	with NotConcrete _ ->	    
-	  self#measure_point_influence "reploop" (D.to_symbolic_32 count)
+	  self#measure_point_influence "reploop" [(D.to_symbolic_32 count)]
 
-    method measure_influence_expr expr =
-      let (v, ty) = fm#eval_int_exp_ty expr in
-      let e = match ty with
+    method measure_influence_expr code_exprs =
+      let sym_exprs = (List.map (fun code_expr -> let (v, ty) = fm#eval_int_exp_ty code_expr in
+      let sym_expr = match ty with
 	| V.REG_1  -> D.to_symbolic_1 v
 	| V.REG_8  -> D.to_symbolic_8 v
 	| V.REG_16 -> D.to_symbolic_16 v
@@ -601,7 +626,8 @@ struct
 	| V.REG_64 -> D.to_symbolic_64 v
 	| _ -> failwith "Bad type in measure_influence_expr"
       in
-	self#measure_point_influence "expr" e
+      sym_expr) code_exprs) in
+	self#measure_point_influence "expr" sym_exprs
 
     val mutable qualified = true
 
@@ -618,12 +644,12 @@ struct
 	     | 0xf2 | 0xf3 ->
 		 self#measure_influence_rep
 	     | _ -> ());
-      (match !opt_measure_expr_influence_at with
-	 | Some (eip', expr) when eip' = eip ->
-	     self#measure_influence_expr expr;
-	      if !opt_stop_at_measurement then
-		raise ReachedMeasurePoint
-	 | _ -> ());
+      let exprs = (List.map (fun (_, expr) -> expr)
+         (List.filter (fun (eip', _) -> eip' = eip) !opt_measure_expr_influence_at)) in
+         if exprs <> [] then 
+            self#measure_influence_expr exprs;
+            if !opt_stop_at_measurement then
+               raise ReachedMeasurePoint
 
     method finish_path =
       if qualified then
@@ -637,7 +663,7 @@ struct
 	     !opt_measure_expr_influence_at) with
 	| (Some eip, _) -> self#compute_multipath_influence 
 	    (Printf.sprintf "eip 0x%08Lx" eip)
-	| (_, Some (eip, expr)) -> self#compute_multipath_influence 
+	| (_, (eip, _) :: _) -> self#compute_multipath_influence  
 	    (Printf.sprintf "eip 0x%08Lx" eip)
 	| _ -> self#compute_all_multipath_influence
   end
