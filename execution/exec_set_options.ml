@@ -7,6 +7,14 @@ open Exec_options;;
 
 let opt_fuzz_start_addr = ref None
 let opt_initial_eax = ref None
+let opt_symbolic_eax = ref None
+let opt_symbolic_ebx = ref None
+let opt_symbolic_ecx = ref None
+let opt_symbolic_edx = ref None
+let opt_symbolic_esi = ref None
+let opt_symbolic_edi = ref None
+let opt_symbolic_ebp = ref None
+let opt_symbolic_esp = ref None
 let opt_initial_ebx = ref None
 let opt_initial_ecx = ref None
 let opt_initial_edx = ref None
@@ -20,6 +28,7 @@ let opt_store_shorts = ref []
 let opt_store_words = ref []
 let opt_store_longs = ref []
 let opt_symbolic_regs = ref false
+let opt_symbolic_flags = ref false
 let opt_symbolic_strings = ref []
 let opt_symbolic_cstrings = ref []
 let opt_symbolic_cstrings_fulllen = ref []
@@ -100,6 +109,32 @@ let concrete_state_cmdline_opts =
     ("-initial-eax", Arg.String
        (fun s -> opt_initial_eax := Some(Int64.of_string s)),
      "word Concrete initial value for %eax register");
+    ("-symbolic-eax", Arg.String
+       (fun s -> opt_symbolic_eax := Some(s)),
+     "word Symbolic value for %eax register");
+    ("-symbolic-ebx", Arg.String
+       (fun s -> opt_symbolic_ebx := Some(s)),
+     "word Symbolic value for %ebx register");
+    ("-symbolic-ecx", Arg.String
+       (fun s -> opt_symbolic_ecx := Some(s)),
+     "word Symbolic value for %ecx register");
+    ("-symbolic-edx", Arg.String
+       (fun s -> opt_symbolic_edx := Some(s)),
+     "word Symbolic value for %edx register");
+    ("-symbolic-esi", Arg.String
+       (fun s -> opt_symbolic_esi := Some(s)),
+     "word Symbolic value for %esi register");
+    ("-symbolic-edi", Arg.String
+       (fun s -> opt_symbolic_edi := Some(s)),
+     "word Symbolic value for %edi register");
+    ("-symbolic-ebp", Arg.String
+       (fun s -> opt_symbolic_ebp := Some(s)),
+     "word Symbolic value for %ebp register");
+    ("-symbolic-esp", Arg.String
+       (fun s -> opt_symbolic_esp := Some(s)),
+     "word Symbolic value for %esp register");
+
+
     ("-initial-rax", Arg.String
        (fun s -> opt_initial_eax := Some(Int64.of_string s)),
      "word Concrete initial value for %rax register");
@@ -187,6 +222,8 @@ let symbolic_state_cmdline_opts =
      "base+16s As above, but with 16-bit characters");
     ("-symbolic-regs", Arg.Set(opt_symbolic_regs),
      " Give symbolic values to registers");
+    ("-symbolic-flags", Arg.Set(opt_symbolic_flags),
+     " Give symbolic values to FLAG registers");
     ("-symbolic-byte", Arg.String
        (add_delimited_num_str_pair opt_symbolic_bytes '='),
      "addr=var Make a memory byte symbolic");
@@ -759,12 +796,41 @@ let make_symbolic_init (fm:Fragment_machine.fragment_machine)
        List.iter (fun (varname, size) ->
 		    fm#make_sink_region varname size)
 	 !opt_sink_regions;
+	 
+        (match !opt_symbolic_eax with 
+	| Some s -> fm#set_word_reg_symbolic Fragment_machine.R_EAX s
+	| None	-> ());
+	(match !opt_symbolic_ebx with 
+	| Some s -> fm#set_word_reg_symbolic Fragment_machine.R_EBX s
+	| None	-> ());
+	(match !opt_symbolic_ecx with 
+	| Some s -> fm#set_word_reg_symbolic Fragment_machine.R_ECX s
+	| None	-> ());
+	(match !opt_symbolic_edx with 
+	| Some s -> fm#set_word_reg_symbolic Fragment_machine.R_EDX s
+	| None	-> ());
+	(match !opt_symbolic_esi with 
+	| Some s -> fm#set_word_reg_symbolic Fragment_machine.R_ESI s
+	| None	-> ());
+	(match !opt_symbolic_edi with 
+	| Some s -> fm#set_word_reg_symbolic Fragment_machine.R_EDI s
+	| None	-> ());
+	(match !opt_symbolic_ebp with 
+	| Some s -> fm#set_word_reg_symbolic Fragment_machine.R_EBP s
+	| None	-> ());
+	(match !opt_symbolic_esp with 
+	| Some s -> fm#set_word_reg_symbolic Fragment_machine.R_ESP s
+	| None	-> ());
+	
        opt_target_region_formulas :=
 	 List.map (fun s -> fm#parse_symbolic_expr s)
 	   !opt_target_region_formula_strings;
        opt_extra_conditions := !opt_extra_conditions @ 
 	 List.map (fun s -> fm#parse_symbolic_expr s)
-	   !opt_extra_condition_strings)
+	   !opt_extra_condition_strings;
+if !opt_symbolic_flags then
+	fm#make_flags_symbolic)
+		   
 
 let decide_start_addrs () =
   let (start_addr, fuzz_start) = match

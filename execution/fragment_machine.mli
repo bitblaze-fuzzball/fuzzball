@@ -97,6 +97,7 @@ class virtual fragment_machine : object
 
   method virtual make_regs_zero : unit
   method virtual make_regs_symbolic : unit
+  method virtual make_flags_symbolic : unit
   method virtual load_x86_user_regs : Temu_state.userRegs -> unit
   method virtual print_regs : unit
   method virtual printable_word_reg : register_name -> string
@@ -303,6 +304,7 @@ sig
 
     method make_regs_zero : unit
     method make_regs_symbolic : unit
+  method make_flags_symbolic : unit
     method load_x86_user_regs : Temu_state.userRegs -> unit
     method print_regs : unit
     method printable_word_reg : register_name -> string

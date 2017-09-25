@@ -328,6 +328,8 @@ class virtual fragment_machine = object
 
   method virtual make_regs_zero : unit
   method virtual make_regs_symbolic : unit
+  method virtual make_flags_symbolic : unit
+
   method virtual load_x86_user_regs : Temu_state.userRegs -> unit
   method virtual print_regs : unit
   method virtual printable_word_reg : register_name -> string
@@ -1010,6 +1012,17 @@ struct
 	| X64 -> self#make_x64_regs_zero
 	| ARM -> self#make_arm_regs_zero
 
+    method private make_x86_flags_symbolic =
+      let reg r v =
+	self#set_int_var (Hashtbl.find reg_to_var r) v
+      in
+	reg R_PF (form_man#fresh_symbolic_1 "initial_PF");
+	reg R_CF (form_man#fresh_symbolic_1 "initial_CF");
+	reg R_AF (form_man#fresh_symbolic_1 "initial_AF");
+	reg R_SF (form_man#fresh_symbolic_1 "initial_SF");
+	reg R_OF (form_man#fresh_symbolic_1 "initial_OF");
+	reg R_ZF (form_man#fresh_symbolic_1 "initial_ZF");
+
     method private make_x86_regs_symbolic =
       let reg r v =
 	self#set_int_var (Hashtbl.find reg_to_var r) v
@@ -1296,6 +1309,11 @@ struct
 	| X86 -> self#make_x86_regs_symbolic
 	| X64 -> self#make_x64_regs_symbolic
 	| ARM -> self#make_arm_regs_symbolic
+
+method make_flags_symbolic = 
+      match !opt_arch with	
+	| X86 -> self#make_x86_flags_symbolic	
+	| _ -> failwith "Unsupported Arch"
 
     method load_x86_user_regs regs =
       self#set_word_var R_EAX (Int64.of_int32 regs.Temu_state.eax);

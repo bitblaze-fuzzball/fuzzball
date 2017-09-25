@@ -97,6 +97,7 @@ sig
       -> string -> unit
     method make_regs_zero : unit
     method make_regs_symbolic : unit
+    method make_flags_symbolic : unit
     method load_x86_user_regs : Temu_state.userRegs -> unit
     method print_regs : unit
     method printable_word_reg : Fragment_machine.register_name -> string
