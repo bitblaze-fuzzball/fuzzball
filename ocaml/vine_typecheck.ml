@@ -45,6 +45,13 @@ let rec tint t =
       REG_1 | REG_8 | REG_16 | REG_32 | REG_64 -> true
     | _ -> false
 
+(* REG_1 isn't here because there isn't a REG_2. REG_64 isn't because
+   there is no REG_128. *)
+let tint_concatable t =
+  match (unwind_type t) with
+      REG_8 | REG_16 | REG_32 -> true
+    | _ -> false
+
 let rec tfloat t =
   match (unwind_type t) with
     | REG_32 | REG_64 -> true
@@ -196,6 +203,10 @@ and typecheck_exp names gamma (e:exp)  =
 		 when tint t1 && tcompat t1 t2
 		  ->
 	      (names,REG_1)
+	  | CONCAT
+	      when tint_concatable t1 && tcompat t1 t2
+		->
+	      (names,double_width t1)
 	  | _ ->
 	      let msg = (binop_to_string bop)^" incompatible with operands ("
 		^type_to_string t1^" and "^type_to_string t2^")"
@@ -509,6 +520,8 @@ let infer_type_fast e =
       | BinOp((PLUS|MINUS|TIMES|DIVIDE|SDIVIDE|MOD|SMOD|BITAND|BITOR|XOR),
 	      e1, e2) ->
 	  loop (if Random.bool () then e1 else e2)
+      | BinOp(CONCAT, e1, e2) ->
+	  double_width (loop (if Random.bool () then e1 else e2))
       | FBinOp((FPLUS|FMINUS|FTIMES|FDIVIDE), _, e1, e2) ->
 	  loop (if Random.bool () then e1 else e2)
       | Unknown(_) -> raise (TypeError("Cannot typecheck unknowns"))

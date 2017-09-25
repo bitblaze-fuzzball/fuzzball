@@ -99,6 +99,10 @@ let fuzz start_eip opt_fuzz_start_eip end_eips
 	| StartSymbolic(eip, setup) ->
 	    fuzz_start_eip := eip;
 	    extra_setup := setup);
+     let path_cond = fm#get_path_cond in
+     if path_cond <> [] then 
+       failwith ("The path condition is non-empty before fm#start_symbolic,"^
+	 "you may want to re-run fuzzball with the -zero-memory option");
      fm#start_symbolic;
      if !opt_trace_setup then
        (Printf.printf "Setting up symbolic values:\n"; flush stdout);

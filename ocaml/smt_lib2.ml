@@ -422,15 +422,6 @@ object (self)
       | BinOp(BITOR,
 	      BinOp(BITAND, Cast(CAST_SIGNED, ty1, cond1), x),
 	      BinOp(BITAND, UnOp(NOT, Cast(CAST_SIGNED, ty2, cond2)), y))
-      | BinOp(BITOR,
-	      BinOp(BITAND, x, Cast(CAST_SIGNED, ty1, cond1)),
-	      BinOp(BITAND, UnOp(NOT, Cast(CAST_SIGNED, ty2, cond2)), y))
-      | BinOp(BITOR,
-	      BinOp(BITAND, Cast(CAST_SIGNED, ty1, cond1), x),
-	      BinOp(BITAND, y, UnOp(NOT, Cast(CAST_SIGNED, ty2, cond2))))
-      | BinOp(BITOR,
-	      BinOp(BITAND, x, Cast(CAST_SIGNED, ty1, cond1)),
-	      BinOp(BITAND, y, UnOp(NOT, Cast(CAST_SIGNED, ty2, cond2))))
 	  when ty1 = ty2 && cond1 = cond2 &&
 	    (Vine_typecheck.infer_type_fast cond1) = REG_1
 	    ->
@@ -477,6 +468,7 @@ object (self)
 	    | (LSHIFT, _)      -> ("(bvshl ", " ", ")")
 	    | (ARSHIFT, _)     -> ("(bvashr ", " ", ")")
 	    | (RSHIFT, _)      -> ("(bvlshr ", " ", ")")
+	    | (CONCAT, _)      -> ("(concat ", " ", ")")
 	  and e2 = match bop with
 	    | LSHIFT | ARSHIFT | RSHIFT ->
 	      (* SMT-LIB requires both shift operands to have the same size *)

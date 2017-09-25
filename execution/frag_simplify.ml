@@ -268,7 +268,8 @@ let rec cfold_with_type e =
 	     | V.LSHIFT | V.RSHIFT | V.ARSHIFT
 		 -> ty1
 	     | V.EQ | V.NEQ | V.LT | V.LE | V.SLT | V.SLE
-		 -> assert(ty1 = ty2); V.REG_1)
+		 -> assert(ty1 = ty2); V.REG_1
+	     | V.CONCAT -> assert(ty1 = ty2); V.double_width ty1)
 	in
 	  (V.BinOp(op, e1', e2'), ty)
     | V.FBinOp(op, rm, e1, e2) ->

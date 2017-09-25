@@ -71,6 +71,7 @@ type binop_type =
   | LE
   | SLT
   | SLE
+  | CONCAT
 type fbinop_type = FPLUS | FMINUS | FTIMES | FDIVIDE | FEQ | FNEQ | FLT | FLE
 type unop_type = NEG | NOT
 type funop_type = FNEG
@@ -140,6 +141,7 @@ val renewvar : var -> var
 val newlab : label -> label
 
 val bits_of_width : typ -> int
+val double_width : typ -> typ
 val binop_of_string : string -> binop_type
 val unop_of_string : string -> unop_type
 val casttype_of_string : string -> cast_type

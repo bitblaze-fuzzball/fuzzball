@@ -56,6 +56,9 @@ let to_val t v =
   let mask = Int64.shift_right_logical (-1L) (64-bits_of_width t) in
     Constant(Int(t,Int64.logand mask v))
 
+(* Combine two bitvectors into a longer one. *)
+let bv_concat t v1 v2 =
+  Int64.logor v2 (Int64.shift_left v1 (bits_of_width t))
 
 (* flatten an expression to make it easier to rearange binops
  * Note: Should only be used with associative binops. *)
@@ -139,6 +142,8 @@ let rec constant_fold ctx e =
 	    | SDIVIDE -> to_val t (Int64.div (tos64 v1) (tos64  v2))
 	    | MOD -> to_val t (int64_urem (tos64 v1) (tos64 v2))
 	    | SMOD -> to_val t (Int64.rem (tos64 v1) (tos64 v2))
+	    | CONCAT -> to_val (double_width t)
+		(bv_concat t (to64 v1) (to64 v2))
 	    | SLT -> exp_bool(tos64  v1 < tos64 v2)
 	    | SLE -> exp_bool(tos64  v1 <= tos64  v2)
 	    | LT -> exp_bool(int64_ucompare (to64 v1) (to64 v2) < 0)
@@ -442,6 +447,23 @@ let rec constant_fold ctx e =
         Ite(cond, Cast(ct, ty, e1), Cast(ct, ty, e2))
     | BinOp(op, Ite(cond, e1, e2), (Constant(_) as k)) ->
         Ite(cond, BinOp(op, e1, k), BinOp(op, e2, k))
+    (* Rules involving CONCAT: *)
+    | Cast(CAST_LOW, REG_8, BinOp(CONCAT, e_h, e_l))
+	when (Vine_typecheck.infer_type None e_l) = REG_8 -> e_l
+    | Cast(CAST_LOW, REG_16, BinOp(CONCAT, e_h, e_l))
+	when (Vine_typecheck.infer_type None e_l) = REG_16 -> e_l
+    | Cast(CAST_LOW, REG_32, BinOp(CONCAT, e_h, e_l))
+	when (Vine_typecheck.infer_type None e_l) = REG_32 -> e_l
+    | Cast(CAST_HIGH, REG_8, BinOp(CONCAT, e_h, e_l))
+	when (Vine_typecheck.infer_type None e_h) = REG_8 -> e_h
+    | Cast(CAST_HIGH, REG_16, BinOp(CONCAT, e_h, e_l))
+	when (Vine_typecheck.infer_type None e_h) = REG_16 -> e_h
+    | Cast(CAST_HIGH, REG_32, BinOp(CONCAT, e_h, e_l))
+	when (Vine_typecheck.infer_type None e_h) = REG_32 -> e_h
+    | Cast(CAST_LOW, REG_1, BinOp(CONCAT, e_h, e_l)) ->
+	Cast(CAST_LOW, REG_1, e_l)
+    | Cast(CAST_HIGH, REG_1, BinOp(CONCAT, e_h, e_l)) ->
+	Cast(CAST_HIGH, REG_1, e_h)
     (* AND / OR with itself *)
     | BinOp(BITOR, x, y)
     | BinOp(BITAND, x, y)

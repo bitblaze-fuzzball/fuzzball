@@ -1242,6 +1242,83 @@ Exp *translate_InterleaveHI8x16(Exp *a, Exp *b) {
     return interleave2_8x8(a_high, b_high);
 }
 
+Exp *translate_par4x8_binop(binop_type_t op, Exp *a, Exp *b)
+{
+    Exp *a3, *a2, *a1, *a0;
+    split4x8(a, &a3, &a2, &a1, &a0);
+    Exp *b3, *b2, *b1, *b0;
+    split4x8(b, &b3, &b2, &b1, &b0);
+    Exp *r3 = new BinOp(op, a3, b3);
+    Exp *r2 = new BinOp(op, a2, b2);
+    Exp *r1 = new BinOp(op, a1, b1);
+    Exp *r0 = new BinOp(op, a0, b0);
+    return assemble4x8(r3, r2, r1, r0);
+}
+
+Exp *halving_binop8(binop_type_t op, bool is_signed, Exp *a, Exp *b) {
+    Exp *a16, *b16;
+    if (is_signed) {
+	a16 = _ex_s_cast(a, REG_16);
+	b16 = _ex_s_cast(b, REG_16);
+    } else {
+	a16 = _ex_u_cast(a, REG_16);
+	b16 = _ex_u_cast(b, REG_16);
+    }
+    Exp *r16 = new BinOp(op, a16, b16);
+    return _ex_l_cast(_ex_shr(r16, 1), REG_8);
+}
+
+Exp *translate_halving4x8_binop(binop_type_t op, bool is_signed,
+				Exp *a, Exp *b)
+{
+    Exp *a3, *a2, *a1, *a0;
+    split4x8(a, &a3, &a2, &a1, &a0);
+    Exp *b3, *b2, *b1, *b0;
+    split4x8(b, &b3, &b2, &b1, &b0);
+    Exp *r3 = halving_binop8(op, is_signed, a3, b3);
+    Exp *r2 = halving_binop8(op, is_signed, a2, b2);
+    Exp *r1 = halving_binop8(op, is_signed, a1, b1);
+    Exp *r0 = halving_binop8(op, is_signed, a0, b0);
+    return assemble4x8(r3, r2, r1, r0);
+}
+
+Exp *saturating_binop8(binop_type_t op, bool is_signed, Exp *a, Exp *b) {
+    Exp *a16, *b16;
+    Exp *min_val, *max_val;
+    if (is_signed) {
+	a16 = _ex_s_cast(a, REG_16);
+	b16 = _ex_s_cast(b, REG_16);
+	min_val = ex_const(REG_16, -128);
+	max_val = ex_const(REG_16, 127);
+    } else {
+	a16 = _ex_u_cast(a, REG_16);
+	b16 = _ex_u_cast(b, REG_16);
+	min_val = ex_const(REG_16, 0);
+	max_val = ex_const(REG_16, 255);
+    }
+    Exp *r16 = new BinOp(op, a16, b16);
+    Exp *clamped =
+      _ex_ite(ex_lt(r16, min_val), min_val,
+	      _ex_ite(ex_gt(r16, max_val), max_val,
+		      r16));
+    return _ex_l_cast(clamped, REG_8);
+}
+
+Exp *translate_saturating4x8_binop(binop_type_t op, bool is_signed,
+				   Exp *a, Exp *b)
+{
+    Exp *a3, *a2, *a1, *a0;
+    split4x8(a, &a3, &a2, &a1, &a0);
+    Exp *b3, *b2, *b1, *b0;
+    split4x8(b, &b3, &b2, &b1, &b0);
+    Exp *r3 = saturating_binop8(op, is_signed, a3, b3);
+    Exp *r2 = saturating_binop8(op, is_signed, a2, b2);
+    Exp *r1 = saturating_binop8(op, is_signed, a1, b1);
+    Exp *r0 = saturating_binop8(op, is_signed, a0, b0);
+    return assemble4x8(r3, r2, r1, r0);
+}
+
+
 Exp *translate_par8x8_binop(binop_type_t op, Exp *a, Exp *b) {
     Exp *a7, *a6, *a5, *a4, *a3, *a2, *a1, *a0;
     split8x8(a, &a7, &a6, &a5, &a4, &a3, &a2, &a1, &a0);
@@ -1824,15 +1901,37 @@ Exp *translate_simple_binop( IRExpr *expr, IRSB *irbb, vector<Stmt *> *irout )
 	    return translate_CmpGT32Sx4(arg1, arg2);
 #endif
 
+        case Iop_Add8x4:
+	    return translate_par4x8_binop(PLUS, arg1, arg2);
         case Iop_Add8x8:
 	    return translate_par8x8_binop(PLUS, arg1, arg2);
         case Iop_Add8x16:
 	    return translate_par16x8_binop(PLUS, arg1, arg2);
 
+        case Iop_HAdd8Ux4:
+	    return translate_halving4x8_binop(PLUS, false, arg1, arg2);
+        case Iop_HAdd8Sx4:
+	    return translate_halving4x8_binop(PLUS, true, arg1, arg2);
+        case Iop_QAdd8Ux4:
+	    return translate_saturating4x8_binop(PLUS, false, arg1, arg2);
+        case Iop_QAdd8Sx4:
+	    return translate_saturating4x8_binop(PLUS, true, arg1, arg2);
+
+        case Iop_Sub8x4:
+	    return translate_par4x8_binop(MINUS, arg1, arg2);
         case Iop_Sub8x8:
 	    return translate_par8x8_binop(MINUS, arg1, arg2);
         case Iop_Sub8x16:
 	    return translate_par16x8_binop(MINUS, arg1, arg2);
+
+        case Iop_HSub8Ux4:
+	    return translate_halving4x8_binop(MINUS, false, arg1, arg2);
+        case Iop_HSub8Sx4:
+	    return translate_halving4x8_binop(MINUS, true, arg1, arg2);
+        case Iop_QSub8Ux4:
+	    return translate_saturating4x8_binop(MINUS, false, arg1, arg2);
+        case Iop_QSub8Sx4:
+	    return translate_saturating4x8_binop(MINUS, true, arg1, arg2);
 
         case Iop_Mul8x8:
 	    return translate_par8x8_binop(TIMES, arg1, arg2);
@@ -2507,8 +2606,25 @@ Stmt *translate_storeg( IRStmt *stmt, IRSB *irbb, vector<Stmt *> *irout ) {
     reg_t rtype = IRType_to_reg_type(itype);
 
     Mem *mem = new Mem(addr, rtype);
+#ifdef STOREG_ITE
+    // This translation is elegant and convenient in some ways for
+    // symbolic execution, but making it look like the store happens
+    // every time has problems with side-effects. For instance it
+    // looks like a problem if the address is null, but sometimes
+    // that's exactly what the guard checked.
     Exp *choice = _ex_ite(guard, data, ecl(mem));
     return new Move(mem, choice);
+#else
+    // Use a CJmp and a label, so there's no store if the guard is
+    // false.
+    Label *skip_store = mk_label();
+    Label *do_store = mk_label();
+    irout->push_back(new CJmp(guard, new Name(do_store->label),
+			      new Name(skip_store->label)));
+    irout->push_back(do_store);
+    irout->push_back(new Move(mem, data));
+    return skip_store;
+#endif
 }
 #endif
 

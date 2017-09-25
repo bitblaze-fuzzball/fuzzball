@@ -38,7 +38,7 @@ class stp_external_engine fname = object(self)
       filenum <- filenum + 1;
       curr_fname <- pick_fresh_fname dir fname filenum;
       if !opt_trace_solver then
-	Printf.printf "Creating STP file: %s.stp\n" curr_fname;
+	Printf.printf "Creating STP file: %s.cvc\n" curr_fname;
       curr_fname
 
   method private chan =
@@ -98,7 +98,7 @@ class stp_external_engine fname = object(self)
 
   method private real_prepare =
     let fname = self#get_fresh_fname in
-      chan <- Some(open_out (fname ^ ".stp"));
+      chan <- Some(open_out (fname ^ ".cvc"));
       visitor <- Some(new Stp.vine_cvcl_print_visitor
 			(output_string self#chan));
       List.iter self#visitor#declare_var (List.rev free_vars);
@@ -135,12 +135,12 @@ class stp_external_engine fname = object(self)
       | None -> ""
     in
     let cmd = !opt_solver_path ^ " " ^ timeout_opt ^ curr_fname
-      ^ ".stp >" ^ curr_fname ^ ".stp.out" in
+      ^ ".cvc >" ^ curr_fname ^ ".cvc.out" in
       if !opt_trace_solver then
 	Printf.printf "Solver command: %s\n" cmd;
       flush stdout;
       let rcode = Sys.command cmd in
-      let results = open_in (curr_fname ^ ".stp.out") in
+      let results = open_in (curr_fname ^ ".cvc.out") in
 	if rcode <> 0 then
 	  (Printf.printf "STP died with result code %d\n" rcode;
 	   (match rcode with 
@@ -155,7 +155,7 @@ class stp_external_engine fname = object(self)
 		      !opt_solver_path
 	      | 131 -> raise (Signal "QUIT")
 	      | _ -> ());
-	   ignore(Sys.command ("cat " ^ curr_fname ^ ".stp.out"));
+	   ignore(Sys.command ("cat " ^ curr_fname ^ ".cvc.out"));
 	   (None, ce_from_list []))
 	else
 	  let result_s = input_line results in
@@ -178,11 +178,11 @@ class stp_external_engine fname = object(self)
 
   method after_query save_results =
     if save_results then
-      Printf.printf "STP query and results are in %s.stp and %s.stp.out\n"
+      Printf.printf "STP query and results are in %s.cvc and %s.cvc.out\n"
 	curr_fname curr_fname
     else if not !opt_save_solver_files then
-      (Sys.remove (curr_fname ^ ".stp");
-       Sys.remove (curr_fname ^ ".stp.out"))
+      (Sys.remove (curr_fname ^ ".cvc");
+       Sys.remove (curr_fname ^ ".cvc.out"))
 
   method reset =
     visitor <- None;
