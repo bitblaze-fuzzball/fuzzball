@@ -40,7 +40,7 @@ type ctx = Vine.typ VM.t
 type gamma = ctx option
 
 
-let rec tint t = 
+let tint t =
   match (unwind_type t) with
       REG_1 | REG_8 | REG_16 | REG_32 | REG_64 -> true
     | _ -> false
@@ -52,14 +52,17 @@ let tint_concatable t =
       REG_8 | REG_16 | REG_32 -> true
     | _ -> false
 
-let rec tfloat t =
+let tfloat t =
   match (unwind_type t) with
     | REG_32 | REG_64 -> true
     | _ -> false
 
-let rec tfcast_int t =
+(* Originally this was only REG_32 and REG_64, but x86 has an
+   instruction that converts an int to a 16-bit value, so we might as
+   well too. I'm still hoping that REG_8 and REG_1 will never come up. *)
+let tfcast_int t =
   match (unwind_type t) with
-    | REG_32 | REG_64 -> true
+    | REG_16 | REG_32 | REG_64 -> true
     | _ -> false
 
 let rec tcompat (t1:typ) (t2:typ) : bool = 
