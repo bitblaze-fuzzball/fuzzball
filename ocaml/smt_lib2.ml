@@ -217,6 +217,16 @@ object (self)
 	    "(let ((" ^ v_s ^ " " ^ rhs_s ^ ")) " ^ body_s ^ ")"
       | Let(Mem(_,_,_), _, _) ->
 	  failwith "Memory let expression translation to SMT-LIB2 not supported"
+      | UnOp(NOT, Cast(CAST_LOW, REG_1,
+		       (BinOp(ARSHIFT, e1, Constant(Int(REG_8, k)))))) ->
+	  let bit = string_of_int (Int64.to_int k) in
+	  let extract = "((_ extract " ^ bit ^ " " ^ bit ^ ") " in
+	    "(= #b0 " ^ extract ^ (tr_exp e1) ^ "))"
+      | Cast(CAST_LOW, REG_1,
+	     (BinOp(ARSHIFT, e1, Constant(Int(REG_8, k))))) ->
+	  let bit = string_of_int (Int64.to_int k) in
+	  let extract = "((_ extract " ^ bit ^ " " ^ bit ^ ") " in
+	    "(= #b1 " ^ extract ^ (tr_exp e1) ^ "))"
       | UnOp(uop, e1) ->
 	  let pre = match (uop, (Vine_typecheck.infer_type_fast e1)) with
 	    | (_, REG_1) -> "(not "
@@ -482,11 +492,6 @@ object (self)
 	        e2
 	  in
 	    pre ^ (tr_exp e1) ^ mid ^ (tr_exp e2) ^ post
-      | Cast(CAST_LOW, REG_1,
-	     (BinOp(ARSHIFT, e1, Constant(Int(REG_8, k))))) ->
-	  let bit = string_of_int (Int64.to_int k) in
-	  let extract = "((_ extract " ^ bit ^ " " ^ bit ^ ") " in
-	    "(= #b1 " ^ extract ^ (tr_exp e1) ^ "))"
       | Cast(ct,t, e1) ->
 	  let make_zeros k =
 	    if k mod 4 = 0 then
