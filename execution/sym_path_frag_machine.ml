@@ -560,8 +560,11 @@ struct
 	   | Some p -> (dt#random_float < p)
 	   | None -> false)
       then
+	(if !opt_trace_decisions then
+	   Printf.printf "Condition %s concretely evaluates to 0x%Lx\n"
+	     (V.exp_to_string cond) (form_man#eval_expr cond);
 	self#extend_pc_known cond verbose ident
-	  ((form_man#eval_expr cond) <> 0L)
+	  ((form_man#eval_expr cond) <> 0L))
       else
 	let (result, cond') = (self#query_with_pc_choice cond verbose ident
 				 (fun () -> self#follow_or_random)) in

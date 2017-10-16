@@ -526,6 +526,9 @@ struct
 		     let (e_enc, _) = Hashtbl.find temp_var_num_to_subexpr n in
 		     let e' = loop (decode_exp e_enc)
 		     in
+		       if !opt_trace_temps then
+			 Printf.printf "%s evaluates to %s\n"
+			   s (V.exp_to_string e');
 		       Hashtbl.replace temp_var_num_evaled n e';
 		       e')
 	  | V.Lval(V.Temp(n,s,ty) as lv) ->
