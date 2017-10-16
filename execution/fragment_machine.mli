@@ -402,6 +402,7 @@ sig
     method private eval_int_exp : Vine.exp -> D.t
 
     method eval_int_exp_simplify : Vine.exp -> D.t
+    method eval_int_exp_tempify : Vine.exp -> D.t
 
     method eval_cjmp : Vine.exp -> int64 -> int64 -> bool
     method eval_bool_exp : Vine.exp -> bool

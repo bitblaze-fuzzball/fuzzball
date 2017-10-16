@@ -431,6 +431,20 @@ struct
 	       None)
 	  d ty
 
+    method eval_int_exp_tempify exp =
+      let (d, ty) = self#eval_int_exp_ty exp in
+	form_man#tempify_with_callback
+	  (fun e2 ty ->
+	     (* self#check_concolic_value e2 ty; *)
+	     if !opt_implied_value_conc then
+	       match self#query_unique_value e2 ty with
+		 | Some v ->
+		     Some (V.Constant(V.Int(ty, v)))
+		 | None -> None
+	     else
+	       None)
+	  d ty
+
     (* It's an important but sometimes subtle invariant that FuzzBALL
        must always reach the same decision points in the same order when
        re-executing a path, so that the decision tree gives consistent
@@ -707,6 +721,9 @@ struct
 		 ignore(self#call_cjmp_heuristic eip targ1 targ2 (Some b));
 		 b)
 
+    (* This code has bitrotten a bit, as shown by its lack of support
+       for 64-bit addresses, since the implementation in
+       srfm#choose_conc_offset_uniform is usually used instead. *)
     method eval_addr_exp exp =
       let c32 x = V.Constant(V.Int(V.REG_32, x)) in
       let v = self#eval_int_exp_simplify exp in
@@ -720,6 +737,7 @@ struct
 		    (V.exp_to_string e) eip;
 		infl_man#maybe_measure_influence_deref e;
 		dt#start_new_query;
+		let e = form_man#tempify_exp e V.REG_32 in
 		let bits = ref 0L in
 		  self#restore_path_cond
 		    (fun () ->

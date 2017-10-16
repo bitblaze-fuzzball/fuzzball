@@ -68,6 +68,17 @@ sig
     method simplify_with_callback :
       (Vine.exp -> Vine.typ -> Vine.exp option) -> D.t -> Vine.typ -> D.t
 
+    method tempify_exp : Vine.exp -> Vine.typ -> Vine.exp
+
+    method tempify1  : D.t -> D.t
+    method tempify8  : D.t -> D.t
+    method tempify16 : D.t -> D.t
+    method tempify32 : D.t -> D.t
+    method tempify64 : D.t -> D.t
+
+    method tempify_with_callback :
+      (Vine.exp -> Vine.typ -> Vine.exp option) -> D.t -> Vine.typ -> D.t
+
     method make_ite : D.t -> Vine.typ -> D.t -> D.t -> D.t
 
     method make_table_lookup : (D.t list) -> Vine.exp -> int -> Vine.typ -> D.t

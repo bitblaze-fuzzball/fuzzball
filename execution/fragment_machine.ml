@@ -2183,8 +2183,24 @@ struct
       in
 	(v', ty)
 
+    method private eval_int_exp_tempify_ty exp =
+      let (v, ty) = self#eval_int_exp_ty exp in
+      let v' =  match (v, ty) with
+	| (v, V.REG_1) -> form_man#tempify1 v
+	| (v, V.REG_8) -> form_man#tempify8 v
+	| (v, V.REG_16) -> form_man#tempify16 v
+	| (v, V.REG_32) -> form_man#tempify32 v
+	| (v, V.REG_64) -> form_man#tempify64 v
+	| _ -> failwith "Unexpected type in eval_int_exp_tempify"
+      in
+	(v', ty)
+
     method eval_int_exp_simplify exp =
       let (v, _) = self#eval_int_exp_simplify_ty exp in
+	v
+
+    method eval_int_exp_tempify exp =
+      let (v, _) = self#eval_int_exp_tempify_ty exp in
 	v
 
     method eval_bool_exp exp =
