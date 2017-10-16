@@ -270,8 +270,8 @@ object (self)
 	    | (CAST_UFLOAT,  REG_64) -> "(_ to_fp_unsigned 11 53)"
 	    | (CAST_FWIDEN,  REG_64) -> "(_ to_fp 11 53)"
 	    | (CAST_FNARROW, REG_32) -> "(_ to_fp 8 24)"
-	    | (CAST_SFIX,    _)      -> "(_ fp.to_sbv " ^ sz2 ^ ") "
-	    | (CAST_UFIX,    _)      -> "(_ fp.to_ubv " ^ sz2 ^ ") "
+	    | (CAST_SFIX,    _)      -> "(_ fp.to_sbv " ^ sz2 ^ ")"
+	    | (CAST_UFIX,    _)      -> "(_ fp.to_ubv " ^ sz2 ^ ")"
 	    | _ -> failwith "Unsupported FCast combination"
 	  in
 	  let core =
@@ -485,7 +485,7 @@ object (self)
       | Cast(CAST_LOW, REG_1,
 	     (BinOp(ARSHIFT, e1, Constant(Int(REG_8, k))))) ->
 	  let bit = string_of_int (Int64.to_int k) in
-	  let extract = "((_ extract " ^ bit ^ " " ^ bit ^ ")" in
+	  let extract = "((_ extract " ^ bit ^ " " ^ bit ^ ") " in
 	    "(= #b1 " ^ extract ^ (tr_exp e1) ^ "))"
       | Cast(ct,t, e1) ->
 	  let make_zeros k =
