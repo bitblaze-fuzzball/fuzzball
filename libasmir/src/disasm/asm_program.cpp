@@ -927,7 +927,7 @@ char* string_of_insn(asm_program_t *prog, Instruction *inst)
   prog->disasm_info.stream = oldstream;
   
   if (change_opts) {
-    prog->disasm_info.disassembler_options = old_opts;
+    prog->disasm_info.disassembler_options = (char *)old_opts;
   }
 
   return bits.str;

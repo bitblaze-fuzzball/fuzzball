@@ -61,7 +61,7 @@ void one_insn(unsigned int addr, unsigned char *bytes, int bytes_len) {
 	asmp->disasm_info.disassembler_options = my_opts;
 	printf("\t%s\n",
 	       string_of_insn(asmp, asmp->functions[addr]->instmap[addr]));
-	asmp->disasm_info.disassembler_options = old_o;
+	asmp->disasm_info.disassembler_options = (char *)old_o;
     }
     destroy_vine_block(vb);
     free_asm_program(asmp);
