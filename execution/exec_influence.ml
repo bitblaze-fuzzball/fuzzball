@@ -372,8 +372,8 @@ struct
       let output_names = List.map (fun s -> "-output_name="^s) var_names in
       let output_name_str = String.concat " " output_names in
       
-      
-      let cmd = "./SearchMC.pl -cl=0.9 -thres=2 " ^ output_name_str ^ " -input_type=smt -solver=cryptominisat5 -verbose=1 " ^ fuzzball_path ^ "/" ^ file_name ^ ".smt2" in
+      let cmd = "./MultiSearchMC.pl 6 " ^ fuzzball_path ^ "/" ^ file_name ^ ".smt2" in
+(*      let cmd = "./SearchMC.pl -cl=0.9 -thres=2 " ^ output_name_str ^ " -input_type=smt -solver=cryptominisat5 -verbose=1 " ^ fuzzball_path ^ "/" ^ file_name ^ ".smt2" in  *)
       Printf.printf "%s\n" cmd;
       ignore(Unix.chdir searchmc_path);
       ignore(Sys.command cmd);
