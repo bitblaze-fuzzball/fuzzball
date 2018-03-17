@@ -28,6 +28,7 @@ using std::ostringstream;
 // from binutils
 #include "config.h"
 #include <bfd.h>
+#include <string.h> // seemingly needed by some versions of dis-asm.h
 #include <dis-asm.h>
 
 #include "common.h"
@@ -110,6 +111,8 @@ typedef struct asm_program {
 extern bfd *immortal_bfd_for_x86;
 extern bfd *immortal_bfd_for_x64;
 extern bfd *immortal_bfd_for_arm;
+
+disassembler_ftype wrap_get_disassembler(bfd *abfd);
 
 typedef struct raw_inst {
   address_t address; // Instruction address

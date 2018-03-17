@@ -127,6 +127,19 @@ else
 	LDFLAGS="-L$with_binutils/lib -L$with_binutils/bfd -L$with_binutils/libiberty $LDFLAGS"
 fi
 
+AC_COMPILE_IFELSE([AC_LANG_PROGRAM(
+        [#include <bfd.h>
+#include <dis-asm.h>],
+        [disassembler_ftype d = disassembler(0);])],
+    [AC_DEFINE([HAVE_FUNC_DISASSEMBLER_1], [1],
+               [Define to 1 if your libopcodes disassembler() takes one argument.])])
+
+AC_COMPILE_IFELSE([AC_LANG_PROGRAM(
+        [#include <bfd.h>
+#include <dis-asm.h>],
+        [disassembler_ftype d = disassembler(0, 0, 0, 0);])],
+    [AC_DEFINE([HAVE_FUNC_DISASSEMBLER_4], [1],
+               [Define to 1 if your libopcodes disassembler() takes four arguments.])])
 
 # Checks for libraries.
 AC_CHECK_LIB([bfd], [bfd_init])
