@@ -580,6 +580,7 @@ struct
     val unique_measurements = Hashtbl.create 30
 
     method measure_point_influence name sym_exprs = 
+      if not fm#started_symbolic then () else
       let eip = fm#get_eip in
       let loc = Printf.sprintf "%s %s:%08Lx:%Ld" name
 		(fm#get_hist_str) eip fm#get_loop_cnt in
