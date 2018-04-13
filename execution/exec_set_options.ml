@@ -101,6 +101,8 @@ let influence_cmdline_opts =
      "float Stop path when influence is <= this value");
     ("-searchmc-path", Arg.Set_string(opt_searchmc_path),
      "path Location of SearchMC");
+    ("-multi-threaded-searchmc", Arg.Set(opt_multi_threaded_searchmc),
+     "Run multi-threaded SearchMC");
   ]
 
 let concrete_state_cmdline_opts =
