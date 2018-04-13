@@ -99,6 +99,8 @@ let influence_cmdline_opts =
      "k Check influence every K bits of branching");
     ("-influence-bound", Arg.Set_float(opt_influence_bound),
      "float Stop path when influence is <= this value");
+    ("-searchmc-path", Arg.Set_string(opt_searchmc_path),
+     "path Location of SearchMC");
   ]
 
 let concrete_state_cmdline_opts =

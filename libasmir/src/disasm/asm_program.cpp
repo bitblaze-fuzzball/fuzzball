@@ -215,9 +215,25 @@ static int ignore() {
   return 1;
 }
 
+disassembler_ftype wrap_get_disassembler(bfd *abfd)
+{
+  disassembler_ftype disas;
+#if HAVE_FUNC_DISASSEMBLER_1
+  // before 2017-05-24, git commit 003ca0fd
+  disas = disassembler(abfd);
+#elif HAVE_FUNC_DISASSEMBLER_4
+  // after
+  disas = disassembler(bfd_get_arch(abfd), bfd_big_endian(abfd),
+		       bfd_get_mach(abfd), abfd);
+#else
+#error "Unknown number of arguments to disassembler()"
+#endif
+  return disas;
+}
+
 int get_instr_length(asm_program_t *prog, bfd_vma addr)
 {
-  disassembler_ftype disas = disassembler(prog->abfd);
+  disassembler_ftype disas = wrap_get_disassembler(prog->abfd);
   fprintf_ftype old_fprintf_func = prog->disasm_info.fprintf_func;
   prog->disasm_info.fprintf_func = (fprintf_ftype)ignore;
   assert(disas);
@@ -889,10 +905,10 @@ char* string_of_insn(asm_program_t *prog, Instruction *inst)
 {
   static struct bprintf_buffer bits = {NULL, NULL, 0};
 
-  disassembler_ftype disas = disassembler(prog->abfd);
+  disassembler_ftype disas = wrap_get_disassembler(prog->abfd);
   fprintf_ftype old_fprintf_func = prog->disasm_info.fprintf_func;
   void *oldstream = prog->disasm_info.stream;
-  char *old_opts = prog->disasm_info.disassembler_options;
+  const char *old_opts = prog->disasm_info.disassembler_options;
   prog->disasm_info.fprintf_func = (fprintf_ftype)bprintf;
   prog->disasm_info.stream = &bits;
 
@@ -911,7 +927,7 @@ char* string_of_insn(asm_program_t *prog, Instruction *inst)
   prog->disasm_info.stream = oldstream;
   
   if (change_opts) {
-    prog->disasm_info.disassembler_options = old_opts;
+    prog->disasm_info.disassembler_options = (char *)old_opts;
   }
 
   return bits.str;

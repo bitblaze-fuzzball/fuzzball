@@ -348,7 +348,13 @@ struct
 	rm_xors_loop num_xors
 
     method private influence_strategies target_eq target_es tys =
-(*      let rename_var name =
+      let fuzzball_path = Sys.getcwd () in
+      let file_name = qe#get_file_name in
+      let f x = 
+      if x then
+        "./MultiSearchMC.pl 6 " ^ fuzzball_path ^ "/" ^ file_name ^ ".smt2"
+      else
+        let rename_var name =
             let need_bars = ref false
             and new_name = ref "" in
               for i = 0 to (String.length name) - 1 do
@@ -361,21 +367,19 @@ struct
 	        "|" ^ !new_name ^ "|"
               else
 	        !new_name
-      in *)
-      let searchmc_path = "/home/smkim/Desktop/tools/SearchMC-umn/" in
-      let fuzzball_path = Sys.getcwd () in
-      let file_name = qe#get_file_name in
-(*      let vars = List.map (fun exp -> match exp with 
+        in
+        let vars = List.map (fun exp -> match exp with 
          | V.Lval(V.Temp(var)) -> var
          | _ -> failwith "Unexpected expression in target expressions") target_es in
-      let var_names = List.map (fun (_, var_name, _) -> rename_var var_name) vars in
-      let output_names = List.map (fun s -> "-output_name="^s) var_names in
-      let output_name_str = String.concat " " output_names in
-      
-      let cmd = "./SearchMC.pl -cl=0.9 -thres=2 " ^ output_name_str ^ " -input_type=smt -solver=cryptominisat5 -verbose=1 " ^ fuzzball_path ^ "/" ^ file_name ^ ".smt2" in  *)
-      let cmd = "./MultiSearchMC.pl 6 " ^ fuzzball_path ^ "/" ^ file_name ^ ".smt2" in
+        let var_names = List.map (fun (_, var_name, _) -> rename_var var_name) vars in
+        let output_names = List.map (fun s -> "-output_name="^s) var_names in
+        let output_name_str = String.concat " " output_names in
+        "./SearchMC.pl -cl=0.9 -thres=2 " ^ output_name_str ^ " -input_type=smt -solver=cryptominisat -term_cond=1 -verbose=1 " ^ fuzzball_path ^ "/" ^ file_name ^ ".smt2"
+      in
+      let cmd = f !opt_multi_threaded_searchmc in
       Printf.printf "%s\n" cmd;
-      ignore(Unix.chdir searchmc_path);
+      
+      ignore(Unix.chdir !opt_searchmc_path);
       ignore(Sys.command cmd);
       ignore(Unix.chdir fuzzball_path);
     0.0

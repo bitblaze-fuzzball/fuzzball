@@ -605,8 +605,9 @@ struct
 
     val mutable concrete_cache = Hashtbl.create 101
 
-    method private choose_conc_offset_cached ty e ident =
+    method private choose_conc_offset_cached ty e_orig ident =
       let const x = V.Constant(V.Int(ty, x)) in
+      let e = form_man#tempify_exp e_orig ty in
       let (bits, verb) = 
 	if Hashtbl.mem concrete_cache e then
 	  (Hashtbl.find concrete_cache e, "Reused")

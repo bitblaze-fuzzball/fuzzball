@@ -280,8 +280,9 @@ let encode_exp_flags e printable =
 		| V.CAST_FWIDEN  -> 'W'
 		| V.CAST_FNARROW -> 'N');
 	push (match ty with
-		| V.REG_32 -> '3'
-		| V.REG_64 -> '6'
+		| V.REG_16 -> 's'
+		| V.REG_32 -> 'i'
+		| V.REG_64 -> 'l'
 		| _ -> failwith "Unsupported FP cast dest type in encode_exp");
 	loop e1
     | V.Ite(ce, te, fe) -> push '?'; loop ce; loop te; loop fe
@@ -504,8 +505,9 @@ let decode_exp s =
 		      in
 		      let i3 = i2 + 1 in
 		      let ty = match s.[i3] with
-			| '3' -> V.REG_32
-			| '6' -> V.REG_64
+			| 's' -> V.REG_16
+			| 'i' -> V.REG_32
+			| 'l' -> V.REG_64
 			| _ -> failwith
 			    "Unexpected FP cast dest. type in decode_exp"
 		      in
