@@ -856,8 +856,12 @@ struct
 	) v
 
     method tempify_exp e ty =
-      let e' = self#simplify_exp e in
-	V.Lval(V.Temp(self#make_temp_var e' ty))
+      let e2 = self#simplify_exp e in
+      match e2 with
+      | V.Constant(_) -> e2
+      | _ ->
+	 V.Lval(V.Temp(self#make_temp_var e2 ty))
+    
 
     method private tempify (v:D.t) ty =
       D.inside_symbolic (fun e -> self#tempify_exp e ty) v
