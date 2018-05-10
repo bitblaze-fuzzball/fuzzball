@@ -466,15 +466,6 @@ object (self)
       | BinOp(BITOR,
 	      BinOp(BITAND, Cast(CAST_SIGNED, ty1, cond1), x),
 	      BinOp(BITAND, UnOp(NOT, Cast(CAST_SIGNED, ty2, cond2)), y))
-      | BinOp(BITOR,
-	      BinOp(BITAND, x, Cast(CAST_SIGNED, ty1, cond1)),
-	      BinOp(BITAND, UnOp(NOT, Cast(CAST_SIGNED, ty2, cond2)), y))
-      | BinOp(BITOR,
-	      BinOp(BITAND, Cast(CAST_SIGNED, ty1, cond1), x),
-	      BinOp(BITAND, y, UnOp(NOT, Cast(CAST_SIGNED, ty2, cond2))))
-      | BinOp(BITOR,
-	      BinOp(BITAND, x, Cast(CAST_SIGNED, ty1, cond1)),
-	      BinOp(BITAND, y, UnOp(NOT, Cast(CAST_SIGNED, ty2, cond2))))
 	  when ty1 = ty2 && cond1 = cond2 &&
 	    (Vine_typecheck.infer_type_fast cond1) = REG_1
 	    ->
@@ -532,6 +523,7 @@ object (self)
 	    | (SLT, _)         -> ("BVSLT(", ", ", ")", false)
 	    | (SLE, REG_1)     -> ("(", " OR (NOT ", "))", false)
 	    | (SLE, _)         -> ("BVSLE(", ", ", ")", false)
+	    | (CONCAT, _)      -> ("(", " @ ", ")", true)
 	    | (LSHIFT, _)
 	    | (ARSHIFT, _)
 	    | (RSHIFT, _) ->

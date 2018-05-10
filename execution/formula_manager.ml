@@ -379,10 +379,11 @@ struct
 	    when List.mem table_var table_vars ->
 	    e
 	| V.Lval(V.Mem((_,region_str,ty1),
-		       V.Constant(V.Int(V.REG_32, addr)), ty2))
+		       V.Constant(V.Int((V.REG_32|V.REG_64), addr)), ty2))
 	  -> (self#add_mem_axioms region_str ty2 addr;
 	      V.Lval(V.Temp(self#mem_var region_str ty2 addr)))
-	| _ -> failwith "Bad expression in rewrite_mem_expr"
+	| _ -> failwith ("Bad expression " ^ (V.exp_to_string e) ^
+			   " in rewrite_mem_expr")
 
     method rewrite_for_solver e =
       let rec loop e =
@@ -530,6 +531,9 @@ struct
 		     let (e_enc, _) = Hashtbl.find temp_var_num_to_subexpr n in
 		     let e' = loop (decode_exp e_enc)
 		     in
+		       if !opt_trace_temps then
+			 Printf.printf "%s evaluates to %s\n"
+			   s (V.exp_to_string e');
 		       Hashtbl.replace temp_var_num_evaled n e';
 		       e')
 	  | V.Lval(V.Temp(n,s,ty) as lv) ->
@@ -834,13 +838,6 @@ struct
 	       V.Lval(V.Temp(self#make_temp_var e' ty))
 	) v
 
-    method private tempify (v:D.t) ty =
-      D.inside_symbolic
-	(fun e ->
-	   let e' = self#simplify_exp e in
-	     V.Lval(V.Temp(self#make_temp_var e' ty))
-	) v
-
     method simplify1  e = self#simplify e V.REG_1
     method simplify8  e = self#simplify e V.REG_8
     method simplify16 e = self#simplify e V.REG_16
@@ -861,6 +858,36 @@ struct
 			     e2
 			   else
 			     V.Lval(V.Temp(self#make_temp_var e2 ty))))
+	) v
+
+    method tempify_exp e ty =
+      let e2 = self#simplify_exp e in
+      match e2 with
+      | V.Constant(_) -> e2
+      | _ ->
+	 V.Lval(V.Temp(self#make_temp_var e2 ty))
+    
+
+    method private tempify (v:D.t) ty =
+      D.inside_symbolic (fun e -> self#tempify_exp e ty) v
+
+    method tempify1  e = self#tempify e V.REG_1
+    method tempify8  e = self#tempify e V.REG_8
+    method tempify16 e = self#tempify e V.REG_16
+    method tempify32 e = self#tempify e V.REG_32
+    method tempify64 e = self#tempify e V.REG_64
+
+    method tempify_with_callback f (v:D.t) ty =
+      D.inside_symbolic
+	(fun e ->
+	   let e2 = self#simplify_exp e in
+	     match e2 with
+	       | V.Constant(_) -> e2
+	       | _ ->
+		   (match (f e2 ty) with
+		      | Some e3 -> e3
+		      | None ->
+			  V.Lval(V.Temp(self#make_temp_var e2 ty)))
 	) v
 
     method make_ite cond_v ty v_true v_false =

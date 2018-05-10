@@ -104,6 +104,7 @@ let rec vine_to_stp vc ctx e =
 	  let tobv f = (fun vc x y -> (e_boolbv vc (f vc x y))) in
 	  let ty = match bop with
 	    | EQ | NEQ | LT | LE | SLT | SLE -> REG_1
+	    | CONCAT -> double_width ty1
 	    | _ -> ty1
 	  in
 	  let constr = match bop with
@@ -117,6 +118,7 @@ let rec vine_to_stp vc ctx e =
 	    | BITAND -> e_bvand vc
 	    | BITOR -> e_bvor vc
 	    | XOR -> e_bvxor vc
+	    | CONCAT -> e_bvconcat vc
 	    | EQ -> tobv e_eq vc
 	    | NEQ -> (fun x y -> e_boolbv vc (e_not vc (e_eq vc x y)))
 	    | LT -> tobv e_bvlt vc 

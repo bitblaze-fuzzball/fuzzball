@@ -297,7 +297,7 @@ object(self)
 
   method string_create len =
     try String.create len
-    with Invalid_argument("String.create")
+    with Invalid_argument(_ (* "String.create" *) )
 	-> raise (Unix.Unix_error(Unix.EFAULT, "String.create", ""))
 
   (* Right now we always redirect the program's FDs 1 and 2 (stdout
@@ -2597,7 +2597,7 @@ object(self)
 	   | (false, ARM) ->
 	       ["Linux"; (* sysname *)
 		nodename; (* nodename *)
-		"2.6.32-5-versatile"; (* release *)
+		"3.2.0-1-ARCH"; (* release *)
 		"#1 Wed Jun 15 07:34:48 UTC 2011"; (* version *)
 		"armv5tejl"; (* machine *)
 		"example.com" (* domain *)
@@ -2999,7 +2999,8 @@ object(self)
 		 Printf.eprintf "ioctl(%d, 0x%Lx, 0x%08Lx)" fd req argp;
 	       self#sys_ioctl fd req argp;
 	 | (ARM, 55) -> uh "Check whether ARM fcntl syscall matches x86"
-	 | (X86, 55) -> (* fcntl *)
+	 | (X86, 55) (* fcntl *)
+	 | (X64, 72) ->
 	     let (ebx, ecx, edx) = read_3_regs () in
 	     let fd = Int64.to_int ebx and
 		 cmd = Int64.to_int ecx and

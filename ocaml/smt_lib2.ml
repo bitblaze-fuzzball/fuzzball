@@ -217,6 +217,16 @@ object (self)
 	    "(let ((" ^ v_s ^ " " ^ rhs_s ^ ")) " ^ body_s ^ ")"
       | Let(Mem(_,_,_), _, _) ->
 	  failwith "Memory let expression translation to SMT-LIB2 not supported"
+      | UnOp(NOT, Cast(CAST_LOW, REG_1,
+		       (BinOp(ARSHIFT, e1, Constant(Int(REG_8, k)))))) ->
+	  let bit = string_of_int (Int64.to_int k) in
+	  let extract = "((_ extract " ^ bit ^ " " ^ bit ^ ") " in
+	    "(= #b0 " ^ extract ^ (tr_exp e1) ^ "))"
+      | Cast(CAST_LOW, REG_1,
+	     (BinOp(ARSHIFT, e1, Constant(Int(REG_8, k))))) ->
+	  let bit = string_of_int (Int64.to_int k) in
+	  let extract = "((_ extract " ^ bit ^ " " ^ bit ^ ") " in
+	    "(= #b1 " ^ extract ^ (tr_exp e1) ^ "))"
       | UnOp(uop, e1) ->
 	  let pre = match (uop, (Vine_typecheck.infer_type_fast e1)) with
 	    | (_, REG_1) -> "(not "
@@ -270,8 +280,8 @@ object (self)
 	    | (CAST_UFLOAT,  REG_64) -> "(_ to_fp_unsigned 11 53)"
 	    | (CAST_FWIDEN,  REG_64) -> "(_ to_fp 11 53)"
 	    | (CAST_FNARROW, REG_32) -> "(_ to_fp 8 24)"
-	    | (CAST_SFIX,    _)      -> "(_ fp.to_sbv " ^ sz2 ^ ") "
-	    | (CAST_UFIX,    _)      -> "(_ fp.to_ubv " ^ sz2 ^ ") "
+	    | (CAST_SFIX,    _)      -> "(_ fp.to_sbv " ^ sz2 ^ ")"
+	    | (CAST_UFIX,    _)      -> "(_ fp.to_ubv " ^ sz2 ^ ")"
 	    | _ -> failwith "Unsupported FCast combination"
 	  in
 	  let core =
@@ -422,15 +432,6 @@ object (self)
       | BinOp(BITOR,
 	      BinOp(BITAND, Cast(CAST_SIGNED, ty1, cond1), x),
 	      BinOp(BITAND, UnOp(NOT, Cast(CAST_SIGNED, ty2, cond2)), y))
-      | BinOp(BITOR,
-	      BinOp(BITAND, x, Cast(CAST_SIGNED, ty1, cond1)),
-	      BinOp(BITAND, UnOp(NOT, Cast(CAST_SIGNED, ty2, cond2)), y))
-      | BinOp(BITOR,
-	      BinOp(BITAND, Cast(CAST_SIGNED, ty1, cond1), x),
-	      BinOp(BITAND, y, UnOp(NOT, Cast(CAST_SIGNED, ty2, cond2))))
-      | BinOp(BITOR,
-	      BinOp(BITAND, x, Cast(CAST_SIGNED, ty1, cond1)),
-	      BinOp(BITAND, y, UnOp(NOT, Cast(CAST_SIGNED, ty2, cond2))))
 	  when ty1 = ty2 && cond1 = cond2 &&
 	    (Vine_typecheck.infer_type_fast cond1) = REG_1
 	    ->
@@ -477,6 +478,7 @@ object (self)
 	    | (LSHIFT, _)      -> ("(bvshl ", " ", ")")
 	    | (ARSHIFT, _)     -> ("(bvashr ", " ", ")")
 	    | (RSHIFT, _)      -> ("(bvlshr ", " ", ")")
+	    | (CONCAT, _)      -> ("(concat ", " ", ")")
 	  and e2 = match bop with
 	    | LSHIFT | ARSHIFT | RSHIFT ->
 	      (* SMT-LIB requires both shift operands to have the same size *)
@@ -490,11 +492,6 @@ object (self)
 	        e2
 	  in
 	    pre ^ (tr_exp e1) ^ mid ^ (tr_exp e2) ^ post
-      | Cast(CAST_LOW, REG_1,
-	     (BinOp(ARSHIFT, e1, Constant(Int(REG_8, k))))) ->
-	  let bit = string_of_int (Int64.to_int k) in
-	  let extract = "((_ extract " ^ bit ^ " " ^ bit ^ ")" in
-	    "(= #b1 " ^ extract ^ (tr_exp e1) ^ "))"
       | Cast(ct,t, e1) ->
 	  let make_zeros k =
 	    if k mod 4 = 0 then

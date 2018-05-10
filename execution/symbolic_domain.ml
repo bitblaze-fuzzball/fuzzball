@@ -131,25 +131,9 @@ module SymbolicDomain : Exec_domain.DOMAIN = struct
 	    | 4 -> V.Cast(V.CAST_HIGH, V.REG_32, e)
 	    | _ -> failwith "bad which in extract_32_from_64"
 
-  let assemble16 e e2 =
-    V.BinOp(V.BITOR,
-	    V.Cast(V.CAST_UNSIGNED, V.REG_16, e),
-	    V.BinOp(V.LSHIFT,
-		    V.Cast(V.CAST_UNSIGNED, V.REG_16, e2),
-		    (from_concrete_8 8)))
-  let assemble32 e e2 =
-    V.BinOp(V.BITOR,
-	    V.Cast(V.CAST_UNSIGNED, V.REG_32, e),
-	    V.BinOp(V.LSHIFT,
-		    V.Cast(V.CAST_UNSIGNED, V.REG_32, e2),
-		    (from_concrete_8 16)))
-
-  let assemble64 e e2 =
-    V.BinOp(V.BITOR,
-	    V.Cast(V.CAST_UNSIGNED, V.REG_64, e),
-	    V.BinOp(V.LSHIFT,
-		    V.Cast(V.CAST_UNSIGNED, V.REG_64, e2),
-		    (from_concrete_8 32)))
+  let assemble16 e e2 = V.BinOp(V.CONCAT, e2, e)
+  let assemble32 e e2 = V.BinOp(V.CONCAT, e2, e)
+  let assemble64 e e2 = V.BinOp(V.CONCAT, e2, e)
 
   let reassemble16 e e2 =
     match (e, e2) with

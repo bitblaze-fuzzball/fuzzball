@@ -127,27 +127,27 @@ type fcast_type = | CAST_SFLOAT (** Signed integer to float *)
 		  | CAST_FNARROW (** Decrease FP precision *)
 
 (** Binary operations implemented in the IR *)
-type binop_type = 
-| PLUS (** Integer addition. (commutative, associative) *)
-| MINUS (** Subtract second integer from first. *)
-| TIMES (** Integer multiplication. (commutative, associative)*)
-| DIVIDE (** Unsigned integer division. *)
-| SDIVIDE (** Signed integer division. *)
-| MOD (** Unsigned modulus. *)
-| SMOD (** Signed modulus. *)
-| LSHIFT (** Left shift. *)
-| RSHIFT (** Right shift, fill with 0. *)
-| ARSHIFT (** Right shift, sign extend. *)
-| BITAND (** Bitwise and. (commutative, associative) *)
-| BITOR (** Bitwise or. (commutative, associative) *)
-| XOR (** Bitwise xor. (commutative, associative) *)
-| EQ (** Equals (commutative) (associative on booleans) *)
-| NEQ (** Not equals (commutative) (associative on booleans) *)
-| LT (** Unsigned less than *)
-| LE (** Unsigned less than or equal to *)
-| SLT (** Signed less than *)
-| SLE (** Signed less than or equal to *)
-                  
+type binop_type = PLUS (** Integer addition. (commutative, associative) *)
+		  | MINUS (** Subtract second integer from first. *)
+		  | TIMES (** Integer multiplication. (commutative, associative)*)
+		  | DIVIDE (** Unsigned integer division. *)
+		  | SDIVIDE (** Signed integer division. *)
+		  | MOD (** Unsigned modulus. *)
+		  | SMOD (** Signed modulus. *)
+		  | LSHIFT (** Left shift. *)
+		  | RSHIFT (** Right shift, fill with 0. *)
+		  | ARSHIFT (** Right shift, sign extend. *)
+		  | BITAND (** Bitwise and. (commutative, associative) *)
+		  | BITOR (** Bitwise or. (commutative, associative) *)
+		  | XOR (** Bitwise xor. (commutative, associative) *)
+		  | EQ (** Equals (commutative) (associative on booleans) *)
+		  | NEQ (** Not equals (commutative) (associative on booleans) *)
+		  | LT (** Unsigned less than *)
+		  | LE (** Unsigned less than or equal to *)
+		  | SLT (** Signed less than *)
+		  | SLE (** Signed less than or equal to *)
+                  | CONCAT (** Bitwise concatenation *)
+
 
 (** Floating point binary operations *)
 type fbinop_type = | FPLUS (** Adddition *)
@@ -313,6 +313,16 @@ let rec bits_of_width t =
 (*    | Array(at, vt) -> bits_of_width vt (* FIXME *)
     | TString -> failwith "bits_of_width of string undefined" *)
 
+let rec double_width ty =
+  match ty with
+    | REG_1 -> failwith "Can't double_width REG_1"
+    | REG_8 -> REG_16
+    | REG_16 -> REG_32
+    | REG_32 -> REG_64
+    | REG_64 -> failwith "Can't double_width REG_64"
+    | TAttr(t', _) -> double_width t'
+    | _ -> raise (Invalid_argument "unknown width in double_width")
+
 (** Parse a binop from a string *)
 let binop_of_string s =
   (match s with
@@ -334,6 +344,7 @@ let binop_of_string s =
     | "LE" ->       LE
     | "SLT" ->      SLT
     | "SLE" ->      SLE
+    | "CONCAT" ->   CONCAT
     | s -> raise(ParseError("\""^s^"\" is  not a known binop"))
   )
 
@@ -406,6 +417,7 @@ let binop_to_string = function
   | LE -> "<="
   | SLT -> "<$"
   | SLE -> "<=$"
+  | CONCAT -> "@"
 
 (** @return the string representation of a rounding mode *)
 let round_mode_to_string = function
@@ -462,8 +474,8 @@ let rec tattr_to_string at =
 let rec format_name ft (vid,name,typ) =
   let pp = Format.pp_print_string ft in
     pp name;
-    pp "_";
-    pp (string_of_int vid)
+    () (* pp "_";
+    pp (string_of_int vid) *)
 
 and format_var ?(print_type=true) ft ((vid,name,typ) as var) =
   let pp = Format.pp_print_string ft in
@@ -615,7 +627,7 @@ let rec format_exp ft e =
 	     | EQ | NEQ			 -> 300
 	     | LT | SLT | SLE | LE	 -> 400
 	     | LSHIFT | RSHIFT | ARSHIFT -> 500
-	     | PLUS | MINUS		 -> 600
+	     | PLUS | MINUS | CONCAT     -> 600
 	     | TIMES|DIVIDE|SDIVIDE|MOD|SMOD  -> 700
 	   in
 	   Format.pp_print_cut ft ();

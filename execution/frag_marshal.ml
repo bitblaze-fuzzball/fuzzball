@@ -189,10 +189,11 @@ let encode_exp_flags e printable =
 	     | V.SMOD -> '#'
 	     | V.LSHIFT -> '['
 	     | V.RSHIFT -> ']'
-	     | V.ARSHIFT -> '@'
+	     | V.ARSHIFT -> '}'
 	     | V.BITAND -> '&'
 	     | V.BITOR -> '|'
 	     | V.XOR -> '^'
+	     | V.CONCAT -> '@'
 	     | V.EQ -> '='
 	     | V.NEQ -> '\\'
 	     | V.LT -> '<'
@@ -280,8 +281,9 @@ let encode_exp_flags e printable =
 		| V.CAST_FWIDEN  -> 'W'
 		| V.CAST_FNARROW -> 'N');
 	push (match ty with
-		| V.REG_32 -> '3'
-		| V.REG_64 -> '6'
+		| V.REG_16 -> 's'
+		| V.REG_32 -> 'i'
+		| V.REG_64 -> 'l'
 		| _ -> failwith "Unsupported FP cast dest type in encode_exp");
 	loop e1
     | V.Ite(ce, te, fe) -> push '?'; loop ce; loop te; loop fe
@@ -425,10 +427,11 @@ let decode_exp s =
 	| '#'  -> parse_binop V.SMOD    i'
 	| '['  -> parse_binop V.LSHIFT  i'
 	| ']'  -> parse_binop V.RSHIFT  i'
-	| '@'  -> parse_binop V.ARSHIFT i'
+	| '}'  -> parse_binop V.ARSHIFT i'
 	| '&'  -> parse_binop V.BITAND  i'
 	| '|'  -> parse_binop V.BITOR   i'
 	| '^'  -> parse_binop V.XOR     i'
+	| '@'  -> parse_binop V.CONCAT  i'
 	| '='  -> parse_binop V.EQ      i'
 	| '\\' -> parse_binop V.NEQ     i'
 	| '<'  -> parse_binop V.LT      i'
@@ -503,8 +506,9 @@ let decode_exp s =
 		      in
 		      let i3 = i2 + 1 in
 		      let ty = match s.[i3] with
-			| '3' -> V.REG_32
-			| '6' -> V.REG_64
+			| 's' -> V.REG_16
+			| 'i' -> V.REG_32
+			| 'l' -> V.REG_64
 			| _ -> failwith
 			    "Unexpected FP cast dest. type in decode_exp"
 		      in

@@ -69,7 +69,7 @@ let print_ce ce =
 	 else
 	   false
        in
-       if value <> 0L && not is_tmp then
+       if not is_tmp then
 	 Printf.eprintf "%s=0x%Lx " var_s value);
   Printf.eprintf "\n";
 

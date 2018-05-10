@@ -40,19 +40,29 @@ type ctx = Vine.typ VM.t
 type gamma = ctx option
 
 
-let rec tint t = 
+let tint t =
   match (unwind_type t) with
       REG_1 | REG_8 | REG_16 | REG_32 | REG_64 -> true
     | _ -> false
 
-let rec tfloat t =
+(* REG_1 isn't here because there isn't a REG_2. REG_64 isn't because
+   there is no REG_128. *)
+let tint_concatable t =
+  match (unwind_type t) with
+      REG_8 | REG_16 | REG_32 -> true
+    | _ -> false
+
+let tfloat t =
   match (unwind_type t) with
     | REG_32 | REG_64 -> true
     | _ -> false
 
-let rec tfcast_int t =
+(* Originally this was only REG_32 and REG_64, but x86 has an
+   instruction that converts an int to a 16-bit value, so we might as
+   well too. I'm still hoping that REG_8 and REG_1 will never come up. *)
+let tfcast_int t =
   match (unwind_type t) with
-    | REG_32 | REG_64 -> true
+    | REG_16 | REG_32 | REG_64 -> true
     | _ -> false
 
 let rec tcompat (t1:typ) (t2:typ) : bool = 
@@ -196,6 +206,10 @@ and typecheck_exp names gamma (e:exp)  =
 		 when tint t1 && tcompat t1 t2
 		  ->
 	      (names,REG_1)
+	  | CONCAT
+	      when tint_concatable t1 && tcompat t1 t2
+		->
+	      (names,double_width t1)
 	  | _ ->
 	      let msg = (binop_to_string bop)^" incompatible with operands ("
 		^type_to_string t1^" and "^type_to_string t2^")"
@@ -509,6 +523,8 @@ let infer_type_fast e =
       | BinOp((PLUS|MINUS|TIMES|DIVIDE|SDIVIDE|MOD|SMOD|BITAND|BITOR|XOR),
 	      e1, e2) ->
 	  loop (if Random.bool () then e1 else e2)
+      | BinOp(CONCAT, e1, e2) ->
+	  double_width (loop (if Random.bool () then e1 else e2))
       | FBinOp((FPLUS|FMINUS|FTIMES|FDIVIDE), _, e1, e2) ->
 	  loop (if Random.bool () then e1 else e2)
       | Unknown(_) -> raise (TypeError("Cannot typecheck unknowns"))

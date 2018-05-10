@@ -190,6 +190,7 @@ sig
     method eval_int_exp_ty : Vine.exp -> (D.t * Vine.typ)	    
     method private eval_int_exp : Vine.exp -> D.t
     method eval_int_exp_simplify : Vine.exp -> D.t
+    method eval_int_exp_tempify : Vine.exp -> D.t
     method eval_label_exp : Vine.exp -> string
     method jump : (string -> bool) -> string -> string
     method run_sl : (string -> bool) -> Vine.stmt list -> string
