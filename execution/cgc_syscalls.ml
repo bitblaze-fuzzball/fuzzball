@@ -265,7 +265,7 @@ object(self)
 
   method private string_create len =
     try String.create len
-    with Invalid_argument("String.create")
+    with Invalid_argument(_ (* "String.create" *))
 	-> raise (Unix.Unix_error(Unix.EFAULT, "String.create", ""))
 
   method private cgcos_allocate unpadded_length is_exec addr_p =
