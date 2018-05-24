@@ -4327,13 +4327,14 @@ object(self)
 	 | (X86, 294) -> (* migrate_pages *)
 	     uh "Unhandled Linux/x86 system call migrate_pages (294)"
 	 | (ARM, 322)    (* openat *)
-	 | (X86, 295) -> (* openat *)
+	 | (X86, 295)    (* openat *)
+	 | (X64, 257) -> (* openat *)
          let (arg1, arg2, arg3) = read_3_regs () in
          let arg4 = (if (Int64.logand arg3 0o100L) <> 0L then
                        get_reg arg_regs.(3)
                      else
                        0L) in
-         let dirfd    = Int64.to_int arg1 and
+         let dirfd    = Int64.to_int (fix_s32 arg1) and
              path_buf = arg2 and
              flags    = Int64.to_int arg3 and
              mode     = Int64.to_int arg4 in
