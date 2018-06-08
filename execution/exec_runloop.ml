@@ -71,7 +71,12 @@ let decode_insn_at fm gamma eipT =
 	    eipT
       | _ -> eipT
     in
-    let bytes = Array.init 16
+    (* The number of bytes read must be long enough to cover any
+       single instruction. Naively you might think that 16 bytes
+       would be enough, but Valgrind client requests count as single
+       instructions for VEX, and they can be up to 19 bytes on
+       x86-64 and 20 bytes on ARM. *)
+    let bytes = Array.init 20
       (fun i -> Char.chr (fm#load_byte_conc
 			    (Int64.add insn_addr (Int64.of_int i))))
     in
