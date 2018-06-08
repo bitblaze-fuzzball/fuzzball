@@ -1468,7 +1468,7 @@ object(self)
 	    length < 0L || length > 1073741824L ->
 	    raise (Unix.Unix_error(Unix.ENOMEM, "Too large in mmap", ""))
 	| (0L, _, 0x3 (* PROT_READ|PROT_WRITE *),
-	   0x22 (* MAP_PRIVATE|MAP_ANONYMOUS *), -1) ->
+	   (0x22|0x20022) (* MAP_PRIVATE|MAP_ANONYMOUS, opt.MAP_STACK *), -1) ->
 	    let fresh = self#fresh_addr length in
 	      zero_region fresh (Int64.to_int length);
 	      fresh
@@ -3457,8 +3457,9 @@ object(self)
 	       self#sys_fsync fd
 	 | ((X86|ARM), 119) -> (* sigreturn *)
 	     uh "Unhandled Linux system call sigreturn (119)"
-	 | ((X86|ARM), 120) -> (* clone *)
-	     uh "Unhandled Linux system call clone (120)"
+	 | ((X86|ARM), 120) (* clone *)
+         | (X64, 56) ->
+	     uh "Unhandled Linux system call clone"
 	 | ((X86|ARM), 121) -> (* setdomainname *)
 	     uh "Unhandled Linux system call setdomainname (121)"
 	 | ((X86|ARM), 122) (* uname *)
