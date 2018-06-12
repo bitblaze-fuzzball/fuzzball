@@ -617,6 +617,22 @@ let rec constant_fold ctx e =
     | BinOp(BITOR, BinOp(SLT, a1, b1), BinOp(EQ, a2, b2))
 	 when a1 = a2 && b1 = b2 ->
 	BinOp(SLE, a1, b1)
+    (* (a | c) == 0 ==> false, if c is a non-zero constant *)
+    | BinOp(EQ, BinOp(BITOR, a, Constant(Int(_, c))), Constant(Int(_, 0L)))
+	when c <> 0L ->
+	exp_false
+    (* ((a | c) << 32) == 0 ==> false, if c is a non-low32-zero constant *)
+    | BinOp(EQ, BinOp(LSHIFT, BinOp(BITOR, a, Constant(Int(_, c))),
+		      Constant(Int(_, 32L))),
+	    Constant(Int(_, 0L)))
+	when (Int64.logand 0xffffffffL c) <> 0L ->
+	exp_false
+    (* ((a | c) << 32) != 0 ==> true, if c is a non-low32-zero constant *)
+    | BinOp(NEQ, BinOp(LSHIFT, BinOp(BITOR, a, Constant(Int(_, c))),
+		       Constant(Int(_, 32L))),
+	    Constant(Int(_, 0L)))
+	when (Int64.logand 0xffffffffL c) <> 0L ->
+	exp_true
     | _ -> e (* leave other expressions as they are *)
 
 
