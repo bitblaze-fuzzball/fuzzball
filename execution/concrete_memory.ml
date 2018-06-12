@@ -50,7 +50,7 @@ class virtual concrete_memory = object(self)
   method store_page addr pagestr =
     assert(Int64.logand addr 0xfffL = 0L);
     assert(String.length pagestr = 4096);
-    for i = 0 to 4096 do
+    for i = 0 to 4095 do
       self#store_byte (Int64.add addr (Int64.of_int i))
 	(Char.code pagestr.[i])
     done
