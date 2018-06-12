@@ -147,9 +147,22 @@ class linux_special_handler (fm : fragment_machine) =
   in
   let zero_region base len =
     assert(len >= 0 && len <= 0x20000000); (* sanity check *)
-    for i = 0 to len - 1 do
-      fm#store_byte_idx base i 0
-    done
+    let limit = Int64.add base (Int64.of_int len) and
+	i = ref base in
+      assert(limit >= !i);
+      while !i < limit && (Int64.logand !i 0xfffL) <> 0x0L do
+	fm#store_byte_conc !i 0;
+	i := Int64.succ !i
+      done;
+      while (Int64.logand !i 0xfffL) = 0L && (Int64.sub limit !i) >= 4096L do
+	fm#store_page_conc !i (String.make 4096 '\000');
+	i := Int64.add !i 4096L
+      done;
+      while !i < limit do
+	fm#store_byte_conc !i 0;
+	i := Int64.succ !i
+      done;
+      assert(!i = limit)
   in
   let string_of_char_array ca =
     let s = String.create (Array.length ca) in
@@ -1434,6 +1447,13 @@ object(self)
     with
       | Unix.Unix_error(err, _, _) -> self#put_errno err
 
+  method private sys_madvise addr length advice =
+    match advice with
+      | 14 (* MADV_HUGEPAGE *) ->
+	  self#put_errno Unix.EINVAL
+      | _ ->
+	  put_return 0L (* pretend successful *)
+
   method sys_mincore addr length vec =
     for i = 0 to (length / 4096) - 1 do
       (* Say everything is present *)
@@ -1478,9 +1498,12 @@ object(self)
 	    let fresh = self#fresh_addr length in
 	      zero_region fresh (Int64.to_int length);
 	      fresh	    
-	| (_, _, (0x3|0x7) (* PROT_READ|PROT_WRITE|PROT_EXEC) *),
-	   0x32 (* MAP_PRIVATE|FIXED|ANONYMOUS *), -1) ->
+	| (_, _, _,
+	   (0x832|0x32) (* MAP_DENYWRITE|PRIVATE|FIXED|ANONYMOUS *), -1) ->
 	    zero_region addr (Int64.to_int length);
+	    addr
+	| (_, _, (0x0) (* PROT_NONE *),
+	   0x4032 (* MAP_NORESERVE|PRIVATE|FIXED|ANONYMOUS *), -1) ->
 	    addr
 	| (0L, _, 
 	   (0x1|0x5) (* PROT_READ|PROT_EXEC *),
@@ -1491,7 +1514,10 @@ object(self)
 	   (0x1|0x5) (* PROT_READ|PROT_EXEC *),
 	   (0x802|0x2|0x1) (* MAP_PRIVATE|MAP_DENYWRITE|MAP_SHARED *), _) ->
 	    do_read addr
-	| (_, _, (0x3|0x7) (* PROT_READ|PROT_WRITE|PROT_EXEC *),
+	| (_, _, (0x1|0x3|0x5) (* R, RW, RX *),
+	   0x12 (* MAP_PRIVATE|FIXED *), _) ->
+	    do_read addr
+	| (_, _, (0x3|0x5|0x7) (* RW RX RWX *),
 	   0x812 (* MAP_DENYWRITE|PRIVATE|FIXED *), _) ->
 	    do_read addr
 	| _ -> failwith "Unhandled mmap operation"
@@ -3930,8 +3956,15 @@ object(self)
 		 Printf.printf "mincore(0x%08Lx, %d, 0x%08Lx)" addr length vec;
 	       self#sys_mincore addr length vec
 	 | (ARM, 220)
-	 | (X86, 219) -> (* madvise *)
-	     uh "Unhandled Linux system call madvise"
+	 | (X86, 219)
+	 | (X64, 28) -> (* madvise *)
+	     let (arg1, arg2, arg3) = read_3_regs () in
+	     let addr = arg1 and
+		 length = arg2 and
+		 advice = Int64.to_int arg3 in
+	       if !opt_trace_syscalls then
+		 Printf.printf "madvise(0x%08Lx, %Ld, %d)" addr length advice;
+	       self#sys_madvise addr length advice
 	 | (ARM, 217)
 	 | (X86, 220) -> (* getdents64 *)
 	     let (arg1, arg2, arg3) = read_3_regs () in
