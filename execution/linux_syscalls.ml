@@ -3738,12 +3738,22 @@ object(self)
 	     uh "Unhandled Linux system call rt_sigqueueinfo (178)"
 	 | ((X86|ARM), 179) -> (* rt_sigsuspend *)
 	     uh "Unhandled Linux system call rt_sigsuspend (179)"
-	 | ((X86|ARM), 180) -> (* pread64 *)
+	 | ((X86|ARM), 180) -> (* pread64, 32 bit *)
 	     let (arg1, arg2, arg3, arg4, arg5) = read_5_regs () in
 	     let fd    = Int64.to_int arg1 and
 		 buf   = arg2 and
 		 count = Int64.to_int arg3 and
 		 off   = Int64.logor (Int64.shift_left arg5 32) arg4 in
+	       if !opt_trace_syscalls then
+		 Printf.printf "pread64(%d, 0x%08Lx, %d, %Ld)"
+		   fd buf count off;
+	       self#sys_pread64 fd buf count off;
+	 | (X64, 17) -> (* pread64, 64-bit *)
+	     let (arg1, arg2, arg3, arg4) = read_4_regs () in
+	     let fd    = Int64.to_int arg1 and
+		 buf   = arg2 and
+		 count = Int64.to_int arg3 and
+		 off   = arg4 in
 	       if !opt_trace_syscalls then
 		 Printf.printf "pread64(%d, 0x%08Lx, %d, %Ld)"
 		   fd buf count off;
