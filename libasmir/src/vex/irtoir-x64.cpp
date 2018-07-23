@@ -939,17 +939,13 @@ Exp *x64_translate_get( IRExpr *expr, IRSB *irbb, vector<Stmt *> *irout )
     {
         result = translate_get_reg_16(offset);
     }
-    else if ( type == Ity_I32 )
+    else if ( type == Ity_I32 || type == Ity_F32 )
     {
         result = translate_get_reg_32(offset);
     }
     else if ( type == Ity_I64 || type == Ity_F64 )
     {
         result = translate_get_reg_64(offset);
-    }
-    else if ( type == Ity_F32 )
-    {
-        result = new Unknown("register type (F32)");
     }
 
     else if ( type == Ity_I128 || type == Ity_V128 )
@@ -1421,7 +1417,7 @@ Stmt *x64_translate_put( IRStmt *stmt, IRSB *irbb, vector<Stmt *> *irout )
     //
     // Regular 32 bit registers
     //
-    else if ( type == Ity_I32 )
+    else if ( type == Ity_I32 || type == Ity_F32 )
     {
         result = translate_put_reg_32(offset, data, irbb);
     }
