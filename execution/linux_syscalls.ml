@@ -620,6 +620,35 @@ object(self)
       store_word addr 36 f_namelen;
       store_word addr 40 f_frsize
 
+  method private write_fake_statfs_x64_buf addr =
+    (* OCaml's Unix module doesn't provide an interface for this
+       information, so we just make it up. *)
+    let f_type   = 0x52654973L (* REISERFS_SUPER_MAGIC *) and
+	f_bsize  = 4096L and
+	f_blocks = 244182546L and
+	f_bfree  = 173460244L and
+	f_bavail = 173460244L and
+	f_files  = 0L and
+	f_ffree  = 0L and
+	f_fsid_0 = 0L and
+	f_fsid_1 = 0L and
+	f_namelen = 255L and
+	f_frsize = 4096L and
+	f_flags = 0L
+    in
+      store_long addr  0 f_type;
+      store_long addr  8 f_bsize;
+      store_long addr 16 f_blocks;
+      store_long addr 24 f_bfree;
+      store_long addr 32 f_bavail;
+      store_long addr 40 f_files;
+      store_long addr 48 f_ffree;
+      store_long addr 56 f_fsid_0;
+      store_long addr 64 f_fsid_1;
+      store_long addr 72 f_namelen;
+      store_long addr 80 f_frsize;
+      store_long addr 88 f_flags
+
   method private write_fake_statfs64buf addr =
     (* OCaml's Unix module doesn't provide an interface for this
        information, so we just make it up. *)
@@ -988,6 +1017,11 @@ object(self)
 
   method sys_getdents fd dirp buf_sz =
     try
+      let ulong_len = match !opt_arch with X86|ARM -> 4 | X64 -> 8 in
+      let store_ulong = match !opt_arch with
+	| X86|ARM -> store_word
+	| X64 -> store_long
+      in
       let dirname = chroot fd_info.(fd).fname in
       let dirh = Unix.opendir dirname in
       let written = ref 0 in
@@ -997,21 +1031,31 @@ object(self)
 	try
 	  while true do
 	    let fname = Unix.readdir dirh in
-	    let reclen = 10 + (String.length fname) + 1 in
+	    let datalen = 2*ulong_len + 2 + (String.length fname) + 1 in
+	    let padding = (~- datalen) land (ulong_len - 1) in
+	    let reclen = datalen + padding in
 	    let next_pos = !written + reclen in
 	      if next_pos >= buf_sz then
 		raise End_of_file
 	      else
 		let oc_st = Unix.stat (dirname ^ "/" ^ fname) in
 		let d_ino = oc_st.Unix.st_ino in
-		  store_word dirp !written (Int64.of_int d_ino);
-		  written := !written + 4;
-		  store_word dirp !written (Int64.of_int next_pos);
-		  written := !written + 4;
+		  store_ulong dirp !written (Int64.of_int d_ino);
+		  written := !written + ulong_len;
+		  (* The meaning of the d_off field varies by file
+		     system, and programs are recommended to ignore
+		     it. This meaninig of it ("next_pos") was inspired by
+		     what the man page says, but upon further
+		     investigation does not match what any real Linux
+		     filesystems do. *)
+		  store_ulong dirp !written (Int64.of_int next_pos);
+		  written := !written + ulong_len;
 		  fm#store_short_conc (lea dirp 0 0 !written) reclen;
 		  written := !written + 2;
 		  fm#store_cstr dirp (Int64.of_int !written) fname;
 		  written := !written + (String.length fname) + 1;
+		  written := !written + padding;
+		  assert(!written = next_pos);
 		  fd_info.(fd).dirp_offset <- fd_info.(fd).dirp_offset + 1;
 	  done;
 	with End_of_file -> ();
@@ -1025,27 +1069,27 @@ object(self)
       let dirname = chroot fd_info.(fd).fname in
       let dirh = Unix.opendir dirname in
       let written = ref 0 in
-      if fd_info.(fd).readdir_eof = 0 then (
-        for i = 0 to fd_info.(fd).dirp_offset - 1 do
-          ignore(Unix.readdir dirh)
-        done;);
-    try
-      while true do
-        if fd_info.(fd).readdir_eof = 1 then (
-          raise End_of_file);
-        fd_info.(fd).readdir_eof <- 1;
-        let fname = Unix.readdir dirh in
-        fd_info.(fd).readdir_eof <- 0;
-        let reclen = 19 + (String.length fname) + 1 in
-        let next_pos = !written + reclen in
-        if next_pos >= buf_sz then
-          raise End_of_file
-        else
-          let oc_st = Unix.stat (dirname ^ "/" ^ fname) in
-          let d_ino = oc_st.Unix.st_ino in
-          store_word dirp !written (Int64.of_int d_ino);
-          written := !written + 4;
-          store_word dirp !written 0L; (* high bits of d_ino *)
+	if fd_info.(fd).readdir_eof = 0 then (
+          for i = 0 to fd_info.(fd).dirp_offset - 1 do
+            ignore(Unix.readdir dirh)
+          done;);
+	try
+	  while true do
+            if fd_info.(fd).readdir_eof = 1 then (
+              raise End_of_file);
+            fd_info.(fd).readdir_eof <- 1;
+            let fname = Unix.readdir dirh in
+              fd_info.(fd).readdir_eof <- 0;
+              let reclen = 19 + (String.length fname) + 1 in
+              let next_pos = !written + reclen in
+		if next_pos >= buf_sz then
+		  raise End_of_file
+		else
+		  let oc_st = Unix.stat (dirname ^ "/" ^ fname) in
+		  let d_ino = oc_st.Unix.st_ino in
+		    store_word dirp !written (Int64.of_int d_ino);
+		    written := !written + 4;
+		    store_word dirp !written 0L; (* high bits of d_ino *)
           written := !written + 4;
           store_word dirp !written (Int64.of_int next_pos);
           written := !written + 4;
@@ -1168,7 +1212,7 @@ object(self)
     let tid = Int64.of_int (self#get_pid) in
       put_return tid
 
-  method sys_getrusage who buf =
+  method private sys_getrusage32 who buf =
     ignore(who);
     store_word buf  0 0L; (* utime secs *)
     store_word buf  4 0L; (* utime usecs *)
@@ -1188,6 +1232,28 @@ object(self)
     store_word buf 60 0L; (* nsignals *)
     store_word buf 64 0L; (* nvcsw *)
     store_word buf 68 0L; (* nivcsw *)
+    put_return 0L (* success *)
+
+  method private sys_getrusage64 who buf =
+    ignore(who);
+    store_word buf  0  0L; (* utime secs *)
+    store_word buf  8  0L; (* utime usecs *)
+    store_word buf 16  0L; (* stime secs *)
+    store_word buf 24  0L; (* stime usecs *)
+    store_word buf 32  0L; (* maxrss *)
+    store_word buf 40  0L; (* ixrss *)
+    store_word buf 48  0L; (* idrss *)
+    store_word buf 56  0L; (* isrss *)
+    store_word buf 64  0L; (* minflt *)
+    store_word buf 72  0L; (* majflt *)
+    store_word buf 80  0L; (* nswap *)
+    store_word buf 88  0L; (* inblock *)
+    store_word buf 96  0L; (* outblock *)
+    store_word buf 104 0L; (* msgsnd *)
+    store_word buf 112 0L; (* msgrcv *)
+    store_word buf 120 0L; (* nsignals *)
+    store_word buf 128 0L; (* nvcsw *)
+    store_word buf 136 0L; (* nivcsw *)
     put_return 0L (* success *)
 
   method sys_getpeername sockfd addr addrlen_ptr =
@@ -1388,6 +1454,9 @@ object(self)
 		 put_return 0L (* success *)
 	     with
 	       | Unix.Unix_error(err, _, _) -> self#put_errno err)
+      | 0x5402L -> (* TCSETS *)
+	  (* Todo: implement in terms of Unix.tcsetattr *)
+	  put_return 0L (* success *)
       | 0x540fL -> (* TIOCGPGRP *)
 	  store_word argp 0 (Int64.of_int (self#get_pid));
 	  put_return 0L (* success *)
@@ -1428,6 +1497,8 @@ object(self)
 	    (Unix.Unix_error(Unix.EINVAL, "Bad whence argument to llseek", ""))
       in
       let loc = Unix.lseek (self#get_fd fd) (Int64.to_int offset) seek_cmd in
+	if seek_cmd = Unix.SEEK_SET && offset = 0L then
+	  fd_info.(fd).dirp_offset <- 0; (* rewinddir *)
 	put_return (Int64.of_int loc);
     with
       | Unix.Unix_error(err, _, _) -> self#put_errno err
@@ -1551,7 +1622,7 @@ object(self)
 	Array.set unix_fds vt_fd (Some oc_fd);
 	fd_info.(vt_fd).fname <- path;
 	fd_info.(vt_fd).dirp_offset <- 0;
-    fd_info.(vt_fd).readdir_eof <- 0;
+	fd_info.(vt_fd).readdir_eof <- 0;
 	(* XXX: canonicalize filename here? *)
 	if Hashtbl.mem symbolic_fnames path then
 	  Hashtbl.replace symbolic_fds vt_fd
@@ -1767,7 +1838,7 @@ object(self)
     with
       | Unix.Unix_error(err, _, _) -> self#put_errno err
 
-  method sys_recvmsg sockfd msg flags =
+  method private sys_recvmsg32 sockfd msg flags =
     let store_nlmsg_newaddr buf =
       (* nlmsghdr *)
       store_word buf 0 32L;(* nlmsg_len *)
@@ -1832,6 +1903,27 @@ object(self)
     with
       | Unix.Unix_error(err, _, _) -> self#put_errno err
 
+  method private sys_recvmsg64 sockfd msg flags =
+    try
+      let iov = load_long (lea msg 0 0 16) and
+          cnt = Int64.to_int (load_long (lea msg 0 0 24)) in
+      let len = self#iovec_size iov cnt in
+      let str = self#string_create len in
+      let flags = (if (flags land 1) <> 0 then [Unix.MSG_OOB] else []) @
+        (if (flags land 2) <> 0 then [Unix.MSG_PEEK] else [])
+      and addrbuf = load_long (lea msg 0 0 0)
+      in
+      let (num_read, sockaddr) =
+        Unix.recvfrom (self#get_fd sockfd) str 0 len flags
+      in
+        assert(not (Hashtbl.mem symbolic_fds sockfd)); (* unimplemented *)
+        (if addrbuf <> 0L then
+           let addrlen_ptr = load_long (lea msg 0 0 8) in
+             self#write_sockaddr sockaddr addrbuf addrlen_ptr);
+        self#scatter_iovec iov cnt str;
+        put_return (Int64.of_int num_read) (* success *)
+    with
+      | Unix.Unix_error(err, _, _) -> self#put_errno err
 
   method sys_rename oldpath newpath =
     try
@@ -2340,6 +2432,9 @@ object(self)
     put_reg R_TPIDRURO tp_value;
     put_return 0L (* success *)
 
+  method private sys_shmget key size shmflag =
+    self#put_errno Unix.ENOSYS
+
   method sys_rt_sigaction signum newbuf oldbuf setlen =
     try
       (if oldbuf = 0L then () else
@@ -2465,7 +2560,7 @@ object(self)
       (match !opt_arch with
       | X86 -> self#write_oc_statbuf_as_stat buf_addr oc_buf;
       | X64 -> self#write_oc_statbuf_as_x64_stat buf_addr oc_buf
-      | ARM -> failwith "Unimplemented: ARM 32-bit fstat");
+      | ARM -> failwith "Unimplemented: ARM 32-bit stat");
       put_return 0L (* success *)
     with
       | Unix.Unix_error(err, _, _) -> self#put_errno err
@@ -2473,7 +2568,10 @@ object(self)
   method sys_lstat path buf_addr =
     try
       let oc_buf = Unix.lstat (chroot path) in
-	self#write_oc_statbuf_as_stat buf_addr oc_buf;
+	(match !opt_arch with
+	   | X86 -> self#write_oc_statbuf_as_stat buf_addr oc_buf;
+	   | X64 -> self#write_oc_statbuf_as_x64_stat buf_addr oc_buf
+	   | ARM -> failwith "Unimplemented: ARM 32-bit lstat");
 	put_return 0L (* success *)
     with
       | Unix.Unix_error(err, _, _) -> self#put_errno err
@@ -2523,12 +2621,24 @@ object(self)
 	  
   method sys_statfs path buf =
     ignore(path);
-    self#write_fake_statfs_buf buf;
-    put_return 0L (* success *)
+    try
+      ignore(Unix.stat path); (* only for the errors it generates *)
+      (match !opt_arch with
+	 | X86| ARM ->
+	     self#write_fake_statfs_buf buf
+	 | X64 ->
+	     self#write_fake_statfs_x64_buf buf);
+      put_return 0L (* success *)
+    with
+      | Unix.Unix_error(err, _, _) -> self#put_errno err
 
   method sys_fstatfs fd buf =
     ignore(fd);
-    self#write_fake_statfs_buf buf;
+    (match !opt_arch with
+       | X86| ARM ->
+	   self#write_fake_statfs_buf buf
+       | X64 ->
+	   self#write_fake_statfs_x64_buf buf);
     put_return 0L (* success *)
 
   method sys_statfs64 path buf_len struct_buf =
@@ -2539,6 +2649,10 @@ object(self)
   method sys_fsync fd =
     ignore(fd);
     put_return 0L (* success *)
+
+  method private sys_sysinfo info_buf =
+    ignore(info_buf);
+    self#put_errno Unix.ENOSYS
 
   method sys_tgkill tgid tid signal : unit =
     let my_pid = self#get_pid in
@@ -2666,10 +2780,20 @@ object(self)
   method sys_write fd bytes count =
     self#do_write fd bytes count
 
+  method private iovec_load_base iov i =
+    match !opt_arch with
+      | X86|ARM -> (load_word (lea iov i 8  0))
+      | X64     -> (load_long (lea iov i 16 0))
+
+  method private iovec_load_len iov i =
+    match !opt_arch with
+      | X86|ARM -> (load_word (lea iov i 8  4))
+      | X64     -> (load_long (lea iov i 16 8))
+
   method private iovec_size iov cnt =
     let sum = ref 0 in
       for i = 0 to cnt - 1 do
-	let len = Int64.to_int (load_word (lea iov i 8 4)) in
+	let len = Int64.to_int (self#iovec_load_len iov i) in
 	  sum := !sum + len
       done;
       !sum
@@ -2677,23 +2801,18 @@ object(self)
   method private scatter_iovec iov cnt buf =
     let off = ref 0 in
       for i = 0 to cnt - 1 do
-	let base = load_word (lea iov i 8 0) and
-	    len = Int64.to_int (load_word (lea iov i 8 4))
+	let base = self#iovec_load_base iov i and
+	    len = Int64.to_int (self#iovec_load_len iov i)
 	in
 	  fm#store_str base 0L (String.sub buf !off len);
 	  off := !off + len
       done
 
   method private gather_iovec iov cnt =
-    let read_vec = match !opt_arch with
-      | X86|ARM ->
-	  (fun i -> read_buf
-	     (load_word (lea iov i 8 0)) (* iov_base *)
-	     (Int64.to_int (load_word (lea iov i 8 4)))) (* iov_len *)
-      | X64 ->
-	  (fun i -> read_buf
-	     (load_long (lea iov i 16 0)) (* iov_base *)
-	     (Int64.to_int (load_long (lea iov i 16 8)))) (* iov_len *)
+    let read_vec i =
+      read_buf
+	(self#iovec_load_base iov i) (* iov_base *)
+	(Int64.to_int (self#iovec_load_len iov i)) (* iov_len *)
     in
       Array.concat (Vine_util.mapn read_vec (cnt - 1))
 
@@ -3008,7 +3127,8 @@ object(self)
 	 | (ARM, 53) -> uh "No lock (53) syscall in Linux/ARM (E)ABI"
 	 | (X86, 53) -> (* lock *)
 	     uh "Unhandled Linux system call lock (53)"
-	 | ((X86|ARM), 54) -> (* ioctl *)
+	 | ((X86|ARM), 54) (* ioctl *)
+	 | (X64, 16)    -> (* ioctl *)
 	     let (arg1, arg2, arg3) = read_3_regs () in
 	     let fd   = Int64.to_int arg1 and
 		 req  = arg2 and
@@ -3061,7 +3181,8 @@ object(self)
 	       Printf.printf "getppid()";
 	     self#sys_getppid ()
 	 | (ARM, 65) -> uh "Check whether ARM getpgrp syscall matches x86"
-	 | (X86, 65) -> (* getpgrp *)
+	 | (X86,  65)    (* getpgrp *)
+	 | (X64, 111) -> (* getpgrp *)
 	     if !opt_trace_syscalls then
 	       Printf.printf "getpgrp()";
 	     self#sys_getpgrp ()
@@ -3108,13 +3229,20 @@ object(self)
 	       if !opt_trace_syscalls then
 		 Printf.printf "getrlimit(%d, 0x%08Lx)" rsrc buf;
 	       self#sys_getrlimit rsrc buf
-	 | ((X86|ARM), 77) -> (* getrusage *)
+	 | ((X86|ARM), 77) -> (* getrusage, 32-bit structure *)
 	     let (ebx, ecx) = read_2_regs () in
 	     let who = Int64.to_int ebx and
 		 buf = ecx in
 	       if !opt_trace_syscalls then
 		 Printf.printf "getrusage(%d, 0x%08Lx)" who buf;
-	       self#sys_getrusage who buf
+	       self#sys_getrusage32 who buf
+	 | (X64, 98) -> (* getrusage, 64-bit structure *)
+	     let (arg1, arg2) = read_2_regs () in
+	     let who = Int64.to_int arg1 and
+		 buf = arg2 in
+	       if !opt_trace_syscalls then
+		 Printf.printf "getrusage(%d, 0x%08Lx)" who buf;
+	       self#sys_getrusage64 who buf
 	 | (X64, 96)
 	 | ((X86|ARM), 78) -> (* gettimeofday *)
 	     let (arg1, arg2) = read_2_regs () in
@@ -3131,6 +3259,17 @@ object(self)
 	     uh "Unhandled Linux system call setgroups (81)"
 	 | ((X86|ARM), 82) -> (* select *)
 	     uh "Unhandled Linux system call select (82)"
+	 | (X64, 23) -> (* select *)
+	     let (ebx, ecx, edx, esi, edi) = read_5_regs () in
+	     let nfds = Int64.to_int ebx and
+		 readfds = ecx and
+		 writefds = edx and
+		 exceptfds = esi and
+		 timeout = edi in
+	       if !opt_trace_syscalls then
+		 Printf.printf "select(%d, 0x%08Lx, 0x%08Lx, 0x%08Lx, 0x%08Lx)"
+		   nfds readfds writefds exceptfds timeout;
+	       self#sys_select nfds readfds writefds exceptfds timeout
 	 | ((X86|ARM), 83) -> (* symlink *)
          let (arg1, arg2) = read_2_regs () in
          let target = (fm#read_cstr arg1) and
@@ -3215,7 +3354,8 @@ object(self)
 	 | (X86, 98) -> (* profil *)
 	     uh "Unhandled Linux system call profil (98)"
 	 | (ARM, 99) -> uh "Check whether ARM statfs syscall matches x86"
-	 | (X86, 99) -> (* statfs *)
+	 | (X86,  99)    (* statfs *)
+	 | (X64, 137) -> (* statfs *)
 	     let (ebx, ecx) = read_2_regs () in
 	     let path = fm#read_cstr ebx and
 		 buf = ecx in
@@ -3357,11 +3497,11 @@ object(self)
 			    sockfd buf len flags addr addrlen_ptr;
 			self#sys_recvfrom sockfd buf len flags addr addrlen_ptr
 		  | 13 ->
-              let sockfd = Int64.to_int (load_word args) and
-                  how = Int64.to_int (load_word(lea args 0 0 4)) in
-              if !opt_trace_syscalls then
-                Printf.printf "shutdown(%d, %d)" sockfd how;
-              self#sys_shutdown sockfd how 
+		      let sockfd = Int64.to_int (load_word args) and
+			  how = Int64.to_int (load_word(lea args 0 0 4)) in
+			if !opt_trace_syscalls then
+			  Printf.printf "shutdown(%d, %d)" sockfd how;
+			self#sys_shutdown sockfd how
 		  | 14 ->
 		      let sockfd = Int64.to_int (load_word args) and
 			  level = Int64.to_int (load_word (lea args 0 0 4)) and
@@ -3375,7 +3515,7 @@ object(self)
 			    sockfd level name valp len;
 			self#sys_setsockopt sockfd level name valp len
 		  | 15 ->
-              let sockfd = Int64.to_int (load_word args) and
+		      let sockfd = Int64.to_int (load_word args) and
 			  level = Int64.to_int (load_word (lea args 0 0 4)) and
 			  name = Int64.to_int (load_word (lea args 0 0 8)) and
 			  valp = load_word (lea args 0 0 12) and
@@ -3404,7 +3544,7 @@ object(self)
 			if !opt_trace_syscalls then
 			  Printf.printf "recvmsg(%d, 0x%08Lx, %d)"
 			    sockfd msg flags;
-			self#sys_recvmsg sockfd msg flags
+			self#sys_recvmsg32 sockfd msg flags
 		  | 18 -> uh"Unhandled Linux system call accept4 (102:18)"
 		  | _ -> self#put_errno Unix.EINVAL)
 	 | ((X86|ARM), 103) -> (* syslog *)
@@ -3424,7 +3564,8 @@ object(self)
 		 Printf.printf "stat(\"%s\", 0x%08Lx)" path buf_addr;
 	       self#sys_stat path buf_addr
 	 | (ARM, 107) -> uh "Check whether ARM lstat (107) syscall matches x86"
-	 | (X86, 107) -> (* lstat *)
+	 | (X86, 107)    (* lstat *)
+	 | (X64,   6) -> (* lstat *)
 	     let (ebx, ecx) = read_2_regs () in
 	     let path_buf = ebx and
 		 buf_addr = ecx in
@@ -3460,8 +3601,13 @@ object(self)
 	     uh "Unhandled Linux system call wait4 (114)"
 	 | ((X86|ARM), 115) -> (* swapoff *)
 	     uh "Unhandled Linux system call swapoff (115)"
-	 | ((X86|ARM), 116) -> (* sysinfo *)
-	     uh "Unhandled Linux system call sysinfo (116)"
+	 | ((X86|ARM), 116) (* sysinfo *)
+	 | (X64, 99)     -> (* sysinfo *)
+	     let arg1 = read_1_reg () in
+	     let info_buf = arg1 in
+	       if !opt_trace_syscalls then
+		 Printf.printf "sysinfo(0x%Lx)" info_buf;
+	       self#sys_sysinfo info_buf
 	 | ((X86|ARM), 117) -> (* ipc *)
 	     let (arg1, arg2, arg3, arg4, arg5, arg6) = read_6_regs () in
 	     let call = Int64.to_int arg1 and
@@ -3570,7 +3716,8 @@ object(self)
 		   fd offset resultp whence;
 	       self#sys__llseek fd offset resultp whence
 	 | (ARM, 141) -> uh "Check whether ARM getdents syscall matches x86"
-	 | (X86, 141) -> (* getdents *)
+	 | (X86, 141)    (* getdents *)
+	 | (X64,  78) -> (* getdents *)
 	     let (ebx, ecx, edx) = read_3_regs () in
 	     let fd = Int64.to_int ebx and
 		 dirp = ecx and
@@ -3683,7 +3830,8 @@ object(self)
 	 | (ARM, 167) -> uh "No query_module syscall in Linux/ARM (E)ABI"
 	 | (X86, 167) -> (* query_module *)
 	     uh "Unhandled Linux system call query_module (167)"
-	 | ((X86|ARM), 168) -> (* poll *)
+	 | ((X86|ARM), 168)  (* poll *)
+	 | (X64, 7) ->       (* poll *)
 	     let (arg1, arg2, arg3) = read_3_regs () in
 	     let fds_buf = arg1 and
 		 nfds = Int64.to_int arg2 and
@@ -4255,7 +4403,8 @@ object(self)
 	 | (ARM, 280)    (* waitid *)
 	 | (X86, 284) -> (* waitid *)
 	     uh "Unhandled Linux system call waitid"
-	 | (ARM, 281) -> (* socket *)
+	 | (ARM, 281)    (* socket *)
+	 | (X64,  41) -> (* socket *)
 	     let (arg1, arg2, arg3) = read_3_regs () in
 	     let dom_i = Int64.to_int arg1 and
 		 typ_i = Int64.to_int arg2 and
@@ -4265,8 +4414,9 @@ object(self)
 		   dom_i typ_i prot_i;
 	       self#sys_socket dom_i typ_i prot_i
 	 | (ARM, 282) -> (* bind *)
-	     uh "Unhandled Linux/ARM system call bind (282, split)"
-	 | (ARM, 283) -> (* connect *)
+	     uh "Unhandled Linux/ARM system call bind (282)"
+	 | (ARM, 283)    (* connect *)
+	 | (X64,  42) -> (* connect *)
 	     let (arg1, arg2, arg3) = read_3_regs () in
 	     let sockfd = Int64.to_int arg1 and
 		 addr = arg2 and
@@ -4277,10 +4427,11 @@ object(self)
 		   sockfd addr addrlen;
 	       self#sys_connect sockfd addr addrlen
 	 | (ARM, 284) -> (* listen *)
-	     uh "Unhandled Linux/ARM system call listen (284, split)"
+	     uh "Unhandled Linux/ARM system call listen (284)"
 	 | (ARM, 285) -> (* accept *)
-	     uh "Unhandled Linux/ARM system call accept (285, split)"
-	 | (ARM, 286) -> (* getsockname *)
+	     uh "Unhandled Linux/ARM system call accept (285)"
+	 | (ARM, 286)    (* getsockname *)
+	 | (X64,  51) -> (* getsockname *)
 	     let (arg1, arg2, arg3) = read_3_regs () in
 	     let sockfd = Int64.to_int arg1 and
 		 addr = load_word arg2 and
@@ -4290,7 +4441,8 @@ object(self)
 		 Printf.printf "getsockname(%d, 0x%08Lx, 0x%08Lx)"
 		   sockfd addr addrlen_ptr;
 	       self#sys_getsockname sockfd addr addrlen_ptr
-	 | (ARM, 287) -> (* getpeername *)
+	 | (ARM, 287)    (* getpeername *)
+	 | (X64,  52) -> (* getpeername *)
 	     let (arg1, arg2, arg3) = read_3_regs () in
 	     let sockfd = Int64.to_int arg1 and
 		 addr = arg2 and
@@ -4301,47 +4453,86 @@ object(self)
 		   sockfd addr addrlen_ptr;
 	       self#sys_getpeername sockfd addr addrlen_ptr
 	 | (ARM, 288) -> (* socketpair *)
-	     uh "Unhandled Linux/ARM system call socketpair (288, split)"
+	     uh "Unhandled Linux/ARM system call socketpair (288)"
 	 | (ARM, 289) -> (* send *)
-	     uh "Unhandled Linux/ARM system call send (289, split)"
+	     uh "Unhandled Linux/ARM system call send (289)"
 	 | (ARM, 290) -> (* sendto *)
-	     uh "Unhandled Linux/ARM system call sendto (290, split)"
+	     uh "Unhandled Linux/ARM system call sendto (290)"
 	 | (ARM, 291) -> (* recv *)
-	     uh "Unhandled Linux/ARM system call recv (291, split)"
+	     uh "Unhandled Linux/ARM system call recv (291)"
 	 | (ARM, 292) -> (* recvfrom *)
-	     uh "Unhandled Linux/ARM system call recvfrom (292, split)"
+	     uh "Unhandled Linux/ARM system call recvfrom (292)"
+	 | (X64,  45) -> (* recvfrom *)
+	     let (arg1, arg2, arg3, arg4, arg5, arg6) = read_6_regs () in
+	     let sockfd = Int64.to_int arg1 and
+		 buf = arg2 and
+		 len = Int64.to_int arg3 and
+		 flags = Int64.to_int arg4 and
+		 addr = arg5 and
+		 addrlen_ptr = arg6
+	     in
+	       if !opt_trace_syscalls then
+		 Printf.printf
+		   "recvfrom(%d, 0x%08Lx, %d, %d, 0x%08Lx, 0x%08Lx)"
+		   sockfd buf len flags addr addrlen_ptr;
+	       self#sys_recvfrom sockfd buf len flags addr addrlen_ptr
 	 | (ARM, 293) -> (* shutdown *)
-	     uh "Unhandled Linux/ARM system call shutdown (293, split)"
+	     uh "Unhandled Linux/ARM system call shutdown (293)"
+	 | (X64, 48) -> (* shutdown *)
+	     let (arg1, arg2) = read_2_regs () in
+	     let sockfd = Int64.to_int arg1 and
+		 how = Int64.to_int arg2 in
+	       if !opt_trace_syscalls then
+		 Printf.printf "shutdown(%d, %d)" sockfd how;
+	       self#sys_shutdown sockfd how
 	 | (ARM, 294) -> (* setsockopt *)
-	     uh "Unhandled Linux/ARM system call setsockopt (294, split)"
+	     uh "Unhandled Linux/ARM system call setsockopt (294)"
 	 | (ARM, 295) -> (* getsockopt *)
-	     uh "Unhandled Linux/ARM system call getsockopt (295, split)"
+	     uh "Unhandled Linux/ARM system call getsockopt (295)"
 	 | (ARM, 296) -> (* sendmsg *)
-	     uh "Unhandled Linux/ARM system call sendmsg (296, split)"
+	     uh "Unhandled Linux/ARM system call sendmsg (296)"
 	 | (ARM, 297) -> (* recvmsg *)
-	     uh "Unhandled Linux/ARM system call recvmsg (297, split)"
+	     uh "Unhandled Linux/ARM system call recvmsg (297)"
+	 | (X64,  47) -> (* recvmsg *)
+	     let (arg1, arg2, arg3) = read_3_regs () in
+	     let sockfd = Int64.to_int arg1 and
+		 msg = arg2 and
+		 flags = Int64.to_int arg3
+	     in
+	       if !opt_trace_syscalls then
+		 Printf.printf "recvmsg(%d, 0x%08Lx, %d)"
+		   sockfd msg flags;
+	       self#sys_recvmsg64 sockfd msg flags
 	 | (ARM, 298) -> (* semop *)
-	     uh "Unhandled Linux/ARM system call semop (298, split)"
+	     uh "Unhandled Linux/ARM system call semop (298)"
 	 | (ARM, 299) -> (* semget *)
-	     uh "Unhandled Linux/ARM system call semget (299, split)"
+	     uh "Unhandled Linux/ARM system call semget (299)"
 	 | (ARM, 300) -> (* semctl *)
-	     uh "Unhandled Linux/ARM system call semctl (300, split)"
+	     uh "Unhandled Linux/ARM system call semctl (300)"
 	 | (ARM, 301) -> (* msgsnd *)
-	     uh "Unhandled Linux/ARM system call msgsnd (301, split)"
+	     uh "Unhandled Linux/ARM system call msgsnd (301)"
 	 | (ARM, 302) -> (* msgrcv *)
-	     uh "Unhandled Linux/ARM system call msgrcv (302, split)"
+	     uh "Unhandled Linux/ARM system call msgrcv (302)"
 	 | (ARM, 303) -> (* msgget *)
-	     uh "Unhandled Linux/ARM system call msgget (303, split)"
+	     uh "Unhandled Linux/ARM system call msgget (303)"
 	 | (ARM, 304) -> (* msgctl *)
-	     uh "Unhandled Linux/ARM system call msgctl (304, split)"
+	     uh "Unhandled Linux/ARM system call msgctl (304)"
 	 | (ARM, 305) -> (* shmat *)
-	     uh "Unhandled Linux/ARM system call shmat (305, split)"
+	     uh "Unhandled Linux/ARM system call shmat (305)"
 	 | (ARM, 306) -> (* shmdt *)
-	     uh "Unhandled Linux/ARM system call shmdt (306, split)"
+	     uh "Unhandled Linux/ARM system call shmdt (306)"
 	 | (ARM, 307) -> (* shmget *)
-	     uh "Unhandled Linux/ARM system call shmget (307, split)"
+	     uh "Unhandled Linux/ARM system call shmget (307)"
+	 | (X64,  29) -> (* shmget *)
+	     let (arg1, arg2, arg3) = read_3_regs () in
+	     let key = arg1 and
+		 size = Int64.to_int arg2 and
+		 shmflag = Int64.to_int arg3 in
+	       if !opt_trace_syscalls then
+		 Printf.printf "shmget(%Ld, %d, %d)" key size shmflag;
+	       self#sys_shmget key size shmflag
 	 | (ARM, 308) -> (* shmctl *)
-	     uh "Unhandled Linux/ARM system call shmctl (308, split)"
+	     uh "Unhandled Linux/ARM system call shmctl (308)"
 	 | (ARM, 309)    (* add_key *)
 	 | (X86, 286) -> (* add_key *)
 	     uh "Unhandled Linux system call add_key"
