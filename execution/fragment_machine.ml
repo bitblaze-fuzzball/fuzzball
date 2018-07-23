@@ -2304,7 +2304,8 @@ struct
 			| Some sl -> 
 			    loop (sl @ rest)
 			| None ->
-			    Printf.printf "Unhandled special %s\n" str;
+			    Printf.printf "Unhandled special %s near 0x%Lx (%s)\n"
+			      str (self#get_eip) last_insn;
 			    failwith "Unhandled special")
 		 | V.Label(l) ->
 		     if ((String.length l > 5) && 
