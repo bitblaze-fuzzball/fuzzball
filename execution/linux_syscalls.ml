@@ -2884,7 +2884,7 @@ object(self)
 	 | ((X86|ARM), 2) -> (* fork *)
 	     uh "Unhandled Linux system call fork (2)"
 	 | ((X86|ARM), 3) (* read *)
-	 | (X64, 0) ->
+	 | (X64, 0) (* read *) ->
 	     let (arg1, arg2, arg3) = read_3_regs () in
 	     let fd    = Int64.to_int arg1 and
 		 buf   = arg2 and
@@ -2893,7 +2893,7 @@ object(self)
 		 Printf.printf "read(%d, 0x%08Lx, %d)" fd buf count;
 	       self#sys_read fd buf count;
 	 | ((X86|ARM), 4) (* write *)
-	 | (X64, 1) ->
+	 | (X64, 1) (* write *) ->
 	     let (arg1, arg2, arg3) = read_3_regs () in
 	     let fd    = Int64.to_int arg1 and
 		 buf   = arg2 and
@@ -2903,7 +2903,7 @@ object(self)
 	       let bytes = read_buf buf count in
 		 self#sys_write fd bytes count
 	 | ((X86|ARM), 5) (* open *)
-	 | (X64, 2) ->
+	 | (X64, 2) (* open *) ->
 	     let (arg1, arg2) = read_2_regs () in
 	     let arg3 = (if (Int64.logand arg2 0o100L) <> 0L then
 			  get_reg arg_regs.(2)
@@ -2917,7 +2917,7 @@ object(self)
 		 Printf.printf "open(\"%s\", 0x%x, 0o%o)" path flags mode;
 	       self#sys_open path flags mode
 	 | ((X86|ARM), 6) (* close *)
-	 | (X64, 3) ->
+	 | (X64, 3) (* close *) ->
 	     let arg1 = read_1_reg () in
 	     let fd = Int64.to_int arg1 in
 	       if !opt_trace_syscalls then
@@ -2978,7 +2978,7 @@ object(self)
 	     uh "Unhandled Linux system call oldstat (18)"
 	 | (ARM, 19) -> uh "Check whether ARM lseek syscall matches x86"
 	 | (X86, 19) (* lseek *)
-	 | (X64,  8) ->
+	 | (X64,  8) -> (* lseek *)
 	     let (ebx, ecx, edx) = read_3_regs () in
 	     let (fd: int) = Int64.to_int ebx and
 		 offset = ecx and
@@ -3032,7 +3032,7 @@ object(self)
 	 | (X86, 32) -> (* gtty *)
 	     uh "Unhandled Linux system call gtty (32)"
 	 | ((X86|ARM), 33) (* access *)
-	 | (X64, 21) ->
+	 | (X64, 21) ->    (* access *)
 	     let (arg1, arg2) = read_2_regs () in
 	     let path_buf = arg1 and
 		 mode     = Int64.to_int arg2 in
@@ -3073,6 +3073,7 @@ object(self)
 	       if !opt_trace_syscalls then
 		 Printf.printf "dup(%d)" fd;
 	       self#sys_dup fd
+	 | (X64, 22) -> uh "Check whether x64 pipe syscall matches x86"
 	 | (ARM, 42) -> uh "Check whether ARM pipe syscall matches x86"
 	 | (X86, 42) -> (* pipe *)
 	     let ebx = read_1_reg () in
@@ -3091,7 +3092,7 @@ object(self)
 	 | (X86, 44) -> (* prof *)
 	     uh "Unhandled Linux system call prof (44)"
 	 | ((X86|ARM), 45) (* brk *)
-	 | (X64, 12) ->
+	 | (X64, 12) -> (* brk *)
 	     let arg1 = read_1_reg () in
 	     let addr = arg1 in
 	       if !opt_trace_syscalls then
@@ -3325,7 +3326,7 @@ object(self)
 		   addr length prot flags fd offset;
 	       self#sys_mmap addr length prot flags fd offset
 	 | ((X86|ARM), 91) (* munmap *)
-	 | (X64, 11) ->
+	 | (X64, 11) -> (* munmap *)
 	     let (arg1, arg2) = read_2_regs () in
 	     let addr = arg1 and
 		 len  = arg2 in
@@ -3575,7 +3576,7 @@ object(self)
 	       self#sys_lstat path buf_addr
 	 | (ARM, 108) -> uh "Check whether ARM fstat (108) syscall matches x86"
 	 | (X86, 108) (* fstat *)
-	 | (X64, 5) ->
+	 | (X64, 5) -> (* fstat *)
 	     let (ebx, ecx) = read_2_regs () in
 	     let fd = Int64.to_int ebx and
 		 buf_addr = ecx in
@@ -3647,7 +3648,7 @@ object(self)
 	 | ((X86|ARM), 124) -> (* adjtimex *)
 	     uh "Unhandled Linux system call adjtimex (124)"
 	 | ((X86|ARM), 125) (* mprotect *)
-	 | (X64, 10) ->
+	 | (X64, 10) (* mprotect *) ->
 	     let (arg1, arg2, arg3) = read_3_regs () in
 	     let addr = arg1 and
 		 len  = arg2 and
@@ -3741,7 +3742,10 @@ object(self)
 	     uh "Unhandled Linux system call flock (143)"
 	 | ((X86|ARM), 144) -> (* msync *)
 	     uh "Unhandled Linux system call msync (144)"
-	 | ((X86|ARM), 145) -> (* readv *)
+	 | (X64, 26) -> (* msync *)
+	     uh "Unhandled Linux/x64 system call msync (26)"
+	 | ((X86|ARM), 145) (* readv *)
+	 | (X64, 19)     -> (* readv *)
 	     let (arg1, arg2, arg3) = read_3_regs () in
 	     let fd  = Int64.to_int arg1 and
 		 iov = arg2 and
@@ -3750,7 +3754,7 @@ object(self)
 		 Printf.printf "readv(%d, 0x%08Lx, %d)" fd iov cnt;
 	       self#sys_readv fd iov cnt
 	 | ((X86|ARM), 146) (* writev *)
-	 | (X64, 20) ->
+	 | (X64, 20) ->     (* writev *)
 	     let (arg1, arg2, arg3) = read_3_regs () in
 	     let fd  = Int64.to_int arg1 and
 		 iov = arg2 and
@@ -3796,6 +3800,8 @@ object(self)
 	       self#sys_sched_getscheduler pid
 	 | ((X86|ARM), 158) -> (* sched_yield *)
 	     uh "Unhandled Linux system call sched_yield (158)"
+	 | (X64, 24) -> (* sched_yield *)
+	     uh "Unhandled/x64 Linux system call sched_yield (24)"
 	 | (ARM, 159) -> uh "Check whether ARM sched_get_priority_max matches x86"
 	 | (X86, 159) -> (* sched_get_priority_max *)
 	     let ebx = read_1_reg () in
@@ -3820,6 +3826,8 @@ object(self)
 	       self#sys_nanosleep req_addr rem_addr
 	 | ((X86|ARM), 163) -> (* mremap *)
 	     uh "Unhandled Linux system call mremap (163)"
+	 | (X64, 25) -> (* mremap *)
+	     uh "Unhandled Linux/x64 system call mremap (25)"
 	 | ((X86|ARM), 164) -> (* setresuid *)
 	     uh "Unhandled Linux system call setresuid (164)"
 	 | ((X86|ARM), 165) -> (* getresuid *)
@@ -3856,8 +3864,10 @@ object(self)
 	       self#sys_arch_prctl code addr
 	 | ((X86|ARM), 173) -> (* rt_sigreturn *)
 	     uh "Unhandled Linux system call rt_sigreturn (173)"
+	 | (X64, 15) -> (* rt_sigreturn *)
+	     uh "Unhandled Linux/x64 system call rt_sigreturn (15)"
 	 | ((X86|ARM), 174) (* rt_sigaction *)
-	 | (X64, 13) ->
+	 | (X64, 13) -> (* rt_sigaction *)
 	     let (arg1, arg2, arg3, arg4) = read_4_regs () in
 	     let signum = Int64.to_int arg1 and
 		 newbuf = arg2 and
@@ -3868,7 +3878,7 @@ object(self)
 		   signum newbuf oldbuf setlen;
 	       self#sys_rt_sigaction signum newbuf oldbuf setlen
 	 | ((X86|ARM), 175) (* rt_sigprocmask *)
-	 | (X64, 14) ->
+	 | (X64, 14) -> (* rt_sigprocmask *)
 	     let (arg1, arg2, arg3, arg4) = read_4_regs () in
 	     let how    = Int64.to_int arg1 and
 		 newset = arg2 and
@@ -3908,6 +3918,8 @@ object(self)
 	       self#sys_pread64 fd buf count off;
 	 | ((X86|ARM), 181) -> (* pwrite64 *)
 	     uh "Unhandled Linux system call pwrite64 (181)"
+	 | (X64, 18) ->  (* pwrite64 *)
+	     uh "Unhandled Linux/x64 ststem call pwrite64 (18)"
 	 | ((X86|ARM), 182) -> (* chown *)
 	     uh "Unhandled Linux system call chown (182)"
 	 | (ARM, 183) -> uh "Check whether ARM getcwd syscall matches x86"
@@ -4105,6 +4117,7 @@ object(self)
 	 | (X86, 217) -> (* pivot_root *)
 	     uh "Unhandled Linux system call pivot_root"
 	 | (ARM, 219) -> uh "Check whether ARM mincore syscall matches x86"
+	 | (X64, 27) -> uh "Check whether x64 mincore syscall matches x86"
 	 | (X86, 218) -> (* mincore *)
 	     let (ebx, ecx, edx) = read_3_regs () in
 	     let addr = ebx and
