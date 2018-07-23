@@ -4,10 +4,7 @@
     Basically, constant_fold will only perform constant folding, whereas
     simplify() will also perform alpha substitution.
     
-    Let me know if you use this, because I might be changing the
-    interface slightly.
-
-    @author Ivan Jager
+    Original author: Ivan Jager
  *)
 
 open ExtList
@@ -25,6 +22,18 @@ type alias = MayAlias | DoesAlias | PartialAlias | NoAlias
 
 (* some helper functions *)
 
+(* These fix* functions are duplicated from
+   Execution.exec_utils. That's not ideal, but I'm not sure of a better
+   place. *)
+let fix_u1  x = Int64.logand x 0x1L
+let fix_u8  x = Int64.logand x 0xffL
+let fix_u16 x = Int64.logand x 0xffffL
+let fix_u32 x = Int64.logand x 0xffffffffL
+
+let fix_s1  x = Int64.shift_right (Int64.shift_left x 63) 63
+let fix_s8  x = Int64.shift_right (Int64.shift_left x 56) 56
+let fix_s16 x = Int64.shift_right (Int64.shift_left x 48) 48
+let fix_s32 x = Int64.shift_right (Int64.shift_left x 32) 32
 
 (* drop high bits *)
 let to64 v =
@@ -425,6 +434,52 @@ let rec constant_fold ctx e =
 		  Constant(Int(_, 8L))))
 	when e1 = e2 && ((Vine_typecheck.infer_type None e1) = REG_8)
 	  -> Cast(CAST_SIGNED, REG_16, e1)
+    (* Impossible equalities with extension casts *)
+    | BinOp(EQ, Cast(CAST_UNSIGNED, (REG_16|REG_32|REG_64), e1),
+	    Constant(Int(_, c)))
+	when (Vine_typecheck.infer_type None e1) = REG_8
+	  && c != fix_u8 c
+	  -> exp_false
+    | BinOp(EQ, Cast(CAST_SIGNED, REG_16, e1),
+	    Constant(Int(_, c)))
+	when (Vine_typecheck.infer_type None e1) = REG_8
+	  && c != fix_u16 (fix_s8 c)
+	  -> exp_false
+    | BinOp(EQ, Cast(CAST_SIGNED, REG_32, e1),
+	    Constant(Int(_, c)))
+	when (Vine_typecheck.infer_type None e1) = REG_8
+	  && c != fix_u32 (fix_s8 c)
+	  -> exp_false
+    | BinOp(EQ, Cast(CAST_SIGNED, REG_64, e1),
+	    Constant(Int(_, c)))
+	when (Vine_typecheck.infer_type None e1) = REG_8
+	  && c != fix_s8 c
+	  -> exp_false
+    | BinOp(EQ, Cast(CAST_UNSIGNED, (REG_32|REG_64), e1),
+	    Constant(Int(_, c)))
+	when (Vine_typecheck.infer_type None e1) = REG_16
+	  && c != fix_u16 c
+	  -> exp_false
+    | BinOp(EQ, Cast(CAST_SIGNED, REG_32, e1),
+	    Constant(Int(_, c)))
+	when (Vine_typecheck.infer_type None e1) = REG_16
+	  && c != fix_u32 (fix_s16 c)
+	  -> exp_false
+    | BinOp(EQ, Cast(CAST_SIGNED, REG_64, e1),
+	    Constant(Int(_, c)))
+	when (Vine_typecheck.infer_type None e1) = REG_16
+	  && c != fix_s16 c
+	  -> exp_false
+    | BinOp(EQ, Cast(CAST_UNSIGNED, REG_64, e1),
+	    Constant(Int(_, c)))
+	when (Vine_typecheck.infer_type None e1) = REG_32
+	  && c != fix_u32 c
+	  -> exp_false
+    | BinOp(EQ, Cast(CAST_SIGNED, REG_64, e1),
+	    Constant(Int(_, c)))
+	when (Vine_typecheck.infer_type None e1) = REG_32
+	  && c != fix_s32 c
+	  -> exp_false
     | Cast(ct, ty, e) when (Vine_typecheck.infer_type None e) = ty ->
 	e
     | Lval l ->
