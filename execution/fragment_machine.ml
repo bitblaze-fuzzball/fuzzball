@@ -1795,24 +1795,42 @@ struct
 
     method private handle_load addr_e ty =
       let addr = self#eval_addr_exp addr_e in
-      let v =
+      let (v, to_str) =
 	(match ty with
-	   | V.REG_8 -> self#load_byte addr
-	   | V.REG_16 -> self#load_short addr
-	   | V.REG_32 -> self#load_word addr
-	   | V.REG_64 -> self#load_long addr
+	   | V.REG_8  -> (self#load_byte addr,  D.to_string_8)
+	   | V.REG_16 -> (self#load_short addr, D.to_string_16)
+	   | V.REG_32 -> (self#load_word addr,  D.to_string_32)
+	   | V.REG_64 -> (self#load_long addr,  D.to_string_64)
 	   | _ -> failwith "Unsupported memory type") in
+	(if !opt_trace_loads then
+	   (if !opt_trace_eval then
+	      Printf.printf "    "; (* indent to match other details *)
+	    Printf.printf "Load from conc. mem ";
+	    Printf.printf "%08Lx = %s" addr (to_str v);
+	    (if !opt_use_tags then
+	       Printf.printf " (%Ld @ %08Lx)" (D.get_tag v) (self#get_eip));
+	    Printf.printf "\n"));
 	(v, ty)
 
     method private handle_store addr_e ty rhs_e =
       let addr = self#eval_addr_exp addr_e and
 	  value = self#eval_int_exp_simplify rhs_e in
+      let (_, to_str) =
 	match ty with
-	  | V.REG_8 -> self#store_byte addr value
-	  | V.REG_16 -> self#store_short addr value
-	  | V.REG_32 -> self#store_word addr value
-	  | V.REG_64 -> self#store_long addr value
-	  | _ -> failwith "Unsupported type in memory move"
+	  | V.REG_8  -> (self#store_byte  addr value, D.to_string_8)
+	  | V.REG_16 -> (self#store_short addr value, D.to_string_16)
+	  | V.REG_32 -> (self#store_word  addr value, D.to_string_32)
+	  | V.REG_64 -> (self#store_long  addr value, D.to_string_64)
+	  | _ -> failwith "Unsupported type in memory store"
+      in
+	if !opt_trace_stores then
+	  (if !opt_trace_eval then
+	     Printf.printf "    "; (* indent to match other details *)
+	   Printf.printf "Store to conc. mem ";
+	   Printf.printf "%08Lx = %s" addr (to_str value);
+	   (if !opt_use_tags then
+	      Printf.printf " (%Ld @ %08Lx)" (D.get_tag value) (self#get_eip));
+	   Printf.printf "\n")
 
     method private maybe_concretize_binop op v1 v2 ty1 ty2 =
       (v1, v2)
