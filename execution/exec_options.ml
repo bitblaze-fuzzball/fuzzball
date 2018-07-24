@@ -25,7 +25,7 @@ let execution_arch_of_string s =
     | "i386"|"x86" -> X86
     | "x64"|"x86-64"|"x86_64"|"amd64"|"intel64" -> X64
     | "arm" -> ARM
-    | _ -> failwith "Unrecognized architecture"
+    | _ -> failwith ("Unrecognized architecture `" ^ s ^ "'")
 
 let asmir_arch_of_execution_arch = function
   | X86 -> Asmir.arch_i386
