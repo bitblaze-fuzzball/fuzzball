@@ -2936,9 +2936,9 @@ object(self)
 	 | (X64, 2) (* open *) ->
 	     let (arg1, arg2) = read_2_regs () in
 	     let arg3 = (if (Int64.logand arg2 0o100L) <> 0L then
-			  get_reg arg_regs.(2)
-			else
-			  0L) in
+			   get_reg arg_regs.(2)
+			 else
+			   0L) in
 	     let path_buf = arg1 and
 		 flags    = Int64.to_int arg2 and
 		 mode     = Int64.to_int arg3 in
@@ -3483,104 +3483,113 @@ object(self)
 	     let (ebx, ecx) = read_2_regs () in
 	     let call = Int64.to_int ebx and
 		 args = ecx in
+	       (* Each sub-call has at least 2 args, so we can always
+		  read them. The unit functions ensure we don't read the
+		  later args unless needed, since memory reads in
+		  FuzzBALL can have various side effects. *)
+	     let arg1 = load_word args and
+		 arg2 = load_word (lea args 0 0 4) and
+		 get_arg3 () = load_word (lea args 0 0 8) and
+		 get_arg4 () = load_word (lea args 0 0 12) and
+		 get_arg5 () = load_word (lea args 0 0 16) and
+		 get_arg6 () = load_word (lea args 0 0 20) in
 	       (match call with
 		  | 1 -> 
-		      let dom_i = Int64.to_int (load_word args) and
-			  typ_i = Int64.to_int (load_word (lea args 0 0 4)) and
-			  prot_i = Int64.to_int (load_word (lea args 0 0 8)) in
+		      let dom_i = Int64.to_int arg1 and
+			  typ_i = Int64.to_int arg2 and
+			  prot_i = Int64.to_int (get_arg3 ()) in
 			if !opt_trace_syscalls then
 			  Printf.printf "socket(%d, %d, %d)"
 			    dom_i typ_i prot_i;
 			self#sys_socket dom_i typ_i prot_i
 		  | 2 ->
-		      let sockfd = Int64.to_int (load_word args) and
-			  addr = load_word (lea args 0 0 4) and
-			  addrlen = Int64.to_int (load_word (lea args 0 0 8))
+		      let sockfd = Int64.to_int arg1 and
+			  addr = arg2 and
+			  addrlen = Int64.to_int (get_arg3 ())
 		      in
 			if !opt_trace_syscalls then
 			  Printf.printf "bind(%d, 0x%08Lx, %d)"
 			    sockfd addr addrlen;
 			self#sys_bind sockfd addr addrlen
 		  | 3 -> 
-		      let sockfd = Int64.to_int (load_word args) and
-			  addr = load_word (lea args 0 0 4) and
-			  addrlen = Int64.to_int (load_word (lea args 0 0 8))
+		      let sockfd = Int64.to_int arg1 and
+			  addr = arg2 and
+			  addrlen = Int64.to_int (get_arg3 ())
 		      in
 			if !opt_trace_syscalls then
 			  Printf.printf "connect(%d, 0x%08Lx, %d)"
 			    sockfd addr addrlen;
 			self#sys_connect sockfd addr addrlen
 		  | 4 -> 
-		      let sockfd = Int64.to_int (load_word args) and
-			  backlog = Int64.to_int (load_word (lea args 0 0 4))
+		      let sockfd = Int64.to_int arg1 and
+			  backlog = Int64.to_int arg2
 		      in
 			if !opt_trace_syscalls then
 			  Printf.printf "listen(%d, %d)" sockfd backlog;
 			self#sys_listen sockfd backlog
-          | 5 ->
-              let sockfd = Int64.to_int (load_word args) and
-              addr = load_word (lea args 0 0 4) and
-              addrlen_ptr = load_word (lea args 0 0 8)
+		  | 5 ->
+		      let sockfd = Int64.to_int arg1 and
+			  addr = arg2 and
+			  addrlen_ptr = get_arg3 ()
 		      in
-			  if !opt_trace_syscalls then
-			    Printf.printf "accept(%d, 0x%08Lx, 0x%08Lx)"
-			      sockfd addr addrlen_ptr;
-			  self#sys_accept sockfd addr addrlen_ptr
+			if !opt_trace_syscalls then
+			  Printf.printf "accept(%d, 0x%08Lx, 0x%08Lx)"
+			    sockfd addr addrlen_ptr;
+			self#sys_accept sockfd addr addrlen_ptr
 		  | 6 ->
-		      let sockfd = Int64.to_int (load_word args) and
-			  addr = load_word (lea args 0 0 4) and
-			  addrlen_ptr = load_word (lea args 0 0 8)
+		      let sockfd = Int64.to_int arg1 and
+			  addr = arg2 and
+			  addrlen_ptr = get_arg3 ()
 		      in
 			if !opt_trace_syscalls then
 			  Printf.printf "getsockname(%d, 0x%08Lx, 0x%08Lx)"
 			    sockfd addr addrlen_ptr;
 			self#sys_getsockname sockfd addr addrlen_ptr
 		  | 7 -> 
-		      let sockfd = Int64.to_int (load_word args) and
-			  addr = load_word (lea args 0 0 4) and
-			  addrlen_ptr = load_word (lea args 0 0 8)
+		      let sockfd = Int64. to_int arg1 and
+			  addr = arg2 and
+			  addrlen_ptr = get_arg3 ()
 		      in
 			if !opt_trace_syscalls then
 			  Printf.printf "getpeername(%d, 0x%08Lx, 0x%08Lx)"
 			    sockfd addr addrlen_ptr;
 			self#sys_getpeername sockfd addr addrlen_ptr
 		  | 8 -> 
-              let dom_i = Int64.to_int (load_word args) and
-                  typ_i = Int64.to_int (load_word (lea args 0 0 4)) and
-                  prot_i = Int64.to_int (load_word (lea args 0 0 8)) and
-                  addr = load_word (lea args 0 0 12) in
-              if !opt_trace_syscalls then
-                Printf.printf "socketpair(%d, %d, %d, 0x%08Lx)"
-                  dom_i typ_i prot_i addr;
-              self#sys_socketpair dom_i typ_i prot_i addr
+		      let dom_i = Int64.to_int arg1 and
+			  typ_i = Int64.to_int arg2 and
+			  prot_i = Int64.to_int (get_arg3 ()) and
+			  addr = get_arg4 () in
+			if !opt_trace_syscalls then
+			  Printf.printf "socketpair(%d, %d, %d, 0x%08Lx)"
+			    dom_i typ_i prot_i addr;
+			self#sys_socketpair dom_i typ_i prot_i addr
 		  | 9 ->
-		      let sockfd = Int64.to_int (load_word args) and
-			  buf = load_word (lea args 0 0 4) and
-			  len = Int64.to_int (load_word (lea args 0 0 8)) and
-			  flags = Int64.to_int (load_word (lea args 0 0 12))
+		      let sockfd = Int64.to_int arg1 and
+			  buf = arg2 and
+			  len = Int64.to_int (get_arg3 ()) and
+			  flags = Int64.to_int (get_arg4 ())
 		      in
 			if !opt_trace_syscalls then
 			  Printf.printf "send(%d, 0x%08Lx, %d, %d)"
 			    sockfd buf len flags;
 			self#sys_send sockfd buf len flags
 		  | 10 ->
-		      let sockfd = Int64.to_int (load_word args) and
-			  buf = load_word (lea args 0 0 4) and
-			  len = Int64.to_int (load_word (lea args 0 0 8)) and
-			  flags = Int64.to_int (load_word (lea args 0 0 12))
+		      let sockfd = Int64.to_int arg1 and
+			  buf = arg2 and
+			  len = Int64.to_int (get_arg3 ()) and
+			  flags = Int64.to_int (get_arg4 ())
 		      in
 			if !opt_trace_syscalls then
 			  Printf.printf "recv(%d, 0x%08Lx, %d, %d)"
 			    sockfd buf len flags;
 			self#sys_recv sockfd buf len flags
 		  | 11 ->
-		      let sockfd = Int64.to_int (load_word args) and
-			  buf = load_word (lea args 0 0 4) and
-			  len = Int64.to_int (load_word (lea args 0 0 8)) and
-			  flags = Int64.to_int (load_word (lea args 0 0 12))
-									  and
-			  addr = load_word (lea args 0 0 16) and
-			  addrlen = Int64.to_int (load_word (lea args 0 0 20))
+		      let sockfd = Int64.to_int arg1 and
+			  buf = arg2 and
+			  len = Int64.to_int (get_arg3 ()) and
+			  flags = Int64.to_int (get_arg4 ()) and
+			  addr = get_arg5 () and
+			  addrlen = Int64.to_int (get_arg6 ())
 		      in
 			if !opt_trace_syscalls then
 			  Printf.printf
@@ -3588,13 +3597,12 @@ object(self)
 			    sockfd buf len flags addr addrlen;
 			self#sys_sendto sockfd buf len flags addr addrlen
 		  | 12 ->
-		      let sockfd = Int64.to_int (load_word args) and
-			  buf = load_word (lea args 0 0 4) and
-			  len = Int64.to_int (load_word (lea args 0 0 8)) and
-			  flags = Int64.to_int (load_word (lea args 0 0 12))
-									  and
-			  addr = load_word (lea args 0 0 16) and
-			  addrlen_ptr = load_word (lea args 0 0 20)
+		      let sockfd = Int64.to_int arg1 and
+			  buf = arg2 and
+			  len = Int64.to_int (get_arg3 ()) and
+			  flags = Int64.to_int (get_arg4 ()) and
+			  addr = get_arg5 () and
+			  addrlen_ptr = get_arg6 ()
 		      in
 			if !opt_trace_syscalls then
 			  Printf.printf
@@ -3602,17 +3610,17 @@ object(self)
 			    sockfd buf len flags addr addrlen_ptr;
 			self#sys_recvfrom sockfd buf len flags addr addrlen_ptr
 		  | 13 ->
-		      let sockfd = Int64.to_int (load_word args) and
-			  how = Int64.to_int (load_word(lea args 0 0 4)) in
+		      let sockfd = Int64.to_int arg1 and
+			  how = Int64.to_int arg2 in
 			if !opt_trace_syscalls then
 			  Printf.printf "shutdown(%d, %d)" sockfd how;
 			self#sys_shutdown sockfd how
 		  | 14 ->
-		      let sockfd = Int64.to_int (load_word args) and
-			  level = Int64.to_int (load_word (lea args 0 0 4)) and
-			  name = Int64.to_int (load_word (lea args 0 0 8)) and
-			  valp = load_word (lea args 0 0 12) and
-			  len = Int64.to_int (load_word (lea args 0 0 16))
+		      let sockfd = Int64.to_int arg1 and
+			  level = Int64.to_int arg2 and
+			  name = Int64.to_int (get_arg3 ()) and
+			  valp = get_arg4 () and
+			  len = Int64.to_int (get_arg5 ())
 		      in
 			if !opt_trace_syscalls then
 			  Printf.printf
@@ -3620,11 +3628,11 @@ object(self)
 			    sockfd level name valp len;
 			self#sys_setsockopt sockfd level name valp len
 		  | 15 ->
-		      let sockfd = Int64.to_int (load_word args) and
-			  level = Int64.to_int (load_word (lea args 0 0 4)) and
-			  name = Int64.to_int (load_word (lea args 0 0 8)) and
-			  valp = load_word (lea args 0 0 12) and
-			  lenp = load_word (lea args 0 0 16)
+		      let sockfd = Int64.to_int arg1 and
+			  level = Int64.to_int arg2 and
+			  name = Int64.to_int (get_arg3 ()) and
+			  valp = get_arg4 () and
+			  lenp = get_arg5 ()
 		      in
 			if !opt_trace_syscalls then
 			  Printf.printf
@@ -3633,18 +3641,18 @@ object(self)
 			self#sys_getsockopt sockfd level name valp lenp
 
 		  | 16 ->
-		      let sockfd = Int64.to_int (load_word args) and
-			  msg = load_word (lea args 0 0 4) and
-			  flags = Int64.to_int (load_word (lea args 0 0 8))
+		      let sockfd = Int64.to_int arg1 and
+			  msg = arg2 and
+			  flags = Int64.to_int (get_arg3 ())
 		      in
 			if !opt_trace_syscalls then
 			  Printf.printf "sendmsg(%d, 0x%08Lx, %d)"
 			    sockfd msg flags;
 			self#sys_sendmsg sockfd msg flags
 		  | 17 ->
-		      let sockfd = Int64.to_int (load_word args) and
-			  msg = load_word (lea args 0 0 4) and
-			  flags = Int64.to_int (load_word (lea args 0 0 8))
+		      let sockfd = Int64.to_int arg1 and
+			  msg = arg2 and
+			  flags = Int64.to_int (get_arg3 ())
 		      in
 			if !opt_trace_syscalls then
 			  Printf.printf "recvmsg(%d, 0x%08Lx, %d)"
