@@ -1793,6 +1793,10 @@ struct
 	  (form_man#fresh_region_base_concolic name addr);
 	symbol_uniq <- symbol_uniq + 1
 
+    (* This relatively simple-looking "handle_load" method is used in
+       the concrete-only "vinegrind" tool. In full-fledged FuzzBALL it's
+       is overridden by a more complicated version in
+       sym_region_frag_machine.ml. *)
     method private handle_load addr_e ty =
       let addr = self#eval_addr_exp addr_e in
       let (v, to_str) =
@@ -1810,8 +1814,14 @@ struct
 	    (if !opt_use_tags then
 	       Printf.printf " (%Ld @ %08Lx)" (D.get_tag v) (self#get_eip));
 	    Printf.printf "\n"));
+	if addr >= 0L && addr < 4096L then
+	  raise NullDereference;
 	(v, ty)
 
+    (* This relatively simple-looking "handle_store" method is used in
+       the concrete-only "vinegrind" tool. In full-fledged FuzzBALL it's
+       is overridden by a more complicated version in
+       sym_region_frag_machine.ml. *)
     method private handle_store addr_e ty rhs_e =
       let addr = self#eval_addr_exp addr_e and
 	  value = self#eval_int_exp_simplify rhs_e in
@@ -1830,7 +1840,9 @@ struct
 	   Printf.printf "%08Lx = %s" addr (to_str value);
 	   (if !opt_use_tags then
 	      Printf.printf " (%Ld @ %08Lx)" (D.get_tag value) (self#get_eip));
-	   Printf.printf "\n")
+	   Printf.printf "\n");
+	if addr >= 0L && addr < 4096L then
+	  raise NullDereference
 
     method private maybe_concretize_binop op v1 v2 ty1 ty2 =
       (v1, v2)
