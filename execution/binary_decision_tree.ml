@@ -455,6 +455,11 @@ class binary_decision_tree = object(self)
      alternate along each execution path, delimiting the one or more
      binary choices that are treated as part of one multi-way choice. *)
   method start_new_query =
+    (* A failure of the following assertion generally means that you
+       did start_new_query, then created some new decision tree nodes,
+       then called start_new_query again. You need to call count_query
+       after the first decisions, and before calling start_new_query
+       again. *)
     assert(cur.query_children <> None);
     if !opt_trace_decision_tree then
       Printf.printf "DT: New query, updating cur_query to cur %d\n" cur.ident;
