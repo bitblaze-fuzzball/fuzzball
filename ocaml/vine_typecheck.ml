@@ -251,7 +251,7 @@ and typecheck_exp names gamma (e:exp)  =
 	       raise (TypeError(msg))
 	    else
 	      (names, true_t)
-    | Unknown _ -> raise (TypeError("Cannot typecheck unknown's"))
+    | Unknown s -> raise (TypeError("Cannot typecheck unknown: " ^ s))
     | Cast(ct, t, e') -> ( 
 	let (names,t1) = typecheck_exp names gamma e' in
 	let castbits = Vine.bits_of_width t in
