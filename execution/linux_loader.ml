@@ -393,6 +393,34 @@ let build_startup_state fm eh load_base ldso argv =
 	| ARM -> fm#set_word_var R13 !esp
 	| X64 -> fm#set_long_var R_RSP !esp
 
+(* Forgetting "-arch" is a common mistake, and setting it incorrectly
+   will also cause nothing good to happen. Thus this extra checking. I
+   can imagine some weid situations in which one might mix architectures,
+   so I've left the warning non-fatal in many cases. You could also argue
+   it would be better to just set the architecture automatically, but
+   that would require some more invasive code changes, and thinking about
+   the ISA doesn't seem like it should be a great burden. *)
+let check_elf_arch e_machine do_setup =
+  let (expected_str, expected_arch, weird) =
+    match e_machine with
+      | 0x03 -> ("x86", X86, false) (* EM_386 *)
+      | 0x28 -> ("arm", ARM, false) (* EM_ARM = 40 *)
+      | 0x3e -> ("x64", X64, false) (* EM_ARM = 62 *)
+      | _    -> ("",    X86, true)
+  in
+    if weird then
+      (Printf.printf "Unsupported e_machine architecture %d.\n" e_machine;
+       Printf.printf "FuzzBALL probably won't be able to run this binary.\n")
+    else if !opt_arch <> expected_arch then
+      (Printf.printf "Binary does not match configured architecture.\n";
+       Printf.printf "Perhaps you should have used the -arch %s option?\n"
+	 expected_str;
+       if do_setup then
+	 failwith "Refusing to continue with wrong architecture";)
+
+(* Despite the name, this function is currently used for statically
+   linked binaries as well as dynamically linked binaries and PIE
+   binaries. *)
 let load_dynamic_program (fm : fragment_machine) fname load_base
     data_too do_setup extras argv =
   let ic = open_in (chroot fname) in
@@ -405,6 +433,7 @@ let load_dynamic_program (fm : fragment_machine) fname load_base
     | 3 -> load_base (* shared object or PIE *)
     | _ -> failwith "Unhandled ELF object type"
   in
+    check_elf_arch eh.machine do_setup;
     if !opt_trace_setup then
       Printf.printf "Loading executable from %s\n" (chroot fname);
     entry_point := eh.entry;
