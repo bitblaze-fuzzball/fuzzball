@@ -1400,6 +1400,25 @@ Exp *translate_par2x64_binop(binop_type_t op, Exp *a, Exp *b) {
     return translate_64HLto128(r_h, r_l);
 }
 
+/* "vs" stands for "vector by scalar": all the lanes within the vector
+   are shifted by the same amount. */
+
+Exp *translate_vs2x32_shift(binop_type_t op, Exp *a, Exp *b) {
+    Exp *a1, *a0;
+    split2x32(a, &a1, &a0);
+    Exp *r1 = new BinOp(op, a1, b);
+    Exp *r0 = new BinOp(op, a0, ecl(b));
+    return translate_32HLto64(r1, r0);
+}
+
+Exp *translate_vs4x32_shift(binop_type_t op, Exp *a, Exp *b) {
+    Exp *a_high, *a_low;
+    split_vector(a, &a_high, &a_low);
+    Exp *r_h = translate_vs2x32_shift(op, a_high, b);
+    Exp *r_l = translate_vs2x32_shift(op, a_low, ecl(b));
+    return translate_64HLto128(r_h, r_l);
+}
+
 const_val_t expand_lane_const(int bits) {
     const_val_t x = 0;
     if (bits & 1)
@@ -1990,6 +2009,15 @@ Exp *translate_simple_binop( IRExpr *expr, IRSB *irbb, vector<Stmt *> *irout )
 #if VEX_VERSION >= 2016
         case Iop_SarN64x2:
 	    return translate_vs2x64_shift(ARSHIFT, arg1, arg2);
+#endif
+
+        case Iop_ShlN32x4:
+	    return translate_vs4x32_shift(LSHIFT, arg1, arg2);
+        case Iop_ShrN32x4:
+	    return translate_vs4x32_shift(RSHIFT, arg1, arg2);
+#if VEX_VERSION >= 2016
+        case Iop_SarN32x4:
+	    return translate_vs4x32_shift(ARSHIFT, arg1, arg2);
 #endif
 
         default:
