@@ -5,6 +5,7 @@
 module V = Vine;;
 
 open Exec_exceptions;;
+open Exec_options;;
 
 let rec constant_fold_rec e =
   match e with
@@ -347,7 +348,7 @@ let rm_unused_stmts sl =
        | V.Move(V.Temp(_,"R_CC_DEP2",_),_) -> false
        | V.Move(V.Temp(_,"R_CC_NDEP",_),_) -> false
        | V.Move(V.Temp(_,("R_PF"|"R_AF"),_),_)
-	   when !Exec_options.opt_omit_pf_af -> false
+	   when !opt_omit_pf_af -> false
        | _ -> true)
     sl
 
@@ -841,8 +842,29 @@ let lets_to_moves (dl, sl) =
 
 let simplify_frag (orig_dl, orig_sl) =
   (* V.pp_program print_string (orig_dl, orig_sl); *)
-  (* let extra_dl = Asmir.decls_for_arch (Exec_options.asmir_arch ()) in
-    Vine_typecheck.typecheck (orig_dl @ extra_dl, orig_sl); *)
+  if !opt_sanity_checks then
+    (let extra_dl = Asmir.decls_for_arch (asmir_arch ()) in
+       try
+	 (* Run the Vine typechecker on the IR that we got from
+	    libasmir. This has a noticeable runtime cost. But other
+	    places in FuzzBALL assume that expressions are type-correct,
+	    so this can sometimes catch problems that would otherwise be
+	    hard to track down. Unfortunately at the moment there are
+	    also some known failures. *)
+	 Vine_typecheck.typecheck (orig_dl @ extra_dl, orig_sl)
+       with
+	 (* rdtsc is a wart right now: it should be more like a
+	    Special than an Unknown because we do deal with it, just in a
+	    special way. But it should be more like an expression than a
+	    statement because it produces a value. *)
+	 | Vine.TypeError("Cannot typecheck unknown: rdtsc") -> ()
+	 (* The old Vine typechecker currently can't deal with
+	    addresses being REG_64, which is one of the things that can
+	    lead to errors like this. *)
+	 | Vine.TypeError(s) when (String.length s) > 30
+	     && (String.sub s 0 30) = "Type error: Invalid jmp target"
+	     -> ()
+    );
   let (dl, sl) = (orig_dl, orig_sl) in
   let (dl, sl) = lets_to_moves (dl, sl) in
   let sl = rm_unused_stmts sl in

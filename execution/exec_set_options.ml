@@ -553,6 +553,8 @@ let cmdline_opts =
     ("-git-version", Arg.Unit
        (fun () -> Printf.printf "GIT version %s\n" Git_version.git_version),
      " Print GIT revision hash");
+    ("-sanity-checks", Arg.Set(opt_sanity_checks),
+     " Enable extra internal checking");
   ]
 
 let trace_replay_cmdline_opts =
