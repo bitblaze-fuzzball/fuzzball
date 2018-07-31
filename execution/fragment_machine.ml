@@ -1429,6 +1429,20 @@ struct
       self#print_reg64 "%r13" R_R13;
       self#print_reg64 "%r14" R_R14;
       self#print_reg64 "%r15" R_R15;
+      (* Here's how you would print the low 128 bits of the low 8 XMM
+         registers, analogous to what we currently do on 32-bit. In
+         many cases on x64 though you'd really want to print 16
+         registers, and each is really 256 bits, but that would make
+         this output even more unwieldy. Leave this disabled for now.
+      self#print_reg128 "XMM0" R_YMM0_1 R_YMM0_0;
+      self#print_reg128 "XMM1" R_YMM1_1 R_YMM1_0;
+      self#print_reg128 "XMM2" R_YMM2_1 R_YMM2_0;
+      self#print_reg128 "XMM3" R_YMM3_1 R_YMM3_0;
+      self#print_reg128 "XMM4" R_YMM4_1 R_YMM4_0;
+      self#print_reg128 "XMM5" R_YMM5_1 R_YMM5_0;
+      self#print_reg128 "XMM6" R_YMM6_1 R_YMM6_0;
+      self#print_reg128 "XMM7" R_YMM7_1 R_YMM7_0;
+       *)
       self#print_reg1 "CF" R_CF;
       self#print_reg1 "PF" R_PF;
       self#print_reg1 "AF" R_AF;
