@@ -1141,6 +1141,15 @@ object(self)
     ignore(rlim);
     put_return 0L (* success *)
 
+  method private sys_prlimit64 pid rsrc new_limit_buf old_limit_buf =
+    ignore(pid);
+    ignore(rsrc);
+    ignore(new_limit_buf);
+    if old_limit_buf <> 0L then
+      (store_long old_limit_buf 0 (-1L); (* infinity *)
+       store_long old_limit_buf 8 (-1L)); (* infinity *)
+    put_return 0L (* success *)
+
   method sys_getgid () = 
     put_return (Int64.of_int (Unix.getgid ()))
 
@@ -5127,22 +5136,31 @@ object(self)
 	     uh "Unhandled Linux system call fanotify_init"
 	 | (X64, 301)    (* fanotify_mark *)
 	 | (X86, 339) -> (* fanotify_mark *)
-	     uh "Unhandled Linux system call fanotify_mark (339)"
+	     uh "Unhandled Linux system call fanotify_mark"
 	 | (X64, 302)    (* prlimit64 *)
 	 | (X86, 340) -> (* prlimit64 *)
-	     uh "Unhandled Linux system call prlimit64 (340)"
+             let (arg1, arg2, arg3, arg4) = read_4_regs () in
+             let pid = Int64.to_int arg1 and
+                 rsrc = Int64.to_int arg2 and
+                 new_limit_buf = arg3 and
+                 old_limit_buf = arg4
+             in
+             if !opt_trace_syscalls then
+               Printf.printf "prlimit64(%d, %d, 0x%08Lx, 0x%08Lx)"
+                 pid rsrc new_limit_buf old_limit_buf;
+             self#sys_prlimit64 pid rsrc new_limit_buf old_limit_buf
 	 | (X64, 303)    (* name_to_handle_at *)
 	 | (X86, 341) -> (* name_to_handle_at *)
-	     uh "Unhandled Linux system call name_to_handle_at (341)"
+	     uh "Unhandled Linux system call name_to_handle_at"
 	 | (X64, 304)    (* open_by_handle_at *)
 	 | (X86, 342) -> (* open_by_handle_at *)
-	     uh "Unhandled Linux system call open_by_handle_at (342)"
+	     uh "Unhandled Linux system call open_by_handle_at"
 	 | (X64, 305)    (* clock_adjtime *)
 	 | (X86, 343) -> (* clock_adjtime *)
-	     uh "Unhandled Linux system call clock_adjtime (343)"
+	     uh "Unhandled Linux system call clock_adjtime"
 	 | (X64, 306)    (* syncfs *)
 	 | (X86, 344) -> (* syncfs *)
-	     uh "Unhandled Linux system call syncfs (344)"
+	     uh "Unhandled Linux system call syncfs"
 	 | (X64, 307) -> uh "Check whether x64 sendmmsg syscall matches x86"
 	 | (X86, 345) -> (* sendmmsg *)
              let (ebx, ecx, edx, esi) = read_4_regs () in
