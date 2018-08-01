@@ -1843,7 +1843,16 @@ object(self)
 		  (if (flags land 2) <> 0 then [Unix.MSG_PEEK] else [])
       in
       let (num_read, sockaddr) =
-	Unix.recvfrom (self#get_fd sockfd) str 0 len flags
+        if addrbuf <> 0L then
+	  Unix.recvfrom (self#get_fd sockfd) str 0 len flags
+        else
+          (* The OCaml recvfrom doesn't deal correctly with not
+             getting a source address: when the kernel doesn't write
+             address information, it doesn't know what type of address
+             to allocate. We can fall back on plain "recv" for this
+             case if we know the caller doesn't care. *)
+          (Unix.recv (self#get_fd sockfd) str 0 len flags,
+           Unix.ADDR_UNIX("unused"))
       in
 	if num_read > 0 && Hashtbl.mem symbolic_fds sockfd then
 	  fm#maybe_start_symbolic
@@ -1852,7 +1861,8 @@ object(self)
 			  max (!max_input_string_length) num_read))
 	else
 	  fm#store_str buf 0L (String.sub str 0 num_read);
-	self#write_sockaddr sockaddr addrbuf addrlen_ptr;
+        if addrbuf <> 0L then
+	  self#write_sockaddr sockaddr addrbuf addrlen_ptr;
 	put_return (Int64.of_int num_read) (* success *)
     with
       | Unix.Unix_error(err, _, _) -> self#put_errno err
@@ -1925,7 +1935,11 @@ object(self)
         and addrbuf = load_word (lea msg 0 0 0)
         in
         let (num_read, sockaddr) =
-          Unix.recvfrom (self#get_fd sockfd) str 0 len flags
+        if addrbuf <> 0L then
+	  Unix.recvfrom (self#get_fd sockfd) str 0 len flags
+        else
+          (Unix.recv (self#get_fd sockfd) str 0 len flags,
+           Unix.ADDR_UNIX("unused"))
         in
         assert(not (Hashtbl.mem symbolic_fds sockfd)); (* unimplemented *)
         (if addrbuf <> 0L then
@@ -1947,7 +1961,11 @@ object(self)
       and addrbuf = load_long (lea msg 0 0 0)
       in
       let (num_read, sockaddr) =
-        Unix.recvfrom (self#get_fd sockfd) str 0 len flags
+        if addrbuf <> 0L then
+	  Unix.recvfrom (self#get_fd sockfd) str 0 len flags
+        else
+          (Unix.recv (self#get_fd sockfd) str 0 len flags,
+           Unix.ADDR_UNIX("unused"))
       in
         assert(not (Hashtbl.mem symbolic_fds sockfd)); (* unimplemented *)
         (if addrbuf <> 0L then
@@ -4813,7 +4831,16 @@ object(self)
 	 | (ARM, 294) -> (* setsockopt *)
 	     uh "Unhandled Linux/ARM system call setsockopt (294)"
 	 | (X64, 54) -> (* setsockopt *)
-	     uh "Unhandled Linux/x64 system call setsockopt (54)"
+	     let (arg1, arg2, arg3, arg4, arg5) = read_5_regs () in
+             let sockfd = Int64.to_int arg1 and
+		 level = Int64.to_int arg2 and
+		 name = Int64.to_int arg3 and
+		 valp = arg4 and
+		 len = Int64.to_int arg5 in
+	     if !opt_trace_syscalls then
+	       Printf.printf "setsockopt(%d, %d, %d, 0x%08Lx, %d)"
+		 sockfd level name valp len;
+	     self#sys_setsockopt sockfd level name valp len
 	 | (ARM, 295) -> (* getsockopt *)
 	     uh "Unhandled Linux/ARM system call getsockopt (295)"
 	 | (X64, 55) -> (* getsockopt *)
