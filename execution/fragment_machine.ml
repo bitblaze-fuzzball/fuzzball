@@ -483,6 +483,8 @@ class virtual fragment_machine = object
 
   method virtual set_iter_seed : int -> unit
 
+  method virtual random_byte : int
+
   method virtual finish_path : bool
 
   method virtual after_exploration : unit
@@ -2740,6 +2742,7 @@ struct
     method set_query_engine (qe:Query_engine.query_engine) = ()
     method print_tree (oc:out_channel) = ()
     method set_iter_seed (i:int) = ()
+    method random_byte = Random.int 256
     method finish_path = false
     method after_exploration = ()
     method make_x86_segtables_symbolic = ()

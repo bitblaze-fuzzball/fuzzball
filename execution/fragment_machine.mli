@@ -252,6 +252,8 @@ class virtual fragment_machine : object
 
   method virtual set_iter_seed : int -> unit
 
+  method virtual random_byte : int
+
   method virtual finish_path : bool
 
   method virtual after_exploration : unit
@@ -505,6 +507,7 @@ sig
     method match_input_var : string -> int option
     method print_tree : out_channel -> unit
     method set_iter_seed : int -> unit
+    method random_byte : int
     method finish_path : bool
     method after_exploration : unit
     method make_x86_segtables_symbolic : unit

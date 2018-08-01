@@ -21,6 +21,7 @@ class linear_decision_tree : object
   method set_iter_seed : int -> unit
   method random_bit : bool
   method random_float : float
+  method random_byte : int
   method record_unsat : bool -> unit
 
   method try_extend : (bool -> Vine.exp) ->

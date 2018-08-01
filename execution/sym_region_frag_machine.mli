@@ -95,6 +95,7 @@ sig
     method finish_path : bool
     method print_tree : out_channel -> unit
     method set_iter_seed : int -> unit
+    method random_byte : int
     method init_prog : Vine.program -> unit
     method set_frag : Vine.program -> unit
     method get_esp : int64

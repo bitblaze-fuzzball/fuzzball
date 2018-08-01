@@ -76,6 +76,8 @@ sig
 
     method set_iter_seed : int -> unit
       
+    method random_byte : int
+
     method reset : unit -> unit
 
     method after_exploration : unit

@@ -1238,6 +1238,13 @@ object(self)
     let tid = Int64.of_int (self#get_pid) in
       put_return tid
 
+  method private sys_getrandom buf buflen flags =
+    ignore(flags); (* no flags implemented *)
+    for i = 0 to buflen - 1 do
+      fm#store_byte_idx buf i fm#random_byte
+    done;
+    put_return (Int64.of_int buflen) (* success *)
+
   method private sys_getrusage32 who buf =
     ignore(who);
     store_word buf  0 0L; (* utime secs *)
@@ -5202,7 +5209,13 @@ object(self)
 	     uh "Unhandled Linux system call seccomp"
 	 | (X86, 355)    (* getrandom *)
 	 | (X64, 318) -> (* getrandom *)
-	     uh "Unhandled Linux system call getrandom"
+             let (arg1, arg2, arg3) = read_3_regs () in
+	     let buf = arg1 and
+		 buflen = Int64.to_int arg2 and
+		 flags = Int64.to_int arg3 in
+	       if !opt_trace_syscalls then
+		 Printf.printf "getrandom(0x%08Lx, %d, %d)" buf buflen flags;
+	       self#sys_getrandom buf buflen flags
 	 | (X86, 356)    (* memfd_create *)
 	 | (X64, 319) -> (* memfd_create *)
 	     uh "Unhandled Linux system call memfd_create"
