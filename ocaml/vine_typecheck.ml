@@ -330,7 +330,7 @@ and typecheck_exp names gamma (e:exp)  =
 
 let rec typecheck_stmt scope omega names labels sigma gamma s  = 
   let err m = 
-    raise (TypeError("Type error: "^m^"\n at"^(stmt_to_string s)))
+    raise (TypeError("Type error: "^m^" at "^(stmt_to_string s)))
   in
   let retcheck t omega = 
     match omega with
