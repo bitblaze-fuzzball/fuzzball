@@ -1203,7 +1203,7 @@ Stmt *x64_translate_dirty( IRStmt *stmt, IRSB *irbb, vector<Stmt *> *irout )
 	Exp *c3210 = _ex_and(_ex_u_cast(ecl(fsw), REG_64), ex_const64(0x4700));
 	irout->push_back(new Move(mk_reg("FC3210", REG_64), c3210));
 
-	Temp *tag_bits = mk_temp(REG_32, irout);
+	Temp *tag_bits = mk_temp(REG_8, irout);
 	irout->push_back(new Move(tag_bits, make_load_offset(arg, 4, REG_8)));
 	for (int i = 0; i < 8; i++) {
 	    string tag_name = "FPTAG";
