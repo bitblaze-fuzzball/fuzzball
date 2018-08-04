@@ -428,6 +428,18 @@ let load_dynamic_program (fm : fragment_machine) fname load_base
   let ldso_base = ref 0xb7f00000L in
   let eh = read_elf_header ic in
   let entry_point = ref eh.entry in
+  let checked_load_base = ref false in
+  let check_load_base addr =
+    if !checked_load_base then
+      ()
+    else if addr <> load_base then
+      (Printf.printf "Unexpected first-segment load address.\n";
+       Printf.printf "Perhaps you need the -load-base 0x%Lx or -arch options\n"
+	 addr;
+       assert(addr = load_base))
+    else
+      checked_load_base := true
+  in
   let extra_vaddr = match eh.eh_type with
     | 2 -> 0L (* fixed-location executable *)
     | 3 -> load_base (* shared object or PIE *)
@@ -440,10 +452,9 @@ let load_dynamic_program (fm : fragment_machine) fname load_base
     List.iter
       (fun phr ->
 	 if phr.ph_type = 1L then (* PT_LOAD *)
-	   (if phr.ph_flags = 5L && extra_vaddr = 0L then
-	      (if phr.vaddr <> load_base then
-		 Printf.printf "Unexpected code load address. Perhaps you need the -load-base 0x%Lx or -arch options\n" phr.vaddr;
-	       assert(phr.vaddr = load_base));
+	   (if (phr.ph_flags = 4L || phr.ph_flags = 5L)
+	      && extra_vaddr = 0L then
+		check_load_base phr.vaddr;
 	    if data_too || (phr.ph_flags <> 6L && phr.ph_flags <> 7L) then
 	      load_segment fm ic phr extra_vaddr true)
 	 else if phr.ph_type = 3L then (* PT_INTERP *)
