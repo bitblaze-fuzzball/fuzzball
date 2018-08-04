@@ -1621,7 +1621,7 @@ object(self)
 	| (_, _, (0x1|0x3|0x5) (* R, RW, RX *),
 	   0x12 (* MAP_PRIVATE|FIXED *), _) ->
 	    do_read addr
-	| (_, _, (0x3|0x5|0x7) (* RW RX RWX *),
+	| (_, _, (0x1|0x3|0x5|0x7) (* R RW RX RWX *),
 	   0x812 (* MAP_DENYWRITE|PRIVATE|FIXED *), _) ->
 	    do_read addr
 	| _ -> failwith "Unhandled mmap operation"
@@ -4060,7 +4060,7 @@ object(self)
 		 nfds = Int64.to_int arg2 and
 		 timeout = arg3 in
 	       if !opt_trace_syscalls then	
-		 Printf.printf "poll(0x%08Lx, %d, %Ld)" fds_buf nfds timeout;
+		 Printf.printf "poll(0x%08Lx, %d, %Ld)%!" fds_buf nfds timeout;
 	       self#sys_poll fds_buf nfds timeout
 	 | ((X86|ARM), 169) -> (* nfsservctl *)
 	     uh "Unhandled Linux system call nfsservctl (169)"
