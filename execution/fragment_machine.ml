@@ -2350,8 +2350,20 @@ struct
 			 jump (self#eval_label_exp l2)
 		 | V.Move(V.Temp((n,s,t) as v), e) ->
 		     let rhs = self#eval_int_exp_simplify e in
+		     let trace_eval () =
+		       Printf.printf "    %s <- %s\n" s (D.to_string_32 rhs)
+		     in
 		       if !opt_trace_eval then
-			 Printf.printf "    %s <- %s\n" s (D.to_string_32 rhs);
+			 trace_eval ()
+		       else if !opt_trace_register_updates then
+			 if String.sub s 0 1 = "T" then
+			   () (* skip updates to temps *)
+			 else if String.length s = 4 &&
+			   String.sub s 0 2 = "R_" &&
+			   String.sub s 3 1 = "F" then
+			     () (* skip updates to flags *)
+			 else
+			   trace_eval ();
 		       self#set_int_var v rhs;
 		       loop rest
 		 | V.Move(V.Mem(memv, idx_e, ty), rhs_e) ->

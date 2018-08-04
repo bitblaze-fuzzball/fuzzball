@@ -493,6 +493,8 @@ let cmdline_opts =
      " Print symbolic memory regions");
     ("-trace-registers", Arg.Set(opt_trace_registers),
      " Print register contents");
+    ("-trace-register-updates", Arg.Set(opt_trace_register_updates),
+     " Print when registers are assigned to");
     ("-trace-setup", Arg.Set(opt_trace_setup),
      " Print progress of program loading");
     ("-trace-stmts", Arg.Set(opt_trace_stmts),
