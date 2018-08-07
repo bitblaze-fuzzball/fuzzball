@@ -444,7 +444,7 @@ struct
 	| V.Lval(V.Temp(var)) ->
 	    FormMan.if_expr_temp form_man var
 	      (fun e' -> loop e') [e] (fun v -> ())
-	| V.Constant(V.Int(V.REG_32, n)) ->
+	| V.Constant(V.Int((V.REG_32|V.REG_64), n)) ->
 	    constants := Int64.add !constants n;
 	    []
 	| e -> [e]
