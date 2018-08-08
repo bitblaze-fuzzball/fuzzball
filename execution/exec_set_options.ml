@@ -537,6 +537,8 @@ let cmdline_opts =
      " Print symbolic memory regions");
     ("-trace-registers", Arg.Set(opt_trace_registers),
      " Print register contents");
+    ("-trace-register-updates", Arg.Set(opt_trace_register_updates),
+     " Print when registers are assigned to");
     ("-trace-setup", Arg.Set(opt_trace_setup),
      " Print progress of program loading");
     ("-trace-stmts", Arg.Set(opt_trace_stmts),
@@ -629,7 +631,9 @@ let cmdline_opts =
      "String Sets output location of eip sequence logger.  Default ./eip_sequence.txt");
     ("-log-eip-sequence", Arg.Set(opt_log_eip_sequence),
      "Log eip coverage");
-    ("-num-fd", Arg.Set_int(opt_num_fd), "N Number of file descriptors we consider open, from 0 to N.")
+    ("-num-fd", Arg.Set_int(opt_num_fd), "N Number of file descriptors we consider open, from 0 to N.");
+    ("-sanity-checks", Arg.Set(opt_sanity_checks),
+     " Enable extra internal checking");
     ]
 
 let trace_replay_cmdline_opts =

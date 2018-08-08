@@ -44,7 +44,7 @@ let execution_arch_of_string s =
     | "i386"|"x86" -> X86
     | "x64"|"x86-64"|"x86_64"|"amd64"|"intel64" -> X64
     | "arm" -> ARM
-    | _ -> failwith "Unrecognized architecture"
+    | _ -> failwith ("Unrecognized architecture `" ^ s ^ "'")
 
 let asmir_arch_of_execution_arch = function
   | X86 -> Asmir.arch_i386
@@ -206,6 +206,7 @@ let opt_global_ce_cache_limit = ref 100
 let opt_disable_ce_cache = ref false
 let opt_narrow_bitwidth_cutoff = ref None
 let opt_t_expr_size = ref 10
+let opt_sanity_checks = ref false
 
 let opt_symbolic_memory = ref false
 let opt_zero_memory = ref false
@@ -219,6 +220,7 @@ let opt_check_read_operands = ref false
 let opt_check_write_operands = ref false
 let opt_fix_write_operands = ref false
 let opt_trace_registers = ref false
+let opt_trace_register_updates = ref false
 let opt_trace_segments = ref false
 let opt_trace_taint = ref false
 let opt_trace_unexpected = ref false

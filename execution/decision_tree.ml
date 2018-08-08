@@ -21,6 +21,7 @@ class virtual decision_tree = object
   method virtual set_iter_seed : int -> unit
   method virtual random_bit : bool
   method virtual random_float : float
+  method virtual random_byte : int
   method virtual random_word : int64
   method virtual record_unsat : bool -> unit
 

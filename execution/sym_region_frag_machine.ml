@@ -427,7 +427,7 @@ struct
 	| V.Lval(V.Temp(var)) ->
 	    FormMan.if_expr_temp form_man var
 	      (fun e' -> loop e') [e] (fun v -> ())
-	| V.Constant(V.Int(V.REG_32, n)) ->
+	| V.Constant(V.Int((V.REG_32|V.REG_64), n)) ->
 	    constants := Int64.add !constants n;
 	    []
 	| e -> [e]
@@ -812,6 +812,10 @@ struct
 	       if !opt_finish_on_null_deref then
 		 self#finish_fuzz "symbolic dereference can be null"
 	);
+      (* This start_new_query is needed because the selection of a
+	 base address with random_case_split and the concretization of
+	 offsets may create decision tree nodes. It should match with a
+	 call to dt#count_query at every return from this method. *)
       dt#start_new_query;
       self#note_first_branch;
       let (cbases, coffs, eoffs, ambig, syms) =
@@ -835,17 +839,17 @@ struct
 	     (String.concat " "
 		(List.map V.exp_to_string syms)));
 	let cbase = List.fold_left Int64.add 0L cbases in
-	let (base, off_syms) = match (cbase, syms, ambig) with
+	let (base, base_e, off_syms) = match (cbase, syms, ambig) with
 	  | (0L, [], []) -> raise
 	    (NullDereference
 	       { eip_of_deref = self#get_eip;
 		 last_set_to_null = Int64.sub Int64.zero Int64.one;
 		 addr_derefed =  Int64.sub Int64.zero Int64.one; })
-	  (* The following two cases are applicable when applying table treatment 
-	     for symbolic regions *)
-	  | (0L, [], [e]) -> (Some(self#region_for e), [])
-	  | (0L, [v], _) -> (Some(self#region_for v), ambig)
-	  | (0L, [], el) -> (Some 0, el)
+	  (* The following two cases are applicable when applying
+	     table treatment for symbolic regions *)
+	  | (0L, [], [e]) -> (Some(self#region_for e), Some e, [])
+	  | (0L, [v], _) -> (Some(self#region_for v), Some v, ambig)
+	  | (0L, [], el) -> (Some 0, None, el)
 	  | (0L, vl, _) ->
 	      let (bvar, rest_vars) =
 		(* We used to have logic here that checked whether one
@@ -868,9 +872,9 @@ struct
 		if !opt_trace_sym_addrs then
 		  Printf.eprintf "Choosing %s as the base address\n"
 		    (V.exp_to_string bvar);
-		(Some(self#region_for bvar), rest_vars @ ambig)
+		(Some(self#region_for bvar), Some bvar, rest_vars @ ambig)
 	  | (off, vl, _) ->
-	      (Some 0, vl @ ambig)
+	      (Some 0, None, vl @ ambig)
 	in
 	let cloc = Int64.add cbase (List.fold_left Int64.add 0L coffs) in
 	(* return a SingleLocation(region, offset)
@@ -892,24 +896,30 @@ struct
 	   else
 	     Printf.eprintf "Can be out of bounds.\n");
 	  sink_read_count <- Int64.add sink_read_count 0x10L;
+	  dt#count_query;
 	  SingleLocation(None, sink_read_count)
 	| _ ->
 	  let off_expr = (sum_list (eoffs @ off_syms)) in
 	  match decide_fn off_expr 0L with
 	  | Some wd ->
-	    if !opt_trace_tables then
-	      Printf.eprintf 
-		"Table treatment for sym region with base = %s and offset expr = %s\n"
-		(V.exp_to_string (List.hd ambig))
-		(V.exp_to_string off_expr);
-	    TableLocation(base, off_expr, cloc)
+	      let base_str = match (base, base_e) with
+		| (Some r, Some e) ->
+		    Printf.sprintf "sym region %d with base = %s" r
+		      (V.exp_to_string e)
+		| _ -> "concrete base"
+	      in
+		if !opt_trace_tables then
+		  Printf.eprintf
+		    "Table treatment for %s and offset expr = %s\n"
+		    base_str (V.exp_to_string off_expr);
+		dt#count_query;
+		TableLocation(base, off_expr, cloc)
 	  | None -> 
 	    let coff = List.fold_left Int64.add 0L coffs in
 	    let offset = Int64.add (Int64.add cbase coff)
 	      (match (eoffs, off_syms) with
 	      | ([], []) -> 0L
 	      | (el, vel) -> 
-		dt#start_new_query;
 		(self#concretize_inner (reg_addr())
 		   (simplify_fp (sum_list (el @ vel))))
 		  (ident + 0x200)) in
@@ -1272,8 +1282,9 @@ struct
 	    try
 	      let wd = Hashtbl.find bitwidth_cache key in
 		if !opt_trace_tables then
-		  Printf.eprintf "Reusing cached width %d for %s at [%s]\n%!"
-		    (match wd with Some w -> (Int64.to_int w) | None -> -1)
+		  Printf.eprintf "Reusing cached width %s for %s at [%s]\n%!"
+		    (match wd with Some w -> string_of_int (Int64.to_int w)
+		       | None -> "[too big]")
 		    (V.exp_to_string off_exp) dt#get_hist_str;
 		wd
 	    with Not_found ->

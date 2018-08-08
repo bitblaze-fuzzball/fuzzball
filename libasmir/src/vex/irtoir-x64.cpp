@@ -866,6 +866,7 @@ static Exp *translate_get_reg_64( int offset )
 static Exp *translate_get_reg_128( unsigned int offset )
 {
     string name;
+    bool high = false;
 
     switch ( offset )
     {
@@ -886,6 +887,23 @@ static Exp *translate_get_reg_128( unsigned int offset )
     case OFFB_YMM13: name = "YMM13"; break;
     case OFFB_YMM14: name = "YMM14"; break;
     case OFFB_YMM15: name = "YMM15"; break;
+
+    case OFFB_YMM0+16: name = "YMM0"; high = 1; break;
+    case OFFB_YMM1+16: name = "YMM1"; high = 1; break;
+    case OFFB_YMM2+16: name = "YMM2"; high = 1; break;
+    case OFFB_YMM3+16: name = "YMM3"; high = 1; break;
+    case OFFB_YMM4+16: name = "YMM4"; high = 1; break;
+    case OFFB_YMM5+16: name = "YMM5"; high = 1; break;
+    case OFFB_YMM6+16: name = "YMM6"; high = 1; break;
+    case OFFB_YMM7+16: name = "YMM7"; high = 1; break;
+    case OFFB_YMM8+16: name = "YMM8"; high = 1; break;
+    case OFFB_YMM9+16: name = "YMM9"; high = 1; break;
+    case OFFB_YMM10+16: name = "YMM10"; high = 1; break;
+    case OFFB_YMM11+16: name = "YMM11"; high = 1; break;
+    case OFFB_YMM12+16: name = "YMM12"; high = 1; break;
+    case OFFB_YMM13+16: name = "YMM13"; high = 1; break;
+    case OFFB_YMM14+16: name = "YMM14"; high = 1; break;
+    case OFFB_YMM15+16: name = "YMM15"; high = 1; break;
 #else
     case OFFB_XMM0: name = "YMM0"; break;
     case OFFB_XMM1: name = "YMM1"; break;
@@ -908,8 +926,15 @@ static Exp *translate_get_reg_128( unsigned int offset )
         assert(0);
     }
 
-    string name_l = name + "_0";
-    string name_h = name + "_1";
+    string name_l, name_h;
+
+    if (high) {
+	name_l = name + "_2";
+	name_h = name + "_3";
+    } else {
+	name_l = name + "_0";
+	name_h = name + "_1";
+    }
 
     Exp *value = new Vector(mk_reg(name_h, REG_64),
                             mk_reg(name_l, REG_64));
@@ -939,17 +964,13 @@ Exp *x64_translate_get( IRExpr *expr, IRSB *irbb, vector<Stmt *> *irout )
     {
         result = translate_get_reg_16(offset);
     }
-    else if ( type == Ity_I32 )
+    else if ( type == Ity_I32 || type == Ity_F32 )
     {
         result = translate_get_reg_32(offset);
     }
     else if ( type == Ity_I64 || type == Ity_F64 )
     {
         result = translate_get_reg_64(offset);
-    }
-    else if ( type == Ity_F32 )
-    {
-        result = new Unknown("register type (F32)");
     }
 
     else if ( type == Ity_I128 || type == Ity_V128 )
@@ -1030,8 +1051,185 @@ Exp *x64_translate_geti( IRExpr *expr, IRSB *irbb, vector<Stmt *> *irout )
     return choice;
 }
 
+static void make_store_offset(vector<Stmt *> *irout,
+			      Exp *base, int offset, Exp *rhs, reg_t size) {
+    Exp *addr = ecl(base);
+    if (offset != 0)
+	addr = _ex_add(addr, ex_const64(offset));
+    irout->push_back(new Move(new Mem(addr, size), rhs));
+}
 
-Stmt *x64_translate_dirty( IRStmt *stmt, IRSB *irbb, vector<Stmt *> *irout )
+static void make_store_offset128(vector<Stmt *> *irout,
+				 Exp *base, int offset, Exp *rhs) {
+    Exp *addr = ecl(base);
+    if (offset != 0)
+	addr = _ex_add(addr, ex_const64(offset));
+
+    // Split into two 64-bit stores
+    Exp *rhs_high, *rhs_low;
+    split_vector(rhs, &rhs_high, &rhs_low);
+    Exp *addr_h = _ex_add(ecl(addr), ex_addr_const(8));
+    irout->push_back(new Move(new Mem(addr, REG_64), rhs_low));
+    irout->push_back(new Move(new Mem(addr_h, REG_64), rhs_high));
+}
+
+static Exp *make_load_offset(Exp *base, int offset, reg_t size) {
+    Exp *addr = ecl(base);
+    if (offset != 0)
+	addr = _ex_add(addr, ex_const64(offset));
+    return new Mem(addr, size);
+}
+
+static Exp *make_load_offset128(Exp *base, int offset) {
+    Exp *addr = ecl(base);
+    if (offset != 0)
+	addr = _ex_add(addr, ex_const64(offset));
+
+    Exp *addr_h = _ex_add(ecl(addr), ex_addr_const(8));
+    Mem *mem_l = new Mem(addr, REG_64);
+    Mem *mem_h = new Mem(addr_h, REG_64);
+    return new Vector(mem_h, mem_l);
+}
+
+static Stmt *
+emit_xsave_component_0(vector<Stmt *> *irout, Exp *addr_exp) {
+    Exp *fprnd_bits = _ex_shl(_ex_and(mk_reg("FPROUND", REG_64),
+					  ex_const64(3)), 10);
+    Exp *fcw = _ex_l_cast(_ex_or(fprnd_bits, ex_const64(0x037f)), REG_16);
+    make_store_offset(irout, addr_exp, 0, fcw, REG_16);
+
+    Exp *fsw_top = _ex_l_cast(_ex_shl(_ex_and(mk_reg("FTOP", REG_32),
+					      ex_const(7)),
+				      11), REG_16);
+    Exp *fsw_stat = _ex_l_cast(_ex_and(mk_reg("FC3210", REG_64),
+					   ex_const64(0x4700)), REG_16);
+    Exp *fsw = _ex_or(fsw_top, fsw_stat);
+    make_store_offset(irout, addr_exp, 2, fsw, REG_16);
+
+    Exp *ftag_bits[8];
+    for (int i = 0; i < 8; i++) {
+	string tag_name = "FPTAG";
+	tag_name += ('0' + i);
+	Exp *tag_reg = mk_reg(tag_name, REG_8);
+	Exp *bit = _ex_u_cast(_ex_neq(tag_reg, ex_const(REG_8, 0)), REG_8);
+	ftag_bits[i] = (i == 0 ? bit :_ex_shl(bit, i));
+    }
+    Exp *ftw = _ex_or(_ex_or(ftag_bits[0], ftag_bits[1]),
+		      _ex_or(ftag_bits[2], ftag_bits[3]),
+		      _ex_or(ftag_bits[4], ftag_bits[5]),
+		      _ex_or(ftag_bits[6], ftag_bits[7]));
+    make_store_offset(irout, addr_exp, 4, ftw, REG_8);
+
+    /* Reserved, write 0 */
+    make_store_offset(irout, addr_exp, 5, ex_const(REG_8, 0), REG_8);
+
+    /* FOP, unsupported */
+    make_store_offset(irout, addr_exp, 6, ex_const(REG_16, 0), REG_16);
+
+    /* FPU IP, unsupported */
+    make_store_offset(irout, addr_exp, 8, ex_const(REG_32, 0), REG_32);
+
+    /* CS, unsupported */
+    make_store_offset(irout, addr_exp, 12, ex_const(REG_16, 0), REG_16);
+
+    /* Reserved, write 0 */
+    make_store_offset(irout, addr_exp, 14, ex_const(REG_16, 0), REG_16);
+
+    /* FPU DP, unsupported */
+    make_store_offset(irout, addr_exp, 16, ex_const(REG_32, 0), REG_32);
+
+    /* DS, unsupported */
+    make_store_offset(irout, addr_exp, 20, ex_const(REG_16, 0), REG_16);
+
+    /* Offsets [24, 32), related to MXCSR, are handled by component 1 */
+
+    /* Since we don't yet support the 80-bit format, we just write
+       64-bit values of the x87 FP registers. */
+    for (int i = 0; i < 8; i++) {
+	string reg_name = "FPREG";
+	reg_name += ('0' + i);
+	Exp *fp_reg = mk_reg(reg_name, REG_64);
+	make_store_offset(irout, addr_exp, 32 + 16*i, fp_reg, REG_64);
+	make_store_offset(irout, addr_exp, 32 + 16*i + 8, ex_const64(0),REG_64);
+    }
+
+    /* Reserved, write 0 */
+    /* make_store_offset(irout, addr_exp, 22, ex_const(REG_16, 0), REG_16); */
+    /* But don't use make_store_offset, since the last statement is
+       as special case (uncloned addr_exp, result instead of push_back) */
+    Exp *addr22 = _ex_add(addr_exp, ex_const64(22));
+    return new Move(new Mem(addr22, REG_16), ex_const(REG_16, 0));
+}
+
+static Stmt *
+emit_xsave_component_1_noxmm(vector<Stmt *> *irout, Exp *addr_exp) {
+    Exp *ssernd_bits = _ex_shl(_ex_and(mk_reg("SSEROUND", REG_64),
+				       ex_const64(3)), 13);
+    Exp *mxcsr = _ex_l_cast(_ex_or(ssernd_bits, ex_const64(0x1f80)),
+			    REG_32);
+    make_store_offset(irout, addr_exp, 24, mxcsr, REG_32);
+
+    /* MXCSR_MASK */
+    Exp *addr28 = _ex_add(addr_exp, ex_const64(28));
+    return new Move(new Mem(addr28, REG_32), ex_const(0x0000ffff));
+}
+
+static Stmt *
+emit_xrstor_component_0(vector<Stmt *> *irout, Exp *addr_exp) {
+    Exp *fsw = make_load_offset(addr_exp, 2, REG_16);
+    Exp *ftop = _ex_and(_ex_shr(_ex_u_cast(fsw, REG_32), 11), ex_const(7));
+    irout->push_back(new Move(mk_reg("FTOP", REG_32), ftop));
+    Exp *c3210 = _ex_and(_ex_u_cast(ecl(fsw), REG_64), ex_const64(0x4700));
+    irout->push_back(new Move(mk_reg("FC3210", REG_64), c3210));
+
+    Temp *tag_bits = mk_temp(REG_8, irout);
+    irout->push_back(new Move(tag_bits, make_load_offset(addr_exp, 4, REG_8)));
+    for (int i = 0; i < 8; i++) {
+	string tag_name = "FPTAG";
+	tag_name += ('0' + i);
+	Exp *tag_reg = mk_reg(tag_name, REG_8);
+	Exp *bit = ex_get_bit(tag_bits, i);
+	irout->push_back(new Move(tag_reg, _ex_u_cast(bit, REG_8)));
+    }
+
+    for (int i = 0; i < 8; i++) {
+	string reg_name = "FPREG";
+	reg_name += ('0' + i);
+	Exp *fp_reg = mk_reg(reg_name, REG_64);
+	Exp *fp_val = make_load_offset(addr_exp, 32 + 16*i, REG_64);
+	irout->push_back(new Move(fp_reg, fp_val));
+    }
+
+    Exp *fcw = make_load_offset(addr_exp, 0, REG_16);
+    Exp::destroy(addr_exp); /* all the make_load_offsets cloned it */
+    Exp *fprnd = _ex_and(_ex_shr(_ex_u_cast(fcw, REG_64), 10),
+			 ex_const64(3));
+    return new Move(mk_reg("FPROUND", REG_64), fprnd);
+}
+
+static Stmt *
+emit_xrstor_component_1_noxmm(vector<Stmt *> *irout, Exp *addr_exp) {
+    Exp *mxcsr = new Mem(_ex_add(addr_exp, ex_const64(24)), REG_32);
+    Exp *rmode = _ex_and(_ex_shr(_ex_u_cast(mxcsr, REG_64), 13),
+			 ex_const64(3));
+    return new Move(mk_reg("SSEROUND", REG_64), rmode);
+}
+
+#if VEX_VERSION >= 2739
+/* In r2739, dirty helpers that use a guest-state pointer started
+   explicitly declaring it as an argument, instead of the old approach
+   of the .needsBBP flag. This changes the argument ordering as we see
+   it. We assume the BBPTR argument always comes first, so the
+   arguments we want are at an offset from it. */
+#define SKIP_BBPTR_ARG 1
+#else
+#define SKIP_BBPTR_ARG 0
+#endif
+
+static Stmt *translate_put_reg_128(unsigned int offset, Exp *data, IRSB *irbb,
+                                   vector<Stmt *> *irout);
+
+    Stmt *x64_translate_dirty( IRStmt *stmt, IRSB *irbb, vector<Stmt *> *irout )
 {
     assert(stmt);
     assert(irbb);
@@ -1058,6 +1256,67 @@ Stmt *x64_translate_dirty( IRStmt *stmt, IRSB *irbb, vector<Stmt *> *irout )
         result = mk_assign_tmp(lhs, new Unknown("loadF80"), irbb, irout);
     } else if (func == "amd64g_dirtyhelper_storeF80le") {
         result = new ExpStmt(new Unknown("Unknown: storeF80"));
+    } else if (func == "amd64g_dirtyhelper_XSAVE_COMPONENT_0") {
+	Exp *addr_exp = translate_expr(dirty->args[SKIP_BBPTR_ARG + 0],
+				       irbb, irout);
+	result = emit_xsave_component_0(irout, addr_exp);
+    } else if (func ==
+	       "amd64g_dirtyhelper_XSAVE_COMPONENT_1_EXCLUDING_XMMREGS") {
+	Exp *addr_exp = translate_expr(dirty->args[SKIP_BBPTR_ARG + 0],
+				       irbb, irout);
+	result = emit_xsave_component_1_noxmm(irout, addr_exp);
+    } else if (func == "amd64g_dirtyhelper_FXSAVE") {
+	Exp *addr_exp = translate_expr(dirty->args[SKIP_BBPTR_ARG + 0],
+				       irbb, irout);
+	irout->push_back(emit_xsave_component_0(irout, ecl(addr_exp)));
+	for (int i = 0; i < 16; i++) {
+	    /* We're assuming here that the XMM registers are
+	       allocated sequentially in the guest state. */
+	    int offset = OFFB_YMM0 + i * (OFFB_YMM1 - OFFB_YMM0);
+	    Exp *xmm_val = translate_get_reg_128(offset);
+	    make_store_offset128(irout, addr_exp, 160 + 16*i, xmm_val);
+	}
+	result = emit_xsave_component_1_noxmm(irout, addr_exp);
+    } else if (func == "amd64g_dirtyhelper_FINIT") {
+	irout->push_back(new Move(mk_reg("FTOP", REG_32), ex_const(0)));
+	irout->push_back(new Move(mk_reg("FPTAG0", REG_8), ex_const(REG_8,0)));
+	irout->push_back(new Move(mk_reg("FPTAG1", REG_8), ex_const(REG_8,0)));
+	irout->push_back(new Move(mk_reg("FPTAG2", REG_8), ex_const(REG_8,0)));
+	irout->push_back(new Move(mk_reg("FPTAG3", REG_8), ex_const(REG_8,0)));
+	irout->push_back(new Move(mk_reg("FPTAG4", REG_8), ex_const(REG_8,0)));
+	irout->push_back(new Move(mk_reg("FPTAG5", REG_8), ex_const(REG_8,0)));
+	irout->push_back(new Move(mk_reg("FPTAG6", REG_8), ex_const(REG_8,0)));
+	irout->push_back(new Move(mk_reg("FPTAG7", REG_8), ex_const(REG_8,0)));
+	irout->push_back(new Move(mk_reg("FPREG0", REG_64), ex_const64(0)));
+	irout->push_back(new Move(mk_reg("FPREG1", REG_64), ex_const64(0)));
+	irout->push_back(new Move(mk_reg("FPREG2", REG_64), ex_const64(0)));
+	irout->push_back(new Move(mk_reg("FPREG3", REG_64), ex_const64(0)));
+	irout->push_back(new Move(mk_reg("FPREG4", REG_64), ex_const64(0)));
+	irout->push_back(new Move(mk_reg("FPREG5", REG_64), ex_const64(0)));
+	irout->push_back(new Move(mk_reg("FPREG6", REG_64), ex_const64(0)));
+	irout->push_back(new Move(mk_reg("FPREG7", REG_64), ex_const64(0)));
+	irout->push_back(new Move(mk_reg("FC3210", REG_64), ex_const64(0)));
+	result = new Move(mk_reg("FPROUND", REG_64), ex_const64(0));
+    } else if (func == "amd64g_dirtyhelper_XRSTOR_COMPONENT_0") {
+	Exp *addr_exp =
+	    translate_expr(dirty->args[SKIP_BBPTR_ARG + 0], irbb, irout);
+	result = emit_xrstor_component_0(irout, addr_exp);
+    } else if (func ==
+	       "amd64g_dirtyhelper_XRSTOR_COMPONENT_1_EXCLUDING_XMMREGS") {
+	Exp *addr_exp =
+	    translate_expr(dirty->args[SKIP_BBPTR_ARG + 0], irbb, irout);
+	result = emit_xrstor_component_1_noxmm(irout, addr_exp);
+    } else if (func == "amd64g_dirtyhelper_FXRSTOR") {
+	Exp *addr_exp =
+	    translate_expr(dirty->args[SKIP_BBPTR_ARG + 0], irbb, irout);
+	irout->push_back(emit_xrstor_component_0(irout, ecl(addr_exp)));
+	for (int i = 0; i < 16; i++) {
+	    int offset = OFFB_YMM0 + i * (OFFB_YMM1 - OFFB_YMM0);
+	    Exp *xmm_val = make_load_offset128(addr_exp, 160 + 16*i);
+	    Stmt *put = translate_put_reg_128(offset, xmm_val, irbb, irout);
+	    irout->push_back(put);
+	}
+	result = emit_xrstor_component_1_noxmm(irout, addr_exp);
     } else
     {
         result = new ExpStmt(new Unknown("Unknown: Dirty"));
@@ -1329,6 +1588,7 @@ static Stmt *translate_put_reg_128(unsigned int offset, Exp *data, IRSB *irbb,
     assert(data);
 
     string name;
+    bool high = false;
 
     switch ( offset )
     {
@@ -1349,6 +1609,23 @@ static Stmt *translate_put_reg_128(unsigned int offset, Exp *data, IRSB *irbb,
     case OFFB_YMM13: name = "YMM13"; break;
     case OFFB_YMM14: name = "YMM14"; break;
     case OFFB_YMM15: name = "YMM15"; break;
+
+    case OFFB_YMM0+16: name = "YMM0"; high = 1; break;
+    case OFFB_YMM1+16: name = "YMM1"; high = 1; break;
+    case OFFB_YMM2+16: name = "YMM2"; high = 1; break;
+    case OFFB_YMM3+16: name = "YMM3"; high = 1; break;
+    case OFFB_YMM4+16: name = "YMM4"; high = 1; break;
+    case OFFB_YMM5+16: name = "YMM5"; high = 1; break;
+    case OFFB_YMM6+16: name = "YMM6"; high = 1; break;
+    case OFFB_YMM7+16: name = "YMM7"; high = 1; break;
+    case OFFB_YMM8+16: name = "YMM8"; high = 1; break;
+    case OFFB_YMM9+16: name = "YMM9"; high = 1; break;
+    case OFFB_YMM10+16: name = "YMM10"; high = 1; break;
+    case OFFB_YMM11+16: name = "YMM11"; high = 1; break;
+    case OFFB_YMM12+16: name = "YMM12"; high = 1; break;
+    case OFFB_YMM13+16: name = "YMM13"; high = 1; break;
+    case OFFB_YMM14+16: name = "YMM14"; high = 1; break;
+    case OFFB_YMM15+16: name = "YMM15"; high = 1; break;
 #else
     case OFFB_XMM0: name = "YMM0"; break;
     case OFFB_XMM1: name = "YMM1"; break;
@@ -1374,15 +1651,22 @@ static Stmt *translate_put_reg_128(unsigned int offset, Exp *data, IRSB *irbb,
     // The value should be a Vector; deconstruct it
     assert(data->exp_type == VECTOR);
     Vector *v = (Vector *)data;
-    Exp *high = v->lanes[1];
-    Exp *low = v->lanes[0];
+    Exp *high64 = v->lanes[1];
+    Exp *low64 = v->lanes[0];
     delete v; // Shallow delete, since we reuse high and low
 
-    string name_l = name + "_0";
-    string name_h = name + "_1";
 
-    irout->push_back(new Move(mk_reg(name_h, REG_64), high));
-    return new Move(mk_reg(name_l, REG_64), low);
+    string name_l, name_h;
+    if (high) {
+	name_l = name + "_2";
+	name_h = name + "_3";
+    } else {
+	name_l = name + "_0";
+	name_h = name + "_1";
+    }
+
+    irout->push_back(new Move(mk_reg(name_h, REG_64), high64));
+    return new Move(mk_reg(name_l, REG_64), low64);
 }
 
 
@@ -1421,7 +1705,7 @@ Stmt *x64_translate_put( IRStmt *stmt, IRSB *irbb, vector<Stmt *> *irout )
     //
     // Regular 32 bit registers
     //
-    else if ( type == Ity_I32 )
+    else if ( type == Ity_I32 || type == Ity_F32 )
     {
         result = translate_put_reg_32(offset, data, irbb);
     }

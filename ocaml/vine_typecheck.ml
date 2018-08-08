@@ -251,7 +251,7 @@ and typecheck_exp names gamma (e:exp)  =
 	       raise (TypeError(msg))
 	    else
 	      (names, true_t)
-    | Unknown _ -> raise (TypeError("Cannot typecheck unknown's"))
+    | Unknown s -> raise (TypeError("Cannot typecheck unknown: " ^ s))
     | Cast(ct, t, e') -> ( 
 	let (names,t1) = typecheck_exp names gamma e' in
 	let castbits = Vine.bits_of_width t in
@@ -330,7 +330,7 @@ and typecheck_exp names gamma (e:exp)  =
 
 let rec typecheck_stmt scope omega names labels sigma gamma s  = 
   let err m = 
-    raise (TypeError("Type error: "^m^"\n at"^(stmt_to_string s)))
+    raise (TypeError("Type error: "^m^" at "^(stmt_to_string s)))
   in
   let retcheck t omega = 
     match omega with

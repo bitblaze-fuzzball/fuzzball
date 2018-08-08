@@ -72,10 +72,15 @@ not for program counter but for path condition. "short", "word", and
   Every time a value is dereferenced, check whether it can have the
   value 0, via a mechanism similar to -check-condition-at. Note that
   FuzzBALL will in any case stop a path if the actual dereferenced
-  value is null (in fact if it's less than 4096), but -check-for-null
+  value is 0 (in fact if it's less than 4096, matching the typical
+  behavior of the lowest page being unallocated), but -check-for-null
   will also catch a case where a null value would be allowed by the
   path condition even if it's not the value FuzzBALL's address logic
-  chooses.
+  chooses. There is currently no option provided for disabling the
+  check on concrete addresses: it would be possible for FuzzBALL to
+  treat accesses to the 0th page the same as accesses to any other
+  page, but out experience is that such accesses generally indicate a
+  bug in your subject program or in FuzzBALL.
 
 -chroot <path>
 

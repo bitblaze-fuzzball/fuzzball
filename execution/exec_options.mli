@@ -183,6 +183,7 @@ val opt_global_ce_cache_limit : int ref
 val opt_disable_ce_cache : bool ref
 val opt_narrow_bitwidth_cutoff : int option ref
 val opt_t_expr_size : int ref
+val opt_sanity_checks : bool ref
 
 val opt_symbolic_memory : bool ref
 val opt_zero_memory : bool ref
@@ -196,6 +197,7 @@ val opt_check_read_operands : bool ref
 val opt_check_write_operands : bool ref
 val opt_fix_write_operands : bool ref
 val opt_trace_registers : bool ref
+val opt_trace_register_updates : bool ref
 val opt_trace_segments : bool ref
 val opt_trace_taint : bool ref
 val opt_trace_unexpected : bool ref

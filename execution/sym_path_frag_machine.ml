@@ -982,6 +982,8 @@ struct
 
     method set_iter_seed i = dt#set_iter_seed i
 
+    method random_byte = dt#random_byte
+
     method random_word = dt#random_word
 
     method reset () =

@@ -9,16 +9,40 @@ open Exec_options;;
 open Exec_assert_minder;;
 
 type decision_tree_node = {
+  (* Only the root has parent = None *)
   mutable parent : dt_node_ref option;
+
   (* None: unexplored; Some None: unsat; Some Some n: sat *)
   mutable f_child : dt_node_ref option option;
   mutable t_child : dt_node_ref option option;
+
+  (* Initially false. If true, the full subtree rooted at this node
+     has been completely explored, and so shouldn't be revisited. *)
   mutable all_seen : bool;
+
+  (* In the presence of multi-way choices like pointer concretization,
+     we need a partial subtree of multiple nodes to represent a
+     3-or-more-way decision. This leads to an abstraction of a multi-way
+     tree built on top of the underlying binary tree. The binary tree
+     nodes that represent the roots of the multi-way partial subtrees
+     have query_children = Some n, while all the other binary tree nodes
+     have query_children = None. The value of n in Some n is the number
+     of multi-way tree children that have been explored. *)
   mutable query_children : int option;
+
+  (* Initially false. Set to true at the point a node is counted as
+     one of the query_children (see above) of a multi-way choice. *)
   mutable query_counted : bool;
+
   mutable heur_min : int;
   mutable heur_max : int;
+
+  (* Numeric identifier of a decision tree node. We use these instead
+     of pointers as "dt_node_ref"s so that the tree can use a more
+     compact representation. It serves as a sequential index into either
+     an in-memory array of string representations or an on-disk file. *)
   mutable ident : int;
+
   mutable eip_loc : int64 }
 and
   dt_node_ref = int
@@ -296,8 +320,21 @@ class binary_decision_tree = object(self)
   val seen = Hashtbl.create 100
 
   val root_ident = (new_dt_node None).ident
-  val mutable cur = new_dt_node None (* garbage *)
+
+  (* "cur" is the core changing state that points to the decision tree
+     node corresponding to the current point on some execution path. On a
+     typical path, it will start by traversing a path through the
+     existing tree down from the root, and then it points to the newly
+     created nodes on the new segment of a path. To satisfy OCaml's type
+     system and intialization rules, we have to first initialize this
+     field referring to a dummy node that will never be used. *)
+  val mutable cur = new_dt_node None (* this initial value is garbage *)
+
+  (* "cur_query" is similar to "cur", but it corresponds to the
+     multi-choice structure of the tree, so it trails "cur" and skips
+     over nodes with query_children = None. *)
   val mutable cur_query = new_dt_node None (* garbage *)
+
   val mutable depth = 0
   val mutable path_hash = Int64.to_int32 0x811c9dc5L
   val mutable iteration_count = 0
@@ -468,8 +505,18 @@ class binary_decision_tree = object(self)
 		 )
     ) 	  
 
+  (* Calls to start_new_query(_binary)? and count_query should
+     alternate along each execution path, delimiting the one or more
+     binary choices that are treated as part of one multi-way choice. *)
   method start_new_query =
+    (* A failure of the following assertion generally means that you
+       did start_new_query, then created some new decision tree nodes,
+       then called start_new_query again. You need to call count_query
+       after the first decisions, and before calling start_new_query
+       again. *)
     g_assert(cur.query_children <> None) 100 "Binary_decision_tree.start_new_query";
+    if !opt_trace_decision_tree then
+      Printf.printf "DT: New query, updating cur_query to cur %d\n" cur.ident;
     cur_query <- cur
 
   method start_new_query_binary =
@@ -541,9 +588,9 @@ class binary_decision_tree = object(self)
     self#add_kid b;
     path_hash <- hash_round path_hash (if b then 49 else 48);
     (let h = Int32.to_int path_hash in
-      (if !opt_trace_randomness then
-	 Printf.eprintf "Setting random state to %08x\n" h;
-       randomness <- Random.State.make [|!opt_random_seed; h|]));
+       (if !opt_trace_randomness then
+	  Printf.eprintf "Setting random state to %08x\n" h;
+	randomness <- Random.State.make [|!opt_random_seed; h|]));
     (match (b, get_f_child cur, get_t_child cur) with
        | (false, Some(Some kid), _) -> cur <- kid
        | (true,  _, Some(Some kid)) -> cur <- kid
@@ -571,6 +618,12 @@ class binary_decision_tree = object(self)
       if !opt_trace_randomness then
 	Printf.eprintf "Flipping a floating coin to get %f\n" f;
       f
+
+  method random_byte =
+    let b = Random.State.int randomness 256 in
+      if !opt_trace_randomness then
+	Printf.printf "Rolling a 256-sided die to get %d\n" b;
+      b
 
   method random_word =
     let i = Random.State.int64 randomness 0x100000000L in

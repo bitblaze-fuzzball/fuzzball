@@ -102,6 +102,7 @@ sig
     method finish_path : bool
     method print_tree : out_channel -> unit
     method set_iter_seed : int -> unit
+    method random_byte : int
     method random_word : int64
     method set_pointer_management : Pointer_management.pointer_management -> unit
     method get_pointer_management : unit -> Pointer_management.pointer_management option
