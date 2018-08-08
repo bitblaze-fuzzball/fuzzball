@@ -103,7 +103,7 @@ object(self)
 	arg5 = at_off 5
     in
       if !opt_trace_client_reqs then
-	Printf.printf "0x%08Lx: %s(0x%Lx, 0x%Lx, 0x%Lx, 0x%Lx, 0x%Lx)\n"
+	Printf.eprintf "0x%08Lx: %s(0x%Lx, 0x%Lx, 0x%Lx, 0x%Lx, 0x%Lx)\n"
 	  eip req_name arg1 arg2 arg3 arg4 arg5
 
   method handle_special str : V.stmt list option =

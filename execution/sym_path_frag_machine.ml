@@ -384,7 +384,7 @@ struct
 		 self#print_ce ce))
 	   else
 	     if !opt_trace_decisions then
-	       Printf.printf "Unsatisfiable.\n");
+	       Printf.eprintf "Unsatisfiable.\n");
         if is_sat && not !opt_disable_ce_cache then
 	  (self#add_to_global_cache (ref ce);
 	   if !opt_trace_global_ce_cache then
@@ -598,7 +598,7 @@ struct
 	| None -> false)
       then
 	(if !opt_trace_decisions then
-	   Printf.printf "Condition %s concretely evaluates to 0x%Lx\n"
+	   Printf.eprintf "Condition %s concretely evaluates to 0x%Lx\n"
 	     (V.exp_to_string cond) (form_man#eval_expr cond);
 	self#extend_pc_known cond verbose ident
 	  ((form_man#eval_expr cond) <> 0L))
@@ -1017,7 +1017,7 @@ struct
     method after_exploration =
       infl_man#after_exploration;
       if !opt_trace_working_ce_cache then
-	Printf.printf "CE cache stats: %Ld hits / %Ld refs\n"
+	Printf.eprintf "CE cache stats: %Ld hits / %Ld refs\n"
 	  !ce_cache_hits !ce_cache_refs
   end
 end

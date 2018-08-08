@@ -444,12 +444,12 @@ struct
 	  let (cbase, terms) = classify_terms_simple e form_man in
 	  let cbases = if cbase = 0L then [] else [cbase] in
 	    if !opt_trace_sym_addr_details then
-	      Printf.printf "Extracted base address 0x%0Lx from %s\n"
+	      Printf.eprintf "Extracted base address 0x%0Lx from %s\n"
 		cbase (V.exp_to_string e);
 	    (cbases, [], terms, [], [])
       | (_, _) ->
 	  if !opt_trace_sym_addr_details then
-	    Printf.printf "Analyzing addr expr %s\n" (V.exp_to_string e);
+	    Printf.eprintf "Analyzing addr expr %s\n" (V.exp_to_string e);
 	  let l = List.map (classify_term form_man if_weird)
 	    (split_terms e form_man) in
 	  let (cbases, coffs, eoffs, ambig, syms) =
@@ -618,7 +618,7 @@ struct
       match e with 
 	| V.Cast((V.CAST_UNSIGNED|V.CAST_SIGNED) as ckind, cty, e2) ->
 	    if cty <> ty then
-	      Printf.printf "Cast type is not %s in concretize_inner of %s\n"
+	      Printf.eprintf "Cast type is not %s in concretize_inner of %s\n"
 		(V.type_to_string ty) (V.exp_to_string e);
 	    g_assert(cty = ty) 100 "Sym_region_frag_machine.concretize_inner";
 	    let ty2 = Vine_typecheck.infer_type None e2 in
@@ -1088,7 +1088,7 @@ struct
       with NotConcrete _ ->
 	let e = D.to_symbolic_64 v in
 	  if do_influence then
-	    (Printf.printf "Measuring symbolic %s influence..." name;
+	    (Printf.eprintf "Measuring symbolic %s influence..." name;
 	     infl_man#measure_point_influence name e);
 	  self#concretize V.REG_64 e (0x5000 + 0x100 * (self#register_num reg))
 
@@ -1098,7 +1098,7 @@ struct
       with NotConcrete _ ->
 	let e = D.to_symbolic_64 v in
 	  if do_influence then
-	    (Printf.printf "Measuring symbolic %s influence..." name;
+	    (Printf.eprintf "Measuring symbolic %s influence..." name;
 	     infl_man#measure_point_influence name e);
 	  self#concretize V.REG_64 e 0x6800
 
@@ -1549,7 +1549,7 @@ struct
 	    | None -> None
 	    | Some wd ->
 	      if !opt_trace_tables then
-		Printf.printf 
+		Printf.eprintf
 		  "SRFM#handle_load table load for sym region with offset expr = %s\n"
 		  (V.exp_to_string off_expr);
 	      self#table_load 0L r off_expr (Int64.to_int wd) ty)

@@ -3353,7 +3353,7 @@ object(self)
 	     let rsrc = Int64.to_int arg1 and
 		 buf  = arg2 in
 	       if !opt_trace_syscalls then
-		 Printf.printf "getrlimit(%d, 0x%08Lx)" rsrc buf;
+		 Printf.eprintf "getrlimit(%d, 0x%08Lx)" rsrc buf;
 	       self#sys_getrlimit rsrc buf
 	 | ((X86|ARM), 77) -> (* getrusage, 32-bit structure *)
 	     let (ebx, ecx) = read_2_regs () in
@@ -3456,7 +3456,7 @@ object(self)
 		 fd       = Int64.to_int (fix_s32 arg5) and
 		 offset   = arg6 in
 	       if !opt_trace_syscalls then
-		 Printf.printf "mmap(0x%08Lx, %Ld, 0x%x, 0x%x, %d, %Ld)"
+		 Printf.eprintf "mmap(0x%08Lx, %Ld, 0x%x, 0x%x, %d, %Ld)"
 		   addr length prot flags fd offset;
 	       self#sys_mmap addr length prot flags fd offset
 	 | ((X86|ARM), 91) (* munmap *)
@@ -3775,7 +3775,7 @@ object(self)
 	     let arg1 = read_1_reg () in
 	     let info_buf = arg1 in
 	       if !opt_trace_syscalls then
-		 Printf.printf "sysinfo(0x%Lx)" info_buf;
+		 Printf.eprintf "sysinfo(0x%Lx)" info_buf;
 	       self#sys_sysinfo info_buf
 	 | ((X86|ARM), 117) -> (* ipc *)
 	     let (arg1, arg2, arg3, arg4, arg5, arg6) = read_6_regs () in
@@ -4092,7 +4092,7 @@ object(self)
 	     let code = Int64.to_int arg1 and
 		 addr = arg2 in
 	       if !opt_trace_syscalls then
-		 Printf.printf "arch_prctl(%d, 0x%08Lx)" code addr;
+		 Printf.eprintf "arch_prctl(%d, 0x%08Lx)" code addr;
 	       self#sys_arch_prctl code addr
 	 | ((X86|ARM), 173) -> (* rt_sigreturn *)
 	     uh "Unhandled Linux system call rt_sigreturn (173)"
@@ -4153,7 +4153,7 @@ object(self)
 		 count = Int64.to_int arg3 and
 		 off   = arg4 in
 	       if !opt_trace_syscalls then
-		 Printf.printf "pread64(%d, 0x%08Lx, %d, %Ld)"
+		 Printf.eprintf "pread64(%d, 0x%08Lx, %d, %Ld)"
 		   fd buf count off;
 	       self#sys_pread64 fd buf count off;
 	 | ((X86|ARM), 181) -> (* pwrite64 *)
@@ -4391,7 +4391,7 @@ object(self)
 		 length = arg2 and
 		 advice = Int64.to_int arg3 in
 	       if !opt_trace_syscalls then
-		 Printf.printf "madvise(0x%08Lx, %Ld, %d)" addr length advice;
+		 Printf.eprintf "madvise(0x%08Lx, %Ld, %d)" addr length advice;
 	       self#sys_madvise addr length advice
 	 | (X64, 217) -> uh "Check whether x64 getdents64 syscall matches x86"
 	 | (ARM, 217)
@@ -4564,7 +4564,7 @@ object(self)
 		 len = arg3 and
 		 advice = Int64.to_int arg4 in
 	       if !opt_trace_syscalls then
-		 Printf.printf "fadvise64(%d, %Ld, %Ld, %d)"
+		 Printf.eprintf "fadvise64(%d, %Ld, %Ld, %d)"
 		   fd offset len advice;
 	       self#sys_fadvise64_64 fd offset len advice
 	 | (ARM, 248)    (* exit_group *)
@@ -4828,7 +4828,7 @@ object(self)
 		 addrlen_ptr = arg6
 	     in
 	       if !opt_trace_syscalls then
-		 Printf.printf
+		 Printf.eprintf
 		   "recvfrom(%d, 0x%08Lx, %d, %d, 0x%08Lx, 0x%08Lx)"
 		   sockfd buf len flags addr addrlen_ptr;
 	       self#sys_recvfrom sockfd buf len flags addr addrlen_ptr
@@ -4839,7 +4839,7 @@ object(self)
 	     let sockfd = Int64.to_int arg1 and
 		 how = Int64.to_int arg2 in
 	       if !opt_trace_syscalls then
-		 Printf.printf "shutdown(%d, %d)" sockfd how;
+		 Printf.eprintf "shutdown(%d, %d)" sockfd how;
 	       self#sys_shutdown sockfd how
 	 | (ARM, 294) -> (* setsockopt *)
 	     uh "Unhandled Linux/ARM system call setsockopt (294)"
@@ -4851,7 +4851,7 @@ object(self)
 		 valp = arg4 and
 		 len = Int64.to_int arg5 in
 	     if !opt_trace_syscalls then
-	       Printf.printf "setsockopt(%d, %d, %d, 0x%08Lx, %d)"
+	       Printf.eprintf "setsockopt(%d, %d, %d, 0x%08Lx, %d)"
 		 sockfd level name valp len;
 	     self#sys_setsockopt sockfd level name valp len
 	 | (ARM, 295) -> (* getsockopt *)
@@ -4871,7 +4871,7 @@ object(self)
 		 flags = Int64.to_int arg3
 	     in
 	       if !opt_trace_syscalls then
-		 Printf.printf "recvmsg(%d, 0x%08Lx, %d)"
+		 Printf.eprintf "recvmsg(%d, 0x%08Lx, %d)"
 		   sockfd msg flags;
 	       self#sys_recvmsg64 sockfd msg flags
 	 | (ARM, 298) -> (* semop *)
@@ -4918,7 +4918,7 @@ object(self)
 		 size = Int64.to_int arg2 and
 		 shmflag = Int64.to_int arg3 in
 	       if !opt_trace_syscalls then
-		 Printf.printf "shmget(%Ld, %d, %d)" key size shmflag;
+		 Printf.eprintf "shmget(%Ld, %d, %d)" key size shmflag;
 	       self#sys_shmget key size shmflag
 	 | (ARM, 308) -> (* shmctl *)
 	     uh "Unhandled Linux/ARM system call shmctl (308)"
@@ -5193,7 +5193,7 @@ object(self)
                  old_limit_buf = arg4
              in
              if !opt_trace_syscalls then
-               Printf.printf "prlimit64(%d, %d, 0x%08Lx, 0x%08Lx)"
+               Printf.eprintf "prlimit64(%d, %d, 0x%08Lx, 0x%08Lx)"
                  pid rsrc new_limit_buf old_limit_buf;
              self#sys_prlimit64 pid rsrc new_limit_buf old_limit_buf
 	 | (X64, 303)    (* name_to_handle_at *)
@@ -5299,7 +5299,7 @@ object(self)
 	     Printf.eprintf "Unknown Linux/ARM system call %d\n" syscall_num;
 	     uh "Unhandled Linux system call"
 	 | (X64, _) ->
-	     Printf.printf "Unknown Linux/x86-64 system call %d\n" syscall_num;
+	     Printf.eprintf "Unknown Linux/x86-64 system call %d\n" syscall_num;
 	     uh "Unhandled Linux system call");
     if !opt_trace_syscalls then
       let ret_val = match !opt_arch with

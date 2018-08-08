@@ -1097,14 +1097,14 @@ object(self)
 	let (num_args, name) = syscalls.(syscall_num) in
 	let args = read_regs num_args in
 	  if !opt_trace_syscalls then
-	    Printf.printf "%s(%s)" name (String.concat ", " args);
+	    Printf.eprintf "%s(%s)" name (String.concat ", " args);
 	  if name = "_exit" || name = "exit_group" then
 	    let status = get_reg_i arg_regs.(0) in
-	      Printf.printf "\n";
+	      Printf.eprintf "\n";
 	      raise (SimulatedExit(status))
 	  else
 	    let res = put_reg_sym ret_reg "syscall_result" in
-	      Printf.printf " = %s\n" res
+	      Printf.eprintf " = %s\n" res
 
   method handle_special str =
     let handle () =

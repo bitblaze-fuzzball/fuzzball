@@ -96,7 +96,7 @@ class smtlib_external_engine solver fname = object(self)
       filenum <- filenum + 1;
       curr_fname <- pick_fresh_fname dir fname filenum;
       if !opt_trace_solver then
-	Printf.printf "Creating SMTLIB2 log file: %s.smt2\n" curr_fname;
+	Printf.eprintf "Creating SMTLIB2 log file: %s.smt2\n" curr_fname;
       curr_fname
 
   val mutable log_chan = None

@@ -516,7 +516,7 @@ class binary_decision_tree = object(self)
        again. *)
     g_assert(cur.query_children <> None) 100 "Binary_decision_tree.start_new_query";
     if !opt_trace_decision_tree then
-      Printf.printf "DT: New query, updating cur_query to cur %d\n" cur.ident;
+      Printf.eprintf "DT: New query, updating cur_query to cur %d\n" cur.ident;
     cur_query <- cur
 
   method start_new_query_binary =
@@ -622,7 +622,7 @@ class binary_decision_tree = object(self)
   method random_byte =
     let b = Random.State.int randomness 256 in
       if !opt_trace_randomness then
-	Printf.printf "Rolling a 256-sided die to get %d\n" b;
+	Printf.eprintf "Rolling a 256-sided die to get %d\n" b;
       b
 
   method random_word =

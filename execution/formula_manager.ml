@@ -532,7 +532,7 @@ struct
 		     let e' = loop (decode_exp e_enc)
 		     in
 		       if !opt_trace_temps then
-			 Printf.printf "%s evaluates to %s\n"
+			 Printf.eprintf "%s evaluates to %s\n"
 			   s (V.exp_to_string e');
 		       Hashtbl.replace temp_var_num_evaled n e';
 		       e')
@@ -620,7 +620,7 @@ struct
 	      let table = List.nth tables_by_idx table_num in
 		if idx >= List.length table then
 		  (* Undefined, treat as 0 *)
-		  (* Printf.printf "Out of range index %d in table %d\n"
+		  (* Printf.eprintf "Out of range index %d in table %d\n"
 		     idx table_num; *)
 		  V.Constant(V.Int(elt_ty, 0L))
 		else
@@ -826,7 +826,7 @@ struct
 	(fun e ->
 	   let e' = self#simplify_exp e in
 	     (* if e <> e' then
-		Printf.printf "Simplifying %s -> %s\n"
+		Printf.eprintf "Simplifying %s -> %s\n"
 		(V.exp_to_string e) (V.exp_to_string e'); *)
 	     (* We're supposed to simplify expressions as we build
 		them, so something is going wrong if they get way to big

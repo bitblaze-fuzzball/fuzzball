@@ -2138,12 +2138,12 @@ struct
 	   | _ -> failwith "Unsupported memory type") in
 	(if !opt_trace_loads then
 	   (if !opt_trace_eval then
-	      Printf.printf "    "; (* indent to match other details *)
-	    Printf.printf "Load from conc. mem ";
-	    Printf.printf "%08Lx = %s" addr (to_str v);
+	      Printf.eprintf "    "; (* indent to match other details *)
+	    Printf.eprintf "Load from conc. mem ";
+	    Printf.eprintf "%08Lx = %s" addr (to_str v);
 	    (if !opt_use_tags then
-	       Printf.printf " (%Ld @ %08Lx)" (D.get_tag v) (self#get_eip));
-	    Printf.printf "\n"));
+	       Printf.eprintf " (%Ld @ %08Lx)" (D.get_tag v) (self#get_eip));
+	    Printf.eprintf "\n"));
 	if addr >= 0L && addr < 4096L then
 	  self#raise_null_deref addr;
 	(v, ty)
@@ -2165,12 +2165,12 @@ struct
       in
 	if !opt_trace_stores then
 	  (if !opt_trace_eval then
-	     Printf.printf "    "; (* indent to match other details *)
-	   Printf.printf "Store to conc. mem ";
-	   Printf.printf "%08Lx = %s" addr (to_str value);
+	     Printf.eprintf "    "; (* indent to match other details *)
+	   Printf.eprintf "Store to conc. mem ";
+	   Printf.eprintf "%08Lx = %s" addr (to_str value);
 	   (if !opt_use_tags then
-	      Printf.printf " (%Ld @ %08Lx)" (D.get_tag value) (self#get_eip));
-	   Printf.printf "\n");
+	      Printf.eprintf " (%Ld @ %08Lx)" (D.get_tag value) (self#get_eip));
+	   Printf.eprintf "\n");
 	if addr >= 0L && addr < 4096L then
 	  self#raise_null_deref addr
 
@@ -2343,7 +2343,7 @@ struct
 	   | _ -> failwith "unexpected unop/type in eval_int_exp_ty")
       in
 	if !opt_trace_eval then
-	  Printf.printf "    %s(%s) = %s\n" (V.unop_to_string op)
+	  Printf.eprintf "    %s(%s) = %s\n" (V.unop_to_string op)
 	    (D.to_string_32 v1) (D.to_string_32 result);
 	result, ty1
 
@@ -2501,7 +2501,7 @@ struct
 	| V.Lval(V.Temp((_,s,ty) as var)) ->
 	    let v = self#get_int_var var in
 	      if !opt_trace_eval then
-		Printf.printf "    %s is %s\n" s (D.to_string_32 v);
+		Printf.eprintf "    %s is %s\n" s (D.to_string_32 v);
 	      (v, ty)
 	| V.Lval(V.Mem(memv, idx, ty)) ->
 	    self#handle_load idx ty
@@ -2627,13 +2627,13 @@ struct
 	  | [] -> "fallthrough"
 	  | st :: rest ->
 	      if !opt_trace_stmts then
-		(Printf.printf "  %08Lx."
+		(Printf.eprintf "  %08Lx."
 		   (try self#get_eip with NotConcrete(_) -> 0L);
 		 (if stmt_num = -1 then
-		    Printf.printf "   "
+		    Printf.eprintf "   "
 		  else
-		    Printf.printf "%03d" stmt_num);
-		 Printf.printf " %s\n" (stmt_to_string_compact st));
+		    Printf.eprintf "%03d" stmt_num);
+		 Printf.eprintf " %s\n" (stmt_to_string_compact st));
 	      stmt_num <- stmt_num + 1;
 	      (match st with
 		 | V.Jmp(l) -> jump (self#eval_label_exp l)
@@ -2660,7 +2660,7 @@ struct
 		 | V.Move(V.Temp((n,s,t) as v), e) ->
 		     let rhs = self#eval_int_exp_simplify e in
 		     let trace_eval () =
-		       Printf.printf "    %s <- %s\n" s (D.to_string_32 rhs)
+		       Printf.eprintf "    %s <- %s\n" s (D.to_string_32 rhs)
 		     in
 		       if !opt_trace_eval then
 			 trace_eval ()

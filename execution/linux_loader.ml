@@ -266,7 +266,7 @@ let load_ldso fm dso vaddr =
       close_in ic;
       let r = Int64.add !vaddr dso_eh.entry in
 	if !opt_trace_setup then
-	  Printf.printf "Finished ldso loading, entry at 0x%08Lx\n" r;
+	  Printf.eprintf "Finished ldso loading, entry at 0x%08Lx\n" r;
 	r
 
 let load_x87_emulator fm emulator =
@@ -452,7 +452,7 @@ let load_dynamic_program (fm : fragment_machine) fname load_base
     initial_break := None;
     check_elf_arch eh.machine do_setup;
     if !opt_trace_setup then
-      Printf.printf "Loading executable from %s\n" (chroot fname);
+      Printf.eprintf "Loading executable from %s\n" (chroot fname);
     entry_point := eh.entry;
     List.iter
       (fun phr ->
@@ -542,7 +542,7 @@ let read_core_note fm ic =
     | _ -> "unknown"
   in
     if !opt_trace_setup then
-      Printf.printf "Core note of size 0x%x, type 0x%Lx (%s), name %s\n"
+      Printf.eprintf "Core note of size 0x%x, type 0x%Lx (%s), name %s\n"
 	descsz ntype type_str name;
     (* The ELF spec seems at some places to suggest that the contents
        of notes will consist only of 4-bte values, but other parts of the

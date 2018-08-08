@@ -611,7 +611,7 @@ let cmdline_opts =
     ("-solve-final-pc", Arg.Set(opt_solve_final_pc),
      " Solve final path condition");
     ("-git-version", Arg.Unit
-       (fun () -> Printf.printf "GIT version %s\n" Git_version.git_version),
+       (fun () -> Printf.eprintf "GIT version %s\n" Git_version.git_version),
      " Print GIT revision hash");
     ("-svn-version", Arg.Unit
       (fun () -> 
