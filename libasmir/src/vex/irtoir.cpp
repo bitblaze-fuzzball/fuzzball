@@ -327,6 +327,9 @@ Temp *mk_temp( IRType ty, vector<Stmt *> *stmts )
     return mk_temp(typ, stmts);
 }
 
+/* Note that the Exp *t that is returned is already used once in the
+   definition, so all subsequent uses need to be cloned, unlike the
+   result of mk_temp(). */
 Temp *mk_temp_def(reg_t type, Exp *val, vector<Stmt *> *stmts) {
     Temp *t = mk_temp(type, stmts);
     stmts->push_back(new Move(t, val));
@@ -665,15 +668,113 @@ Exp *translate_MullS64( Exp *arg1, Exp *arg2, vector<Stmt *> *irout )
     return vec_ite(negprod, translate_Neg128(absprod, irout), ecl(absprod));
 }
 
+void split2x32(Exp *x64, Exp **w1, Exp **w0) {
+    *w1 =  ex_h_cast(x64, REG_32);
+    *w0 = _ex_l_cast(x64, REG_32);
+}
+
+/* Create Vine IR for a limited form of 128-bit by 64-bit unsigned
+   division and modulo, implemented using only 64-bit operations. This
+   algorithm works for the case where the divisor (denominator) is
+   nomalized to have its high bit be set, and the high half of the
+   dividend (numerator) is less then the divisor, which ensures that
+   the quotient will fit in 64-bits. Division where the divisor is
+   half the size of the numerator is a convenient building block, so
+   we take a "long-division" approach in which the divisor is in turn
+   split into 32-bit halves. We then do two rounds of 64-by-32
+   division, which are made complicated by the needed for some extra
+   adjustments.
+
+   This approach is modeled after the division implemented in glibc;
+   in particular this function is analogous to a glibc macro named
+   "udiv_qrnnd".
+*/
+Exp *divmod_u128_restricted(Exp *num, Exp *denom, vector<Stmt *> *irout)
+{
+    Exp *n_hi, *n_lo;
+    split_vector(num, &n_hi, &n_lo);
+
+    Exp *d_lh, *d_ll;
+    split2x32(denom, &d_lh, &d_ll);
+    d_lh = mk_temp_def(REG_64, _ex_u_cast(d_lh, REG_64), irout);
+    d_ll = mk_temp_def(REG_64, _ex_u_cast(d_ll, REG_64), irout);
+
+    /* Round one, high half d_lh of divisor */
+    Exp *rem_hi = _ex_mod(n_hi, ecl(d_lh));
+    Exp *q_hi_0 = mk_temp_def(REG_64, ex_div(n_hi, d_lh), irout);
+    Exp *m_r1 = mk_temp_def(REG_64, ex_mul(q_hi_0, d_ll), irout);
+    Exp *r_hi_0 = mk_temp_def(REG_64,
+			      translate_32HLto64(ex_l_cast(rem_hi, REG_32),
+						 ex_h_cast(n_lo, REG_32)),
+			      irout);
+    Exp *adjust_r1_1 = mk_temp_def(REG_1, ex_lt(r_hi_0, m_r1), irout);
+    Exp *q_hi_1 =
+	mk_temp_def(REG_64,
+		    _ex_ite(ecl(adjust_r1_1),
+			    _ex_sub(ecl(q_hi_0), ex_const64(1)),
+			    ecl(q_hi_0)), irout);
+    Exp *r_hi_1 =
+	mk_temp_def(REG_64,
+		    _ex_ite(ecl(adjust_r1_1), ex_add(r_hi_0, denom),
+			    ecl(r_hi_0)), irout);
+    /* r_hi_1 >= d if we didn't get a carry when adding to r_hi_0 + d */
+    Exp *adjust_r1_2 =
+	mk_temp_def(REG_1,_ex_and(ecl(adjust_r1_1), ex_ge(r_hi_1, denom),
+				  ex_lt(r_hi_1, m_r1)), irout);
+    Exp *q_hi_2 = _ex_ite(ecl(adjust_r1_2),
+			  _ex_sub(ecl(q_hi_1), ex_const64(1)),
+			  ecl(q_hi_1));
+    Exp *r_hi_2 = _ex_ite(ecl(adjust_r1_2), ex_add(r_hi_1, denom),
+			  ecl(r_hi_1));
+    Exp *r_hi_3 = mk_temp_def(REG_64, _ex_sub(r_hi_2, ecl(m_r1)), irout);
+
+    /* Round two, low half d_ll of divisor */
+    Exp *rem_lo = ex_mod(r_hi_3, d_lh);
+    Exp *q_lo_0 = mk_temp_def(REG_64, ex_div(n_hi, d_lh), irout);
+    Exp *m_r2 = mk_temp_def(REG_64, ex_mul(q_lo_0, d_ll), irout);
+    Exp *r_lo_0 = mk_temp_def(REG_64,
+			      translate_32HLto64(_ex_l_cast(rem_lo, REG_32),
+						 ex_l_cast(ecl(n_lo),REG_32)),
+			      irout);
+    Exp *adjust_r2_1 = mk_temp_def(REG_1, ex_lt(r_lo_0, m_r2), irout);
+    Exp *q_lo_1 =
+	mk_temp_def(REG_64,
+		    _ex_ite(ecl(adjust_r2_1),
+			    _ex_sub(ecl(q_lo_0), ex_const64(1)),
+			    ecl(q_lo_0)), irout);
+    Exp *r_lo_1 =
+	mk_temp_def(REG_64,
+		    _ex_ite(ecl(adjust_r2_1), ex_add(r_lo_0, denom),
+			    ecl(r_lo_0)), irout);
+    Exp *adjust_r2_2 =
+	mk_temp_def(REG_1,_ex_and(ecl(adjust_r2_1), ex_ge(r_lo_1, denom),
+				  ex_lt(r_lo_1, m_r2)), irout);
+    Exp *q_lo_2 = _ex_ite(ecl(adjust_r2_2),_ex_sub(ecl(q_lo_1), ex_const64(1)),
+			  ecl(q_lo_1));
+    Exp *r_lo_2 = _ex_ite(ecl(adjust_r2_2), ex_add(r_lo_1, denom),
+			  ecl(r_lo_1));
+    Exp *r_lo_3 = _ex_sub(r_lo_2, ecl(m_r2));
+
+    Exp *q = translate_32HLto64(ex_l_cast(q_hi_2, REG_32),
+				_ex_l_cast(q_lo_2, REG_32));
+    Exp *r = r_lo_3;
+
+    /* Package up the remainder and quotient in a 128-bit value, just
+       like Vex's DivMod operations do */
+    return translate_64HLto128(r, q);
+}
+
 /* Here we just ignore the high half of the dividend. That happens to
    work right in the common x64 case in which div on a 64-bit register
    implements 64-bit / or %. However in other cases it's just wrong. A
    true 128-bit divide would be too complex to practically represent
    in IR. */
-Exp *translate_DivModU128to64( Exp *arg1, Exp *arg2 )
+Exp *translate_DivModU128to64( Exp *arg1, Exp *arg2, vector<Stmt *> *irout)
 {
     assert(arg1);
     assert(arg2);
+#if 1
+    (void)irout;
     Exp *arg1h, *arg1l;
     split_vector(arg1, &arg1h, &arg1l);
     delete arg1h;
@@ -682,6 +783,9 @@ Exp *translate_DivModU128to64( Exp *arg1, Exp *arg2 )
     Exp *mod = new BinOp( MOD, ecl(arg1l), ecl(arg2) );
 
     return translate_64HLto128( mod, div );
+#else
+    return divmod_u128_restricted(arg1, arg2, irout);
+#endif
 }
 
 Exp *translate_DivModS128to64( Exp *arg1, Exp *arg2 )
@@ -973,11 +1077,6 @@ void split4x16(Exp *x64, Exp **w3, Exp **w2, Exp **w1, Exp **w0) {
     *w2 = _ex_l_cast( ex_h_cast(x64, REG_32), REG_16);
     *w1 = _ex_h_cast( ex_l_cast(x64, REG_32), REG_16);
     *w0 = _ex_l_cast(_ex_l_cast(x64, REG_32), REG_16);
-}
-
-void split2x32(Exp *x64, Exp **w1, Exp **w0) {
-    *w1 =  ex_h_cast(x64, REG_32);
-    *w0 = _ex_l_cast(x64, REG_32);
 }
 
 Exp *translate_CmpEQ32x2(Exp *a, Exp *b) {
@@ -1767,7 +1866,8 @@ Exp *translate_simple_binop( IRExpr *expr, IRSB *irbb, vector<Stmt *> *irout )
         case Iop_MullS32:           return translate_MullS32(arg1, arg2);
         case Iop_DivModU64to32:     return translate_DivModU64to32(arg1, arg2);
         case Iop_DivModS64to32:     return translate_DivModS64to32(arg1, arg2);
-        case Iop_DivModU128to64:    return translate_DivModU128to64(arg1,arg2);
+        case Iop_DivModU128to64:
+	    return translate_DivModU128to64(arg1, arg2, irout);
         case Iop_DivModS128to64:    return translate_DivModS128to64(arg1,arg2);
 
 	case Iop_DivU32: return new BinOp(DIVIDE, arg1, arg2);
