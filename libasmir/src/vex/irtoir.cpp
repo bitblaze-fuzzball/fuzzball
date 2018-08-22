@@ -730,7 +730,7 @@ Exp *divmod_u128_restricted(Exp *num, Exp *denom, vector<Stmt *> *irout)
 
     /* Round two, low half d_ll of divisor */
     Exp *rem_lo = ex_mod(r_hi_3, d_lh);
-    Exp *q_lo_0 = mk_temp_def(REG_64, ex_div(n_hi, d_lh), irout);
+    Exp *q_lo_0 = mk_temp_def(REG_64, ex_div(r_hi_3, d_lh), irout);
     Exp *m_r2 = mk_temp_def(REG_64, ex_mul(q_lo_0, d_ll), irout);
     Exp *r_lo_0 = mk_temp_def(REG_64,
 			      translate_32HLto64(_ex_l_cast(rem_lo, REG_32),
