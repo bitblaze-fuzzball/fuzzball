@@ -764,6 +764,120 @@ Exp *divmod_u128_restricted(Exp *num, Exp *denom, vector<Stmt *> *irout)
     return translate_64HLto128(r, q);
 }
 
+/* Make formulas to compute the number of leading zeros of a 64-bit
+   value, using only ITE instead of branches. Also compared to the
+   linear number of comparisons used in the translate_Clz64, this uses
+   a log-steps algorithm with more complex data flow. I'm not sure
+   which representation is likely to be more efficient for
+   reasoning. */
+Exp* clz64_ite(Exp *x, vector<Stmt *> *irout) {
+    Exp *lead32 = mk_temp_def(REG_1, _ex_le(x, ex_const64(0xffffffff)), irout);
+    Exp *x_32 = mk_temp_def(REG_32,
+			    _ex_ite(ecl(lead32), ex_l_cast(x, REG_32),
+				    ex_h_cast(x, REG_32)), irout);
+    Exp *lead16 = mk_temp_def(REG_1, _ex_le(ecl(x_32), ex_const(0xffff)),
+			      irout);
+    Exp *x_16 = mk_temp_def(REG_16,
+			    _ex_ite(ecl(lead16), ex_l_cast(x_32, REG_16),
+				    ex_h_cast(x_32, REG_16)), irout);
+    Exp *lead8 = mk_temp_def(REG_1, _ex_le(ecl(x_16), ex_const(REG_16, 0xff)),
+			     irout);
+    Exp *x_8 = mk_temp_def(REG_8,
+			   _ex_ite(ecl(lead8), ex_l_cast(x_16, REG_8),
+				   ex_h_cast(x_16, REG_8)), irout);
+    Exp *lead4 = mk_temp_def(REG_1, _ex_le(ecl(x_8), ex_const(REG_8, 0x0f)),
+			     irout);
+    Exp *x_4 = mk_temp_def(REG_8,
+			   _ex_ite(ecl(lead4), ecl(x_8),
+				   _ex_shr(ecl(x_8), ex_const(4))), irout);
+    Exp *lead2 = mk_temp_def(REG_1, _ex_le(ecl(x_4), ex_const(REG_8, 0x03)),
+			     irout);
+    Exp *x_2 = mk_temp_def(REG_8,
+			   _ex_ite(ecl(lead2), ecl(x_4),
+				   _ex_shr(ecl(x_4), ex_const(2))), irout);
+    Exp *low =
+	_ex_ite(_ex_ge(ecl(x_2), ex_const(REG_8, 2)), ex_const(0),
+		_ex_ite(_ex_eq(ecl(x_2), ex_const(REG_8, 0)), ex_const(2),
+			ex_const(1)));
+    Exp *count32 = _ex_shl(_ex_u_cast(ecl(lead32), REG_32), ex_const(5));
+    Exp *count16 = _ex_shl(_ex_u_cast(ecl(lead16), REG_32), ex_const(4));
+    Exp *count8  = _ex_shl(_ex_u_cast(ecl(lead8),  REG_32), ex_const(3));
+    Exp *count4  = _ex_shl(_ex_u_cast(ecl(lead4),  REG_32), ex_const(2));
+    Exp *count2  = _ex_shl(_ex_u_cast(ecl(lead2),  REG_32), ex_const(1));
+    Exp *high_count = _ex_or(_ex_or(count32, count16, count8, count4), count2);
+    Exp *total = _ex_add(high_count, low);
+    return total;
+
+}
+
+/* This version of 128-by-64 bit division is for the limited case
+   supported by x86-64 and s390, where the numerator can be anything
+   and the divisor can be anything but 0, but the quotient has to fit
+   in 64 bits. If we can tell the the quotient would overflow, it
+   yields an all-1-bits value instead. */
+Exp *divmod_u128_ciscish(Exp *num, Exp *denom, vector<Stmt *> *irout) {
+    Exp *n_hi, *n_lo;
+    split_vector(num, &n_hi, &n_lo);
+
+    Exp *bm = mk_temp_def(REG_32, clz64_ite(denom, irout), irout);
+    Exp *b = _ex_sub(ex_const(64), ecl(bm));
+
+    /* "Case 0": actually just 64-bit operations. This case isn't in
+       the model glibc code, and could be handled fine by case 1, but
+       I expect this a common case for binaries compiled from C code
+       with 64-bit operations, and it is a big simpliciation (avoiding
+       both the clz and the divmod_u128_restricted) */
+    Exp *case0 = mk_temp_def(REG_1, _ex_eq(n_hi, ex_const64(0)), irout);
+    Exp *q_case0 = _ex_div(n_lo, ecl(denom));
+    Exp *r_case0 = ex_mod(n_lo, denom);
+
+    /* "Case 2" and "case 3" are the ones where the quotient doesn't
+       fit in 128 bits, so here we just skip them. */
+    Exp *case23 = mk_temp_def(REG_1, ex_ge(n_hi, denom), irout);
+
+    /* "Case 1" is the most compilcated remaining case that requires
+       normalizing. */
+    Exp *d_norm = mk_temp_def(REG_64, ex_shl(denom, bm), irout);
+    Exp *n_hi_norm_e = _ex_or(ex_shl(n_hi, bm),
+			      _ex_ite(_ex_eq(ecl(bm), ex_const(0)),
+				      _ex_shr(ecl(n_lo), b), ex_const64(0)));
+    Exp *n_hi_norm = mk_temp_def(REG_64, n_hi_norm_e, irout);
+    Exp *n_lo_norm = mk_temp_def(REG_64, ex_shl(n_lo, bm), irout);
+    Exp *n128_norm = translate_64HLto128(n_hi_norm, n_lo_norm);
+    Exp *qrnnd_result = divmod_u128_restricted(n128_norm, ecl(d_norm), irout);
+    Exp *q_case1, *r_case1;
+    split_vector(qrnnd_result, &r_case1, &q_case1);
+    Exp *r_case1_norm = _ex_shr(r_case1, ecl(bm));
+
+    Exp *q = _ex_ite(ecl(case0), q_case0,
+		     _ex_ite(ecl(case23), ex_const64(-1),
+			     q_case1));
+    Exp *r = _ex_ite(ecl(case0), r_case0,
+		     _ex_ite(ecl(case23), ex_const64(-1),
+			     r_case1_norm));
+
+    return translate_64HLto128(r, q);
+}
+
+/* The labelling of the cases in the above code is chosen to match the
+   7 cases that would be needed for full 128-by-128 division, or
+   division that always produced the correct low bits of the quotient
+   even if it doesn't fit in 64 bits:
+
+   Case 0: d_hi == 0 && n_hi == 0 (overlaps with case 1)
+   Case 1: d_hi == 0 && d_lo > n_hi
+   Case 2: d_hi == 0 && d_lo <= n_hi && (d_lo & 0x8000000000000000) == 1
+   Case 3: d_hi == 0 && d_lo <= n_hi && (d_lo & 0x8000000000000000) == 0
+   Case 4: d_hi != 0 && d_hi > n_hi
+   Case 5: d_hi != 0 && d_hi <= n_hi && (d_hi & 0x8000000000000000) == 1
+   Case 6: d_hi != 0 && d_hi <= n_hi && (d_hi & 0x8000000000000000) == 0
+
+   I (SMcC) now think that would be within reason to implement here as
+   well, but it would require 3-4 times more code than
+   divmod_u128_ciscish, including at least 2 copies of
+   divmod_u128_restricted, so let's wait until we see a need for it.
+*/
+
 /* Here we just ignore the high half of the dividend. That happens to
    work right in the common x64 case in which div on a 64-bit register
    implements 64-bit / or %. However in other cases it's just wrong. A
@@ -784,7 +898,7 @@ Exp *translate_DivModU128to64( Exp *arg1, Exp *arg2, vector<Stmt *> *irout)
 
     return translate_64HLto128( mod, div );
 #else
-    return divmod_u128_restricted(arg1, arg2, irout);
+    return divmod_u128_ciscish(arg1, arg2, irout);
 #endif
 }
 
