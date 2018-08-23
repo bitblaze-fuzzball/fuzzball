@@ -704,8 +704,8 @@ Exp *divmod_u128_restricted(Exp *num, Exp *denom, vector<Stmt *> *irout)
     Exp *q_hi_0 = mk_temp_def(REG_64, ex_div(n_hi, d_lh), irout);
     Exp *m_r1 = mk_temp_def(REG_64, ex_mul(q_hi_0, d_ll), irout);
     Exp *r_hi_0 = mk_temp_def(REG_64,
-			      translate_32HLto64(ex_l_cast(rem_hi, REG_32),
-						 ex_h_cast(n_lo, REG_32)),
+			      translate_32HLto64(_ex_l_cast(rem_hi, REG_32),
+						 _ex_h_cast(n_lo, REG_32)),
 			      irout);
     Exp *adjust_r1_1 = mk_temp_def(REG_1, ex_lt(r_hi_0, m_r1), irout);
     Exp *q_hi_1 =
@@ -734,7 +734,7 @@ Exp *divmod_u128_restricted(Exp *num, Exp *denom, vector<Stmt *> *irout)
     Exp *m_r2 = mk_temp_def(REG_64, ex_mul(q_lo_0, d_ll), irout);
     Exp *r_lo_0 = mk_temp_def(REG_64,
 			      translate_32HLto64(_ex_l_cast(rem_lo, REG_32),
-						 ex_l_cast(ecl(n_lo),REG_32)),
+						 ex_l_cast(n_lo, REG_32)),
 			      irout);
     Exp *adjust_r2_1 = mk_temp_def(REG_1, ex_lt(r_lo_0, m_r2), irout);
     Exp *q_lo_1 =
@@ -755,7 +755,7 @@ Exp *divmod_u128_restricted(Exp *num, Exp *denom, vector<Stmt *> *irout)
 			  ecl(r_lo_1));
     Exp *r_lo_3 = _ex_sub(r_lo_2, ecl(m_r2));
 
-    Exp *q = translate_32HLto64(ex_l_cast(q_hi_2, REG_32),
+    Exp *q = translate_32HLto64(_ex_l_cast(q_hi_2, REG_32),
 				_ex_l_cast(q_lo_2, REG_32));
     Exp *r = r_lo_3;
 
@@ -839,11 +839,11 @@ Exp *divmod_u128_ciscish(Exp *num, Exp *denom, vector<Stmt *> *irout) {
        normalizing. */
     Exp *d_norm = mk_temp_def(REG_64, ex_shl(denom, bm), irout);
     Exp *n_hi_norm_e = _ex_or(ex_shl(n_hi, bm),
-			      _ex_ite(_ex_eq(ecl(bm), ex_const(0)),
+			      _ex_ite(_ex_neq(ecl(bm), ex_const(0)),
 				      _ex_shr(ecl(n_lo), b), ex_const64(0)));
     Exp *n_hi_norm = mk_temp_def(REG_64, n_hi_norm_e, irout);
     Exp *n_lo_norm = mk_temp_def(REG_64, ex_shl(n_lo, bm), irout);
-    Exp *n128_norm = translate_64HLto128(n_hi_norm, n_lo_norm);
+    Exp *n128_norm = translate_64HLto128(ecl(n_hi_norm), ecl(n_lo_norm));
     Exp *qrnnd_result = divmod_u128_restricted(n128_norm, ecl(d_norm), irout);
     Exp *q_case1, *r_case1;
     split_vector(qrnnd_result, &r_case1, &q_case1);
@@ -878,30 +878,36 @@ Exp *divmod_u128_ciscish(Exp *num, Exp *denom, vector<Stmt *> *irout) {
    divmod_u128_restricted, so let's wait until we see a need for it.
 */
 
-/* Here we just ignore the high half of the dividend. That happens to
-   work right in the common x64 case in which div on a 64-bit register
-   implements 64-bit / or %. However in other cases it's just wrong. A
-   true 128-bit divide would be too complex to practically represent
-   in IR. */
+/* The VEX IR documentation comments don't say anything about how the
+   narrowing DivMod primitives handle quotient overflow. From a brief
+   grep of the code, it appears that the only places where VEX uses
+   them and overflow is possible (i.e., not cases where the dividend
+   is a zero resp. sign extension of a shorter value) is for the
+   corresponding x86/x86-64 and S390 instructions, which raise
+   exceptions on quotient overflow. So in practice I think VEX is
+   implicitly assuming that these primitves always have the host's
+   overflow behavior. That's a bit contrary to the philosophy of
+   expressions being pure functions, but it's not a big issue because
+   code that could cause such overflows is very rare (it shouldn't
+   happen if you only use the compiler-supported 64-bit or 128-bit
+   integers, only if you write inline assembly and get it wrong).
+
+   We presently behave as if the overflow behavior is "undefined" in
+   the sense of "implementer's choice", and just give an easy but
+   erroneous result. Getting an exception-like behavior should really
+   happen by VEX changing to inserting a branch. */
 Exp *translate_DivModU128to64( Exp *arg1, Exp *arg2, vector<Stmt *> *irout)
 {
     assert(arg1);
     assert(arg2);
-#if 1
-    (void)irout;
-    Exp *arg1h, *arg1l;
-    split_vector(arg1, &arg1h, &arg1l);
-    delete arg1h;
-
-    Exp *div = new BinOp( DIVIDE, arg1l, arg2 );
-    Exp *mod = new BinOp( MOD, ecl(arg1l), ecl(arg2) );
-
-    return translate_64HLto128( mod, div );
-#else
     return divmod_u128_ciscish(arg1, arg2, irout);
-#endif
 }
 
+/* TODO. This implementation gives the wrong results if arg1h is not
+   just the sign extension of arg1l. It should be changed, probably
+   most easily to code that mostly uses divmod_u128_ciscish and deals
+   with negation separately.
+ */
 Exp *translate_DivModS128to64( Exp *arg1, Exp *arg2 )
 {
     assert(arg1);
