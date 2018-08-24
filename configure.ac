@@ -78,6 +78,11 @@ if test -e "${VEX_DIR}/priv/main/vex_svnversion.h"; then
     VEX_VERSION=`tr -d \" <"${VEX_DIR}/priv/main/vex_svnversion.h"`
 fi
 
+if test -e "${VEX_DIR}/../.git" -a -e "${VEX_DIR}/../Makefile.vex.am"; then
+    VEX_VERSION=$(expr 3400 + $(git -C ${VEX_DIR}/.. rev-list --first-parent HEAD --count -- VEX) - $(git -C ~/bitblaze/fuzzball/valgrind/VEX/.. rev-list --first-parent HEAD --author 'umn\.edu' --count -- VEX) )
+    echo Determined VEX version as ${VEX_VERSION} from git
+fi
+
 if test "${VEX_VERSION}" = ""; then
     echo "Could not determine VEX version (override with --with-vex-revision=<num>)"
     exit -1
