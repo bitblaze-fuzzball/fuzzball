@@ -1638,6 +1638,37 @@ Exp *translate_vs4x32_shift(binop_type_t op, Exp *a, Exp *b) {
     return translate_64HLto128(r_h, r_l);
 }
 
+Exp *translate_QNarrow16Sto8U(Exp *a) {
+    return _ex_ite(_ex_slt(a, ex_const(REG_16, 0)), ex_const(REG_8, 0),
+		   _ex_ite(_ex_slt(ex_const(REG_16, 255), ecl(a)),
+			   ex_const(REG_8, 255),
+			   _ex_l_cast(ecl(a), REG_8)));
+}
+
+Exp *translate_QNarrow16Sto8Ux8(Exp *a) {
+    Exp *a_high, *a_low;
+    split_vector(a, &a_high, &a_low);
+    Exp *ah3, *ah2, *ah1, *ah0;
+    split4x16(a_high, &ah3, &ah2, &ah1, &ah0);
+    Exp *al3, *al2, *al1, *al0;
+    split4x16(a_low, &al3, &al2, &al1, &al0);
+    Exp *b7 = translate_QNarrow16Sto8U(ah3);
+    Exp *b6 = translate_QNarrow16Sto8U(ah2);
+    Exp *b5 = translate_QNarrow16Sto8U(ah1);
+    Exp *b4 = translate_QNarrow16Sto8U(ah0);
+    Exp *b3 = translate_QNarrow16Sto8U(al3);
+    Exp *b2 = translate_QNarrow16Sto8U(al2);
+    Exp *b1 = translate_QNarrow16Sto8U(al1);
+    Exp *b0 = translate_QNarrow16Sto8U(al0);
+    return assemble8x8(b7, b6, b5, b4, b3, b2, b1, b0);
+}
+
+Exp *translate_QNarrowBin16Sto8Ux16(Exp *a, Exp *b) {
+    Exp *r_h = translate_QNarrow16Sto8Ux8(a);
+    Exp *r_l = translate_QNarrow16Sto8Ux8(b);
+    return translate_64HLto128(r_h, r_l);
+}
+
 const_val_t expand_lane_const(int bits) {
     const_val_t x = 0;
     if (bits & 1)
@@ -2239,6 +2270,9 @@ Exp *translate_simple_binop( IRExpr *expr, IRSB *irbb, vector<Stmt *> *irout )
         case Iop_SarN32x4:
 	    return translate_vs4x32_shift(ARSHIFT, arg1, arg2);
 #endif
+
+        case Iop_QNarrowBin16Sto8Ux16:
+	    return translate_QNarrowBin16Sto8Ux16(arg1, arg2);
 
         default:
             break;
