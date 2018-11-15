@@ -189,3 +189,5 @@ val opt_program_name : string option ref
 val opt_start_addr : int64 option ref
 val opt_argv : string list ref
 val state_start_addr : int64 option ref
+val opt_fuzz_end_addr_with_count : (int64 * int) option ref
+val opt_measure_expr_influence : Vine.exp list ref

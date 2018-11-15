@@ -98,7 +98,8 @@ let fuzz start_eip opt_fuzz_start_eip end_eips
       with
 	| StartSymbolic(eip, setup) ->
 	    fuzz_start_eip := eip;
-	    extra_setup := setup);
+	    extra_setup := setup
+	| ReachedEndAddr -> failwith "Reached End addr before Start!");
      let path_cond = fm#get_path_cond in
      if path_cond <> [] then 
        failwith ("The path condition is non-empty before fm#start_symbolic,"^
@@ -140,6 +141,7 @@ let fuzz start_eip opt_fuzz_start_eip end_eips
 		      Printf.printf "[trans_eval WARNING]: %s\n%!" s;
 		      stop "at unhandled system call"
 		  | SymbolicSyscall -> stop "at symbolic system call"
+                  | ReachedEndAddr -> stop "at end addr"
 		  | ReachedMeasurePoint -> stop "at measurement point"
 		  | ReachedInfluenceBound -> stop "at influence bound"
 		  | DisqualifiedPath -> stop "on disqualified path"

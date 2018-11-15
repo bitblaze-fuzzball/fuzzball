@@ -521,5 +521,6 @@ sig
     method load_word_concretize  : int64 -> bool -> string -> int64
     method load_long_concretize  : int64 -> bool -> string -> int64
     method make_sink_region : string -> int64 -> unit
+    val insn_count_tbl : (int64, int) Hashtbl.t
   end
 end

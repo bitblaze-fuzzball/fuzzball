@@ -13,6 +13,7 @@ exception KnownPath
 exception LastIteration
 exception NotConcrete of Vine.exp
 exception NullDereference
+exception ReachedEndAddr
 exception ReachedInfluenceBound
 exception ReachedMeasurePoint
 exception Signal of string
@@ -27,3 +28,4 @@ exception TooManyIterations
 exception UnhandledSysCall of string
 exception UnhandledTrap
 exception UnproductivePath
+

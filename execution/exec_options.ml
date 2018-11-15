@@ -225,3 +225,5 @@ let opt_program_name = ref None
 let opt_start_addr = ref None
 let opt_argv = ref []
 let state_start_addr = ref None
+let opt_fuzz_end_addr_with_count = ref None
+let opt_measure_expr_influence = ref []

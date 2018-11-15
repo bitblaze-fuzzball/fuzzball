@@ -46,6 +46,7 @@ let opt_concolic_cstrings = ref []
 let opt_concolic_strings = ref []
 let opt_sink_regions = ref []
 let opt_measure_expr_influence_at_strings = ref []
+let opt_measure_expr_influence_strings = ref []
 let opt_check_condition_at_strings = ref []
 let opt_extra_condition_strings = ref []
 let opt_tracepoint_strings = ref []
@@ -91,6 +92,13 @@ let influence_cmdline_opts =
 	  opt_measure_expr_influence_at_strings :=
 	    (eip_s, expr_s) :: !opt_measure_expr_influence_at_strings),           
      "eip:expr Measure influence of value at given code address");
+(*nvd*)
+    ("-measure-expr-influence", Arg.String
+       (fun s -> let (expr_s) =  s in
+	  opt_measure_expr_influence_strings :=
+	    (expr_s) :: !opt_measure_expr_influence_strings),           
+     "expr Measure influence of value at the end address");
+
     ("-periodic-influence", Arg.String
        (fun s ->
 	  let k = int_of_string s in
@@ -317,6 +325,13 @@ let explore_cmdline_opts =
        (fun s -> opt_fuzz_end_addrs :=
 	  (Int64.of_string s) :: !opt_fuzz_end_addrs),
      "addr Code address to finish fuzzing, may be repeated");
+	(*nvd*)
+    ("-fuzz-end-addr-with-count", Arg.String
+       (fun s -> 
+	let (s1, s2) = split_string ':' s in
+	  opt_fuzz_end_addr_with_count := Some ((Int64.of_string s1), (int_of_string s2))),
+     "addr:count Code address and count to finish fuzzing");
+
     ("-trace-end-jump", Arg.String
        (fun s -> opt_trace_end_jump := Some (Int64.of_string s)),
      " Print the target of the jump at the address specified by -fuzz-end-addr");
@@ -646,6 +661,12 @@ let apply_cmdline_opts_early (fm : Fragment_machine.fragment_machine) dl =
 	   ((Int64.of_string eip_s),
 	   (Vine_parser.parse_exp_from_string dl expr_s)))
       !opt_measure_expr_influence_at_strings;
+(*nvd*)
+  opt_measure_expr_influence :=
+        List.map (fun (expr_s) ->
+	   ((Vine_parser.parse_exp_from_string dl expr_s)))
+      !opt_measure_expr_influence_strings;
+
   opt_check_condition_at :=
     List.map (fun (eip_s, expr_s) ->
 		((Int64.of_string eip_s),

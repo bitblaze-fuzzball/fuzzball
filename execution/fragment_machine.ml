@@ -5,6 +5,8 @@
 
 module V = Vine;;
 
+open Exec_influence;;
+
 open Exec_domain;;
 open Exec_exceptions;;
 open Exec_utils;;
@@ -41,9 +43,13 @@ let str_trim s =
 let stmt_to_string_compact st =
   str_trim (V.stmt_to_string st)
 
-let move_hash src dest =
+let move_varhash src dest =
   V.VarHash.clear dest;
   V.VarHash.iter (fun a b -> V.VarHash.add dest a b) src
+
+let move_hash src dest =
+  Hashtbl.clear dest;
+  Hashtbl.iter (fun a b -> Hashtbl.add dest a b) src
 
 let skip_strings =
   (let h = Hashtbl.create 2 in
@@ -587,7 +593,7 @@ struct
     val mutable frag = ([], [])
     val mutable insns = []
 
-    val mutable snap = (V.VarHash.create 1, V.VarHash.create 1)
+    val mutable snap = (V.VarHash.create 1, V.VarHash.create 1, Hashtbl.create 1)
 
     method init_prog (dl, sl) =
       List.iter
@@ -626,10 +632,30 @@ struct
 
     val mutable insn_count = 0L
 
+    val insn_count_tbl = Hashtbl.create 10001
+
     method eip_hook eip =
       (* Shouldn't be needed; we instead simplify the registers when
 	 writing to them: *)
       (* self#simplify_regs; *)
+(*nvd*)
+      if Hashtbl.mem insn_count_tbl eip then 
+         let tmp_count = Hashtbl.find insn_count_tbl eip in
+             Hashtbl.replace insn_count_tbl eip (tmp_count + 1)
+      else
+         Hashtbl.replace insn_count_tbl eip 1;
+      (*Printf.printf "EIP Count Dump %d\n" (Hashtbl.find insn_count_tbl eip);*)
+
+      (match !opt_fuzz_end_addr_with_count with
+         | Some (addr, count) -> 
+             let current_count = Hashtbl.find insn_count_tbl eip in
+                 if (eip = addr) && (current_count = count) then
+			(*if !opt_measure_expr_influence <> [] then
+				measure_influence !opt_measure_expr_influence*)
+                    raise ReachedEndAddr
+         | None -> ()	
+      );
+
       (match deferred_start_symbolic with
 	 | Some setup ->
 	     deferred_start_symbolic <- None;
@@ -1631,7 +1657,7 @@ method make_flags_symbolic =
 
     method make_snap () =
       mem#make_snap ();
-      snap <- (V.VarHash.copy reg_store, V.VarHash.copy temps);
+      snap <- (V.VarHash.copy reg_store, V.VarHash.copy temps, Hashtbl.copy insn_count_tbl);
       List.iter (fun h -> h#make_snap) special_handler_list
 
     val mutable fuzz_finish_reasons = []
@@ -1657,12 +1683,14 @@ method make_flags_symbolic =
 
     method reset () =
       mem#reset ();
-      (match snap with (r, t) ->
-	 move_hash r reg_store;
-	 move_hash t temps);
+      (match snap with (r, t, counts) ->
+	 move_varhash r reg_store;
+	 move_varhash t temps;
+         move_hash counts insn_count_tbl);
       fuzz_finish_reasons <- [];
       disqualified <- false;
-      List.iter (fun h -> h#reset) special_handler_list
+      List.iter (fun h -> h#reset) special_handler_list;
+      Hashtbl.clear insn_count_tbl (*nvd resetting the hash for the next iteration*)
 
     method add_special_handler (h:special_handler) =
       special_handler_list <- h :: special_handler_list
