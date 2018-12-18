@@ -1918,10 +1918,12 @@ Exp *translate_vs2x64_shift(binop_type_t op, Exp *left_v, Exp *right) {
 }
 
 
-Exp *translate_simple_binop( IRExpr *expr, IRSB *irbb, vector<Stmt *> *irout )
+Exp *translate_binop( IRExpr *expr, IRSB *irbb, vector<Stmt *> *irout )
 {
     Exp *arg1 = translate_expr(expr->Iex.Binop.arg1, irbb, irout);
     Exp *arg2 = translate_expr(expr->Iex.Binop.arg2, irbb, irout);
+
+    const char *unk = 0;
     
     switch ( expr->Iex.Binop.op ) 
     {
@@ -2015,6 +2017,10 @@ Exp *translate_simple_binop( IRExpr *expr, IRSB *irbb, vector<Stmt *> *irout )
         case Iop_MullS16:           return translate_MullS16(arg1, arg2);
         case Iop_MullU32:           return translate_MullU32(arg1, arg2);
         case Iop_MullS32:           return translate_MullS32(arg1, arg2);
+        case Iop_MullU64:
+	    return translate_MullU64(arg1, arg2, irout);
+        case Iop_MullS64:
+	    return translate_MullS64(arg1, arg2, irout);
         case Iop_DivModU64to32:     return translate_DivModU64to32(arg1, arg2);
         case Iop_DivModS64to32:     return translate_DivModS64to32(arg1, arg2);
         case Iop_DivModU128to64:
@@ -2274,52 +2280,25 @@ Exp *translate_simple_binop( IRExpr *expr, IRSB *irbb, vector<Stmt *> *irout )
         case Iop_QNarrowBin16Sto8Ux16:
 	    return translate_QNarrowBin16Sto8Ux16(arg1, arg2);
 
+        case Iop_RoundF64toInt:
+	    unk = "Floating point binop RoundF64toInt";
+	    break;
+
+        case Iop_2xm1F64:
+	    unk = "Floating point binop 2xm1F64";
+	    break;
+
         default:
+	    unk = "Unrecognized binary op";
             break;
     }
 
     Exp::destroy(arg1);
     Exp::destroy(arg2);
 
-    return NULL;
-}
+    assert(unk);
 
-Exp *translate_binop( IRExpr *expr, IRSB *irbb, vector<Stmt *> *irout )
-{
-    assert(irbb);
-    assert(expr);
-    assert(irout);
-
-    //Exp *arg2;
-    Exp *result;
-
-    if ( (result = translate_simple_binop(expr, irbb, irout)) != NULL )
-        return result;
-
-    switch ( expr->Iex.Binop.op ) 
-    {
-        case Iop_MullU64: {
-	    Exp *arg1 = translate_expr(expr->Iex.Binop.arg1, irbb, irout);
-	    Exp *arg2 = translate_expr(expr->Iex.Binop.arg2, irbb, irout);
-	    return translate_MullU64(arg1, arg2, irout);
-	}
-
-        case Iop_MullS64: {
-	    Exp *arg1 = translate_expr(expr->Iex.Binop.arg1, irbb, irout);
-	    Exp *arg2 = translate_expr(expr->Iex.Binop.arg2, irbb, irout);
-	    return translate_MullS64(arg1, arg2, irout);
-	}
-
-        // arg1 in this case, specifies rounding mode, and so is ignored
-        case Iop_RoundF64toInt:
-        case Iop_2xm1F64:
-            return new Unknown("Floating point binop");
-
-        default:  
-	    return new Unknown("Unrecognized binary op");
-    }
-
-    return NULL;
+    return new Unknown(unk);
 }
 
 Exp *translate_triop( IRExpr *expr, IRSB *irbb, vector<Stmt *> *irout )
