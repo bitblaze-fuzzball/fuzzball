@@ -37,7 +37,7 @@ class stpvc_engine = object(self)
   method add_decl d =
     match d with
       | InputVar(v) -> free_vars <- v :: free_vars
-      | TempVar(v, e) -> eqns <- (v, e) :: eqns
+      | TempVar(v, e) -> eqns <- (v, e) :: eqns; temp_vars <- v :: temp_vars
       | TempArray(v, el) ->
 	  failwith "-solver stpvc does not support -tables-as-arrays yet"
 
