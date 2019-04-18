@@ -71,6 +71,8 @@ val opt_trace_callstack : bool ref
 val opt_trace_sym_addrs : bool ref
 val opt_trace_sym_addr_details : bool ref
 val opt_trace_syscalls : bool ref
+val opt_turn_opt_off_range : (string * int64 * int64) list ref
+val opt_turn_opt_on_range : (string * int64 * int64) list ref
 val opt_trace_detailed_ranges : (int64 * int64) list ref
 val opt_extra_conditions : Vine.exp list ref
 val opt_tracepoints : (int64 * string * Vine.exp) list ref
@@ -184,6 +186,8 @@ val add_delimited_num_escstr_pair :
   (int64 * string) list ref -> char -> string -> unit
 val add_delimited_str_num_pair :
   (string * int64) list ref -> char -> string -> unit
+val add_delimited_triple :
+  (string * int64 * int64 ) list ref -> char -> string -> unit
 
 val opt_program_name : string option ref
 val opt_start_addr : int64 option ref

@@ -80,6 +80,7 @@ class virtual fragment_machine : object
   method virtual concretize_misc : unit
   method virtual add_extra_eip_hook :
     (fragment_machine -> int64 -> unit) -> unit
+  method virtual add_range_opt : string -> bool ref -> unit
   method virtual eip_hook : int64 -> unit
   method virtual get_eip : int64
   method virtual set_eip : int64 -> unit
@@ -283,6 +284,7 @@ sig
     method set_frag : Vine.program -> unit
     method concretize_misc : unit
     method add_extra_eip_hook : (fragment_machine -> int64 -> unit) -> unit
+    method add_range_opt : string -> bool ref -> unit
     method eip_hook : int64 -> unit
     method get_eip : int64
     method set_eip : int64 -> unit
