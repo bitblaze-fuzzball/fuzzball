@@ -310,7 +310,8 @@ class virtual fragment_machine = object
   method virtual set_frag : Vine.program -> unit
   method virtual concretize_misc : unit
   method virtual add_extra_eip_hook :
-    (fragment_machine -> int64 -> unit) -> unit
+      (fragment_machine -> int64 -> unit) -> unit
+  method virtual add_range_opt : string -> bool ref -> unit
   method virtual eip_hook : int64 -> unit
   method virtual get_eip : int64
   method virtual set_eip : int64 -> unit
@@ -626,6 +627,11 @@ struct
 
     val mutable insn_count = 0L
 
+    val range_opts_tbl = Hashtbl.create 2
+
+    method add_range_opt opt_str opt =
+      Hashtbl.replace range_opts_tbl opt_str opt	
+
     method eip_hook eip =
       (* Shouldn't be needed; we instead simplify the registers when
 	 writing to them: *)
@@ -649,6 +655,17 @@ struct
 	 print_string "\n"; *)
       List.iter (fun fn -> (fn (self :> fragment_machine) eip))
 	extra_eip_hooks;
+      let control_range_opts opts_list range_val other_val =
+	List.iter (
+	  fun (opt_str, eip1, eip2) ->
+	    let opt = Hashtbl.find range_opts_tbl opt_str in
+	    if eip = eip1 then
+	      opt := range_val
+	    else if eip = eip2 then 
+	      opt := other_val
+	) opts_list in
+      control_range_opts !opt_turn_opt_off_range false true;
+      control_range_opts !opt_turn_opt_on_range true false;
       self#watchpoint
 
     method get_eip =
