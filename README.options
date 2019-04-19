@@ -648,6 +648,20 @@ not for program counter but for path condition. "short", "word", and
 -translation-cache-size <N>
   Save translations of at most N instructions
 
+-turn-opt-off-range <opt>:<addr1>:<addr2>
+  Turn a boolean FuzzBALL option 'opt' off in the address range 
+  [addr1, addr2) when addr1 is reached before addr2. This option 
+  will also turn the option 'opt' on at all program locations 
+  not in [addr1, addr2). 'addr1' does not have to be less than
+  'addr2'.
+
+-turn-opt-on-range <opt>:<addr1>:<addr2>
+  Turn a boolean FuzzBALL option 'opt' on in the address range 
+  [addr1, addr2) when addr1 is reached before addr2. This option 
+  will also turn the option 'opt' off at all program locations 
+  not in [addr1, addr2). 'addr1' does not have to be less than
+  'addr2'.
+
 -use-ids-from-core
   Simulate getpid(), etc., using values from core file
 
