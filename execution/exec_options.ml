@@ -120,6 +120,8 @@ let opt_trace_callstack = ref false
 let opt_trace_sym_addrs = ref false
 let opt_trace_sym_addr_details = ref false
 let opt_trace_syscalls = ref false
+let opt_turn_opt_off_range = ref []
+let opt_turn_opt_on_range = ref []
 let opt_trace_detailed_ranges = ref []
 let opt_extra_conditions = ref []
 let opt_tracepoints = ref []
@@ -319,6 +321,23 @@ let rec split_string_list delim s =
   else
     [s]
 
+let add_delimited_triple opt char s =
+  let rec loop arg_str =
+    try 
+      let (str1, str2) = split_string char arg_str in
+      [str1] @ (loop str2)
+    with Not_found -> [arg_str]
+  in
+  let list_str = loop s in
+  if (List.length list_str) != 3 then
+    failwith
+      (Printf.sprintf
+	 "add_delimited_triple did not find 3 delimited values in option value: %s" s);
+  opt := (List.nth list_str 0, 
+   (Int64.of_string (List.nth list_str 1)), 
+   (Int64.of_string (List.nth list_str 2))) :: !opt
+
+      
 let opt_program_name = ref None
 
 let get_program_name () =

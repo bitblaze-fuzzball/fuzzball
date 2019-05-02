@@ -290,6 +290,13 @@ let build_startup_state (fm : Fragment_machine.fragment_machine) eh load_base ld
     fm#store_cstr !esp 0L s;
     !esp
   in
+  let _push_cstr_padded s =
+    let real_len = (String.length s) + 1 in
+    let padded_len = real_len + (-real_len land 31) in
+      esp := Int64.sub !esp (Int64.of_int padded_len);
+      fm#store_cstr !esp 0L s;
+      !esp
+  in
   let push_word i =
     match !opt_arch with
       | (X86|ARM) ->

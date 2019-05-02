@@ -127,6 +127,10 @@ let prefuzz_region start_eip opt_fuzz_start_eip fuzz_start_eip fm asmir_gamma ex
   | StartSymbolic(eip, setup) ->
     fuzz_start_eip := eip;
     extra_setup := setup
+  | SimulatedExit(code) ->
+      Printf.eprintf "Program exited (code %Ld) before reaching fuzz-start-addr\n" code;
+      Printf.eprintf "(Maybe recheck your fuzz start address?)\n";
+      exit 2 (* This used to be an uncaught exception *)
 
 let fuzz_sighandle_setup fm =
   Sys.set_signal Sys.sighup

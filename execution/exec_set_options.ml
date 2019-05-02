@@ -221,6 +221,12 @@ let symbolic_state_cmdline_opts =
     ("-skip-call-ret-symbol-once", Arg.String
        (add_delimited_num_str_pair opt_skip_call_addr_symbol_once '='),
      "addr=symname Like -s-c-r-s, but always the same variable");
+    ("-turn-opt-off-range", Arg.String
+      (add_delimited_triple opt_turn_opt_off_range ':'),
+     "opt:addr1:addr2 Turns option 'opt' off in address range [addr1, addr2)");
+    ("-turn-opt-on-range", Arg.String
+      (add_delimited_triple opt_turn_opt_on_range ':'),
+    "opt:addr1:addr2 Turns option 'opt' on in address range [addr1, addr2)");
   ]
 
 let slurp_file fname =
@@ -449,7 +455,26 @@ let fuzzball_cmdline_opts =
     ("-no-fail-on-huer", Arg.Clear(opt_fail_offset_heuristic),
      " Do not fail when a heuristic (e.g. offset optimization) fails.");
   ]
-
+(* The 2nd entry in these tuples is used when controlling -trace-basic 
+   using -turn-opt-[on|off]-range, ditto for -trace-detailed *)
+let trace_basic_opts = [(opt_trace_binary_paths, "trace-binary-paths");
+			(opt_trace_conditions, "trace-conditions");
+			(opt_trace_decisions, "trace-decisions");
+			(opt_trace_iterations, "trace-iterations");
+			(opt_trace_setup, "trace-setup");
+			(opt_trace_stopping, "trace-stopping");
+			(opt_trace_sym_addrs, "trace-sym-addrs");
+			(opt_trace_unexpected, "trace-unexpected");
+			(opt_coverage_stats, "coverage-stats");
+			(opt_time_stats, "time-stats")]
+let trace_detailed_opts = [(opt_trace_insns, "trace-insns");
+			   (opt_trace_loads, "trace-loads");
+			   (opt_trace_stores, "trace-stores");
+			   (opt_trace_temps, "trace-temps");
+			   (opt_trace_syscalls, "trace-syscalls");
+			   (opt_trace_registers, "trace-registers");
+			   (opt_trace_segments, "trace-segments");
+			   (opt_trace_taint, "trace-taint")]
 let cmdline_opts =
   [
     ("-arch", Arg.String
@@ -471,19 +496,8 @@ let cmdline_opts =
     ("-read-write-ratio-warn", Arg.Set_int opt_read_write_warn_ratio,
      "Int Sets a threshold where, if we see more than X writes per read for a piece of memory, a warning is issued");
     ("-trace-basic",
-     (Arg.Unit
-	(fun () ->
-	  opt_trace_basic := true;
-	  opt_trace_binary_paths := true;
-	  opt_trace_conditions := true;
-	  opt_trace_decisions := true;
-	  opt_trace_iterations := true;
-	  opt_trace_setup := true;
-	  opt_trace_stopping := true;
-	  opt_trace_sym_addrs := true;
-	  opt_trace_unexpected := true;
-	  opt_coverage_stats := true;
-	  opt_time_stats := true)),
+     (Arg.Unit (fun () ->
+		  List.iter (fun (opt, _) -> opt := true) trace_basic_opts)),
      " Enable several common trace and stats options");
     ("-trace-binary-paths", Arg.Set(opt_trace_binary_paths),
      " Print decision paths as bit strings");
@@ -494,17 +508,8 @@ let cmdline_opts =
     ("-trace-decisions", Arg.Set(opt_trace_decisions),
      " Print symbolic branch choices");
     ("-trace-detailed",
-     (Arg.Unit
-	(fun () ->
-	  opt_trace_detailed := true;
-	  opt_trace_insns := true;
-	  opt_trace_loads := true;
-	  opt_trace_stores := true;
-	  opt_trace_temps := true;
-	  opt_trace_syscalls := true;
-	  opt_trace_registers := true;
-	  opt_trace_segments := true;
-	  opt_trace_taint := true)),
+     (Arg.Unit (fun () ->
+	  List.iter (fun (opt, _) -> opt := true) trace_detailed_opts;)),
      " Enable several verbose tracing options");
     ("-trace-detailed-range", Arg.String
       (add_delimited_pair opt_trace_detailed_ranges '-'),
@@ -668,7 +673,58 @@ let set_program_name s =
 
 let default_on_missing = ref (fun fm -> fm#on_missing_zero)
 
+let set_range_opts (fm : Fragment_machine.fragment_machine) opts_list value =
+  let final_range_opts = ref [] in
+  let set_range_opt (fm : Fragment_machine.fragment_machine) input_opt_str value
+      eip1 eip2 =
+    List.iter (
+      fun (opt_str,spec,_) ->
+	(match spec with
+	| Arg.Set opt 
+	| Arg.Clear opt ->
+	   (* All option strings begin with a -, e.g., -trace-insns. 
+	      But, -turn-opt-[on|off]-range takes the option name without 
+	      the hyphen as the first argument.*)
+	   if (String.equal opt_str ("-" ^ input_opt_str)) then (
+	     opt := value;
+	     fm#add_range_opt input_opt_str opt;
+	     final_range_opts := !final_range_opts @ [(input_opt_str, eip1, eip2)])
+	| Arg.Unit _ ->
+	   (* -trace-basic expands into a list of options 
+	      that should be turned on or off in the range of -trace-basic.
+	      Ditto for -trace-detailed *)
+	   if String.equal opt_str ("-" ^ input_opt_str) then (
+	     let verbose_opts = ref [] in
+	     if String.equal opt_str "-trace-basic" then 
+	       verbose_opts := trace_basic_opts
+	     else if String.equal opt_str "-trace-detailed" then
+	       verbose_opts := trace_detailed_opts;
+	     List.iter (fun (opt, v_opt_str) ->
+	       opt := value;
+	       fm#add_range_opt v_opt_str opt;
+	       final_range_opts := !final_range_opts @
+		 [(v_opt_str, eip1, eip2)];
+	       ) !verbose_opts);
+	| _ -> ());
+	) (cmdline_opts @ Options_linux.linux_cmdline_opts @
+	     State_loader.state_loader_cmdline_opts @
+	     concrete_state_cmdline_opts @ symbolic_state_cmdline_opts @
+	     concolic_state_cmdline_opts @ explore_cmdline_opts @ tags_cmdline_opts @
+	     fuzzball_cmdline_opts @ Options_solver.solver_cmdline_opts @
+	     influence_cmdline_opts) in
+  List.iter ( fun (opt_str, eip1, eip2) ->
+    set_range_opt fm opt_str value eip1 eip2
+  ) opts_list;
+  if (List.length opts_list) <> 0 && (List.length !final_range_opts) = 0 then
+    Printf.eprintf "****Warning: an incorrect option was given in -turn-opt-%s-range\n"
+      (if value then "off" else "on");
+  !final_range_opts
+  
 let apply_cmdline_opts_early (fm : Fragment_machine.fragment_machine) dl =
+  if (List.length !opt_turn_opt_off_range) > 0 then
+    opt_turn_opt_off_range := set_range_opts fm !opt_turn_opt_off_range true;
+  if (List.length !opt_turn_opt_on_range) > 0 then
+    opt_turn_opt_on_range := set_range_opts fm !opt_turn_opt_on_range false;
   if !opt_random_memory then
     fm#on_missing_random
   else if !opt_zero_memory then

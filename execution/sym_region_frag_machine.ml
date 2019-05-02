@@ -58,14 +58,18 @@ struct
      bound on the size of a table. *)
   let narrow_bitwidth form_man e =
     let combine wd res = min wd res in
+    let clamp_high a =
+      let hi = V.bits_of_width (Vine_typecheck.infer_type_fast e) in
+      min a hi
+    in
     let f loop e =
       match e with
 	| V.Constant(V.Int(ty, v)) -> 1 + floor_log2 v
 	| V.BinOp(V.BITAND, e1, e2) -> min (loop e1) (loop e2)
 	| V.BinOp(V.BITOR, e1, e2) -> max (loop e1) (loop e2)
 	| V.BinOp(V.XOR, e1, e2) -> max (loop e1) (loop e2)
-	| V.BinOp(V.PLUS, e1, e2) -> 1 + (max (loop e1) (loop e2))
-	| V.BinOp(V.TIMES, e1, e2) -> (loop e1) + (loop e2)
+	| V.BinOp(V.PLUS, e1, e2) -> clamp_high (1 + (max (loop e1) (loop e2)))
+	| V.BinOp(V.TIMES, e1, e2) -> clamp_high ((loop e1) + (loop e2))
 	| V.BinOp(V.MOD, e1, e2) -> min (loop e1) (loop e2)
 	| V.Cast(V.CAST_UNSIGNED, V.REG_64, e1)
 	  -> min 64 (loop e1)
@@ -96,7 +100,7 @@ struct
 	    V.bits_of_width (Vine_typecheck.infer_type_fast e)
 	| V.BinOp((V.EQ|V.NEQ|V.LT|V.LE|V.SLT|V.SLE), _, _) -> 1
 	| V.BinOp(V.LSHIFT, e1, V.Constant(V.Int(_, v))) ->
-	    (loop e1) + (Int64.to_int v)
+	    clamp_high ((loop e1) + (Int64.to_int v))
 	| V.BinOp(V.RSHIFT, e1, V.Constant(V.Int(_, v))) ->
 	    max 0 ((loop e1) - (Int64.to_int v))
 	| V.BinOp(_, _, _) ->
@@ -122,6 +126,10 @@ struct
      with a flag: some of the cases are similar, but others aren't. *)
   let narrow_bitwidth_signed form_man e =
     let combine wd res = min wd res in
+    let clamp_high a =
+      let hi = V.bits_of_width (Vine_typecheck.infer_type_fast e) in
+      min a hi
+    in
     let f loop = function
       | V.Constant(V.Int(ty, v)) ->
 	  min (1 + floor_log2 v)
@@ -129,8 +137,8 @@ struct
       | V.BinOp(V.BITAND, e1, e2) -> max (loop e1) (loop e2)
       | V.BinOp(V.BITOR, e1, e2) -> max (loop e1) (loop e2)
       | V.BinOp(V.XOR, e1, e2) -> max (loop e1) (loop e2)
-      | V.BinOp(V.PLUS, e1, e2) -> 1 + (max (loop e1) (loop e2))
-      | V.BinOp(V.TIMES, e1, e2) -> (loop e1) + (loop e2)
+      | V.BinOp(V.PLUS, e1, e2) -> clamp_high (1 + (max (loop e1) (loop e2)))
+      | V.BinOp(V.TIMES, e1, e2) -> clamp_high ((loop e1) + (loop e2))
       | V.BinOp(V.MOD, e1, e2) -> min (loop e1) (loop e2)
       | V.BinOp(V.SMOD, e1, e2) -> min (loop e1) (loop e2)
       | V.Cast((V.CAST_UNSIGNED|V.CAST_SIGNED), V.REG_64, e1)
@@ -157,7 +165,7 @@ struct
 	  V.bits_of_width (Vine_typecheck.infer_type_fast e)
       | V.BinOp((V.EQ|V.NEQ|V.LT|V.LE|V.SLT|V.SLE), _, _) -> 1
       | V.BinOp(V.LSHIFT, e1, V.Constant(V.Int(_, v))) ->
-	  (loop e1) + (Int64.to_int v)
+	  clamp_high ((loop e1) + (Int64.to_int v))
       | V.BinOp(_, _, _) ->
 	  V.bits_of_width (Vine_typecheck.infer_type_fast e)
       | V.Ite(_, te, fe) -> max (loop te) (loop fe)

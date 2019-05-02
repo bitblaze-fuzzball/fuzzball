@@ -1002,13 +1002,15 @@ object(self)
 	      Unix.clear_nonblock real_fd;
 	  put_return 0L (* success *)
       | 6 (* F_SETLK *)
-      | 7 (* F_SETLKW *) ->
+      | 7 (* F_SETLKW *)
+      | 13 (* F_SETLK64 *)
+      | 14 (* F_SETLKW64 *) ->
 	  (* Ignore locks for the moment. OCaml has only lockf, so
 	     emulation would be a bit complex. *)
 	  ignore(fd);
 	  ignore(arg);
 	  put_return 0L (* success *)
-      | _ -> failwith "Unhandled cmd in fcntl64"
+      | _ -> failwith "Unhandled cmd in fcntl{,64}"
 
   method sys_fcntl fd cmd arg =
     self#fcntl_common fd cmd arg
@@ -1648,6 +1650,12 @@ object(self)
   method sys_mprotect addr len prot =
     (* treat as no-op *)
     put_return 0L;
+
+  method private sys_mremap old_addr old_size new_size flags new_addr =
+    (* Unsupported *)
+    ignore(old_addr); ignore(old_size); ignore(new_size);
+    ignore(flags); ignore(new_size);
+    self#put_errno Unix.ENOSYS
 
   method sys_munmap addr len =
     (* treat as no-op *)
@@ -2704,6 +2712,11 @@ object(self)
 
   method sys_statfs64 path buf_len struct_buf =
     g_assert(buf_len = 84 || buf_len = 88) 100 "Linux_syscalls.sys_statfs64"; (* Same layout, different padding *)
+    self#write_fake_statfs64buf struct_buf;
+    put_return 0L (* success *)
+
+  method private sys_fstatfs64 fd buf_len struct_buf =
+    assert(buf_len = 84 || buf_len = 88); (* Same layout, different padding *)
     self#write_fake_statfs64buf struct_buf;
     put_return 0L (* success *)
 
@@ -4050,10 +4063,18 @@ object(self)
 		 Printf.eprintf "nanosleep(0x%08Lx, 0x%08Lx)"
 		   req_addr rem_addr;
 	       self#sys_nanosleep req_addr rem_addr
-	 | ((X86|ARM), 163) -> (* mremap *)
-	     uh "Unhandled Linux system call mremap (163)"
+	 | ((X86|ARM), 163) (* mremap *)
 	 | (X64, 25) -> (* mremap *)
-	     uh "Unhandled Linux/x64 system call mremap (25)"
+	     let (arg1, arg2, arg3, arg4, arg5) = read_5_regs () in
+	     let old_addr = arg1 and
+		 old_size = arg2 and
+		 new_size = arg3 and
+		 flags = Int64.to_int arg4 and
+		 new_addr = arg5 in
+	       if !opt_trace_syscalls then
+		 Printf.printf "mremap(0x%08Lx, %Ld, %Ld, %d, 0x%08Lx)"
+		   old_addr old_size new_size flags new_addr;
+	       self#sys_mremap old_addr old_size new_size flags new_addr;
 	 | ((X86|ARM), 164) -> (* setresuid *)
 	     uh "Unhandled Linux system call setresuid (164)"
 	 | ((X86|ARM), 165) -> (* getresuid *)
@@ -4668,7 +4689,14 @@ object(self)
 	       self#sys_statfs64 path buf_len struct_buf
 	 | (ARM, 267)    (* fstatfs64 *)
 	 | (X86, 269) -> (* fstatfs64 *)
-	     uh "Unhandled Linux system call fstatfs64"
+	     let (arg1, arg2, arg3) = read_3_regs () in
+	     let fd = Int64.to_int arg1 and
+		 buf_len = Int64.to_int arg2 and
+		 struct_buf = arg3 in
+	       if !opt_trace_syscalls then
+		 Printf.printf "fstatfs64(%d, %d, 0x%08Lx)"
+		   fd buf_len struct_buf;
+	       self#sys_fstatfs64 fd buf_len struct_buf
 	 | (ARM, 268)    (* tgkill *)
 	 | (X64, 234)    (* tgkill *)
 	 | (X86, 270) -> (* tgkill *)
