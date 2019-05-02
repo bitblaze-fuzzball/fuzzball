@@ -4072,7 +4072,7 @@ object(self)
 		 flags = Int64.to_int arg4 and
 		 new_addr = arg5 in
 	       if !opt_trace_syscalls then
-		 Printf.printf "mremap(0x%08Lx, %Ld, %Ld, %d, 0x%08Lx)"
+		 Printf.eprintf "mremap(0x%08Lx, %Ld, %Ld, %d, 0x%08Lx)"
 		   old_addr old_size new_size flags new_addr;
 	       self#sys_mremap old_addr old_size new_size flags new_addr;
 	 | ((X86|ARM), 164) -> (* setresuid *)
@@ -4694,7 +4694,7 @@ object(self)
 		 buf_len = Int64.to_int arg2 and
 		 struct_buf = arg3 in
 	       if !opt_trace_syscalls then
-		 Printf.printf "fstatfs64(%d, %d, 0x%08Lx)"
+		 Printf.eprintf "fstatfs64(%d, %d, 0x%08Lx)"
 		   fd buf_len struct_buf;
 	       self#sys_fstatfs64 fd buf_len struct_buf
 	 | (ARM, 268)    (* tgkill *)
