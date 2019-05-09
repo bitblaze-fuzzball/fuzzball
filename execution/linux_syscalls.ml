@@ -1627,6 +1627,10 @@ object(self)
 	   (0x802|0x2|0x1) (* MAP_PRIVATE|MAP_DENYWRITE|MAP_SHARED *), _) ->
 	    let dest_addr = self#fresh_addr length in
 	      do_read dest_addr
+	| (0L, _, 0x3 (* PROT_READ|PROT_WRITE *),
+	   (0x22|0x20022) (* MAP_PRIVATE|MAP_ANONYMOUS, opt.MAP_STACK *), _) ->
+	    let fresh = self#fresh_addr length in
+              do_read fresh
 	| (_, _,
 	   (0x1|0x5) (* PROT_READ|PROT_EXEC *),
 	   (0x802|0x2|0x1) (* MAP_PRIVATE|MAP_DENYWRITE|MAP_SHARED *), _) ->
