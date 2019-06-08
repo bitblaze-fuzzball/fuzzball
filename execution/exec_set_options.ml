@@ -685,7 +685,7 @@ let set_range_opts (fm : Fragment_machine.fragment_machine) opts_list value =
 	   (* All option strings begin with a -, e.g., -trace-insns. 
 	      But, -turn-opt-[on|off]-range takes the option name without 
 	      the hyphen as the first argument.*)
-	   if (String.equal opt_str ("-" ^ input_opt_str)) then (
+	   if opt_str = ("-" ^ input_opt_str) then (
 	     opt := value;
 	     fm#add_range_opt input_opt_str opt;
 	     final_range_opts := !final_range_opts @ [(input_opt_str, eip1, eip2)])
@@ -693,11 +693,11 @@ let set_range_opts (fm : Fragment_machine.fragment_machine) opts_list value =
 	   (* -trace-basic expands into a list of options 
 	      that should be turned on or off in the range of -trace-basic.
 	      Ditto for -trace-detailed *)
-	   if String.equal opt_str ("-" ^ input_opt_str) then (
+	   if opt_str = ("-" ^ input_opt_str) then (
 	     let verbose_opts = ref [] in
-	     if String.equal opt_str "-trace-basic" then 
+	     if opt_str = "-trace-basic" then
 	       verbose_opts := trace_basic_opts
-	     else if String.equal opt_str "-trace-detailed" then
+	     else if opt_str = "-trace-detailed" then
 	       verbose_opts := trace_detailed_opts;
 	     List.iter (fun (opt, v_opt_str) ->
 	       opt := value;
