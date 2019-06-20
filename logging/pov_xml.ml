@@ -3,6 +3,10 @@
   Implements the POV reporting XML described for CGC
  *)
 
+(* If using old (e.g., 2.x) versions of Tyxml, uncomment the following
+   module name alias. *)
+(* module Xml = XML *)
+
 type pcre = string
 type var = string
 
