@@ -756,11 +756,17 @@ object(self)
   method add_symbolic_file s is_concolic =
     Hashtbl.replace symbolic_fnames s is_concolic
 
+  method add_symbolic_fd fd is_concolic =
+    Hashtbl.replace symbolic_fds fd is_concolic
+
   method private save_sym_fd_positions = 
     Hashtbl.iter
-      (fun fd _ -> fd_info.(fd).snap_pos <- 
-	 Some (Unix.lseek (self#get_fd fd) 0 Unix.SEEK_CUR))
-      symbolic_fds
+      (fun fd _ ->
+	 try
+	   fd_info.(fd).snap_pos <-
+	     Some (Unix.lseek (self#get_fd fd) 0 Unix.SEEK_CUR)
+	 with Unix.Unix_error(Unix.ESPIPE, "lseek", "") -> ()
+      ) symbolic_fds
 
   method private reset_sym_fd_positions = 
     Hashtbl.iter

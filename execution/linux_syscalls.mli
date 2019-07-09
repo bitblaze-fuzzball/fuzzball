@@ -35,6 +35,8 @@ object
   method flags_to_oc_flags : int -> Unix.open_flag list
 
   method add_symbolic_file : string -> bool -> unit
+  method add_symbolic_fd : int -> bool -> unit
+
   method make_snap : unit
   method reset : unit
 
