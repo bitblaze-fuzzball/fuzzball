@@ -186,8 +186,9 @@ and simplify_rec_lv lv =
 let rec simplify_fp e =
   let rec loop e n =
     let e' = simplify_rec e in
-      (* Printf.printf "Simplified %s -> %s\n"
-	(V.exp_to_string e) (V.exp_to_string e'); *)
+      if !opt_trace_simplify && e <> e' then
+	Printf.printf "Simplified %s -> %s\n"
+	  (V.exp_to_string e) (V.exp_to_string e');
       assert(n < 100);
       if e = e' then
 	e'

@@ -149,6 +149,7 @@ val opt_disable_ce_cache : bool ref
 val opt_narrow_bitwidth_cutoff : int option ref
 val opt_t_expr_size : int ref
 val opt_sanity_checks : bool ref
+val opt_trace_simplify : bool ref
 
 val opt_symbolic_memory : bool ref
 val opt_zero_memory : bool ref

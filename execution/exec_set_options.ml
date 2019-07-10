@@ -401,6 +401,8 @@ let explore_cmdline_opts =
     ("-t-expr-size", Arg.String
        (fun s -> opt_t_expr_size := int_of_string s),
      "SIZE Introduce temporaries for exprs of size or larger");
+    ("-trace-simplify", Arg.Set(opt_trace_simplify),
+     " Print expression simplifications");
   ]
 
 

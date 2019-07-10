@@ -171,6 +171,7 @@ let opt_disable_ce_cache = ref false
 let opt_narrow_bitwidth_cutoff = ref None
 let opt_t_expr_size = ref 10
 let opt_sanity_checks = ref false
+let opt_trace_simplify = ref false
 
 let opt_symbolic_memory = ref false
 let opt_zero_memory = ref false
