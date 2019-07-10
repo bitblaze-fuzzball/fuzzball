@@ -682,7 +682,7 @@ let rec constant_fold ctx e =
 	    Constant(Int(_, 0L)))
 	when (Int64.logand 0xffffffffL c) <> 0L ->
 	exp_false
-    (* ((a | c) << 32) != 0 ==> true, if c is a non-low32-zero constant *)
+    (* ((a | c) << 32) <> 0 ==> true, if c is a non-low32-zero constant *)
     | BinOp(NEQ, BinOp(LSHIFT, BinOp(BITOR, a, Constant(Int(_, c))),
 		       Constant(Int(_, 32L))),
 	    Constant(Int(_, 0L)))

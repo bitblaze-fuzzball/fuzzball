@@ -457,7 +457,7 @@ let rm_unused_vars (dl, sl) =
     (* print_string "{";
        List.iter print_int uses;
        print_string "}\n"; *)
-  let (dl', to_rm) = partition2 (fun n -> n != 0) dl uses in
+  let (dl', to_rm) = partition2 (fun n -> n <> 0) dl uses in
   let sl' = List.fold_right rm_defs to_rm sl in
     (dl', sl')
 
@@ -521,7 +521,7 @@ let copy_const_prop (dl, sl) =
   let invalidate_uses vh bad_var =
     V.VarHash.iter
       (fun lhs rhs ->
-	 if (count_uses_e bad_var rhs) != 0 then	   
+	 if (count_uses_e bad_var rhs) <> 0 then
 	   (V.VarHash.remove vh lhs))
       vh
   in

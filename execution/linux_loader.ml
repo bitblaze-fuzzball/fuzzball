@@ -469,7 +469,7 @@ let load_dynamic_program (fm : fragment_machine) fname load_base
 	    let interp = IO.really_nread i ((Int64.to_int phr.filesz) - 1) in
 	      entry_point := load_ldso fm interp ldso_base;
 	      load_segment fm ic phr extra_vaddr true)
-	 else if phr.memsz != 0L then
+	 else if phr.memsz <> 0L then
 	   load_segment fm ic phr extra_vaddr true;
 	 List.iter
 	   (fun (base, size) ->

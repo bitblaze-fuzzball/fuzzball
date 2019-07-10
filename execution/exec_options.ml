@@ -232,7 +232,7 @@ let add_delimited_triple opt char s =
     with Not_found -> [arg_str]
   in
   let list_str = loop s in
-  if (List.length list_str) != 3 then
+  if (List.length list_str) <> 3 then
     failwith
       (Printf.sprintf
 	 "add_delimited_triple did not find 3 delimited values in option value: %s" s);
