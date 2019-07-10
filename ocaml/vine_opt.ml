@@ -438,47 +438,47 @@ let rec constant_fold ctx e =
     | BinOp(EQ, Cast(CAST_UNSIGNED, (REG_16|REG_32|REG_64), e1),
 	    Constant(Int(_, c)))
 	when (Vine_typecheck.infer_type None e1) = REG_8
-	  && c != fix_u8 c
+	  && c <> fix_u8 c
 	  -> exp_false
     | BinOp(EQ, Cast(CAST_SIGNED, REG_16, e1),
 	    Constant(Int(_, c)))
 	when (Vine_typecheck.infer_type None e1) = REG_8
-	  && c != fix_u16 (fix_s8 c)
+	  && c <> fix_u16 (fix_s8 c)
 	  -> exp_false
     | BinOp(EQ, Cast(CAST_SIGNED, REG_32, e1),
 	    Constant(Int(_, c)))
 	when (Vine_typecheck.infer_type None e1) = REG_8
-	  && c != fix_u32 (fix_s8 c)
+	  && c <> fix_u32 (fix_s8 c)
 	  -> exp_false
     | BinOp(EQ, Cast(CAST_SIGNED, REG_64, e1),
 	    Constant(Int(_, c)))
 	when (Vine_typecheck.infer_type None e1) = REG_8
-	  && c != fix_s8 c
+	  && c <> fix_s8 c
 	  -> exp_false
     | BinOp(EQ, Cast(CAST_UNSIGNED, (REG_32|REG_64), e1),
 	    Constant(Int(_, c)))
 	when (Vine_typecheck.infer_type None e1) = REG_16
-	  && c != fix_u16 c
+	  && c <> fix_u16 c
 	  -> exp_false
     | BinOp(EQ, Cast(CAST_SIGNED, REG_32, e1),
 	    Constant(Int(_, c)))
 	when (Vine_typecheck.infer_type None e1) = REG_16
-	  && c != fix_u32 (fix_s16 c)
+	  && c <> fix_u32 (fix_s16 c)
 	  -> exp_false
     | BinOp(EQ, Cast(CAST_SIGNED, REG_64, e1),
 	    Constant(Int(_, c)))
 	when (Vine_typecheck.infer_type None e1) = REG_16
-	  && c != fix_s16 c
+	  && c <> fix_s16 c
 	  -> exp_false
     | BinOp(EQ, Cast(CAST_UNSIGNED, REG_64, e1),
 	    Constant(Int(_, c)))
 	when (Vine_typecheck.infer_type None e1) = REG_32
-	  && c != fix_u32 c
+	  && c <> fix_u32 c
 	  -> exp_false
     | BinOp(EQ, Cast(CAST_SIGNED, REG_64, e1),
 	    Constant(Int(_, c)))
 	when (Vine_typecheck.infer_type None e1) = REG_32
-	  && c != fix_s32 c
+	  && c <> fix_s32 c
 	  -> exp_false
     | Cast(ct, ty, e) when (Vine_typecheck.infer_type None e) = ty ->
 	e
