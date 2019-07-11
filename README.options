@@ -42,7 +42,12 @@ not for program counter but for path condition. "short", "word", and
 -arch <arch>
 
   Set the CPU architecture of FuzzBALL, where <arch> is either "x86"
-  (32-bit Intel i386 compatible) or "arm" (ARM, including Thumb).
+  (32-bit Intel i386 compatible), "x64" (64-bit AMD64 or Intel 64, AKA
+  x86-64) or "arm" (32-bit ARM, including Thumb). If this option is
+  omitted but a program file is supplied, FuzzBALL will try to detect
+  the right architecture from the program file. Earlier versions of
+  FuzzBALL defaulted to "x86" but this should now be supplied
+  explicitly if it can't be auto-detected.
 
 -branch-preference <eip>:<0 or 1>
 

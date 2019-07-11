@@ -27,6 +27,11 @@ let execution_arch_of_string s =
     | "arm" -> ARM
     | _ -> failwith ("Unrecognized architecture `" ^ s ^ "'")
 
+let string_of_execution_arch = function
+  | X86 -> "x86"
+  | X64 -> "x64"
+  | ARM -> "arm"
+
 let asmir_arch_of_execution_arch = function
   | X86 -> Asmir.arch_i386
   | X64 -> Asmir.arch_x64
@@ -193,7 +198,15 @@ let opt_progress_interval = ref None
 let opt_final_pc = ref false
 let opt_solve_final_pc = ref false
 let opt_skip_untainted = ref false
+
+(* We avoid making this an option type becaue there is a lot of code
+   that matches on it, and it should always be set to a paticular
+   architecture from quite early in the run. But the behavior when the
+   -arch option is ommitted is no longer to default to X86: instead we
+   try to detect the architecture from the headers of a supplied ELF
+   executable. *)
 let opt_arch = ref X86
+
 let opt_trace_stmts = ref false
 let opt_trace_eval = ref false
 let opt_trace_client_reqs = ref false
