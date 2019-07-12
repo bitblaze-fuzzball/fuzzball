@@ -37,7 +37,7 @@ let main argv =
                 @ Logger_config.verb_cmdline_opts
                 @ Pov_xml.pov_xml_cmdline_opts
      ))
-    (fun arg -> Exec_set_options.set_program_name arg)
+    (fun arg -> Exec_set_options.set_program_name_guess_arch arg)
     "fuzzball [options]* program\n";
   Loggers.update_all_loggers (); (* Update all loggers according to argv *)
   (* Pull out the fuzzball general logger to use for starting the process *)

@@ -42,6 +42,7 @@ let main argv =
 		 ))
       (fun s -> bytes_arg := !bytes_arg @ (parse_hex_to_bytes s))
       "test_insn [options]* 0xfe 0xed 0x42 ...\n";
+    Exec_set_options.require_explicit_arch ();
     let dt = ((new Linear_decision_tree.linear_decision_tree)
 		:> Decision_tree.decision_tree) in
     let fm = ((new SRFM.sym_region_frag_machine dt)

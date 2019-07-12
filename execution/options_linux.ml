@@ -16,6 +16,8 @@ let opt_core_file_name = ref None
 let opt_use_ids_from_core = ref false
 let opt_symbolic_files = ref []
 let opt_concolic_files = ref []
+let opt_symbolic_stdin_concrete_size = ref false
+let opt_concolic_stdin = ref false
 
 let opt_extra_programs = ref []
 
@@ -70,6 +72,11 @@ let linux_cmdline_opts =
     ("-concolic-file", Arg.String
        (fun s -> opt_concolic_files := s :: !opt_concolic_files),
      "fname Make data read from the named file concolic");
+    ("-symbolic-stdin-concrete-size",
+     Arg.Set(opt_symbolic_stdin_concrete_size),
+     " Make data read from standard input symbolic");
+    ("-concolic-stdin", Arg.Set(opt_concolic_stdin),
+     " Make data read from standard input concolic");
     ("-symbolic-syscall-error", Arg.String
        (fun s -> opt_symbolic_syscall_error := Some (Int64.of_string s)),
      "errno Force syscalls with symbolic args to return given value");
@@ -162,6 +169,10 @@ let apply_linux_cmdline_opts (fm : Fragment_machine.fragment_machine) =
 	  lsh#set_proc_identities !Linux_loader.proc_identities;
 	List.iter (fun f -> lsh#add_symbolic_file f false) !opt_symbolic_files;
 	List.iter (fun f -> lsh#add_symbolic_file f  true) !opt_concolic_files;
+	if !opt_symbolic_stdin_concrete_size then
+	  lsh#add_symbolic_fd 0 true;
+	if !opt_concolic_stdin then
+	  lsh#add_symbolic_fd 0 true;
 	Linux_syscalls.linux_set_up_arm_kuser_page fm;
 	lsh#set_the_break linux_break;
 	fm#add_special_handler (lsh :> Fragment_machine.special_handler)

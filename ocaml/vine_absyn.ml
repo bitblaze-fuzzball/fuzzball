@@ -492,7 +492,7 @@ let check_lval scope v optind opttyp lctx =
 		(* temp with some type annotation not the same as decled
 		   type *)
 		err lctx ("Temp '"^v^"' annotation and declaration type mismatch: "
-			  ^Vine.type_to_string t' ^" != "^Vine.type_to_string t)
+			  ^Vine.type_to_string t' ^" <> "^Vine.type_to_string t)
 	| None,None ->
 	    (* no annoation. use type from context *)
 	    Temp(var)

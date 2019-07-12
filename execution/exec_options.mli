@@ -28,6 +28,7 @@ val random_notice_of_string : string -> random_notice
 type execution_arch = X86 | X64 | ARM
 
 val execution_arch_of_string : string -> execution_arch
+val string_of_execution_arch : execution_arch -> string
 
 val asmir_arch_of_execution_arch : execution_arch -> Asmir.arch
 val libasmir_arch_of_execution_arch : execution_arch ->
@@ -186,6 +187,7 @@ val opt_disable_ce_cache : bool ref
 val opt_narrow_bitwidth_cutoff : int option ref
 val opt_t_expr_size : int ref
 val opt_sanity_checks : bool ref
+val opt_trace_simplify : bool ref
 
 val opt_symbolic_memory : bool ref
 val opt_zero_memory : bool ref

@@ -43,6 +43,7 @@ let opt_extra_condition_strings = ref []
 let opt_tracepoint_strings = ref []
 let opt_string_tracepoint_strings = ref []
 let opt_svn_version = ref false
+let opt_cmdline_arch = ref None
 
 let set_defaults_for_concrete () =
   opt_zero_memory := true
@@ -433,6 +434,8 @@ let explore_cmdline_opts =
     ("-t-expr-size", Arg.String
        (fun s -> opt_t_expr_size := int_of_string s),
      "SIZE Introduce temporaries for exprs of size or larger");
+    ("-trace-simplify", Arg.Set(opt_trace_simplify),
+     " Print expression simplifications");
   ]
 
 
@@ -480,8 +483,8 @@ let cmdline_opts =
     ("-arch", Arg.String
       (fun s -> 
 	opt_arch_string := Some s;
-	opt_arch := execution_arch_of_string s ),
-     "arch x86 (default), x64, arm");
+	opt_cmdline_arch := Some (execution_arch_of_string s) ),
+     "arch x86, x64, arm (default: autodetect from ELF header)");
     ("-translation-cache-size", Arg.String
       (fun s -> opt_translation_cache_size := Some (int_of_string s)),
      "N Save translations of at most N instructions");
@@ -659,17 +662,33 @@ let trace_replay_cmdline_opts =
      " Print when our execution doesn't match the trace");
     ("-progress-interval", Arg.String
        (fun s -> opt_progress_interval := Some (Int64.of_string s)),
-     "insns Print every INSNsth instruction");
+     "insns Print every INSNSth instruction");
     ("-skip-untainted", Arg.Set(opt_skip_untainted),
      " Skip replaying instructions that are not tainted");
   ]
 
-let set_program_name s =
+let set_program_name_guess_arch s =
   match !opt_program_name with 
-    | None -> opt_program_name := Some s
     | Some prev ->
 	Printf.eprintf "Multiple args: %s, %s\n" prev s;
 	failwith "Multiple non-option args not allowed"
+    | None ->
+	opt_program_name := Some s;
+	opt_arch :=
+	  (match !opt_cmdline_arch with
+	     | Some a -> a
+	     | None ->
+		 match Linux_loader.detect_elf_arch s with
+		   | Some a -> a
+		   | None ->
+		       failwith "Failed to guess CPU architecture, use -arch")
+
+let require_explicit_arch () =
+  opt_arch :=
+    match !opt_cmdline_arch with
+      | Some a -> a
+      | None ->
+	  failwith "The -arch option is required"
 
 let default_on_missing = ref (fun fm -> fm#on_missing_zero)
 

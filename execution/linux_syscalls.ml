@@ -452,12 +452,12 @@ object(self)
     (if (flags land 0x3) = 0        then [Unix.O_RDONLY]   else []) @
       (if (flags land 0x3)= 1       then [Unix.O_WRONLY]   else []) @
       (if (flags land 0x3) = 2      then [Unix.O_RDWR]     else []) @
-      (if (flags land 0o4000) != 0  then [Unix.O_NONBLOCK] else []) @
-      (if (flags land 0o2000) != 0  then [Unix.O_APPEND]   else []) @
-      (if (flags land 0o100) != 0   then [Unix.O_CREAT]    else []) @
-      (if (flags land 0o1000) != 0  then [Unix.O_TRUNC]    else []) @
-      (if (flags land 0o200) != 0   then [Unix.O_EXCL]     else []) @
-      (if (flags land 0o10000) != 0 then [Unix.O_SYNC]     else [])
+      (if (flags land 0o4000) <> 0  then [Unix.O_NONBLOCK] else []) @
+      (if (flags land 0o2000) <> 0  then [Unix.O_APPEND]   else []) @
+      (if (flags land 0o100) <> 0   then [Unix.O_CREAT]    else []) @
+      (if (flags land 0o1000) <> 0  then [Unix.O_TRUNC]    else []) @
+      (if (flags land 0o200) <> 0   then [Unix.O_EXCL]     else []) @
+      (if (flags land 0o10000) <> 0 then [Unix.O_SYNC]     else [])
 
   method private write_oc_statbuf_as_stat addr oc_buf =
     let dev = Int64.of_int oc_buf.Unix.st_dev and
@@ -761,11 +761,17 @@ object(self)
   method add_symbolic_file s is_concolic =
     Hashtbl.replace symbolic_fnames s is_concolic
 
+  method add_symbolic_fd fd is_concolic =
+    Hashtbl.replace symbolic_fds fd is_concolic
+
   method private save_sym_fd_positions = 
     Hashtbl.iter
-      (fun fd _ -> fd_info.(fd).snap_pos <- 
-	 Some (Unix.lseek (self#get_fd fd) 0 Unix.SEEK_CUR))
-      symbolic_fds
+      (fun fd _ ->
+	 try
+	   fd_info.(fd).snap_pos <-
+	     Some (Unix.lseek (self#get_fd fd) 0 Unix.SEEK_CUR)
+	 with Unix.Unix_error(Unix.ESPIPE, "lseek", "") -> ()
+      ) symbolic_fds
 
   method private reset_sym_fd_positions = 
     Hashtbl.iter
@@ -786,9 +792,9 @@ object(self)
   method sys_access path mode =
     let oc_mode =
       (if   (mode land 0x7)= 0 then [Unix.F_OK] else []) @
-	(if (mode land 0x1)!=0 then [Unix.X_OK] else []) @
-	(if (mode land 0x2)!=0 then [Unix.W_OK] else []) @
-	(if (mode land 0x4)!=0 then [Unix.R_OK] else []) 
+	(if (mode land 0x1)<>0 then [Unix.X_OK] else []) @
+	(if (mode land 0x2)<>0 then [Unix.W_OK] else []) @
+	(if (mode land 0x4)<>0 then [Unix.R_OK] else [])
     in
       try
 	Unix.access (chroot path) oc_mode;
@@ -2736,7 +2742,7 @@ object(self)
 
   method sys_time addr =
     let time = Int64.of_float (Unix.time ()) in
-      if addr != 0L then
+      if addr <> 0L then
 	store_word addr 0 time else ();
       put_return time
 
@@ -2812,7 +2818,7 @@ object(self)
       put_return 0L (* success *)
 
   method sys_alarm sec =
-    if sec != 0 then
+    if sec <> 0 then
       raise (Unix.Unix_error
                (Unix.EOPNOTSUPP, 
                "Nonzero argument to alarm(2) not supported", ""))

@@ -187,8 +187,9 @@ and simplify_rec_lv lv =
 let rec simplify_fp e =
   let rec loop e n =
     let e' = simplify_rec e in
-      (* Printf.eprintf "Simplified %s -> %s\n"
-	(V.exp_to_string e) (V.exp_to_string e'); *)
+      if !opt_trace_simplify && e <> e' then
+	Printf.eprintf "Simplified %s -> %s\n"
+	  (V.exp_to_string e) (V.exp_to_string e');
       g_assert(n < 100) 100 "Frag_simplify.simplify_fp";
       if e = e' then
 	e'
@@ -459,7 +460,7 @@ let rm_unused_vars (dl, sl) =
     (* print_string "{";
        List.iter print_int uses;
        print_string "}\n"; *)
-  let (dl', to_rm) = partition2 (fun n -> n != 0) dl uses in
+  let (dl', to_rm) = partition2 (fun n -> n <> 0) dl uses in
   let sl' = List.fold_right rm_defs to_rm sl in
     (dl', sl')
 
@@ -523,7 +524,7 @@ let copy_const_prop (dl, sl) =
   let invalidate_uses vh bad_var =
     V.VarHash.iter
       (fun lhs rhs ->
-	 if (count_uses_e bad_var rhs) != 0 then	   
+	 if (count_uses_e bad_var rhs) <> 0 then
 	   (V.VarHash.remove vh lhs))
       vh
   in

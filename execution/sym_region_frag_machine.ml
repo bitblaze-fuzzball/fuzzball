@@ -1052,7 +1052,7 @@ struct
                          let (cbases, coffs, eoffs, ambig, syms) =
                            classify_terms e form_man self#handle_weird_addr_expr in
 	                   if cbases = [] && coffs = [] && eoffs = [] &&
-                             ambig = [] && syms != [] then
+                             ambig = [] && syms <> [] then
                              Printf.eprintf "Completely symbolic load\n");
 		    raise SymbolicJump
 		| None ->
@@ -1527,7 +1527,7 @@ struct
         match (self#decide_offset_wd off_exp, !opt_trace_end_jump) with
           | (None, Some jump_addr) when jump_addr = self#get_eip ->
 	      if cbases = [] && coffs = [] && eoffs = [] && ambig = [] &&
-	        syms != [] then
+	        syms <> [] then
 	        Printf.eprintf "Completely symbolic load\n";
 	      raise SymbolicJump
 	  | (None, _) ->
