@@ -130,7 +130,7 @@ let apply_linux_cmdline_opts (fm : Fragment_machine.fragment_machine) =
       List.iter (fun f -> lsh#add_symbolic_file f false) !opt_symbolic_files;
       List.iter (fun f -> lsh#add_symbolic_file f  true) !opt_concolic_files;
       if !opt_symbolic_stdin_concrete_size then
-	lsh#add_symbolic_fd 0 true;
+	lsh#add_symbolic_fd 0 false;
       if !opt_concolic_stdin then
 	lsh#add_symbolic_fd 0 true;
       Linux_syscalls.linux_set_up_arm_kuser_page fm;
