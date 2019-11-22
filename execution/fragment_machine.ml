@@ -716,7 +716,9 @@ struct
 	      let s = last_insn ^ "    " in
 		if (String.sub s 0 4) = "call" then
 		  "call"
-		else if (String.sub s 0 3) = "ret" then
+		else if ((String.sub s 0 3) = "ret")
+                  || ((String.length s >= 8) &&  ((String.sub s 0 8) = "repz ret"))
+                then
 		  "return"
 		else if (String.sub s 0 3) = "jmp" then
 		  "unconditional jump"
