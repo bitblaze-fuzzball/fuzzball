@@ -25,6 +25,8 @@ val opt_trace_temps : bool ref
 val opt_trace_temps_encoded : bool ref
 val opt_use_tags : bool ref
 val opt_fail_offset_heuristic : bool ref
+val opt_stop_on_weird_sym_addr : bool ref
+val opt_finish_on_weird_sym_addr : bool ref
 val opt_trace_solver : bool ref
 val opt_measure_influence_syscall_args : bool ref
 val opt_solver_timeout : int option ref

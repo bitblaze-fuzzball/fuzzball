@@ -396,6 +396,10 @@ let explore_cmdline_opts =
      " Set an integer limit on the global cache size");
     ("-disable-ce-cache", Arg.Set(opt_disable_ce_cache),
      " Do not use cached satisfying assingments at all");
+    ("-stop-on-weird-sym-addr", Arg.Set(opt_stop_on_weird_sym_addr),
+     " Don't continue execution past a strange symbolic-controlled address");
+    ("-finish-on-weird-sym-addr", Arg.Set(opt_finish_on_weird_sym_addr),
+     " Finish exploration as with -stop-on-weird-sym-addr");
     ("-narrow-bitwidth-cutoff", Arg.String
        (fun s -> opt_narrow_bitwidth_cutoff := Some (int_of_string s)),
      "BITS Treat values narrower than width as non-pointers");
