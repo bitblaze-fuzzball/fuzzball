@@ -519,6 +519,12 @@ let rec constant_fold ctx e =
 	Cast(CAST_LOW, REG_1, e_l)
     | Cast(CAST_HIGH, REG_1, BinOp(CONCAT, e_h, e_l)) ->
 	Cast(CAST_HIGH, REG_1, e_h)
+    | BinOp(CONCAT, Constant(Int(REG_8, 0L)), x) ->
+       Cast(CAST_UNSIGNED, REG_16, x)
+    | BinOp(CONCAT, Constant(Int(REG_16, 0L)), x) ->
+       Cast(CAST_UNSIGNED, REG_32, x)
+    | BinOp(CONCAT, Constant(Int(REG_32, 0L)), x) ->
+       Cast(CAST_UNSIGNED, REG_64, x)
     (* AND / OR with itself *)
     | BinOp(BITOR, x, y)
     | BinOp(BITAND, x, y)
