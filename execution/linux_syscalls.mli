@@ -15,9 +15,6 @@ class linux_special_handler : Fragment_machine.fragment_machine ->
 object
   method handle_special : string -> Vine.stmt list option
 
-  method fresh_fd : unit -> int
-  method get_fd : int -> Unix.file_descr
-
   method errno : Unix.error -> int
   method put_errno : Unix.error -> unit
 
