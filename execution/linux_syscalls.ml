@@ -99,6 +99,8 @@ type fd_extra_info = {
   mutable snap_pos : int option;
   mutable is_symbolic : bool;
   mutable is_concolic : bool;
+  mutable num_read_symbolic : int;
+  mutable snap_num_read : int;
 }
 
 (* N.b. the argument order here is the opposite from D.assemble64,
@@ -207,7 +209,9 @@ object(self)
                           fname = "";
                           snap_pos = None;
                           is_symbolic = false;
-                          is_concolic = false })
+                          is_concolic = false;
+                          num_read_symbolic = 0;
+                          snap_num_read = 0})
     in
       a.(0).unix_fd <- (Some Unix.stdin);
       a.(1).unix_fd <- (Some Unix.stdout);
@@ -229,15 +233,6 @@ object(self)
 	| None -> raise
 	    (Unix.Unix_error(Unix.EBADF, "Bad (virtual) file handle", ""))
 
-  method private new_fd vt_fd unix_fd =
-    fd_info.(vt_fd).unix_fd <- Some unix_fd;
-    fd_info.(vt_fd).dirp_offset <- 0;
-    fd_info.(vt_fd).readdir_eof <- 0;
-    fd_info.(vt_fd).fname <- "";
-    fd_info.(vt_fd).snap_pos <- None;
-    fd_info.(vt_fd).is_symbolic <- false;
-    fd_info.(vt_fd).is_concolic <- false
-
   method private clear_fd vt_fd =
     fd_info.(vt_fd).unix_fd <- None;
     fd_info.(vt_fd).dirp_offset <- 0;
@@ -245,7 +240,13 @@ object(self)
     fd_info.(vt_fd).fname <- "";
     fd_info.(vt_fd).snap_pos <- None;
     fd_info.(vt_fd).is_symbolic <- false;
-    fd_info.(vt_fd).is_concolic <- false
+    fd_info.(vt_fd).is_concolic <- false;
+    fd_info.(vt_fd).num_read_symbolic <- 0;
+    fd_info.(vt_fd).snap_num_read <- 0
+
+  method private new_fd vt_fd unix_fd =
+    self#clear_fd vt_fd;
+    fd_info.(vt_fd).unix_fd <- Some unix_fd
 
   method private copy_fd new_vt_fd new_unix_fd old_vt_fd =
     let old = fd_info.(old_vt_fd) in
@@ -255,7 +256,9 @@ object(self)
     fd_info.(new_vt_fd).fname <- old.fname;
     fd_info.(new_vt_fd).snap_pos <- old.snap_pos;
     fd_info.(new_vt_fd).is_symbolic <- old.is_symbolic;
-    fd_info.(new_vt_fd).is_concolic <- old.is_concolic
+    fd_info.(new_vt_fd).is_concolic <- old.is_concolic;
+    fd_info.(new_vt_fd).num_read_symbolic <- old.num_read_symbolic;
+    fd_info.(new_vt_fd).snap_num_read <- old.snap_num_read;
 
   val netlink_sim_sockfd = ref 1025
   val netlink_sim_seq = ref 0L
@@ -793,25 +796,36 @@ object(self)
 
   method add_symbolic_fd fd is_concolic =
     fd_info.(fd).is_symbolic <- true;
-    fd_info.(fd).is_concolic <- is_concolic
+    fd_info.(fd).is_concolic <- is_concolic;
+    (* Set up a global variable so that the symbolic variables
+       produced for input from this FD can be parsed by
+       -trace-assigns-string. For this to work, this code has to match
+       the way the variables are created later in fill_read_buf. *)
+    let byte_suf = if is_concolic then "" else "byte_" in
+    match (!input_string_mem_prefix, fd) with
+    | (None, 0) -> input_string_mem_prefix := Some ("stdin_" ^ byte_suf)
+    | (None, _) -> input_string_mem_prefix := Some ("file_" ^ byte_suf)
+    | (Some _, _) -> ()
 
   method private save_sym_fd_positions = 
     Array.iteri
       (fun fd info ->
         if info.is_symbolic then
-	  try
-	    info.snap_pos <-
-	      Some (Unix.lseek (self#get_fd fd) 0 Unix.SEEK_CUR)
-	  with Unix.Unix_error(Unix.ESPIPE, "lseek", "") -> ()
+	  ((try
+	      info.snap_pos <-
+	        Some (Unix.lseek (self#get_fd fd) 0 Unix.SEEK_CUR)
+	    with Unix.Unix_error(Unix.ESPIPE, "lseek", "") -> ());
+           info.snap_num_read <- info.num_read_symbolic)
       ) fd_info
 
   method private reset_sym_fd_positions = 
     Array.iteri
       (fun fd info ->
         if info.is_symbolic then
-	  match info.snap_pos with
-	  | Some pos -> ignore(Unix.lseek (self#get_fd fd) pos Unix.SEEK_SET)
-	  | None -> ()
+          ((match info.snap_pos with
+	   | Some pos -> ignore(Unix.lseek (self#get_fd fd) pos Unix.SEEK_SET)
+	   | None -> ());
+           info.num_read_symbolic <- info.snap_num_read)
       ) fd_info
 
   method make_snap = 
@@ -1805,12 +1819,17 @@ object(self)
       let is_concolic = fd_info.(fd).is_concolic in
       fm#maybe_start_symbolic
         (fun () ->
-	  (if is_concolic then
-	     fm#store_concolic_cstr buf (String.sub str 0 num_read) false
+	  (let name = if fd = 0 then "stdin" else "file" and
+               pos = fd_info.(fd).num_read_symbolic
+           in
+           if is_concolic then
+	     fm#store_concolic_name_str buf (String.sub str 0 num_read)
+               name pos
 	   else
-	     fm#make_symbolic_region buf num_read;
+	     fm#make_symbolic_region buf num_read name pos;
+           fd_info.(fd).num_read_symbolic <- pos + num_read;
 	   max_input_string_length :=
-	     max (!max_input_string_length) num_read))
+	     max (!max_input_string_length) fd_info.(fd).num_read_symbolic))
     else
       fm#store_str buf 0L (String.sub str 0 num_read);
 

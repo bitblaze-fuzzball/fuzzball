@@ -413,10 +413,13 @@ class virtual fragment_machine = object
 
   method virtual store_str : int64 -> int64 -> string -> unit
 
-  method virtual make_symbolic_region : int64 -> int -> unit
+  method virtual make_symbolic_region : int64 -> int -> string -> int -> unit
+  method virtual make_fresh_symbolic_region : int64 -> int -> unit
 
   method virtual store_symbolic_cstr : int64 -> int -> bool -> bool -> unit
   method virtual store_concolic_cstr : int64 -> string -> bool -> unit
+  method virtual store_concolic_name_str :
+                   int64 -> string -> string -> int -> unit
 
   method virtual store_symbolic_wcstr : int64 -> int -> unit
 
@@ -2485,13 +2488,16 @@ struct
 
     val mutable symbolic_string_id = 0
 
-    method make_symbolic_region base len =
+    method make_symbolic_region base len varname pos =
+      for i = 0 to len - 1 do
+	self#store_byte (Int64.add base (Int64.of_int i))
+	  (form_man#fresh_symbolic_mem_8 varname (Int64.of_int (pos + i)))
+      done
+
+    method make_fresh_symbolic_region base len =
       let varname = "input" ^ (string_of_int symbolic_string_id) in
-	symbolic_string_id <- symbolic_string_id + 1;
-	for i = 0 to len - 1 do
-	  self#store_byte (Int64.add base (Int64.of_int i))
-	    (form_man#fresh_symbolic_mem_8 varname (Int64.of_int i))
-	done
+        symbolic_string_id <- symbolic_string_id + 1;
+        self#make_symbolic_region base len varname 0
 
     method store_symbolic_cstr base len fulllen terminate =
       let varname = "input" ^ (string_of_int symbolic_string_id) ^ "_" in
@@ -2519,6 +2525,14 @@ struct
 	done;
 	if terminate then
 	  self#store_byte_idx base len 0
+
+    method store_concolic_name_str base str varname pos =
+      let len = String.length str in
+      for i = 0 to len - 1 do
+	self#store_byte (Int64.add base (Int64.of_int i))
+	  (form_man#make_concolic_8 (varname ^ "_" ^ (string_of_int (pos + i)))
+	     (Char.code str.[i]))
+      done
 
     method store_symbolic_wcstr base len =
       let varname = "winput" ^ (string_of_int symbolic_string_id) ^ "_" in
