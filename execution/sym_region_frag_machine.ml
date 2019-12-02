@@ -715,29 +715,30 @@ struct
       let eoffs = List.map simplify_fp eoffs in
 	if !opt_trace_sym_addr_details then
 	  (Printf.printf "Concrete base terms: %s\n"
-	     (String.concat " "
+	     (String.concat "; "
 		(List.map (Printf.sprintf "0x%08Lx") cbases));
 	   Printf.printf "Concrete offset terms: %s\n"
-	     (String.concat " "
+	     (String.concat "; "
 		(List.map (Printf.sprintf "0x%08Lx") coffs));
 	   Printf.printf "Offset expression terms: %s\n"
-	     (String.concat " "
+	     (String.concat "; "
 		(List.map V.exp_to_string eoffs));
 	   Printf.printf "Ambiguous expression terms: %s\n"
-	     (String.concat " "
+	     (String.concat "; "
 		(List.map V.exp_to_string ambig));
 	   Printf.printf "Ambiguous symbol terms: %s\n"
-	     (String.concat " "
+	     (String.concat "; "
 		(List.map V.exp_to_string syms)));
 	let cbase = List.fold_left Int64.add 0L cbases in
-	let (base, base_e, off_syms) = match (cbase, syms, ambig) with
-	  | (0L, [], []) -> raise NullDereference
+	let (base, base_e, off_syms) =
+          match (cbase, syms, ambig, !opt_no_sym_regions) with
+	  | (0L, [], [], false) -> raise NullDereference
 	  (* The following two cases are applicable when applying
 	     table treatment for symbolic regions *)
-	  | (0L, [], [e]) -> (Some(self#region_for e), Some e, [])
-	  | (0L, [v], _) -> (Some(self#region_for v), Some v, ambig)
-	  | (0L, [], el) -> (Some 0, None, el)
-	  | (0L, vl, _) ->
+	  | (0L, [], [e], false) -> (Some(self#region_for e), Some e, [])
+	  | (0L, [v], _, false) -> (Some(self#region_for v), Some v, ambig)
+	  | (0L, [], el, _) -> (Some 0, None, el)
+	  | (0L, vl, _, _) ->
 	      let (bvar, rest_vars) =
 		(* We used to have logic here that checked whether one
 		   of the symbols was known to have already been used as
@@ -760,7 +761,7 @@ struct
 		  Printf.printf "Choosing %s as the base address\n"
 		    (V.exp_to_string bvar);
 		(Some(self#region_for bvar), Some bvar, rest_vars @ ambig)
-	  | (off, vl, _) ->
+	  | (off, vl, _, _) ->
 	      (Some 0, None, vl @ ambig)
 	in
 	let cloc = Int64.add cbase (List.fold_left Int64.add 0L coffs) in
@@ -1098,7 +1099,10 @@ struct
 		    (match wd with Some w -> string_of_int (Int64.to_int w)
 		       | None -> "[too big]")
 		    (V.exp_to_string off_exp) dt#get_hist_str;
-		wd
+                if wd = Some 0L then
+                  None
+                else
+                  wd
 	    with Not_found ->
 	      let wd = compute_wd off_exp in
 		Hashtbl.replace bitwidth_cache key wd;
@@ -1171,9 +1175,10 @@ struct
 	    else
 	      loop (Int64.succ mid) max
       in
-      let wd = narrow_bitwidth form_man e in
+      let wd = min 63 (narrow_bitwidth form_man e) in
       let max_limit = Int64.shift_right_logical (-1L) (64-wd)
       in
+      assert(max_limit <> -1L);
       let limit = loop 0L max_limit in
 	if !opt_trace_tables then
 	  Printf.printf "Largest value based on queries is %Ld\n" limit;
@@ -1266,6 +1271,7 @@ struct
 	    ((self#region region_num)#load_long  addr)
 	| _ -> failwith "Unexpected type in table_load"
       in
+      assert(num_ents >= 1);
       let table = map_n
 	(fun i -> load_ent (Int64.add cloc (Int64.of_int (i * stride))))
 	(num_ents - 1)
@@ -1356,10 +1362,16 @@ struct
 	let addr' = ref 0L in
 	let sym_region_table_v = 
 	  match location with
-	  | TableLocation(r, off_expr, _) ->
-	    (match self#decide_wd "Load" off_expr 0L with
-	    | None -> None
-	    | Some wd ->
+	  | TableLocation(r, off_expr, cloc) ->
+	    (match (r, self#decide_wd "Load" off_expr 0L) with
+	    | (_, None) -> None
+            | (Some 0, Some wd) ->
+	       if !opt_trace_tables then
+		Printf.printf
+		  "SRFM#handle_load table load with base 0x%Lx, offset = %s\n"
+		  cloc (V.exp_to_string off_expr);
+              self#table_load cloc r off_expr (Int64.to_int wd) ty
+	    | (_, Some wd) ->
 	      if !opt_trace_tables then
 		Printf.printf 
 		  "SRFM#handle_load table load for sym region with offset expr = %s\n"
