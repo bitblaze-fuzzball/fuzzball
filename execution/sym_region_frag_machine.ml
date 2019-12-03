@@ -1523,6 +1523,30 @@ struct
 	      let v0 = form_man#simplify8 (D.extract_8_from_32 value 0) in
 	      let cond0 = byte_cond offset v0 in
 		Some (offset, cond0, 1)
+          | V.REG_64 when in_range addr 8 ->
+              (* should really be 7 other cases *)
+	      let v0 = form_man#simplify8 (D.extract_8_from_64 value 0) and
+		  v1 = form_man#simplify8 (D.extract_8_from_64 value 1) and
+		  v2 = form_man#simplify8 (D.extract_8_from_64 value 2) and
+		  v3 = form_man#simplify8 (D.extract_8_from_64 value 3) and
+                  v4 = form_man#simplify8 (D.extract_8_from_64 value 4) and
+		  v5 = form_man#simplify8 (D.extract_8_from_64 value 5) and
+		  v6 = form_man#simplify8 (D.extract_8_from_64 value 6) and
+		  v7 = form_man#simplify8 (D.extract_8_from_64 value 7) in
+	      let cond0 = byte_cond offset v0 and
+		  cond1 = byte_cond (offset + 1) v1 and
+		  cond2 = byte_cond (offset + 2) v2 and
+		  cond3 = byte_cond (offset + 3) v3 and
+                  cond4 = byte_cond (offset + 4) v4 and
+		  cond5 = byte_cond (offset + 5) v5 and
+		  cond6 = byte_cond (offset + 6) v6 and
+		  cond7 = byte_cond (offset + 7) v7 in
+              let cond01 = D.bitand1 cond0 cond1 and
+                  cond23 = D.bitand1 cond2 cond3 and
+                  cond45 = D.bitand1 cond4 cond5 and
+                  cond67 = D.bitand1 cond6 cond7 in
+		Some (offset, (D.bitand1 (D.bitand1 cond01 cond23)
+				 (D.bitand1 cond45 cond67)), 8)
 	  | _ -> None
 
     method private target_solve cond_v ident =
