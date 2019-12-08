@@ -1674,6 +1674,9 @@ struct
     method finish_fuzz s =
       if not disqualified then
 	(fuzz_finish_reasons <- s :: fuzz_finish_reasons;
+	 if !opt_finish_immediately then
+	   (Printf.eprintf "Finishing (immediately), %s\n" s;
+	    raise FinishNow);
 	 if !opt_trace_stopping then
 	   Printf.printf "Final iteration, %s\n" s)
 
