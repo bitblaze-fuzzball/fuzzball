@@ -366,6 +366,8 @@ let explore_cmdline_opts =
      " Do not stop path at target mismatch");
     ("-finish-on-target-match", Arg.Set(opt_finish_on_target_match),
      " Finish exploration on -target-string match");
+    ("-finish-immediately", Arg.Set(opt_finish_immediately),
+     " Don't complete the execution path after the first -finish-*");
     ("-target-guidance", Arg.Set_float(opt_target_guidance),
      "PROB Prefer better target matches with given probability");
     ("-trace-guidance", Arg.Set(opt_trace_guidance),

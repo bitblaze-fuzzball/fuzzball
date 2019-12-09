@@ -7,6 +7,7 @@ exception BranchLimit
 exception DeepPath
 exception DisqualifiedPath
 exception DivideByZero
+exception FinishNow
 exception IllegalInstruction
 exception JumpToNull
 exception KnownPath

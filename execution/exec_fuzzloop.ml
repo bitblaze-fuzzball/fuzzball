@@ -153,6 +153,7 @@ let fuzz start_eip opt_fuzz_start_eip end_eips
 		  | ReachedInfluenceBound -> stop "at influence bound"
 		  | DisqualifiedPath -> stop "on disqualified path"
 		  | BranchLimit -> stop "on branch limit"
+		  | FinishNow -> stop "on finish immediately"
 		  | SolverFailure when !opt_nonfatal_solver
 		      -> stop "on solver failure"
 		  | UnproductivePath -> stop "on unproductive path"
