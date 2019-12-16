@@ -643,6 +643,11 @@ struct
     method private concretize_inner ty e ident =
       match e with 
 	| V.Cast((V.CAST_UNSIGNED|V.CAST_SIGNED) as ckind, cty, e2) ->
+	    (* If the value we're trying to concretize is an extension
+	       of a narrow symbolic expression, just concretize the
+	       narrow value and concretely extend the result. This is a
+	       valuable optimization, but the way we do the check is
+	       brittle to t-variable creation. *)
 	    if cty <> ty then
 	      Printf.printf "Cast type is not %s in concretize_inner of %s\n"
 		(V.type_to_string ty) (V.exp_to_string e);
@@ -1277,8 +1282,9 @@ struct
 	(num_ents - 1)
       in
         if !opt_trace_tables then
-	  Printf.printf "Load with base %08Lx, size 2**%d, stride %d"
-	    cloc idx_wd stride;
+	  Printf.printf
+	    "Load with base %08Lx, size 2**%d, stride %d, elt size %d"
+	    cloc idx_wd stride (V.bits_of_width ty);
         Some (form_man#make_table_lookup table idx_exp idx_wd ty)
 
     method private concretize_once_and_load addr_e ty =

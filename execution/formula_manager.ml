@@ -869,10 +869,13 @@ struct
 
     method tempify_exp e ty =
       let e2 = self#simplify_exp e in
-      match e2 with
-      | V.Constant(_) -> e2
-      | _ ->
-	 V.Lval(V.Temp(self#make_temp_var e2 ty))
+	match e2 with
+	  | V.Constant(_) -> e2
+	  | V.Lval(V.Temp(n,s,t))
+	      when Hashtbl.mem temp_var_num_to_subexpr n ->
+	      e2
+	  | _ ->
+	      V.Lval(V.Temp(self#make_temp_var e2 ty))
     
 
     method private tempify (v:D.t) ty =
@@ -947,10 +950,6 @@ struct
 	let v = self#lookup_tree idx_exp idx_wd ty table in
 	let v' = self#tempify v ty
 	in
-	  if !opt_trace_tables then
-	    (Printf.printf "Select from table %d at %s is %s\n"
-	       table_num (V.exp_to_string idx_exp) (D.to_string_64 v');
-	     flush stdout);
 	  if table_num <> -1 then
 	    Hashtbl.replace table_trees_cache (table_num, idx_exp) v';
 	  v'
@@ -966,8 +965,9 @@ struct
 		 v)
 	  in
 	    if !opt_trace_tables then
-	      (Printf.printf "Select from table %d at %s is %s\n"
-		 table_num (V.exp_to_string idx_exp) (D.to_string_64 v);
+	      (Printf.printf "Select from table %d at %s elt size %d is %s\n"
+		 table_num (V.exp_to_string idx_exp)
+		 (V.bits_of_width ty) (D.to_string_64 v);
 	       flush stdout);
 	    v
 	with
