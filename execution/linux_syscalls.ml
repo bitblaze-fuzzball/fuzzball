@@ -372,6 +372,16 @@ object(self)
      place as they did when the program started), or controlled by a
      command-line flag. *)
   method do_write fd bytes count =
+    let str = string_of_char_array bytes in
+    let strstr haystack needle =
+      let needle_len = String.length needle in
+      let found = ref false in
+	for i = 0 to (String.length haystack) - needle_len do
+	  if (String.sub haystack i needle_len) = needle then
+	    found := true
+	done;
+	!found
+    in
     (try
        (match !opt_prefix_out, fd with
 	  | (Some prefix, (1|2)) ->
@@ -383,13 +393,18 @@ object(self)
 	      flush stdout;
 	      put_return (Int64.of_int count)
 	  | _ ->
-	      let str = string_of_char_array bytes and
-		  ufd = self#get_fd fd
+	      let ufd = self#get_fd fd
 	      in
 		match Unix.write ufd str 0 count
 		with
 		  | i when i = count -> put_return (Int64.of_int count)
-		  | _ -> raise (Unix.Unix_error(Unix.EINTR, "", "")))
+		  | _ -> raise (Unix.Unix_error(Unix.EINTR, "", "")));
+       (match !opt_disqualify_on_message with
+	  | Some msg ->
+	      if strstr str msg then
+		(if not (strstr str "\n") then print_char '\n';
+		 raise DisqualifiedPath)
+	  | _ -> ())
      with
        | Unix.Unix_error(err, _, _) -> self#put_errno err);
     ()

@@ -80,12 +80,15 @@ let linux_cmdline_opts =
      "errno Force syscalls with symbolic args to return given value");
     ("-stop-on-symbolic-syscall-args",
      Arg.Set(opt_stop_on_symbolic_syscall_args),
-     " Cut of path on symbolic value in system call argument");
+     " Cut off path on symbolic value in system call argument");
     ("-skip-output-concretize", Arg.Set(opt_skip_output_concretize),
      " Output symbolic bytes as ? instead of solving");
     ("-chroot", Arg.String
        (fun s -> opt_chroot_path := Some s),
      "path Prepend PATH to absolute filenames");
+    ("-disqualify-on-message", Arg.String
+       (fun s -> opt_disqualify_on_message := Some s),
+     "STR Stop execution if a given string is printed");
     ("--", Arg.Rest(fun s -> opt_argv := !opt_argv @ [s]),
      " Pass any remaining arguments to the program");
   ]

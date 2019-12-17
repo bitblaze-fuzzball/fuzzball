@@ -85,6 +85,7 @@ let opt_stop_at_measurement = ref false
 let opt_periodic_influence = ref None
 let opt_influence_bound = ref (-2.0)
 let opt_disqualify_addrs = ref []
+let opt_disqualify_on_message = ref None
 let opt_check_condition_at = ref []
 let opt_trace_assigns = ref false
 let opt_trace_assigns_string = ref false
