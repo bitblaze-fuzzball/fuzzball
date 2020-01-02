@@ -495,7 +495,9 @@ not for program counter but for path condition. "short", "word", and
   concretely. Note that the standard input should still be redirected
   from a regular file if you want to explore multiple execution paths,
   since FuzzBALL needs to be able to seek on the file to reset it to
-  the beginning.
+  the beginning. If you want to have a symbolic standard input with
+  unlimited data, you can simulate this by redirecting FuzzBALL's
+  concrete standard input from an unlimited source such as /dev/zero.
 
 -symbolic-string16 <base>+<16s>
   As -symbolic-string, but with 16-bit characters
@@ -519,7 +521,21 @@ not for program counter but for path condition. "short", "word", and
   Try to make a buffer have the given contents
 
 -target-guidance <PROB>
-  Prefer better target matches with given probability
+
+  Prefer execution paths that achieve better matches with the target,
+  where the probability controls how strong/greedy the guidance is.
+  FuzzBALL records for each exploration subtree the best and worst
+  valued state it has seen in that subtree. When it has a choice,
+  guidance causes it to prefer going to a subtree with a better best
+  state, or if the best states are equal the one with the better worst
+  state. Values between 0 and 1 control the probability with which
+  FuzzBALL chooses to use this guidance at each branch. The special
+  values 2.0 and 3.0 enable an even more greedy mode in which FuzzBALL
+  will only prefer branches that are known to lead to a state with the
+  globally best score we've ever seen, but in the 2.0 level this is
+  limited by applying only after the point on a path when FuzzBALL has
+  seen at least one state it can assign a score to. (The details of
+  this guidance will probably continue to change in the future.)
 
 -target-no-prune
   Do not stop path at a target mismatch
