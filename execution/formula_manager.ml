@@ -367,18 +367,16 @@ struct
        constraints called "mem_axioms" here. Table indexing is kept
        distinct until the solver interface when it is translated into an
        SMTLIB "select" array operator or the equivalent for other
-       solvers. *)
-    method private rewrite_mem_expr e =
+       solvers. This method only performs the latter rewriting. 
+       The former rewriting should be handled by callers of this method. *)
+    method private rewrite_mem_to_scalar e =
       match e with
-	| V.Lval(V.Mem(table_var, idx, elt_ty))
-	    when List.mem table_var table_vars ->
-	    e
 	| V.Lval(V.Mem((_,region_str,ty1),
 		       V.Constant(V.Int((V.REG_32|V.REG_64), addr)), ty2))
 	  -> (self#add_mem_axioms region_str ty2 addr;
 	      V.Lval(V.Temp(self#mem_var region_str ty2 addr)))
 	| _ -> failwith ("Bad expression " ^ (V.exp_to_string e) ^
-			   " in rewrite_mem_expr")
+			   " in rewrite_mem_to_scalar")
 
     method rewrite_for_solver e =
       let rec loop e =
@@ -389,7 +387,10 @@ struct
 	  | V.FUnOp(op, rm, e1) -> V.FUnOp(op, rm, (loop e1))
 	  | V.Constant(_) -> e
 	  | V.Lval(V.Temp(_)) -> e
-	  | V.Lval(V.Mem(_, _, _)) -> self#rewrite_mem_expr e
+	  | V.Lval(V.Mem(table_var, idx_e, elt_ty))
+	      when List.mem table_var table_vars ->
+	    V.Lval(V.Mem(table_var, (loop idx_e), elt_ty))
+	  | V.Lval(V.Mem(_, _, _)) -> self#rewrite_mem_to_scalar e
 	  | V.Name(_) -> e
 	  | V.Cast(kind, ty, e1) -> V.Cast(kind, ty, (loop e1))
 	  | V.FCast(kind, rm, ty, e1) -> V.FCast(kind, rm, ty, (loop e1))
@@ -621,7 +622,7 @@ struct
 		else
 		  let elt_e = List.nth table idx in
 		    loop elt_e
-	  | V.Lval(V.Mem(_, _, _)) -> loop (self#rewrite_mem_expr e)
+	  | V.Lval(V.Mem(_, _, _)) -> loop (self#rewrite_mem_to_scalar e)
 	  | V.Lval(V.Temp(memvar))
 	      when V.VarHash.mem mem_axioms memvar
 		->
