@@ -433,12 +433,15 @@ class virtual fragment_machine = object
 
   method virtual populate_symbolic_region :
     ?prov:Interval_tree.provenance -> string -> int -> int64 -> int -> Vine.exp array
-  method virtual make_symbolic_region : int64 -> int -> unit
+  method virtual make_symbolic_region : int64 -> int -> string -> int -> unit
+  method virtual make_fresh_symbolic_region : int64 -> int -> unit
 
   method virtual store_symbolic_cstr : int64 -> int -> bool -> bool -> unit
   method virtual store_concolic_cstr : int64 -> string -> bool -> unit
   method virtual populate_concolic_string :
       ?prov:Interval_tree.provenance -> string -> int -> int64 -> string -> unit
+  method virtual store_concolic_name_str :
+                   int64 -> string -> string -> int -> unit
 
   method virtual store_symbolic_wcstr : int64 -> int -> unit
 
@@ -912,7 +915,9 @@ struct
 		       is essentially "push %eip", and usually used for PIC
 		       setup instead of a real call. *)
 		  "call"
-		else if (String.sub s 0 3) = "ret" then
+		else if ((String.sub s 0 3) = "ret")
+                  || ((String.length s >= 8) &&  ((String.sub s 0 8) = "repz ret"))
+                then
 		  "return"
 		else if (String.sub s 0 8) = "repz ret" then
 		  (* "repz ret" is a weird historical synonym for "ret"
@@ -1922,9 +1927,9 @@ struct
 
     method finish_fuzz s =
       if not disqualified then
-        (if !opt_finish_immediately then
+	(fuzz_finish_reasons <- s :: fuzz_finish_reasons;
+	 if !opt_finish_immediately then
 	   (Printf.eprintf "Finishing (immediately), %s\n" s;
-	    fuzz_finish_reasons <- s :: fuzz_finish_reasons;
 	    raise FinishNow);
 	 if !opt_trace_stopping then
 	   Printf.eprintf "Final iteration (%d previous reasons), %s\n"
@@ -2805,7 +2810,13 @@ struct
       done;
       ar
 
-    method make_symbolic_region base len =
+    method make_symbolic_region base len varname pos =
+      for i = 0 to len - 1 do
+	self#store_byte (Int64.add base (Int64.of_int i))
+	  (form_man#fresh_symbolic_mem_8 varname (Int64.of_int (pos + i)))
+      done
+
+    method make_fresh_symbolic_region base len =
       let varname = "input" ^ (string_of_int symbolic_string_id) in
 	symbolic_string_id <- symbolic_string_id + 1;
 	ignore(self#populate_symbolic_region varname 0 base len)
@@ -2845,6 +2856,14 @@ struct
 	done;
 	if terminate then
 	  self#store_byte_idx base len 0
+
+    method store_concolic_name_str base str varname pos =
+      let len = String.length str in
+      for i = 0 to len - 1 do
+	self#store_byte (Int64.add base (Int64.of_int i))
+	  (form_man#make_concolic_8 (varname ^ "_" ^ (string_of_int (pos + i)))
+	     (Char.code str.[i]))
+      done
 
     method store_symbolic_wcstr base len =
       let varname = "winput" ^ (string_of_int symbolic_string_id) ^ "_" in

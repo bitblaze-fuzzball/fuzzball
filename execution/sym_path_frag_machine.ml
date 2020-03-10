@@ -524,29 +524,46 @@ struct
 	Int64.logor (Int64.shift_left eip 16) (Int64.of_int ident)
 
     method follow_or_random =
-      let currpath_str = dt#get_hist_str in
-      let followplen = String.length !opt_follow_path and
-	  currplen = String.length currpath_str in
-      let pref =
-        if followplen > currplen then
-	  let follow_prefix = String.sub !opt_follow_path 0 currplen in
-	  if follow_prefix = currpath_str
-	  then
-	    Some ((String.sub !opt_follow_path currplen 1) = "1")
-	  else 
-	    None
-        else
-          None
-      in
-      match pref with
-      | Some b -> b
-      | None ->
-	(match !opt_always_prefer with
-	| Some b -> b
-	| _ ->
-	  if !opt_trace_guidance then
-	    Printf.eprintf "No guidance, choosing randomly\n";
-	  dt#random_bit)
+	let currpath_str = dt#get_hist_str in
+	let followplen = String.length !opt_follow_path and
+	    currplen = String.length currpath_str in
+	let follow_pref =
+          if followplen > currplen then
+	    let follow_prefix = String.sub !opt_follow_path 0 currplen in
+	      if follow_prefix = currpath_str
+	      then
+		Some ((String.sub !opt_follow_path currplen 1) = "1")
+	      else 
+		None
+          else
+            None
+	in
+	let heur_pref =
+	  match dt#heur_preference with
+	    | Some b ->
+		let choice = dt#random_float in
+		  if choice < !opt_target_guidance then
+		    (if !opt_trace_guidance then
+		       Printf.printf "On %f, using heuristic choice %b\n"
+			 choice b;
+		     Some b)
+		  else
+		    (if !opt_trace_guidance then
+		       Printf.printf "On %f, falling to cjmp_heuristic\n"
+			 choice;
+		     None)
+	    | _ -> None
+	in
+	  match (follow_pref, heur_pref) with
+	    | (Some b, _) -> b
+	    | (None, Some b) -> b
+	    | (None, None) ->
+		(match !opt_always_prefer with
+		   | Some b -> b
+		   | _ ->
+		       if !opt_trace_guidance then
+			 Printf.printf "No guidance, choosing randomly\n";
+		       dt#random_bit)
 
     method query_with_pc_choice cond verbose ident choice =
       let trans_func b =
@@ -713,21 +730,7 @@ struct
 	    | _ -> failwith "Unsupported branch preference"
 	with
 	| Not_found ->
-	  path := "hashtable miss (heur_preference)";
-	  match dt#heur_preference with
-	  | Some b ->
-	    let choice = dt#random_float in
-	    if choice < !opt_target_guidance then
-	      (if !opt_trace_guidance then
-		  Printf.eprintf "On %f, using heuristic choice %b\n"
-		    choice b;
-	       Some b)
-	    else
-	      (if !opt_trace_guidance then
-		  Printf.eprintf "On %f, falling to cjmp_heuristic\n"
-		    choice;
-	       self#call_cjmp_heuristic eip targ1 targ2 None)
-	  | None -> 
+	      path := "hashtable miss (heur_preference)";
 	      (match is_input_byte_compare e with
 		 | Some (flip, c) ->
 		     (try let prob = Hashtbl.find opt_rare_delims c in
@@ -764,7 +767,6 @@ struct
 	);
       *)
       preference
-
 
     method eval_cjmp exp targ1 targ2 =
       let eip = self#get_eip in

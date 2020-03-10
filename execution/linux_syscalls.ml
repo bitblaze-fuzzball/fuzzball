@@ -93,10 +93,15 @@ let chroot s =
     s
 
 type fd_extra_info = {
+  mutable unix_fd : Unix.file_descr option;
   mutable dirp_offset : int;
   mutable readdir_eof: int;
   mutable fname : string;
   mutable snap_pos : int option;
+  mutable is_symbolic : bool;
+  mutable is_concolic : bool;
+  mutable num_read_symbolic : int;
+  mutable snap_num_read : int;
 }
 
 (* N.b. the argument order here is the opposite from D.assemble64,
@@ -201,30 +206,64 @@ class linux_special_handler (fm : fragment_machine) =
            name, "")));
   in
 object(self)
-  val unix_fds = 
-    let a = Array.make 1024 None in
-      Array.set a 0 (Some Unix.stdin);
-      Array.set a 1 (Some Unix.stdout);
-      Array.set a 2 (Some Unix.stderr);
+  val fd_info =
+    let a = Array.init 1024
+              (fun _ -> { unix_fd = None;
+                          dirp_offset = 0;
+                          readdir_eof = 0;
+                          fname = "";
+                          snap_pos = None;
+                          is_symbolic = false;
+                          is_concolic = false;
+                          num_read_symbolic = 0;
+                          snap_num_read = 0})
+    in
+      a.(0).unix_fd <- (Some Unix.stdin);
+      a.(1).unix_fd <- (Some Unix.stdout);
+      a.(2).unix_fd <- (Some Unix.stderr);
       a
 
-  method fresh_fd () =
-    let rec loop i = match unix_fds.(i) with
+  method private fresh_fd () =
+    let rec loop i = match fd_info.(i).unix_fd with
       | None -> i
       | Some _ -> loop (i + 1)
     in loop 0
 
-  method get_fd vt_fd =
-    if vt_fd < 0 || vt_fd >= (Array.length unix_fds) then
+  method private get_fd vt_fd =
+    if vt_fd < 0 || vt_fd >= (Array.length fd_info) then
       raise (Unix.Unix_error(Unix.EBADF, "Bad (virtual) file handle", ""))
     else
-      match unix_fds.(vt_fd) with
+      match fd_info.(vt_fd).unix_fd with
 	| Some fd -> fd
 	| None -> raise
 	    (Unix.Unix_error(Unix.EBADF, "Bad (virtual) file handle", ""))
 
-  val fd_info = Array.init 1024
-    (fun _ -> { dirp_offset = 0; readdir_eof = 0; fname = ""; snap_pos = None })
+  method private clear_fd vt_fd =
+    fd_info.(vt_fd).unix_fd <- None;
+    fd_info.(vt_fd).dirp_offset <- 0;
+    fd_info.(vt_fd).readdir_eof <- 0;
+    fd_info.(vt_fd).fname <- "";
+    fd_info.(vt_fd).snap_pos <- None;
+    fd_info.(vt_fd).is_symbolic <- false;
+    fd_info.(vt_fd).is_concolic <- false;
+    fd_info.(vt_fd).num_read_symbolic <- 0;
+    fd_info.(vt_fd).snap_num_read <- 0
+
+  method private new_fd vt_fd unix_fd =
+    self#clear_fd vt_fd;
+    fd_info.(vt_fd).unix_fd <- Some unix_fd
+
+  method private copy_fd new_vt_fd new_unix_fd old_vt_fd =
+    let old = fd_info.(old_vt_fd) in
+    fd_info.(new_vt_fd).unix_fd <- Some new_unix_fd;
+    fd_info.(new_vt_fd).dirp_offset <- old.dirp_offset;
+    fd_info.(new_vt_fd).readdir_eof <- old.readdir_eof;
+    fd_info.(new_vt_fd).fname <- old.fname;
+    fd_info.(new_vt_fd).snap_pos <- old.snap_pos;
+    fd_info.(new_vt_fd).is_symbolic <- old.is_symbolic;
+    fd_info.(new_vt_fd).is_concolic <- old.is_concolic;
+    fd_info.(new_vt_fd).num_read_symbolic <- old.num_read_symbolic;
+    fd_info.(new_vt_fd).snap_num_read <- old.snap_num_read;
 
   val netlink_sim_sockfd = ref 1025
   val netlink_sim_seq = ref 0L
@@ -338,6 +377,16 @@ object(self)
      place as they did when the program started), or controlled by a
      command-line flag. *)
   method do_write fd bytes count =
+    let str = string_of_char_array bytes in
+    let strstr haystack needle =
+      let needle_len = String.length needle in
+      let found = ref false in
+	for i = 0 to (String.length haystack) - needle_len do
+	  if (String.sub haystack i needle_len) = needle then
+	    found := true
+	done;
+	!found
+    in
     (try
        (match !opt_prefix_out, fd with
 	  | (Some prefix, (1|2)) ->
@@ -349,13 +398,18 @@ object(self)
 	      flush stdout; (* Linux write(2) is unbuffered *)
 	      put_return (Int64.of_int count)
 	  | _ ->
-	      let str = string_of_char_array bytes and
-		  ufd = self#get_fd fd
+	      let ufd = self#get_fd fd
 	      in
 		match Unix.write ufd str 0 count
 		with
 		  | i when i = count -> put_return (Int64.of_int count)
-		  | _ -> raise (Unix.Unix_error(Unix.EINTR, "", "")))
+		  | _ -> raise (Unix.Unix_error(Unix.EINTR, "", "")));
+       (match !opt_disqualify_on_message with
+	  | Some msg ->
+	      if strstr str msg then
+		(if not (strstr str "\n") then print_char '\n';
+		 raise DisqualifiedPath)
+	  | _ -> ())
      with
        | Unix.Unix_error(err, _, _) -> self#put_errno err);
     ()
@@ -756,30 +810,43 @@ object(self)
       | None -> failwith "OCaml has no getsid()"
 
   val symbolic_fnames = Hashtbl.create 11
-  val symbolic_fds = Hashtbl.create 11
 
   method add_symbolic_file s is_concolic =
     Hashtbl.replace symbolic_fnames s is_concolic
 
   method add_symbolic_fd fd is_concolic =
-    Hashtbl.replace symbolic_fds fd is_concolic
+    fd_info.(fd).is_symbolic <- true;
+    fd_info.(fd).is_concolic <- is_concolic;
+    (* Set up a global variable so that the symbolic variables
+       produced for input from this FD can be parsed by
+       -trace-assigns-string. For this to work, this code has to match
+       the way the variables are created later in fill_read_buf. *)
+    let byte_suf = if is_concolic then "" else "byte_" in
+    match (!input_string_mem_prefix, fd) with
+    | (None, 0) -> input_string_mem_prefix := Some ("stdin_" ^ byte_suf)
+    | (None, _) -> input_string_mem_prefix := Some ("file_" ^ byte_suf)
+    | (Some _, _) -> ()
 
   method private save_sym_fd_positions = 
-    Hashtbl.iter
-      (fun fd _ ->
-	 try
-	   fd_info.(fd).snap_pos <-
-	     Some (Unix.lseek (self#get_fd fd) 0 Unix.SEEK_CUR)
-	 with Unix.Unix_error(Unix.ESPIPE, "lseek", "") -> ()
-      ) symbolic_fds
+    Array.iteri
+      (fun fd info ->
+        if info.is_symbolic then
+	  ((try
+	      info.snap_pos <-
+	        Some (Unix.lseek (self#get_fd fd) 0 Unix.SEEK_CUR)
+	    with Unix.Unix_error(Unix.ESPIPE, "lseek", "") -> ());
+           info.snap_num_read <- info.num_read_symbolic)
+      ) fd_info
 
   method private reset_sym_fd_positions = 
-    Hashtbl.iter
-      (fun fd _ ->
-	 match fd_info.(fd).snap_pos with
+    Array.iteri
+      (fun fd info ->
+        if info.is_symbolic then
+          ((match info.snap_pos with
 	   | Some pos -> ignore(Unix.lseek (self#get_fd fd) pos Unix.SEEK_SET)
-	   | None -> ())
-      symbolic_fds
+	   | None -> ());
+           info.num_read_symbolic <- info.snap_num_read)
+      ) fd_info
 
   method make_snap = 
     self#save_sym_fd_positions;
@@ -817,7 +884,7 @@ object(self)
       let (sockfd_oc,socka_oc) = Unix.accept (self#get_fd sockfd) and
           vt_fd = self#fresh_fd () in
       self#write_sockaddr socka_oc addr addrlen_ptr;
-      Array.set unix_fds vt_fd (Some sockfd_oc);
+      self#new_fd vt_fd sockfd_oc;
       put_return (Int64.of_int vt_fd)
     with
       | Unix.Unix_error(err, _, _) -> self#put_errno err
@@ -928,8 +995,7 @@ object(self)
           netlink_sim_sockfd := 1025
         else
           Unix.close oc_fd);
-      Array.set unix_fds fd None;
-      Hashtbl.remove symbolic_fds fd;
+      self#clear_fd fd;
       put_return 0L (* success *)
     with
       | Unix.Unix_error(err, _, _) -> self#put_errno err
@@ -947,19 +1013,18 @@ object(self)
     let old_oc_fd = self#get_fd old_vt_fd in
     let new_oc_fd = Unix.dup old_oc_fd in
     let new_vt_fd = self#fresh_fd () in
-      Array.set unix_fds new_vt_fd (Some new_oc_fd);
-      fd_info.(new_vt_fd).fname <- fd_info.(old_vt_fd).fname;
-      fd_info.(new_vt_fd).dirp_offset <- fd_info.(old_vt_fd).dirp_offset;
-      fd_info.(new_vt_fd).readdir_eof <- fd_info.(old_vt_fd).readdir_eof;
+      self#copy_fd new_vt_fd new_oc_fd old_vt_fd;
       put_return (Int64.of_int new_vt_fd)
 
   method sys_dup2 old_vt_fd new_vt_fd =
     let old_oc_fd = self#get_fd old_vt_fd and
         new_oc_fd = self#get_fd new_vt_fd in
+    (* We should probably recheck whether this does the right thing in
+       the two cases of the new file descriptor number either being in
+       use or not. The get_fd might fail if it is not in use, but if
+       it is in use it might be best to close it. *)
     Unix.dup2 old_oc_fd new_oc_fd;
-    fd_info.(new_vt_fd).fname <- fd_info.(old_vt_fd).fname;
-    fd_info.(new_vt_fd).dirp_offset <- fd_info.(old_vt_fd).dirp_offset;
-    fd_info.(new_vt_fd).readdir_eof <- fd_info.(old_vt_fd).readdir_eof;
+    self#copy_fd new_vt_fd new_oc_fd old_vt_fd;
     put_return (Int64.of_int new_vt_fd)
 
   method sys_eventfd2 initval flags =
@@ -969,7 +1034,7 @@ object(self)
     in
     let oc_fd = Unix.openfile "/dev/null" oc_flags 0o666 in
     let vt_fd = self#fresh_fd () in
-      Array.set unix_fds vt_fd (Some oc_fd);
+      self#new_fd vt_fd oc_fd;
       fd_info.(vt_fd).fname <- "/dev/fake/eventfd";
       put_return (Int64.of_int vt_fd)
 
@@ -1332,9 +1397,9 @@ object(self)
       in
       let (oc_fd1, oc_fd2) = Unix.socketpair domain typ prot_i in
       let vt_fd1 = self#fresh_fd () in
-      Array.set unix_fds vt_fd1 (Some oc_fd1);
+      self#new_fd vt_fd1 oc_fd1;
       let vt_fd2 = self#fresh_fd () in
-      Array.set unix_fds vt_fd2 (Some oc_fd2);
+      self#new_fd vt_fd2 oc_fd2;
       store_word addr 0 (Int64.of_int vt_fd1);
       store_word addr 4 (Int64.of_int vt_fd2);
       put_return 0L
@@ -1671,14 +1736,14 @@ object(self)
     let oc_flags = self#flags_to_oc_flags flags in
     let oc_fd = Unix.openfile (chroot path) oc_flags mode and
 	  vt_fd = self#fresh_fd () in
-	Array.set unix_fds vt_fd (Some oc_fd);
+        self#new_fd vt_fd oc_fd;
 	fd_info.(vt_fd).fname <- path;
 	fd_info.(vt_fd).dirp_offset <- 0;
 	fd_info.(vt_fd).readdir_eof <- 0;
 	(* XXX: canonicalize filename here? *)
 	if Hashtbl.mem symbolic_fnames path then
-	  Hashtbl.replace symbolic_fds vt_fd
-	    (Hashtbl.find symbolic_fnames path);
+          (fd_info.(vt_fd).is_symbolic <- true;
+           fd_info.(vt_fd).is_concolic <- (Hashtbl.find symbolic_fnames path));
 	put_return (Int64.of_int vt_fd)
 
   method sys_open path flags mode =
@@ -1704,9 +1769,9 @@ object(self)
   method sys_pipe buf =
     let (oc_fd1, oc_fd2) = Unix.pipe () in
     let vt_fd1 = self#fresh_fd () in
-    Array.set unix_fds vt_fd1 (Some oc_fd1);
+    self#new_fd vt_fd1 oc_fd1;
     let vt_fd2 = self#fresh_fd () in
-    Array.set unix_fds vt_fd2 (Some oc_fd2);
+    self#new_fd vt_fd2 oc_fd2;
     store_word buf 0 (Int64.of_int vt_fd1);
     store_word buf 4 (Int64.of_int vt_fd2);
     put_return 0L (* success *)
@@ -1714,9 +1779,9 @@ object(self)
   method sys_pipe2 buf flags =
     let (oc_fd1, oc_fd2) = Unix.pipe () in
     let vt_fd1 = self#fresh_fd () in
-      Array.set unix_fds vt_fd1 (Some oc_fd1);
+    self#new_fd vt_fd1 oc_fd1;
     let vt_fd2 = self#fresh_fd () in
-      Array.set unix_fds vt_fd2 (Some oc_fd2);
+    self#new_fd vt_fd2 oc_fd2;
     store_word buf 0 (Int64.of_int vt_fd1);
     store_word buf 4 (Int64.of_int vt_fd2);
     if (flags land 0o4000 <> 0) then (* O_NONBLOCK *)
@@ -1766,25 +1831,36 @@ object(self)
       put_pollfd fds_buf i flags
     done;
     put_return (Int64.of_int !count)
-		
+
+  (* For read-like system calls, handle filling in the memory buffer
+     with the actual data, or symbolic bytes.
+   *)
+  method private fill_read_buf fd buf num_read str =
+    if num_read > 0 && fd_info.(fd).is_symbolic then
+      let is_concolic = fd_info.(fd).is_concolic in
+      fm#maybe_start_symbolic
+        (fun () ->
+	  (let name = if fd = 0 then "stdin" else "file" and
+               pos = fd_info.(fd).num_read_symbolic
+           in
+           if is_concolic then
+	     fm#store_concolic_name_str buf (String.sub str 0 num_read)
+               name pos
+	   else
+	     fm#make_symbolic_region buf num_read name pos;
+           fd_info.(fd).num_read_symbolic <- pos + num_read;
+	   max_input_string_length :=
+	     max (!max_input_string_length) fd_info.(fd).num_read_symbolic))
+    else
+      fm#store_str buf 0L (String.sub str 0 num_read);
+
   method private read_throw fd buf count =
     let str = self#string_create count in
     let oc_fd = self#get_fd fd in	
     let num_read = Unix.read oc_fd str 0 count in
-      if num_read > 0 && Hashtbl.mem symbolic_fds fd then
-	let is_concolic = Hashtbl.find symbolic_fds fd in
-	  fm#maybe_start_symbolic
-	    (fun () ->
-	       (if is_concolic then
-		  fm#store_concolic_cstr buf (String.sub str 0 num_read) false
-		else
-		  fm#make_symbolic_region buf num_read;
-		max_input_string_length :=
-		  max (!max_input_string_length) num_read))
-      else
-	fm#store_str buf 0L (String.sub str 0 num_read);
-      put_return (Int64.of_int num_read)
-    
+    self#fill_read_buf fd buf num_read str;
+    put_return (Int64.of_int num_read)
+
   method sys_read fd buf count =
     try
       self#read_throw fd buf count
@@ -1797,7 +1873,7 @@ object(self)
       let str = self#string_create num_bytes in
       let oc_fd = self#get_fd fd in
       let num_read = Unix.read oc_fd str 0 num_bytes in
-	g_assert(not (Hashtbl.mem symbolic_fds fd)) 100 "Linux_syscalls.sys_readv"; (* unimplemented *)
+	g_assert(not (fd_info.(fd).is_symbolic)) 100 "Linux_syscalls.sys_readv"; (* unimplemented *)
 	self#scatter_iovec iov cnt str;
 	put_return (Int64.of_int num_read)
     with
@@ -1845,13 +1921,7 @@ object(self)
       let num_read =
 	Unix.recv (self#get_fd sockfd) str 0 len flags
       in
-	if num_read > 0 && Hashtbl.mem symbolic_fds sockfd then    
-	  fm#maybe_start_symbolic
-	    (fun () -> (fm#make_symbolic_region buf num_read;
-			max_input_string_length :=
-			  max (!max_input_string_length) num_read))
-	else
-	  fm#store_str buf 0L (String.sub str 0 num_read);
+        self#fill_read_buf sockfd buf num_read str;
 	put_return (Int64.of_int num_read) (* success *)
     with
       | Unix.Unix_error(err, _, _) -> self#put_errno err
@@ -1874,13 +1944,7 @@ object(self)
           (Unix.recv (self#get_fd sockfd) str 0 len flags,
            Unix.ADDR_UNIX("unused"))
       in
-	if num_read > 0 && Hashtbl.mem symbolic_fds sockfd then
-	  fm#maybe_start_symbolic
-	    (fun () -> (fm#make_symbolic_region buf num_read;
-			max_input_string_length :=
-			  max (!max_input_string_length) num_read))
-	else
-	  fm#store_str buf 0L (String.sub str 0 num_read);
+        self#fill_read_buf sockfd buf num_read str;
         if addrbuf <> 0L then
 	  self#write_sockaddr sockaddr addrbuf addrlen_ptr;
 	put_return (Int64.of_int num_read) (* success *)
@@ -1961,7 +2025,7 @@ object(self)
           (Unix.recv (self#get_fd sockfd) str 0 len flags,
            Unix.ADDR_UNIX("unused"))
         in
-        g_assert(not (Hashtbl.mem symbolic_fds sockfd)) 100 "Linux_syscalls.sys_recvmsg"; (* unimplemented *)
+	g_assert(not (fd_info.(sockfd).is_symbolic)) 100 "Linux_syscalls.sys_recvmsg"; (* unimplemented *)
         (if addrbuf <> 0L then
            let addrlen_ptr = load_word (lea msg 0 0 4) in
            self#write_sockaddr sockaddr addrbuf addrlen_ptr);
@@ -1987,7 +2051,7 @@ object(self)
           (Unix.recv (self#get_fd sockfd) str 0 len flags,
            Unix.ADDR_UNIX("unused"))
       in
-        assert(not (Hashtbl.mem symbolic_fds sockfd)); (* unimplemented *)
+	assert(not (fd_info.(sockfd).is_symbolic)); (* unimplemented *)
         (if addrbuf <> 0L then
            let addrlen_ptr = load_long (lea msg 0 0 8) in
              self#write_sockaddr sockaddr addrbuf addrlen_ptr);
@@ -2618,13 +2682,13 @@ object(self)
       if !netlink_flag = false then (
         let oc_fd = Unix.socket domain typ prot_i and
         vt_fd = self#fresh_fd () in
-        Array.set unix_fds vt_fd (Some oc_fd);
+        self#new_fd vt_fd oc_fd;
         put_return (Int64.of_int vt_fd))
       else (
         let vt_fd = self#fresh_fd () in
         netlink_sim_sockfd := vt_fd;
-        (* Plugging in a placeholder into unix_fds *)
-        Array.set unix_fds vt_fd (Some Unix.stdin);
+        (* Plugging in a placeholder Unix file descriptor *)
+        self#new_fd vt_fd Unix.stdin;
         put_return (Int64.of_int vt_fd))
     with 
       | Unix.Unix_error(err, _, _) -> self#put_errno err

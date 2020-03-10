@@ -35,7 +35,7 @@ let binary_str x len =
 
 let bvconst_str x len =
   if len mod 4 = 0 then
-    let fmt_str = "#x%0" ^ (string_of_int (len / 4)) ^ "x" in
+    let fmt_str = "#x%0" ^ (string_of_int (len / 4)) ^ "Lx" in
       sprintf (Scanf.format_from_string fmt_str "#x%0Lx") x
   else
     "#b" ^ (binary_str x len)

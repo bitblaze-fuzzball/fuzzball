@@ -108,9 +108,14 @@ class concrete_string_memory = object(self)
   (* The extra page is a hacky way to not crash on address wrap-around *)
   val mem = Array.init 0x100001 (fun _ -> None)
 
+  method private check_page page addr is_store =
+    if page < 0 || page > 0x100001 then
+      raise (SimulatedSegfault(addr, is_store))
+
   method store_byte addr b =
     let page = Int64.to_int (Int64.shift_right addr 12) and
 	idx = Int64.to_int (Int64.logand addr 0xfffL) in
+    self#check_page page addr true;
     let page_str = match mem.(page) with
       | Some page_str -> page_str
       | None ->
@@ -129,6 +134,7 @@ class concrete_string_memory = object(self)
   method load_byte addr =
     let page = Int64.to_int (Int64.shift_right addr 12) and
 	idx = Int64.to_int (Int64.logand addr 0xfffL) in
+    self#check_page page addr false;
     let page_str = match mem.(page) with
       | Some page_str -> page_str
       | None ->
@@ -282,9 +288,14 @@ class string_maybe_memory = object(self)
   val mem = Array.init 0x100001 (fun _ -> None)
   val bitmaps = Array.init 0x100001 (fun _ -> None)
 
+  method private check_page page addr is_store =
+    if page < 0 || page > 0x100001 then
+      raise (SimulatedSegfault(addr, is_store))
+
   method private maybe_get_pages addr = 
     let page = Int64.to_int (Int64.shift_right addr 12) and
 	idx = Int64.to_int (Int64.logand addr 0xfffL) in
+      self#check_page page addr false;
       match (mem.(page), bitmaps.(page)) with
 	| (Some page_str, Some bitmap) -> Some (page_str, bitmap, idx)
 	| (None, None) -> None
@@ -293,6 +304,7 @@ class string_maybe_memory = object(self)
   method private get_pages addr = 
     let page = Int64.to_int (Int64.shift_right addr 12) and
 	idx = Int64.to_int (Int64.logand addr 0xfffL) in
+      self#check_page page addr true;
       match (mem.(page), bitmaps.(page)) with
 	| (Some page_str, Some bitmap) -> (page_str, bitmap, idx)
 	| (None, None) ->

@@ -195,6 +195,12 @@ let fuzz_runloop fm fuzz_start_eip asmir_gamma end_eips =
   | JumpToNull -> 
     log_fuzz_restart Log.always ":jump_to_null" true fm;
     stop "at jump to null" true
+  | SimulatedSegfault(addr, is_store) ->
+    log_fuzz_restart Log.always ":simulated_segfault" true fm;
+    stop
+      ("at illegal " ^
+	 (if is_store then "store to" else "load from")
+       ^ " address 0x" ^ (Printf.sprintf "%08Lx" addr)) true
   | DivideByZero -> 
     log_fuzz_restart Log.always ":division_by_zero" true fm;
     stop "at division by zero" true

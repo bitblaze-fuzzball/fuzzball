@@ -516,9 +516,13 @@ let rec constant_fold ctx e =
         BinOp(BITOR, cond, cond2)
     | Ite(cond, cond2, Constant(Int(REG_1, 0L))) ->
         BinOp(BITAND, cond, cond2)
+    (* These next two rules seem questionable. We've seen cases where
+       they help, but it's risky that they make the tree bigger. The
+       binop one with + also can interfere with symbolic address
+       parsing. *)
     | Cast(ct, ty, Ite(cond, e1, e2)) ->
         Ite(cond, Cast(ct, ty, e1), Cast(ct, ty, e2))
-    | BinOp(op, Ite(cond, e1, e2), (Constant(_) as k)) ->
+    | BinOp(op, Ite(cond, e1, e2), (Constant(_) as k)) when op <> PLUS ->
         Ite(cond, BinOp(op, e1, k), BinOp(op, e2, k))
     (* Rules involving CONCAT: *)
     | Cast(CAST_LOW, REG_8, BinOp(CONCAT, e_h, e_l))
@@ -537,6 +541,12 @@ let rec constant_fold ctx e =
 	Cast(CAST_LOW, REG_1, e_l)
     | Cast(CAST_HIGH, REG_1, BinOp(CONCAT, e_h, e_l)) ->
 	Cast(CAST_HIGH, REG_1, e_h)
+    | BinOp(CONCAT, Constant(Int(REG_8, 0L)), x) ->
+       Cast(CAST_UNSIGNED, REG_16, x)
+    | BinOp(CONCAT, Constant(Int(REG_16, 0L)), x) ->
+       Cast(CAST_UNSIGNED, REG_32, x)
+    | BinOp(CONCAT, Constant(Int(REG_32, 0L)), x) ->
+       Cast(CAST_UNSIGNED, REG_64, x)
     (* AND / OR with itself *)
     | BinOp(BITOR, x, y)
     | BinOp(BITAND, x, y)

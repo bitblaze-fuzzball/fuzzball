@@ -931,15 +931,15 @@ class binary_decision_tree = object(self)
 	  tMax := t_max;
 	    if !opt_trace_guidance then
 	      Printf.eprintf
-		"Heuristic choice between F[%d, %d] and T[%d, %d]\n"
-		f_min f_max t_min t_max;
+		"Heuristic choice between F[%d, %d] and T[%d, %d] (cur %d)\n"
+		f_min f_max t_min t_max cur_heur;
 	    if f_min > f_max || t_min > t_max then
 	      (* Only one side explored, no basis to choose *)
 	      None
-	    else if !opt_target_guidance = 2.0 then
-	      if cur_heur <= 1 then
-		(* Don't apply guidance before we have any estimate
-		   of the value of this path *)
+	    else if !opt_target_guidance >= 2.0 then
+	      if !opt_target_guidance = 2.0 && cur_heur <= 1 then
+		(* At 2.0, don't apply guidance before we have any
+		   estimate of the value of this path *)
 		None
 	      (* Only prefer branches that lead to the best state(s)
 		 we've ever seen *)
