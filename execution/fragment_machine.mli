@@ -80,6 +80,7 @@ class virtual fragment_machine : object
   method virtual concretize_misc : unit
   method virtual add_extra_eip_hook :
     (fragment_machine -> int64 -> unit) -> unit
+  method virtual add_range_opt : string -> bool ref -> unit
   method virtual eip_hook : int64 -> unit
   method virtual get_eip : int64
   method virtual set_eip : int64 -> unit
@@ -182,10 +183,13 @@ class virtual fragment_machine : object
 
   method virtual store_str : int64 -> int64 -> string -> unit
 
-  method virtual make_symbolic_region : int64 -> int -> unit
+  method virtual make_symbolic_region : int64 -> int -> string -> int -> unit
+  method virtual make_fresh_symbolic_region : int64 -> int -> unit
 
   method virtual store_symbolic_cstr : int64 -> int -> bool -> bool -> unit
   method virtual store_concolic_cstr : int64 -> string -> bool -> unit
+  method virtual store_concolic_name_str :
+                   int64 -> string -> string -> int -> unit
 
   method virtual store_symbolic_wcstr : int64 -> int -> unit
 
@@ -253,6 +257,8 @@ class virtual fragment_machine : object
 
   method virtual set_iter_seed : int -> unit
 
+  method virtual random_byte : int
+
   method virtual finish_path : bool
 
   method virtual after_exploration : unit
@@ -282,6 +288,7 @@ sig
     method set_frag : Vine.program -> unit
     method concretize_misc : unit
     method add_extra_eip_hook : (fragment_machine -> int64 -> unit) -> unit
+    method add_range_opt : string -> bool ref -> unit
     method eip_hook : int64 -> unit
     method get_eip : int64
     method set_eip : int64 -> unit
@@ -430,10 +437,13 @@ sig
 
     method store_str : int64 -> int64 -> string -> unit
 
-    method make_symbolic_region : int64 -> int -> unit
+    method make_symbolic_region : int64 -> int -> string -> int -> unit
+    method make_fresh_symbolic_region : int64 -> int -> unit
 
     method store_symbolic_cstr : int64 -> int -> bool -> bool -> unit
     method store_concolic_cstr : int64 -> string -> bool -> unit
+    method store_concolic_name_str :
+             int64 -> string -> string -> int -> unit
 
     method store_symbolic_wcstr : int64 -> int -> unit
 
@@ -507,6 +517,7 @@ sig
     method match_input_var : string -> int option
     method print_tree : out_channel -> unit
     method set_iter_seed : int -> unit
+    method random_byte : int
     method finish_path : bool
     method after_exploration : unit
     method make_x86_segtables_symbolic : unit

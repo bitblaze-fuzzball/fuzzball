@@ -12,7 +12,7 @@ struct
   let equal x y =
     x == y ||
       match (x,y) with
-	| ((x,_,_), (y,_,_)) when x == y ->
+	| ((x,_,_), (y,_,_)) when x = y ->
 	    true
 	| _ -> false
   let compare (x,_,_) (y,_,_) = compare x y

@@ -71,27 +71,54 @@ sudo debuginfo-install coreutils
 2. VEX
 
 We use the VEX library for instruction processing, best known for its
-use in Valgrind. It's not distributed separately, so you can just
-check it out from Valgrind's SVN repository (and we refer to versions
-by their SVN revision number). Unfortunately for us the VEX interface
-changes incompatibly from time to time, requiring matching updates in
-our interface code (look for "#if VEX_VERSION > xxxx" in
-libasmir/src).
+use in Valgrind. It's not distributed separately, so what we've
+historically done was to check it out from Valgrind's SVN repository,
+where it was a sub-project. Unfortunately for us the VEX interface
+changes incompatibly from time to time. The way we handled this is by
+having the configure process generate a preprocessor macro named
+VEX_VERSION, which we then use for conditional compilation like
+"#if VEX_VERSION >= xxxx" in the interface code under libasmir.
 
-The most recent version of VEX we've tested with is r3206. However it
-doesn't work out of the box because the Valgrind developers have
-broken their Makefile. A patch for this is in vex-r3206.patch. You'll
-want to use this version if you're running x86-64 binaries new enough
-to contain MPX instructions, since VEX versions before r2858 can't
-deal with them. However ARM support hasn't been tested in this version
-yet.
+In 2017 the Valgrind developers transitioned from SVN to Git. The good
+news is that Git's distributed nature makes it easier for us to keep
+track of the changes to VEX that we need. What may be less convenient
+is how to keep track of VEX interface changes: as of this writing
+there haven't yet been any incompatible changes in the Git version,
+but it's probably only a matter of time until there are. We've set up
+some configure machinery to create fake VEX_VERSION values of Git
+checkouts, by count the number of commits back to the merge point and
+adding 3400 (the final SVN revision number). This is a bit of a hack,
+but it seems it may work OK because the Valgrind developers are
+planning to only do linear (SVN-like, rebase-based) development.
 
-The more recent stable version of VEX we recommend is r2737. For x86
-and x86-64 it works out of the box. Typical commands to check out and
-compile it look like:
+Our fork of Valgrind/VEX is at:
 
-   % svn co -r2737 svn://svn.valgrind.org/vex/trunk vex-r2737
-   % cd vex-r2737
+https://github.com/bitblaze-fuzzball/valgrind-vex-for-fuzzball.git
+
+We'll try to always keep it in a state that's compatible with
+FuzzBALL. Commands to check out and compile VEX from this repository
+look like:
+
+   % git clone https://github.com/bitblaze-fuzzball/valgrind-vex-for-fuzzball.git
+   % cd valgrind-vex-for-fuzzball/VEX
+   % make -f Makefile-gcc
+
+The most recent SVN version of VEX we've tested with (and probably the
+final one) is r3400. As of this writing the repository is still
+available read-only. The build process of recent VEX versions
+needs some workarounds to compile outside of Valgrind's autoconf
+environment, so you'll want to apply one of the patches like
+vex-r3400.patch. r3260 is another version we've used
+extensively. Before it we recommended r2737, but on recent x86-64
+systems you need a version that's at least r2858 to deal with MPX
+instructions (even as no-ops).
+
+Thus, some typical commands to check out and compile VEX from SVN look
+like:
+
+   % svn co -r3260 svn://svn.valgrind.org/vex/trunk vex-r3260
+   % cd vex-r3260
+   % patch -p0 <$HERE/vex-r3260.patch
    % make -f Makefile-gcc
 
 For many uses of FuzzBALL, and especially on x86-32, any version of

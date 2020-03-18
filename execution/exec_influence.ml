@@ -55,7 +55,7 @@ let diff_to_range_i diff =
     log2_of_uint64 (Int64.succ diff)
 
 let random_xor_constraint ty target_e num_terms =
-  (* (out & (1 << k)) != 0, k random in [0, bits(out)-1] *)
+  (* (out & (1 << k)) <> 0, k random in [0, bits(out)-1] *)
   let random_term () = 
     let k = Random.int (V.bits_of_width ty) in
     let mask = V.Constant(V.Int(ty, (Int64.shift_left 1L k))) in

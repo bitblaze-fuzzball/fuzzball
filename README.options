@@ -42,7 +42,12 @@ not for program counter but for path condition. "short", "word", and
 -arch <arch>
 
   Set the CPU architecture of FuzzBALL, where <arch> is either "x86"
-  (32-bit Intel i386 compatible) or "arm" (ARM, including Thumb).
+  (32-bit Intel i386 compatible), "x64" (64-bit AMD64 or Intel 64, AKA
+  x86-64) or "arm" (32-bit ARM, including Thumb). If this option is
+  omitted but a program file is supplied, FuzzBALL will try to detect
+  the right architecture from the program file. Earlier versions of
+  FuzzBALL defaulted to "x86" but this should now be supplied
+  explicitly if it can't be auto-detected.
 
 -branch-preference <eip>:<0 or 1>
 
@@ -72,10 +77,15 @@ not for program counter but for path condition. "short", "word", and
   Every time a value is dereferenced, check whether it can have the
   value 0, via a mechanism similar to -check-condition-at. Note that
   FuzzBALL will in any case stop a path if the actual dereferenced
-  value is null (in fact if it's less than 4096), but -check-for-null
+  value is 0 (in fact if it's less than 4096, matching the typical
+  behavior of the lowest page being unallocated), but -check-for-null
   will also catch a case where a null value would be allowed by the
   path condition even if it's not the value FuzzBALL's address logic
-  chooses.
+  chooses. There is currently no option provided for disabling the
+  check on concrete addresses: it would be possible for FuzzBALL to
+  treat accesses to the 0th page the same as accesses to any other
+  page, but out experience is that such accesses generally indicate a
+  bug in your subject program or in FuzzBALL.
 
 -chroot <path>
 
@@ -120,6 +130,18 @@ not for program counter but for path condition. "short", "word", and
   -concolic-prob 0. "-concolic-prob 1 -num-paths 1" has an effect
   similar to -concrete-path; see its entry for a discussion of the
   difference.
+
+-concolic-stdin
+
+  Mark all the data that the program reads from the standard input
+  (file descriptor 0) as concolic. This is analogous to
+  -concolic-file, except that the file descriptor is identified by
+  being FD 0 instead of based on a file name. The length of data read
+  will be the same as the amount the program would read
+  concretely. Note that the standard input should still be redirected
+  from a regular file if you want to explore multiple execution paths,
+  since FuzzBALL needs to be able to seek on the file to reset it to
+  the beginning.
 
 -concolic-string <base>=<str>
 
@@ -463,6 +485,20 @@ not for program counter but for path condition. "short", "word", and
 -symbolic-short-influence <addr>=<var>
   Like -symbolic-short, but also use for -periodic-influence
 
+-symbolic-stdin-concrete-size
+
+  Mark all the data that the program reads from the standard input
+  (file descriptor 0) as symbolic. This is analogous to
+  -symbolic-file, except that the file descriptor is identified by
+  being FD 0 instead of based on a file name. The length of data read
+  will be the same as the amount the program would read
+  concretely. Note that the standard input should still be redirected
+  from a regular file if you want to explore multiple execution paths,
+  since FuzzBALL needs to be able to seek on the file to reset it to
+  the beginning. If you want to have a symbolic standard input with
+  unlimited data, you can simulate this by redirecting FuzzBALL's
+  concrete standard input from an unlimited source such as /dev/zero.
+
 -symbolic-string16 <base>+<16s>
   As -symbolic-string, but with 16-bit characters
 
@@ -485,7 +521,21 @@ not for program counter but for path condition. "short", "word", and
   Try to make a buffer have the given contents
 
 -target-guidance <PROB>
-  Prefer better target matches with given probability
+
+  Prefer execution paths that achieve better matches with the target,
+  where the probability controls how strong/greedy the guidance is.
+  FuzzBALL records for each exploration subtree the best and worst
+  valued state it has seen in that subtree. When it has a choice,
+  guidance causes it to prefer going to a subtree with a better best
+  state, or if the best states are equal the one with the better worst
+  state. Values between 0 and 1 control the probability with which
+  FuzzBALL chooses to use this guidance at each branch. The special
+  values 2.0 and 3.0 enable an even more greedy mode in which FuzzBALL
+  will only prefer branches that are known to lead to a state with the
+  globally best score we've ever seen, but in the 2.0 level this is
+  limited by applying only after the point on a path when FuzzBALL has
+  seen at least one state it can assign a score to. (The details of
+  this guidance will probably continue to change in the future.)
 
 -target-no-prune
   Do not stop path at a target mismatch
@@ -642,6 +692,20 @@ not for program counter but for path condition. "short", "word", and
 
 -translation-cache-size <N>
   Save translations of at most N instructions
+
+-turn-opt-off-range <opt>:<addr1>:<addr2>
+  Turn a boolean FuzzBALL option 'opt' off in the address range 
+  [addr1, addr2) when addr1 is reached before addr2. This option 
+  will also turn the option 'opt' on at all program locations 
+  not in [addr1, addr2). 'addr1' does not have to be less than
+  'addr2'.
+
+-turn-opt-on-range <opt>:<addr1>:<addr2>
+  Turn a boolean FuzzBALL option 'opt' on in the address range 
+  [addr1, addr2) when addr1 is reached before addr2. This option 
+  will also turn the option 'opt' off at all program locations 
+  not in [addr1, addr2). 'addr1' does not have to be less than
+  'addr2'.
 
 -use-ids-from-core
   Simulate getpid(), etc., using values from core file

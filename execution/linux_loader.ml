@@ -286,6 +286,13 @@ let build_startup_state fm eh load_base ldso argv =
     fm#store_cstr !esp 0L s;
     !esp
   in
+  let _push_cstr_padded s =
+    let real_len = (String.length s) + 1 in
+    let padded_len = real_len + (-real_len land 31) in
+      esp := Int64.sub !esp (Int64.of_int padded_len);
+      fm#store_cstr !esp 0L s;
+      !esp
+  in
   let push_word i =
     match !opt_arch with
       | (X86|ARM) ->
@@ -393,6 +400,54 @@ let build_startup_state fm eh load_base ldso argv =
 	| ARM -> fm#set_word_var R13 !esp
 	| X64 -> fm#set_long_var R_RSP !esp
 
+(* Forgetting "-arch" is a common mistake, and setting it incorrectly
+   will also cause nothing good to happen. Thus this extra checking. I
+   can imagine some weid situations in which one might mix architectures,
+   so I've left the warning non-fatal in many cases. You could also argue
+   it would be better to just set the architecture automatically, but
+   that would require some more invasive code changes, and thinking about
+   the ISA doesn't seem like it should be a great burden. *)
+let check_elf_arch e_machine do_setup =
+  let (expected_str, expected_arch, weird) =
+    match e_machine with
+      | 0x03 -> ("x86", X86, false) (* EM_386 *)
+      | 0x28 -> ("arm", ARM, false) (* EM_ARM = 40 *)
+      | 0x3e -> ("x64", X64, false) (* EM_X64 = 62 *)
+      | _    -> ("",    X86, true)
+  in
+    if weird then
+      (Printf.printf "Unsupported e_machine architecture %d.\n" e_machine;
+       Printf.printf "FuzzBALL probably won't be able to run this binary.\n")
+    else if !opt_arch <> expected_arch then
+      (Printf.printf "Binary does not match configured architecture.\n";
+       Printf.printf "Perhaps you should have used the -arch %s option?\n"
+	 expected_str;
+       if do_setup then
+	 failwith "Refusing to continue with wrong architecture";)
+
+let detect_elf_arch fname =
+  let ic = open_in (chroot fname) in
+  let eh = read_elf_header ic in
+  let arch =
+    match eh.machine with
+      | 0x03 -> Some X86    (* EM_386 *)
+      | 0x28 -> Some ARM    (* EM_ARM = 40 *)
+      | 0x3e -> Some X64    (* EM_X64 = 62 *)
+      | _    -> None
+  in
+    close_in ic;
+    if !opt_trace_setup then
+      (Printf.printf "Attempting to detect CPU architecture from %s\n" fname;
+       match arch with
+	 | None -> Printf.printf "Failed to detect CPU architecture\n"
+	 | Some arch ->
+	     Printf.printf "Detected architecuture as %s\n"
+	       (string_of_execution_arch arch));
+    arch
+
+(* Despite the name, this function is currently used for statically
+   linked binaries as well as dynamically linked binaries and PIE
+   binaries. *)
 let load_dynamic_program (fm : fragment_machine) fname load_base
     data_too do_setup extras argv =
   let ic = open_in (chroot fname) in
@@ -400,21 +455,33 @@ let load_dynamic_program (fm : fragment_machine) fname load_base
   let ldso_base = ref 0xb7f00000L in
   let eh = read_elf_header ic in
   let entry_point = ref eh.entry in
+  let checked_load_base = ref false in
+  let check_load_base addr =
+    if !checked_load_base then
+      ()
+    else if addr <> load_base then
+      (Printf.printf "Unexpected first-segment load address.\n";
+       Printf.printf "Perhaps you need the -load-base 0x%Lx or -arch options\n"
+	 addr;
+       assert(addr = load_base))
+    else
+      checked_load_base := true
+  in
   let extra_vaddr = match eh.eh_type with
     | 2 -> 0L (* fixed-location executable *)
     | 3 -> load_base (* shared object or PIE *)
     | _ -> failwith "Unhandled ELF object type"
   in
+    check_elf_arch eh.machine do_setup;
     if !opt_trace_setup then
       Printf.printf "Loading executable from %s\n" (chroot fname);
     entry_point := eh.entry;
     List.iter
       (fun phr ->
 	 if phr.ph_type = 1L then (* PT_LOAD *)
-	   (if phr.ph_flags = 5L && extra_vaddr = 0L then
-	      (if phr.vaddr <> load_base then
-		 Printf.printf "Unexpected code load address. Perhaps you need the -load-base 0x%Lx or -arch options\n" phr.vaddr;
-	       assert(phr.vaddr = load_base));
+	   (if (phr.ph_flags = 4L || phr.ph_flags = 5L)
+	      && extra_vaddr = 0L then
+		check_load_base phr.vaddr;
 	    if data_too || (phr.ph_flags <> 6L && phr.ph_flags <> 7L) then
 	      load_segment fm ic phr extra_vaddr true)
 	 else if phr.ph_type = 3L then (* PT_INTERP *)
@@ -422,7 +489,7 @@ let load_dynamic_program (fm : fragment_machine) fname load_base
 	    let interp = IO.really_nread i ((Int64.to_int phr.filesz) - 1) in
 	      entry_point := load_ldso fm interp ldso_base;
 	      load_segment fm ic phr extra_vaddr true)
-	 else if phr.memsz != 0L then
+	 else if phr.memsz <> 0L then
 	   load_segment fm ic phr extra_vaddr true;
 	 List.iter
 	   (fun (base, size) ->

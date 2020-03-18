@@ -330,9 +330,13 @@ IRExpr* vx_IRExpr_VECRET ( void ) {
    e->tag    = Iex_VECRET;
    return e;
 }
-IRExpr* vx_IRExpr_BBPTR ( void ) {
+IRExpr* vx_IRExpr_GSPTR ( void ) {
    IRExpr* e = (IRExpr *)vx_Alloc(sizeof(IRExpr));
+#if VEX_VERSION >= 3287
+   e->tag    = Iex_GSPTR;
+#else
    e->tag    = Iex_BBPTR;
+#endif
    return e;
 }
 #endif
@@ -703,8 +707,12 @@ IRExpr* vx_dopyIRExpr ( IRExpr* e )
 #if VEX_VERSION >= 2742
       case Iex_VECRET:
          return vx_IRExpr_VECRET();
+#if VEX_VERSION >= 3287
+      case Iex_GSPTR:
+#else
       case Iex_BBPTR:
-         return vx_IRExpr_BBPTR();
+#endif
+         return vx_IRExpr_GSPTR();
 #endif
       default:
          vx_panic("Unhandled type in vx_dopyIRExpr");

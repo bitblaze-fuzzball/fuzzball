@@ -5,6 +5,7 @@
 module V = Vine;;
 
 open Exec_exceptions;;
+open Exec_options;;
 
 let rec constant_fold_rec e =
   match e with
@@ -185,8 +186,9 @@ and simplify_rec_lv lv =
 let rec simplify_fp e =
   let rec loop e n =
     let e' = simplify_rec e in
-      (* Printf.printf "Simplified %s -> %s\n"
-	(V.exp_to_string e) (V.exp_to_string e'); *)
+      if !opt_trace_simplify && e <> e' then
+	Printf.printf "Simplified %s -> %s\n"
+	  (V.exp_to_string e) (V.exp_to_string e');
       assert(n < 100);
       if e = e' then
 	e'
@@ -347,7 +349,7 @@ let rm_unused_stmts sl =
        | V.Move(V.Temp(_,"R_CC_DEP2",_),_) -> false
        | V.Move(V.Temp(_,"R_CC_NDEP",_),_) -> false
        | V.Move(V.Temp(_,("R_PF"|"R_AF"),_),_)
-	   when !Exec_options.opt_omit_pf_af -> false
+	   when !opt_omit_pf_af -> false
        | _ -> true)
     sl
 
@@ -455,7 +457,7 @@ let rm_unused_vars (dl, sl) =
     (* print_string "{";
        List.iter print_int uses;
        print_string "}\n"; *)
-  let (dl', to_rm) = partition2 (fun n -> n != 0) dl uses in
+  let (dl', to_rm) = partition2 (fun n -> n <> 0) dl uses in
   let sl' = List.fold_right rm_defs to_rm sl in
     (dl', sl')
 
@@ -519,7 +521,7 @@ let copy_const_prop (dl, sl) =
   let invalidate_uses vh bad_var =
     V.VarHash.iter
       (fun lhs rhs ->
-	 if (count_uses_e bad_var rhs) != 0 then	   
+	 if (count_uses_e bad_var rhs) <> 0 then
 	   (V.VarHash.remove vh lhs))
       vh
   in
@@ -841,8 +843,29 @@ let lets_to_moves (dl, sl) =
 
 let simplify_frag (orig_dl, orig_sl) =
   (* V.pp_program print_string (orig_dl, orig_sl); *)
-  (* let extra_dl = Asmir.decls_for_arch (Exec_options.asmir_arch ()) in
-    Vine_typecheck.typecheck (orig_dl @ extra_dl, orig_sl); *)
+  if !opt_sanity_checks then
+    (let extra_dl = Asmir.decls_for_arch (asmir_arch ()) in
+       try
+	 (* Run the Vine typechecker on the IR that we got from
+	    libasmir. This has a noticeable runtime cost. But other
+	    places in FuzzBALL assume that expressions are type-correct,
+	    so this can sometimes catch problems that would otherwise be
+	    hard to track down. Unfortunately at the moment there are
+	    also some known failures. *)
+	 Vine_typecheck.typecheck (orig_dl @ extra_dl, orig_sl)
+       with
+	 (* rdtsc is a wart right now: it should be more like a
+	    Special than an Unknown because we do deal with it, just in a
+	    special way. But it should be more like an expression than a
+	    statement because it produces a value. *)
+	 | Vine.TypeError("Cannot typecheck unknown: rdtsc") -> ()
+	 (* The old Vine typechecker currently can't deal with
+	    addresses being REG_64, which is one of the things that can
+	    lead to errors like this. *)
+	 | Vine.TypeError(s) when (String.length s) > 30
+	     && (String.sub s 0 30) = "Type error: Invalid jmp target"
+	     -> ()
+    );
   let (dl, sl) = (orig_dl, orig_sl) in
   let (dl, sl) = lets_to_moves (dl, sl) in
   let sl = rm_unused_stmts sl in

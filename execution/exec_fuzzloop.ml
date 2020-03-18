@@ -99,7 +99,11 @@ let fuzz start_eip opt_fuzz_start_eip end_eips
 	| StartSymbolic(eip, setup) ->
 	    fuzz_start_eip := eip;
 	    extra_setup := setup
-	| ReachedEndAddr -> failwith "Reached End addr before Start!");
+	| SimulatedExit(code) ->
+	    Printf.printf "Program exited (code %Ld) before reaching fuzz-start-addr\n" code;
+	    Printf.printf "(Maybe recheck your fuzz start address?)\n";
+	    exit 2 (* This used to be an uncaught exception *)
+     );
      let path_cond = fm#get_path_cond in
      if path_cond <> [] then 
        failwith ("The path condition is non-empty before fm#start_symbolic,"^
@@ -132,6 +136,10 @@ let fuzz start_eip opt_fuzz_start_eip end_eips
 		  | DeepPath -> stop "on too-deep path"
 		  | SymbolicJump -> stop "at symbolic jump"
 		  | NullDereference -> stop "at null deref"
+		  | SimulatedSegfault(addr, is_store) -> stop
+		      ("at illegal " ^
+			 (if is_store then "store to" else "load from")
+		       ^ " address 0x" ^ (Printf.sprintf "%08Lx" addr))
 		  | JumpToNull -> stop "at jump to null"
 		  | DivideByZero -> stop "at division by zero"
 		  | TooManyIterations -> stop "after too many loop iterations"
@@ -146,6 +154,7 @@ let fuzz start_eip opt_fuzz_start_eip end_eips
 		  | ReachedInfluenceBound -> stop "at influence bound"
 		  | DisqualifiedPath -> stop "on disqualified path"
 		  | BranchLimit -> stop "on branch limit"
+		  | FinishNow -> stop "on finish immediately"
 		  | SolverFailure when !opt_nonfatal_solver
 		      -> stop "on solver failure"
 		  | UnproductivePath -> stop "on unproductive path"

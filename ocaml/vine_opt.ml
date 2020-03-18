@@ -4,10 +4,7 @@
     Basically, constant_fold will only perform constant folding, whereas
     simplify() will also perform alpha substitution.
     
-    Let me know if you use this, because I might be changing the
-    interface slightly.
-
-    @author Ivan Jager
+    Original author: Ivan Jager
  *)
 
 open ExtList
@@ -25,6 +22,18 @@ type alias = MayAlias | DoesAlias | PartialAlias | NoAlias
 
 (* some helper functions *)
 
+(* These fix* functions are duplicated from
+   Execution.exec_utils. That's not ideal, but I'm not sure of a better
+   place. *)
+let fix_u1  x = Int64.logand x 0x1L
+let fix_u8  x = Int64.logand x 0xffL
+let fix_u16 x = Int64.logand x 0xffffL
+let fix_u32 x = Int64.logand x 0xffffffffL
+
+let fix_s1  x = Int64.shift_right (Int64.shift_left x 63) 63
+let fix_s8  x = Int64.shift_right (Int64.shift_left x 56) 56
+let fix_s16 x = Int64.shift_right (Int64.shift_left x 48) 48
+let fix_s32 x = Int64.shift_right (Int64.shift_left x 32) 32
 
 (* drop high bits *)
 let to64 v =
@@ -425,6 +434,52 @@ let rec constant_fold ctx e =
 		  Constant(Int(_, 8L))))
 	when e1 = e2 && ((Vine_typecheck.infer_type None e1) = REG_8)
 	  -> Cast(CAST_SIGNED, REG_16, e1)
+    (* Impossible equalities with extension casts *)
+    | BinOp(EQ, Cast(CAST_UNSIGNED, (REG_16|REG_32|REG_64), e1),
+	    Constant(Int(_, c)))
+	when (Vine_typecheck.infer_type None e1) = REG_8
+	  && c <> fix_u8 c
+	  -> exp_false
+    | BinOp(EQ, Cast(CAST_SIGNED, REG_16, e1),
+	    Constant(Int(_, c)))
+	when (Vine_typecheck.infer_type None e1) = REG_8
+	  && c <> fix_u16 (fix_s8 c)
+	  -> exp_false
+    | BinOp(EQ, Cast(CAST_SIGNED, REG_32, e1),
+	    Constant(Int(_, c)))
+	when (Vine_typecheck.infer_type None e1) = REG_8
+	  && c <> fix_u32 (fix_s8 c)
+	  -> exp_false
+    | BinOp(EQ, Cast(CAST_SIGNED, REG_64, e1),
+	    Constant(Int(_, c)))
+	when (Vine_typecheck.infer_type None e1) = REG_8
+	  && c <> fix_s8 c
+	  -> exp_false
+    | BinOp(EQ, Cast(CAST_UNSIGNED, (REG_32|REG_64), e1),
+	    Constant(Int(_, c)))
+	when (Vine_typecheck.infer_type None e1) = REG_16
+	  && c <> fix_u16 c
+	  -> exp_false
+    | BinOp(EQ, Cast(CAST_SIGNED, REG_32, e1),
+	    Constant(Int(_, c)))
+	when (Vine_typecheck.infer_type None e1) = REG_16
+	  && c <> fix_u32 (fix_s16 c)
+	  -> exp_false
+    | BinOp(EQ, Cast(CAST_SIGNED, REG_64, e1),
+	    Constant(Int(_, c)))
+	when (Vine_typecheck.infer_type None e1) = REG_16
+	  && c <> fix_s16 c
+	  -> exp_false
+    | BinOp(EQ, Cast(CAST_UNSIGNED, REG_64, e1),
+	    Constant(Int(_, c)))
+	when (Vine_typecheck.infer_type None e1) = REG_32
+	  && c <> fix_u32 c
+	  -> exp_false
+    | BinOp(EQ, Cast(CAST_SIGNED, REG_64, e1),
+	    Constant(Int(_, c)))
+	when (Vine_typecheck.infer_type None e1) = REG_32
+	  && c <> fix_s32 c
+	  -> exp_false
     | Cast(ct, ty, e) when (Vine_typecheck.infer_type None e) = ty ->
 	e
     | Lval l ->
@@ -443,9 +498,13 @@ let rec constant_fold ctx e =
         BinOp(BITOR, cond, cond2)
     | Ite(cond, cond2, Constant(Int(REG_1, 0L))) ->
         BinOp(BITAND, cond, cond2)
+    (* These next two rules seem questionable. We've seen cases where
+       they help, but it's risky that they make the tree bigger. The
+       binop one with + also can interfere with symbolic address
+       parsing. *)
     | Cast(ct, ty, Ite(cond, e1, e2)) ->
         Ite(cond, Cast(ct, ty, e1), Cast(ct, ty, e2))
-    | BinOp(op, Ite(cond, e1, e2), (Constant(_) as k)) ->
+    | BinOp(op, Ite(cond, e1, e2), (Constant(_) as k)) when op <> PLUS ->
         Ite(cond, BinOp(op, e1, k), BinOp(op, e2, k))
     (* Rules involving CONCAT: *)
     | Cast(CAST_LOW, REG_8, BinOp(CONCAT, e_h, e_l))
@@ -464,6 +523,12 @@ let rec constant_fold ctx e =
 	Cast(CAST_LOW, REG_1, e_l)
     | Cast(CAST_HIGH, REG_1, BinOp(CONCAT, e_h, e_l)) ->
 	Cast(CAST_HIGH, REG_1, e_h)
+    | BinOp(CONCAT, Constant(Int(REG_8, 0L)), x) ->
+       Cast(CAST_UNSIGNED, REG_16, x)
+    | BinOp(CONCAT, Constant(Int(REG_16, 0L)), x) ->
+       Cast(CAST_UNSIGNED, REG_32, x)
+    | BinOp(CONCAT, Constant(Int(REG_32, 0L)), x) ->
+       Cast(CAST_UNSIGNED, REG_64, x)
     (* AND / OR with itself *)
     | BinOp(BITOR, x, y)
     | BinOp(BITAND, x, y)
@@ -617,6 +682,22 @@ let rec constant_fold ctx e =
     | BinOp(BITOR, BinOp(SLT, a1, b1), BinOp(EQ, a2, b2))
 	 when a1 = a2 && b1 = b2 ->
 	BinOp(SLE, a1, b1)
+    (* (a | c) == 0 ==> false, if c is a non-zero constant *)
+    | BinOp(EQ, BinOp(BITOR, a, Constant(Int(_, c))), Constant(Int(_, 0L)))
+	when c <> 0L ->
+	exp_false
+    (* ((a | c) << 32) == 0 ==> false, if c is a non-low32-zero constant *)
+    | BinOp(EQ, BinOp(LSHIFT, BinOp(BITOR, a, Constant(Int(_, c))),
+		      Constant(Int(_, 32L))),
+	    Constant(Int(_, 0L)))
+	when (Int64.logand 0xffffffffL c) <> 0L ->
+	exp_false
+    (* ((a | c) << 32) <> 0 ==> true, if c is a non-low32-zero constant *)
+    | BinOp(NEQ, BinOp(LSHIFT, BinOp(BITOR, a, Constant(Int(_, c))),
+		       Constant(Int(_, 32L))),
+	    Constant(Int(_, 0L)))
+	when (Int64.logand 0xffffffffL c) <> 0L ->
+	exp_true
     | _ -> e (* leave other expressions as they are *)
 
 

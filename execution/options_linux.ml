@@ -16,6 +16,8 @@ let opt_core_file_name = ref None
 let opt_use_ids_from_core = ref false
 let opt_symbolic_files = ref []
 let opt_concolic_files = ref []
+let opt_symbolic_stdin_concrete_size = ref false
+let opt_concolic_stdin = ref false
 
 let set_linux_defaults_for_concrete () =
   opt_linux_syscalls := true
@@ -68,17 +70,25 @@ let linux_cmdline_opts =
     ("-concolic-file", Arg.String
        (fun s -> opt_concolic_files := s :: !opt_concolic_files),
      "fname Make data read from the named file concolic");
+    ("-symbolic-stdin-concrete-size",
+     Arg.Set(opt_symbolic_stdin_concrete_size),
+     " Make data read from standard input symbolic");
+    ("-concolic-stdin", Arg.Set(opt_concolic_stdin),
+     " Make data read from standard input concolic");
     ("-symbolic-syscall-error", Arg.String
        (fun s -> opt_symbolic_syscall_error := Some (Int64.of_string s)),
      "errno Force syscalls with symbolic args to return given value");
     ("-stop-on-symbolic-syscall-args",
      Arg.Set(opt_stop_on_symbolic_syscall_args),
-     " Cut of path on symbolic value in system call argument");
+     " Cut off path on symbolic value in system call argument");
     ("-skip-output-concretize", Arg.Set(opt_skip_output_concretize),
      " Output symbolic bytes as ? instead of solving");
     ("-chroot", Arg.String
        (fun s -> opt_chroot_path := Some s),
      "path Prepend PATH to absolute filenames");
+    ("-disqualify-on-message", Arg.String
+       (fun s -> opt_disqualify_on_message := Some s),
+     "STR Stop execution if a given string is printed");
     ("--", Arg.Rest(fun s -> opt_argv := !opt_argv @ [s]),
      " Pass any remaining arguments to the program");
   ]
@@ -122,6 +132,10 @@ let apply_linux_cmdline_opts (fm : Fragment_machine.fragment_machine) =
 	lsh#set_proc_identities !Linux_loader.proc_identities;
       List.iter (fun f -> lsh#add_symbolic_file f false) !opt_symbolic_files;
       List.iter (fun f -> lsh#add_symbolic_file f  true) !opt_concolic_files;
+      if !opt_symbolic_stdin_concrete_size then
+	lsh#add_symbolic_fd 0 false;
+      if !opt_concolic_stdin then
+	lsh#add_symbolic_fd 0 true;
       Linux_syscalls.linux_set_up_arm_kuser_page fm;
       fm#add_special_handler (lsh :> Fragment_machine.special_handler)
   else if !opt_noop_syscalls then

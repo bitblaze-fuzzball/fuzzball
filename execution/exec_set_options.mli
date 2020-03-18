@@ -15,7 +15,8 @@ val tags_cmdline_opts           : (string * Arg.spec * string) list
 val fuzzball_cmdline_opts       : (string * Arg.spec * string) list
 val trace_replay_cmdline_opts   : (string * Arg.spec * string) list
 
-val set_program_name : string -> unit
+val set_program_name_guess_arch : string -> unit
+val require_explicit_arch : unit -> unit
 
 val default_on_missing : (Fragment_machine.fragment_machine -> unit) ref
 

@@ -6,7 +6,8 @@ AC_INIT(Vine/FuzzBALL, 20130511, bitblaze-users@googlegroups.com)
 AC_CONFIG_SRCDIR([libasmir/src/vex/vexir.cpp])
 AC_CONFIG_HEADER([libasmir/config.h])
 
-AM_INIT_AUTOMAKE([-Wall subdir-objects])
+# "foreign" means, for our purposes, "don't complain about missing NEWS, etc."
+AM_INIT_AUTOMAKE([-Wall subdir-objects foreign])
 
 m4_include([./m4/ac_ocaml.m4])
 
@@ -76,6 +77,11 @@ AC_ARG_WITH(vex-revision,
 
 if test -e "${VEX_DIR}/priv/main/vex_svnversion.h"; then
     VEX_VERSION=`tr -d \" <"${VEX_DIR}/priv/main/vex_svnversion.h"`
+fi
+
+if test -e "${VEX_DIR}/../.git" -a -e "${VEX_DIR}/../Makefile.vex.am"; then
+    VEX_VERSION=$(expr 3400 + $(cd ${VEX_DIR}/..; git rev-list --first-parent HEAD --count -- VEX) - $(cd ${VEX_DIR}/..; git rev-list --first-parent HEAD --author 'umn\.edu' --count -- VEX) )
+    echo Determined VEX version as ${VEX_VERSION} from git
 fi
 
 if test "${VEX_VERSION}" = ""; then

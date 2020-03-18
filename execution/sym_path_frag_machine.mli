@@ -68,6 +68,8 @@ sig
     method add_extra_eip_hook :
       (Fragment_machine.fragment_machine -> int64 -> unit) -> unit
 
+    method add_range_opt : string -> bool ref -> unit
+
     method eip_hook : int64 -> unit
 	  
     method finish_path : bool
@@ -76,6 +78,8 @@ sig
 
     method set_iter_seed : int -> unit
       
+    method random_byte : int
+
     method reset : unit -> unit
 
     method after_exploration : unit
@@ -194,9 +198,12 @@ sig
     method measure_size : int * int
     method store_byte_idx : int64 -> int -> int -> unit
     method store_str : int64 -> int64 -> string -> unit
-    method make_symbolic_region : int64 -> int -> unit
+    method make_symbolic_region : int64 -> int -> string -> int -> unit
+    method make_fresh_symbolic_region : int64 -> int -> unit
     method store_symbolic_cstr : int64 -> int -> bool -> bool -> unit
     method store_concolic_cstr : int64 -> string -> bool -> unit
+    method store_concolic_name_str :
+             int64 -> string -> string -> int -> unit
     method store_symbolic_wcstr : int64 -> int -> unit
     method store_symbolic_byte  : int64 -> string -> unit
     method store_symbolic_short : int64 -> string -> unit

@@ -50,6 +50,8 @@ class linear_decision_tree = object(self)
 
   method random_float = Random.float 1.0
 
+  method random_byte = Random.int 256
+
   method record_unsat b = ()
 
   method try_extend (trans_func : bool -> V.exp)

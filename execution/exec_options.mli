@@ -10,6 +10,7 @@ val offset_strategy_of_string : string -> offset_strategy
 type execution_arch = X86 | X64 | ARM
 
 val execution_arch_of_string : string -> execution_arch
+val string_of_execution_arch : execution_arch -> string
 
 val asmir_arch_of_execution_arch : execution_arch -> Asmir.arch
 val libasmir_arch_of_execution_arch : execution_arch ->
@@ -24,6 +25,8 @@ val opt_trace_temps : bool ref
 val opt_trace_temps_encoded : bool ref
 val opt_use_tags : bool ref
 val opt_fail_offset_heuristic : bool ref
+val opt_stop_on_weird_sym_addr : bool ref
+val opt_finish_on_weird_sym_addr : bool ref
 val opt_trace_solver : bool ref
 val opt_measure_influence_syscall_args : bool ref
 val opt_solver_timeout : int option ref
@@ -58,6 +61,7 @@ val opt_multi_threaded_searchmc : bool ref
 val opt_periodic_influence : int option ref
 val opt_influence_bound : float ref
 val opt_disqualify_addrs : int64 list ref
+val opt_disqualify_on_message : string option ref
 val opt_check_condition_at : (int64 * Vine.exp) list ref
 val opt_trace_assigns : bool ref
 val opt_trace_assigns_string : bool ref
@@ -73,6 +77,8 @@ val opt_trace_callstack : bool ref
 val opt_trace_sym_addrs : bool ref
 val opt_trace_sym_addr_details : bool ref
 val opt_trace_syscalls : bool ref
+val opt_turn_opt_off_range : (string * int64 * int64) list ref
+val opt_turn_opt_on_range : (string * int64 * int64) list ref
 val opt_trace_detailed_ranges : (int64 * int64) list ref
 val opt_extra_conditions : Vine.exp list ref
 val opt_tracepoints : (int64 * string * Vine.exp) list ref
@@ -118,6 +124,7 @@ val opt_stop_on_symbolic_syscall_args : bool ref
 val opt_skip_output_concretize : bool ref
 val opt_chroot_path : string option ref
 val opt_finish_on_nonfalse_cond : bool ref
+val opt_finish_immediately : bool ref
 val opt_finish_reasons_needed : int ref
 val opt_total_timeout : float option ref
 val opt_x87_emulator : string option ref
@@ -148,6 +155,8 @@ val opt_global_ce_cache_limit : int ref
 val opt_disable_ce_cache : bool ref
 val opt_narrow_bitwidth_cutoff : int option ref
 val opt_t_expr_size : int ref
+val opt_sanity_checks : bool ref
+val opt_trace_simplify : bool ref
 
 val opt_symbolic_memory : bool ref
 val opt_zero_memory : bool ref
@@ -161,6 +170,7 @@ val opt_check_read_operands : bool ref
 val opt_check_write_operands : bool ref
 val opt_fix_write_operands : bool ref
 val opt_trace_registers : bool ref
+val opt_trace_register_updates : bool ref
 val opt_trace_segments : bool ref
 val opt_trace_taint : bool ref
 val opt_trace_unexpected : bool ref
@@ -184,6 +194,8 @@ val add_delimited_num_escstr_pair :
   (int64 * string) list ref -> char -> string -> unit
 val add_delimited_str_num_pair :
   (string * int64) list ref -> char -> string -> unit
+val add_delimited_triple :
+  (string * int64 * int64 ) list ref -> char -> string -> unit
 
 val opt_program_name : string option ref
 val opt_start_addr : int64 option ref

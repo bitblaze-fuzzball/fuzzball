@@ -51,6 +51,7 @@ let opt_check_condition_at_strings = ref []
 let opt_extra_condition_strings = ref []
 let opt_tracepoint_strings = ref []
 let opt_string_tracepoint_strings = ref []
+let opt_cmdline_arch = ref None
 
 let set_defaults_for_concrete () =
   opt_zero_memory := true
@@ -268,6 +269,12 @@ let symbolic_state_cmdline_opts =
     ("-skip-call-ret-symbol-once", Arg.String
        (add_delimited_num_str_pair opt_skip_call_addr_symbol_once '='),
      "addr=symname Like -s-c-r-s, but always the same variable");
+    ("-turn-opt-off-range", Arg.String
+      (add_delimited_triple opt_turn_opt_off_range ':'),
+     "opt:addr1:addr2 Turns option 'opt' off in address range [addr1, addr2)");
+    ("-turn-opt-on-range", Arg.String
+      (add_delimited_triple opt_turn_opt_on_range ':'),
+    "opt:addr1:addr2 Turns option 'opt' on in address range [addr1, addr2)");
   ]
 
 let slurp_file fname =
@@ -415,6 +422,8 @@ let explore_cmdline_opts =
      " Do not stop path at target mismatch");
     ("-finish-on-target-match", Arg.Set(opt_finish_on_target_match),
      " Finish exploration on -target-string match");
+    ("-finish-immediately", Arg.Set(opt_finish_immediately),
+     " Don't complete the execution path after the first -finish-*");
     ("-target-guidance", Arg.Set_float(opt_target_guidance),
      "PROB Prefer better target matches with given probability");
     ("-trace-guidance", Arg.Set(opt_trace_guidance),
@@ -445,12 +454,18 @@ let explore_cmdline_opts =
      " Set an integer limit on the global cache size");
     ("-disable-ce-cache", Arg.Set(opt_disable_ce_cache),
      " Do not use cached satisfying assingments at all");
+    ("-stop-on-weird-sym-addr", Arg.Set(opt_stop_on_weird_sym_addr),
+     " Don't continue execution past a strange symbolic-controlled address");
+    ("-finish-on-weird-sym-addr", Arg.Set(opt_finish_on_weird_sym_addr),
+     " Finish exploration as with -stop-on-weird-sym-addr");
     ("-narrow-bitwidth-cutoff", Arg.String
        (fun s -> opt_narrow_bitwidth_cutoff := Some (int_of_string s)),
      "BITS Treat values narrower than width as non-pointers");
     ("-t-expr-size", Arg.String
        (fun s -> opt_t_expr_size := int_of_string s),
      "SIZE Introduce temporaries for exprs of size or larger");
+    ("-trace-simplify", Arg.Set(opt_trace_simplify),
+     " Print expression simplifications");
   ]
 
 
@@ -471,12 +486,31 @@ let fuzzball_cmdline_opts =
     ("-no-fail-on-huer", Arg.Clear(opt_fail_offset_heuristic),
      " Do not fail when a heuristic (e.g. offset optimization) fails.");
   ]
-
+(* The 2nd entry in these tuples is used when controlling -trace-basic 
+   using -turn-opt-[on|off]-range, ditto for -trace-detailed *)
+let trace_basic_opts = [(opt_trace_binary_paths, "trace-binary-paths");
+			(opt_trace_conditions, "trace-conditions");
+			(opt_trace_decisions, "trace-decisions");
+			(opt_trace_iterations, "trace-iterations");
+			(opt_trace_setup, "trace-setup");
+			(opt_trace_stopping, "trace-stopping");
+			(opt_trace_sym_addrs, "trace-sym-addrs");
+			(opt_trace_unexpected, "trace-unexpected");
+			(opt_coverage_stats, "coverage-stats");
+			(opt_time_stats, "time-stats")]
+let trace_detailed_opts = [(opt_trace_insns, "trace-insns");
+			   (opt_trace_loads, "trace-loads");
+			   (opt_trace_stores, "trace-stores");
+			   (opt_trace_temps, "trace-temps");
+			   (opt_trace_syscalls, "trace-syscalls");
+			   (opt_trace_registers, "trace-registers");
+			   (opt_trace_segments, "trace-segments");
+			   (opt_trace_taint, "trace-taint")]
 let cmdline_opts =
   [
     ("-arch", Arg.String
-       (fun s -> opt_arch := execution_arch_of_string s ),
-     "arch x86 (default), x64, arm");
+       (fun s -> opt_cmdline_arch := Some (execution_arch_of_string s) ),
+     "arch x86, x64, arm (default: autodetect from ELF header)");
     ("-translation-cache-size", Arg.String
        (fun s -> opt_translation_cache_size := Some (int_of_string s)),
      "N Save translations of at most N instructions");
@@ -487,18 +521,8 @@ let cmdline_opts =
     ("-zero-memory", Arg.Set(opt_zero_memory),
      " Use zero values for uninit. memory reads");
     ("-trace-basic",
-     (Arg.Unit
-	(fun () ->
-	   opt_trace_binary_paths := true;
-	   opt_trace_conditions := true;
-	   opt_trace_decisions := true;
-	   opt_trace_iterations := true;
-	   opt_trace_setup := true;
-	   opt_trace_stopping := true;
-	   opt_trace_sym_addrs := true;
-	   opt_trace_unexpected := true;
-	   opt_coverage_stats := true;
-	   opt_time_stats := true)),
+     (Arg.Unit (fun () ->
+	  List.iter (fun (opt, _) -> opt := true) trace_basic_opts;)),
      " Enable several common trace and stats options");
     ("-trace-binary-paths", Arg.Set(opt_trace_binary_paths),
      " Print decision paths as bit strings");
@@ -509,16 +533,8 @@ let cmdline_opts =
     ("-trace-decisions", Arg.Set(opt_trace_decisions),
      " Print symbolic branch choices");
     ("-trace-detailed",
-     (Arg.Unit
-	(fun () ->
-	   opt_trace_insns := true;
-	   opt_trace_loads := true;
-	   opt_trace_stores := true;
-	   opt_trace_temps := true;
-	   opt_trace_syscalls := true;
-	   opt_trace_registers := true;
-	   opt_trace_segments := true;
-	   opt_trace_taint := true)),
+     (Arg.Unit (fun () ->
+	  List.iter (fun (opt, _) -> opt := true) trace_detailed_opts;)),
      " Enable several verbose tracing options");
     ("-trace-detailed-range", Arg.String
        (add_delimited_pair opt_trace_detailed_ranges '-'),
@@ -549,6 +565,8 @@ let cmdline_opts =
      " Print symbolic memory regions");
     ("-trace-registers", Arg.Set(opt_trace_registers),
      " Print register contents");
+    ("-trace-register-updates", Arg.Set(opt_trace_register_updates),
+     " Print when registers are assigned to");
     ("-trace-setup", Arg.Set(opt_trace_setup),
      " Print progress of program loading");
     ("-trace-stmts", Arg.Set(opt_trace_stmts),
@@ -609,6 +627,8 @@ let cmdline_opts =
     ("-git-version", Arg.Unit
        (fun () -> Printf.printf "GIT version %s\n" Git_version.git_version),
      " Print GIT revision hash");
+    ("-sanity-checks", Arg.Set(opt_sanity_checks),
+     " Enable extra internal checking");
   ]
 
 let trace_replay_cmdline_opts =
@@ -629,21 +649,88 @@ let trace_replay_cmdline_opts =
      " Print when our execution doesn't match the trace");
     ("-progress-interval", Arg.String
        (fun s -> opt_progress_interval := Some (Int64.of_string s)),
-     "insns Print every INSNsth instruction");
+     "insns Print every INSNSth instruction");
     ("-skip-untainted", Arg.Set(opt_skip_untainted),
      " Skip replaying instructions that are not tainted");
   ]
 
-let set_program_name s =
+let set_program_name_guess_arch s =
   match !opt_program_name with 
-    | None -> opt_program_name := Some s
     | Some prev ->
 	Printf.printf "Multiple args: %s, %s\n" prev s;
 	failwith "Multiple non-option args not allowed"
+    | None ->
+	opt_program_name := Some s;
+	opt_arch :=
+	  (match !opt_cmdline_arch with
+	     | Some a -> a
+	     | None ->
+		 match Linux_loader.detect_elf_arch s with
+		   | Some a -> a
+		   | None ->
+		       failwith "Failed to guess CPU architecture, use -arch")
+
+let require_explicit_arch () =
+  opt_arch :=
+    match !opt_cmdline_arch with
+      | Some a -> a
+      | None ->
+	  failwith "The -arch option is required"
 
 let default_on_missing = ref (fun fm -> fm#on_missing_zero)
 
+let set_range_opts (fm : Fragment_machine.fragment_machine) opts_list value =
+  let final_range_opts = ref [] in
+  let set_range_opt (fm : Fragment_machine.fragment_machine) input_opt_str value
+      eip1 eip2 =
+    List.iter (
+      fun (opt_str,spec,_) ->
+	(match spec with
+	| Arg.Set opt 
+	| Arg.Clear opt ->
+	   (* All option strings begin with a -, e.g., -trace-insns. 
+	      But, -turn-opt-[on|off]-range takes the option name without 
+	      the hyphen as the first argument.*)
+	   if opt_str = ("-" ^ input_opt_str) then (
+	     opt := value;
+	     fm#add_range_opt input_opt_str opt;
+	     final_range_opts := !final_range_opts @ [(input_opt_str, eip1, eip2)])
+	| Arg.Unit _ ->
+	   (* -trace-basic expands into a list of options 
+	      that should be turned on or off in the range of -trace-basic.
+	      Ditto for -trace-detailed *)
+	   if opt_str = ("-" ^ input_opt_str) then (
+	     let verbose_opts = ref [] in
+	     if opt_str = "-trace-basic" then
+	       verbose_opts := trace_basic_opts
+	     else if opt_str = "-trace-detailed" then
+	       verbose_opts := trace_detailed_opts;
+	     List.iter (fun (opt, v_opt_str) ->
+	       opt := value;
+	       fm#add_range_opt v_opt_str opt;
+	       final_range_opts := !final_range_opts @
+		 [(v_opt_str, eip1, eip2)];
+	       ) !verbose_opts);
+	| _ -> ());
+	) (cmdline_opts @ Options_linux.linux_cmdline_opts @
+	     State_loader.state_loader_cmdline_opts @
+	     concrete_state_cmdline_opts @ symbolic_state_cmdline_opts @
+	     concolic_state_cmdline_opts @ explore_cmdline_opts @ tags_cmdline_opts @
+	     fuzzball_cmdline_opts @ Options_solver.solver_cmdline_opts @
+	     influence_cmdline_opts) in
+  List.iter ( fun (opt_str, eip1, eip2) ->
+    set_range_opt fm opt_str value eip1 eip2
+  ) opts_list;
+  if (List.length opts_list) <> 0 && (List.length !final_range_opts) = 0 then
+    Printf.printf "****Warning: an incorrect option was given in -turn-opt-%s-range\n"
+      (if value then "off" else "on");
+  !final_range_opts
+  
 let apply_cmdline_opts_early (fm : Fragment_machine.fragment_machine) dl =
+  if (List.length !opt_turn_opt_off_range) > 0 then
+    opt_turn_opt_off_range := set_range_opts fm !opt_turn_opt_off_range true;
+  if (List.length !opt_turn_opt_on_range) > 0 then
+    opt_turn_opt_on_range := set_range_opts fm !opt_turn_opt_on_range false;
   if !opt_random_memory then
     fm#on_missing_random
   else if !opt_zero_memory then
@@ -766,7 +853,7 @@ let make_symbolic_init (fm:Fragment_machine.fragment_machine)
        opt_extra_conditions := [];
        List.iter (fun (base, len) ->
 		    new_max len;
-		    fm#make_symbolic_region base (Int64.to_int len))
+		    fm#make_fresh_symbolic_region base (Int64.to_int len))
 	 !opt_symbolic_regions;
        List.iter (fun (base, len) ->
 		    new_max len;
