@@ -1046,6 +1046,8 @@ struct
 	not !is_sat_r
 
     method private query_bitwidth e ty =
+      let wd_min = self#query_minval e ty in
+      let new_e = V.BinOp(V.MINUS, e, V.Constant(V.Int(ty, wd_min))) in
       let rec loop min max =
 	assert(min <= max);
 	if min = max then
@@ -1054,10 +1056,10 @@ struct
 	  let mid = (min + max) / 2 in
 	  let mask = if mid = 0 then 0L 
 	    else (Int64.shift_right_logical (-1L) (64-mid)) in
-	  let cond_e = V.BinOp(V.LE, e, V.Constant(V.Int(ty, mask))) in
+	  let cond_e = V.BinOp(V.LE, new_e, V.Constant(V.Int(ty, mask))) in
 	  let in_bounds = self#query_valid cond_e in
 	    if !opt_trace_tables then
-	      Printf.printf "(%s) <= 2**%d: %s\n" (V.exp_to_string e) mid
+	      Printf.printf "(%s) <= 2**%d: %s\n" (V.exp_to_string new_e) mid
 		(if in_bounds then "valid" else "invalid");
 	    if in_bounds then
 	      loop min mid
@@ -1189,8 +1191,37 @@ struct
 	  Printf.printf "Largest value based on queries is %Ld\n" limit;
 	limit
 
+    method private query_minval e ty =
+      let rec loop min max =
+	assert(min <= max);
+	if min = max then
+	  min
+	else
+	  let mid =
+	    Int64.shift_right (Int64.succ (Int64.add min max)) 1
+	  in
+	  let cond_e = V.BinOp(V.SLE, V.Constant(V.Int(ty, mid)), e) in
+	  let in_bounds = self#query_valid cond_e in
+	    if !opt_trace_tables then
+	      Printf.printf "(%s) >=$ %Ld: %s\n" (V.exp_to_string e) mid
+		(if in_bounds then "valid" else "invalid");
+	    if in_bounds then
+	      loop mid max 
+	    else
+	      loop min (Int64.pred mid)
+      in
+      let wd = min 62 (narrow_bitwidth_signed form_man e) in
+      let max_limit = Int64.shift_right_logical (-1L) (64-wd) in
+      let min_limit = Int64.pred (Int64.neg max_limit) in
+      let limit = loop min_limit max_limit in
+	if !opt_trace_tables then
+	  Printf.printf "Smallest value based on queries is %Ld\n" limit;
+	limit
+
     val maxval_cache = Hashtbl.create 101
     val maxval_offset_cache = Hashtbl.create 101
+    val minval_cache = Hashtbl.create 101
+    val minval_offset_cache = Hashtbl.create 101
     val used_addr_cache = Hashtbl.create 101
     val dummy_vars_cache = Hashtbl.create 101
     val mutable dummy_counter = 0
