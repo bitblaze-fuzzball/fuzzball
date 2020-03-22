@@ -1220,8 +1220,6 @@ struct
 
     val maxval_cache = Hashtbl.create 101
     val maxval_offset_cache = Hashtbl.create 101
-    val minval_cache = Hashtbl.create 101
-    val minval_offset_cache = Hashtbl.create 101
     val used_addr_cache = Hashtbl.create 101
     val dummy_vars_cache = Hashtbl.create 101
     val mutable dummy_counter = 0
