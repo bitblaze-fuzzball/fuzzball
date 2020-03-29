@@ -1670,7 +1670,7 @@ object(self)
 	    length < 0L || length > 1073741824L ->
 	    raise (Unix.Unix_error(Unix.ENOMEM, "Too large in mmap", ""))
 	| (0L, _, 0x3 (* PROT_READ|PROT_WRITE *),
-	   (0x22|0x20022) (* MAP_PRIVATE|MAP_ANONYMOUS, opt.MAP_STACK *), -1) ->
+	   (0x22|0x20022) (* MAP_PRIVATE|MAP_ANONYMOUS, opt.MAP_STACK *), (-1|0)) ->
 	    let fresh = self#fresh_addr length in
 	      zero_region fresh (Int64.to_int length);
 	      fresh
