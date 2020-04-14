@@ -95,4 +95,5 @@ class linear_decision_tree = object(self)
   method measure_size = depth
 
   method print_tree chan = ()
+  method print_dot = ()
 end
