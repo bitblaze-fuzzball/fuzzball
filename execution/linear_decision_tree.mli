@@ -43,4 +43,5 @@ class linear_decision_tree : object
 
   method measure_size : int
   method print_tree : out_channel -> unit
+  method print_dot : unit
 end

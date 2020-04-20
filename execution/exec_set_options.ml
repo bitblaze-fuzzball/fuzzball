@@ -436,6 +436,9 @@ let explore_cmdline_opts =
      "SIZE Introduce temporaries for exprs of size or larger");
     ("-trace-simplify", Arg.Set(opt_trace_simplify),
      " Print expression simplifications");
+    ("-save-decision-tree-dot", 
+     Arg.Set_string(opt_save_decision_tree_dot), 
+     "filename Save dot format decision tree to file");
   ]
 
 

@@ -43,4 +43,5 @@ class virtual decision_tree = object
 
   method virtual measure_size : int
   method virtual print_tree : out_channel -> unit
+  method virtual print_dot : unit
 end

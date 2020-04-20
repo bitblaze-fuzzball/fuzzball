@@ -82,6 +82,7 @@ let opt_solver_slow_time = ref 1.0
 let opt_save_solver_files = ref false
 let opt_solver_path = ref "stp"
 let opt_follow_path = ref ""
+let opt_save_decision_tree_dot = ref ""
 let opt_branch_preference = Hashtbl.create 10
 let opt_branch_preference_unchecked = Hashtbl.create 10
 let opt_always_prefer = ref None
