@@ -174,6 +174,7 @@ let  getParameterTable () =
     add_parameter "-coverage-stats" (Bool EO.opt_coverage_stats);
     add_parameter "-offset-strategy" (String EO.opt_offset_strategy_string);
     add_parameter "-follow-path" (String EO.opt_follow_path);
+    add_parameter "-branch-preference" (Int64Hashtbl EO.opt_branch_preference);
     add_parameter "-random-seed" (Int EO.opt_random_seed);
     add_parameter "-save-decision-tree-interval" (FloatOpt EO.opt_save_decision_tree_interval);
     add_parameter "-decision-tree-use-file" (Bool EO.opt_decision_tree_use_file);
