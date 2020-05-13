@@ -190,7 +190,8 @@ struct
       | (_, _, _) -> 23
 
   let ctz i =
-    let rec loop = function
+    let rec loop x =
+      match x with
       | 0L -> 64
       | i when Int64.logand i 1L = 1L -> 0
       | i when Int64.logand i 0xffffffffL = 0L ->
@@ -216,6 +217,7 @@ struct
 	    (loop e1) + (Int64.to_int v)
 	| V.BinOp(V.TIMES, e1, e2) -> (loop e1) + (loop e2)
 	| V.BinOp(V.PLUS, e1, e2) -> min (loop e1) (loop e2)
+	| V.Cast(_, V.REG_64, e1) -> min 64 (loop e1)
 	| V.Cast(_, V.REG_32, e1) -> min 32 (loop e1)
 	| V.Cast(_, V.REG_16, e1) -> min 16 (loop e1)
 	| V.Cast(_, V.REG_8, e1)  -> min 8  (loop e1)
@@ -230,6 +232,8 @@ struct
     match (a, b) with
       | (0, b) -> b
       | (a, 0) -> a
+      | (a, b) when a < 0 -> gcd (-a) b
+      | (a, b) when b < 0 -> gcd a (-b)
       | (a, b) when a > b -> gcd b (a mod b)
       | _ -> gcd a (b mod a)
 
@@ -793,8 +797,8 @@ struct
 	  SingleLocation(None, sink_read_count)
 	| _ ->
 	  let off_expr = (sum_list (eoffs @ off_syms)) in
-	  match decide_fn off_expr 0L with
-	  | Some wd ->
+	  match decide_fn off_expr cloc with
+	  | (Some wd, off_expr', cloc') ->
 	      let base_str = match (base, base_e) with
 		| (Some r, Some e) ->
 		    Printf.sprintf "sym region %d with base = %s" r
@@ -804,10 +808,10 @@ struct
 		if !opt_trace_tables then
 		  Printf.printf
 		    "Table treatment for %s and offset expr = %s\n"
-		    base_str (V.exp_to_string off_expr);
+		    base_str (V.exp_to_string off_expr');
 		dt#count_query;
-		TableLocation(base, off_expr, cloc)
-	  | None -> 
+		TableLocation(base, off_expr', cloc')
+	  | (None, _, _) -> 
 	    let coff = List.fold_left Int64.add 0L coffs in
 	    let offset = Int64.add (Int64.add cbase coff)
 	      (match (eoffs, off_syms) with
@@ -881,7 +885,8 @@ struct
     (* Because we override handle_{load,store}, this should only be
        called for jumps. *)
     method eval_addr_exp exp =
-      match (self#eval_addr_exp_region exp 0xa000 (fun _ _ -> None)) with
+      let decide_fn off_expr cloc = (None, off_expr, cloc) in
+      match (self#eval_addr_exp_region exp 0xa000 decide_fn) with
       | SingleLocation(r, addr) ->
 	(match r with
 	  | Some 0 -> addr
@@ -1046,8 +1051,6 @@ struct
 	not !is_sat_r
 
     method private query_bitwidth e ty =
-      let wd_min = self#query_minval e ty in
-      let new_e = V.BinOp(V.MINUS, e, V.Constant(V.Int(ty, wd_min))) in
       let rec loop min max =
 	assert(min <= max);
 	if min = max then
@@ -1056,10 +1059,10 @@ struct
 	  let mid = (min + max) / 2 in
 	  let mask = if mid = 0 then 0L 
 	    else (Int64.shift_right_logical (-1L) (64-mid)) in
-	  let cond_e = V.BinOp(V.LE, new_e, V.Constant(V.Int(ty, mask))) in
+	  let cond_e = V.BinOp(V.LE, e, V.Constant(V.Int(ty, mask))) in
 	  let in_bounds = self#query_valid cond_e in
 	    if !opt_trace_tables then
-	      Printf.printf "(%s) <= 2**%d: %s\n" (V.exp_to_string new_e) mid
+	      Printf.printf "(%s) <= 2**%d: %s\n" (V.exp_to_string e) mid
 		(if in_bounds then "valid" else "invalid");
 	    if in_bounds then
 	      loop min mid
@@ -1074,8 +1077,25 @@ struct
 
     val bitwidth_cache = Hashtbl.create 101
     val bitwidth_offset_cache = Hashtbl.create 101
+    
+    method private decide_bitwidth op_name off_exp cloc =
+      let minval = self#decide_minval op_name off_exp cloc in
+      let off_exp' = 
+        if minval = 0L then
+          off_exp
+        else
+          V.BinOp(V.MINUS, off_exp, V.Constant(V.Int(reg_addr(), minval))) 
+      in
+      let cloc' =
+        if minval = 0L then
+          cloc 
+        else
+          Int64.add cloc minval 
+      in
+      let bitwidth = self#decide_wd op_name off_exp' cloc' in
+        (bitwidth, off_exp', cloc')
 
-    method private decide_wd op_name off_exp cloc = 
+      method private decide_wd op_name off_exp cloc = 
       let fast_wd = narrow_bitwidth form_man off_exp in
       let compute_wd off_exp =
 	if !opt_table_limit = 0 then
@@ -1102,7 +1122,7 @@ struct
 	    try
 	      let wd = Hashtbl.find bitwidth_cache key in
 		if !opt_trace_tables then
-		  Printf.printf "Reusing cached width %s for %s at [%s]\n%!"
+		  Printf.printf "Reusing cached width %s for %s at [%s]%!"
 		    (match wd with Some w -> string_of_int (Int64.to_int w)
 		       | None -> "[too big]")
 		    (V.exp_to_string off_exp) dt#get_hist_str;
@@ -1192,38 +1212,62 @@ struct
 	limit
 
     method private query_minval e ty =
-      let rec loop min max =
+      let rec loop min max cnt =
 	assert(min <= max);
 	if min = max then
 	  min
 	else
 	  let mid =
-	    Int64.shift_right (Int64.succ (Int64.add min max)) 1
-	  in
+	    Int64.shift_right (Int64.succ (Int64.add min max)) 1 in
 	  let cond_e = V.BinOp(V.SLE, V.Constant(V.Int(ty, mid)), e) in
 	  let in_bounds = self#query_valid cond_e in
 	    if !opt_trace_tables then
 	      Printf.printf "(%s) >=$ %Ld: %s\n" (V.exp_to_string e) mid
 		(if in_bounds then "valid" else "invalid");
 	    if in_bounds then
-	      loop mid max 
+	      loop mid max (cnt+1)
 	    else
-	      loop min (Int64.pred mid)
+	      loop min (Int64.pred mid) (cnt+1)
       in
       let wd = min 62 (narrow_bitwidth_signed form_man e) in
       let max_limit = Int64.shift_right_logical (-1L) (64-wd) in
       let min_limit = Int64.pred (Int64.neg max_limit) in
-      let limit = loop min_limit max_limit in
+      let limit = loop min_limit max_limit 0 in
 	if !opt_trace_tables then
 	  Printf.printf "Smallest value based on queries is %Ld\n" limit;
 	limit
 
+    val minval_cache = Hashtbl.create 101
     val maxval_cache = Hashtbl.create 101
     val maxval_offset_cache = Hashtbl.create 101
     val used_addr_cache = Hashtbl.create 101
     val dummy_vars_cache = Hashtbl.create 101
     val mutable dummy_counter = 0
 
+    method private decide_minval op_name off_exp cloc =
+      let compute_minval off_exp =
+	let minval = self#query_minval off_exp (reg_addr()) in
+          minval
+      in
+	match off_exp with
+	  | V.Constant(V.Int(_, v)) -> v
+	  | _ ->
+	      let key = (off_exp, dt#get_hist_str) in
+		try
+		  let limit = Hashtbl.find minval_cache key in
+		    if !opt_trace_tables then
+		      Printf.printf ("Reusing cached minval %Ld "
+				     ^^ "for %s at [%s]\n")
+			limit (*(match limit with Some l -> l | None -> -1L)*)
+			(V.exp_to_string off_exp) dt#get_hist_str;
+		    limit
+		with Not_found ->
+		  let limit = compute_minval off_exp in
+		    if !opt_trace_tables then
+		      Printf.printf ("Not Found %s at [%s]\n")
+			(V.exp_to_string off_exp) dt#get_hist_str;
+                    Hashtbl.replace minval_cache key limit;
+		    limit
     method private decide_maxval op_name off_exp cloc =
       let compute_maxval off_exp =
 	if !opt_table_limit = 0 then
@@ -1381,9 +1425,11 @@ struct
         if cbase = 0L then
 	  None
 	else 
-	  match self#decide_wd "Load" off_exp cloc with
-	    | None -> None
-	    | Some wd -> self#table_load cloc (Some 0) off_exp (Int64.to_int wd) ty
+          let wd = self#decide_bitwidth "Load" off_exp cloc in
+	  (*match self#decide_bitwidth "Load" off_exp cloc with*)
+          match wd with
+	    | (None, _, _) -> None
+	    | (Some wd, off_exp', cloc') -> self#table_load cloc' (Some 0) off_exp' (Int64.to_int wd) ty
 	    
     method private handle_load addr_e ty =
       if !opt_trace_offset_limit then
@@ -1392,26 +1438,26 @@ struct
       | Some v -> (v, ty)
       | None ->
 	let location = 
-	  self#eval_addr_exp_region addr_e 0x8000 (self#decide_wd "Load") in
+	  self#eval_addr_exp_region addr_e 0x8000 (self#decide_bitwidth "Load") in
 	let r' = ref None in
 	let addr' = ref 0L in
 	let sym_region_table_v = 
 	  match location with
 	  | TableLocation(r, off_expr, cloc) ->
-	    (match (r, self#decide_wd "Load" off_expr 0L) with
-	    | (_, None) -> None
-            | (Some 0, Some wd) ->
-	       if !opt_trace_tables then
+	    (match (r, self#decide_bitwidth "Load" off_expr 0L) with
+	    | (_, (None, _, _)) -> None
+            | (Some 0, (Some wd, off_expr', cloc')) ->
+	      if !opt_trace_tables then
 		Printf.printf
 		  "SRFM#handle_load table load with base 0x%Lx, offset = %s\n"
-		  cloc (V.exp_to_string off_expr);
-              self#table_load cloc r off_expr (Int64.to_int wd) ty
-	    | (_, Some wd) ->
+		  cloc' (V.exp_to_string off_expr');
+              self#table_load cloc' r off_expr' (Int64.to_int wd) ty
+	    | (_, (Some wd, off_expr', cloc')) ->
 	      if !opt_trace_tables then
 		Printf.printf 
 		  "SRFM#handle_load table load for sym region with offset expr = %s\n"
-		  (V.exp_to_string off_expr);
-	      self#table_load 0L r off_expr (Int64.to_int wd) ty)
+		  (V.exp_to_string off_expr');
+	      self#table_load cloc' r off_expr' (Int64.to_int wd) ty)
 	  | SingleLocation(r, addr) -> 
 	    r' := r; addr' := addr; None
 	in 
@@ -1737,8 +1783,10 @@ struct
       if (!opt_no_table_store) ||
 	not (self#maybe_table_or_concrete_store addr_e ty value)
       then
+        let decide_fn off_exp cloc =
+          ((self#decide_maxval "Store" off_exp cloc), off_exp, cloc) in
 	let location = 
-	  self#eval_addr_exp_region addr_e 0x9000 (self#decide_maxval "Store") in
+	  self#eval_addr_exp_region addr_e 0x9000 decide_fn in
 	let r = ref None in
 	let addr = ref 0L in
 	let table_store_status =
