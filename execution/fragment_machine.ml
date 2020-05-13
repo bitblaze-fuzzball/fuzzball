@@ -1495,6 +1495,7 @@ method make_flags_symbolic =
       self#print_reg64 "%r13" R_R13;
       self#print_reg64 "%r14" R_R14;
       self#print_reg64 "%r15" R_R15;
+      (* self#print_reg64 "FS_BASE" R_FS_BASE; *)
       (* Here's how you would print the low 128 bits of the low 8 XMM
          registers, analogous to what we currently do on 32-bit. In
          many cases on x64 though you'd really want to print 16
