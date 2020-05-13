@@ -5,6 +5,8 @@
 
 module V = Vine;;
 
+open Exec_influence;;
+
 open Exec_domain;;
 open Exec_exceptions;;
 open Exec_utils;;
@@ -41,9 +43,13 @@ let str_trim s =
 let stmt_to_string_compact st =
   str_trim (V.stmt_to_string st)
 
-let move_hash src dest =
+let move_varhash src dest =
   V.VarHash.clear dest;
   V.VarHash.iter (fun a b -> V.VarHash.add dest a b) src
+
+let move_hash src dest =
+  Hashtbl.clear dest;
+  Hashtbl.iter (fun a b -> Hashtbl.add dest a b) src
 
 let skip_strings =
   (let h = Hashtbl.create 2 in
@@ -329,6 +335,8 @@ class virtual fragment_machine = object
 
   method virtual make_regs_zero : unit
   method virtual make_regs_symbolic : unit
+  method virtual make_flags_symbolic : unit
+
   method virtual load_x86_user_regs : Temu_state.userRegs -> unit
   method virtual print_regs : unit
   method virtual printable_word_reg : register_name -> string
@@ -591,7 +599,7 @@ struct
     val mutable frag = ([], [])
     val mutable insns = []
 
-    val mutable snap = (V.VarHash.create 1, V.VarHash.create 1)
+    val mutable snap = (V.VarHash.create 1, V.VarHash.create 1, Hashtbl.create 1)
 
     method init_prog (dl, sl) =
       List.iter
@@ -639,6 +647,24 @@ struct
       (* Shouldn't be needed; we instead simplify the registers when
 	 writing to them: *)
       (* self#simplify_regs; *)
+(*nvd*)
+      if Hashtbl.mem insn_count_tbl eip then 
+         let tmp_count = Hashtbl.find insn_count_tbl eip in
+             Hashtbl.replace insn_count_tbl eip (tmp_count + 1)
+      else
+         Hashtbl.replace insn_count_tbl eip 1;
+      (*Printf.printf "EIP Count Dump %d\n" (Hashtbl.find insn_count_tbl eip);*)
+
+      (match !opt_fuzz_end_addr_with_count with
+         | Some (addr, count) -> 
+             let current_count = Hashtbl.find insn_count_tbl eip in
+                 if (eip = addr) && (current_count = count) then
+			(*if !opt_measure_expr_influence <> [] then
+				measure_influence !opt_measure_expr_influence*)
+                    raise ReachedEndAddr
+         | None -> ()	
+      );
+
       (match deferred_start_symbolic with
 	 | Some setup ->
 	     deferred_start_symbolic <- None;
@@ -1050,6 +1076,17 @@ struct
 	| X64 -> self#make_x64_regs_zero
 	| ARM -> self#make_arm_regs_zero
 
+    method private make_x86_flags_symbolic =
+      let reg r v =
+	self#set_int_var (Hashtbl.find reg_to_var r) v
+      in
+	reg R_PF (form_man#fresh_symbolic_1 "initial_PF");
+	reg R_CF (form_man#fresh_symbolic_1 "initial_CF");
+	reg R_AF (form_man#fresh_symbolic_1 "initial_AF");
+	reg R_SF (form_man#fresh_symbolic_1 "initial_SF");
+	reg R_OF (form_man#fresh_symbolic_1 "initial_OF");
+	reg R_ZF (form_man#fresh_symbolic_1 "initial_ZF");
+
     method private make_x86_regs_symbolic =
       let reg r v =
 	self#set_int_var (Hashtbl.find reg_to_var r) v
@@ -1335,6 +1372,11 @@ struct
 	| X64 -> self#make_x64_regs_symbolic
 	| ARM -> self#make_arm_regs_symbolic
 
+method make_flags_symbolic = 
+      match !opt_arch with	
+	| X86 -> self#make_x86_flags_symbolic	
+	| _ -> failwith "Unsupported Arch"
+
     method load_x86_user_regs regs =
       self#set_word_var R_EAX (Int64.of_int32 regs.Temu_state.eax);
       self#set_word_var R_EBX (Int64.of_int32 regs.Temu_state.ebx);
@@ -1453,6 +1495,7 @@ struct
       self#print_reg64 "%r13" R_R13;
       self#print_reg64 "%r14" R_R14;
       self#print_reg64 "%r15" R_R15;
+      (* self#print_reg64 "FS_BASE" R_FS_BASE; *)
       (* Here's how you would print the low 128 bits of the low 8 XMM
          registers, analogous to what we currently do on 32-bit. In
          many cases on x64 though you'd really want to print 16
@@ -1665,7 +1708,7 @@ struct
 
     method make_snap () =
       mem#make_snap ();
-      snap <- (V.VarHash.copy reg_store, V.VarHash.copy temps);
+      snap <- (V.VarHash.copy reg_store, V.VarHash.copy temps, Hashtbl.copy insn_count_tbl);
       List.iter (fun h -> h#make_snap) special_handler_list
 
     val mutable fuzz_finish_reasons = []
@@ -1694,12 +1737,14 @@ struct
 
     method reset () =
       mem#reset ();
-      (match snap with (r, t) ->
-	 move_hash r reg_store;
-	 move_hash t temps);
+      (match snap with (r, t, counts) ->
+	 move_varhash r reg_store;
+	 move_varhash t temps;
+         move_hash counts insn_count_tbl);
       fuzz_finish_reasons <- [];
       disqualified <- false;
-      List.iter (fun h -> h#reset) special_handler_list
+      List.iter (fun h -> h#reset) special_handler_list;
+      Hashtbl.clear insn_count_tbl (*nvd resetting the hash for the next iteration*)
 
     method add_special_handler (h:special_handler) =
       special_handler_list <- h :: special_handler_list

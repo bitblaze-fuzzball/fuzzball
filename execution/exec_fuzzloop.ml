@@ -149,6 +149,7 @@ let fuzz start_eip opt_fuzz_start_eip end_eips
 		      Printf.printf "[trans_eval WARNING]: %s\n%!" s;
 		      stop "at unhandled system call"
 		  | SymbolicSyscall -> stop "at symbolic system call"
+                  | ReachedEndAddr -> stop "at end addr"
 		  | ReachedMeasurePoint -> stop "at measurement point"
 		  | ReachedInfluenceBound -> stop "at influence bound"
 		  | DisqualifiedPath -> stop "on disqualified path"

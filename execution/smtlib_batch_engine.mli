@@ -15,5 +15,6 @@ class smtlib_batch_engine
   method pop : unit
   method query : Vine.exp -> (bool option) * Query_engine.sat_assign
   method after_query : bool -> unit
+  method get_file_name : string
   method reset : unit
 end

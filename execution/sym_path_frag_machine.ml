@@ -801,6 +801,15 @@ struct
       (false, false, false, false, false, false, false, false)
 
     method eip_hook eip = 
+	(*nvd*)
+	(match !opt_fuzz_end_addr_with_count with
+		 | Some (addr, count) -> 
+		     let current_count = if Hashtbl.mem insn_count_tbl eip then Hashtbl.find insn_count_tbl eip else 0 in
+			 if (eip = addr) && (current_count = count - 1) then (* because here the count is not incremented yet!*)
+				if !opt_measure_expr_influence <> [] && self#started_symbolic then
+					ignore (infl_man#measure_influence_expr !opt_measure_expr_influence) (*TODO: ignore*)
+		 | None -> ()	
+	);
       fm#eip_hook eip;
       List.iter
 	(fun (f_eip, _) -> 

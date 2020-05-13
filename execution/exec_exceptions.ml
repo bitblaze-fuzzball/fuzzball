@@ -14,6 +14,7 @@ exception KnownPath
 exception LastIteration
 exception NotConcrete of Vine.exp
 exception NullDereference
+exception ReachedEndAddr
 exception ReachedInfluenceBound
 exception ReachedMeasurePoint
 exception Signal of string

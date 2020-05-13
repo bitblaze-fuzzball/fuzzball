@@ -101,6 +101,7 @@ sig
       -> string -> unit
     method make_regs_zero : unit
     method make_regs_symbolic : unit
+    method make_flags_symbolic : unit
     method load_x86_user_regs : Temu_state.userRegs -> unit
     method print_regs : unit
     method printable_word_reg : Fragment_machine.register_name -> string
@@ -259,5 +260,6 @@ sig
     method load_word_concretize  : int64 -> bool -> string -> int64
     method load_long_concretize  : int64 -> bool -> string -> int64
     method make_sink_region : string -> int64 -> unit
+    val insn_count_tbl : (int64, int) Hashtbl.t
   end
 end

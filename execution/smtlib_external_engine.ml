@@ -237,5 +237,11 @@ class smtlib_external_engine solver fname = object(self)
       self#reset_solver_chans;
       first_query <- true;
       visitor <- None;
+      match log_chan with
+        | Some chan -> close_out chan
+        | None ->();
+      
+  method get_file_name =
+    ""
 
 end

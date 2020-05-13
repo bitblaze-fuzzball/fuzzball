@@ -184,5 +184,8 @@ class stpvc_engine = object(self)
   method push_vc = Libstp.vc_push vc
     
   method get_vc = vc
+  
+  method get_file_name =
+    ""
       
 end

@@ -33,6 +33,7 @@ class virtual query_engine : object
   method virtual query : Vine.exp -> (bool option) * sat_assign
   method virtual after_query : bool -> unit
   method virtual reset : unit
+  method virtual get_file_name : string
 end
 
 class dummy_query_engine : object
@@ -45,6 +46,7 @@ class dummy_query_engine : object
   method query : Vine.exp -> (bool option) * sat_assign
   method after_query : bool -> unit
   method reset : unit
+  method get_file_name : string
 end
 
 val print_ce : sat_assign -> unit
@@ -59,4 +61,5 @@ class parallel_check_engine : query_engine -> query_engine -> object
   method query : Vine.exp -> (bool option) * sat_assign
   method after_query : bool -> unit
   method reset : unit
+  method get_file_name : string
 end

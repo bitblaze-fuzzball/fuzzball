@@ -2542,15 +2542,24 @@ object(self)
   method sys_arch_prctl code addr =
     (match code with
        | 0x1001 (* ARCH_SET_GS *) ->
-	   fm#set_long_var R_GS_BASE addr
+	   fm#set_long_var R_GS_BASE addr;
+	   put_return 0L
        | 0x1002 (* ARCH_SET_FS *) ->
-	   fm#set_long_var R_FS_BASE addr
+	   fm#set_long_var R_FS_BASE addr;
+	   put_return 0L
        | 0x1003 (* ARCH_GET_FS *) ->
-	   store_long addr 0 (fm#get_long_var R_FS_BASE)
+	   store_long addr 0 (fm#get_long_var R_FS_BASE);
+	   put_return 0L
        | 0x1004 (* ARCH_GET_GS *) ->
-	   store_long addr 0 (fm#get_long_var R_GS_BASE)
-       | _ -> failwith "Unexpected arch_prctl subfunction");
-    put_return 0L
+	   store_long addr 0 (fm#get_long_var R_GS_BASE);
+	   put_return 0L
+       | (0x1011|0x1012) -> (* ARCH_GET/SET_CPUID *)
+	   self#put_errno Unix.EINVAL
+       | (0x2001|0x2002|0x2003) -> (* ARCH_MAP_VDSO_X32/32/64 *)
+	   self#put_errno Unix.EINVAL
+       | 0x3001 -> (* ARCH_CET_STATUS, widely unsupported *)
+	   self#put_errno Unix.EINVAL
+       | _ -> failwith "Unexpected arch_prctl subfunction")
 
   method sys_set_tid_address addr =
     let pid = self#get_pid in

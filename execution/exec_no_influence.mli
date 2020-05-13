@@ -3,14 +3,14 @@
 *)
 
 class virtual influence_manager : object
-  method virtual take_measure_eip : Vine.exp -> unit
+  method virtual take_measure_eip : Vine.exp list -> unit
   
   method virtual take_measure_expr : Vine.exp -> Vine.exp -> unit
 
   method virtual measure_influence_common : Vine.decl list
-    -> (Vine.var * Vine.exp) list -> Vine.exp -> Vine.exp -> float
+    -> (Vine.var * Vine.exp) list -> Vine.exp -> Vine.exp list -> float
 
-  method virtual measure_influence : Vine.exp -> float
+  method virtual measure_influence : Vine.exp list -> float
 
   method virtual compute_multipath_influence : string -> unit
 
@@ -25,13 +25,13 @@ class virtual influence_manager : object
 
   method virtual path_end_influence : unit
 
-  method virtual measure_point_influence : string -> Vine.exp -> unit
+  method virtual measure_point_influence : string -> Vine.exp list -> unit
 
   method virtual maybe_measure_influence_deref : Vine.exp -> unit
 
   method virtual measure_influence_rep : unit
 
-  method virtual measure_influence_expr : Vine.exp -> unit
+  method virtual measure_influence_expr : Vine.exp list -> unit
 
   method virtual disqualify_path : unit
 
@@ -45,14 +45,14 @@ class virtual influence_manager : object
 end
 
 class no_influence_manager : object
-  method take_measure_eip : Vine.exp -> unit
+  method take_measure_eip : Vine.exp list -> unit
 
   method take_measure_expr : Vine.exp -> Vine.exp -> unit
 
   method measure_influence_common : Vine.decl list
-    -> (Vine.var * Vine.exp) list -> Vine.exp -> Vine.exp -> float
+    -> (Vine.var * Vine.exp) list -> Vine.exp -> Vine.exp list -> float
 
-  method measure_influence : Vine.exp -> float
+  method measure_influence : Vine.exp list -> float
 
   method compute_multipath_influence : string -> unit
 
@@ -67,13 +67,13 @@ class no_influence_manager : object
 
   method path_end_influence : unit
 
-  method measure_point_influence : string -> Vine.exp -> unit
+  method measure_point_influence : string -> Vine.exp list -> unit
 
   method maybe_measure_influence_deref : Vine.exp -> unit
 
   method measure_influence_rep : unit
 
-  method measure_influence_expr : Vine.exp -> unit
+  method measure_influence_expr : Vine.exp list -> unit
 
   method disqualify_path : unit
 

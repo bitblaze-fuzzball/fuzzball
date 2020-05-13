@@ -35,6 +35,7 @@ val opt_solver_slow_time : float ref
 val opt_save_solver_files : bool ref
 val opt_solver_path : string ref
 val opt_follow_path : string ref
+val opt_searchmc_path : string ref
 val opt_branch_preference : (int64, int64) Hashtbl.t
 val opt_branch_preference_unchecked : (int64, int64) Hashtbl.t
 val opt_always_prefer : bool option ref
@@ -53,9 +54,10 @@ val opt_trace_randomness : bool ref
 val opt_measure_influence_derefs : bool ref
 val opt_measure_influence_reploops : bool ref
 val opt_measure_deref_influence_at : int64 option ref
-val opt_measure_expr_influence_at : (int64 * Vine.exp) option ref
+val opt_measure_expr_influence_at : (int64 * Vine.exp) list ref
 val opt_multipath_influence_only : bool ref
 val opt_stop_at_measurement : bool ref
+val opt_multi_threaded_searchmc : bool ref
 val opt_periodic_influence : int option ref
 val opt_influence_bound : float ref
 val opt_disqualify_addrs : int64 list ref
@@ -199,3 +201,5 @@ val opt_program_name : string option ref
 val opt_start_addr : int64 option ref
 val opt_argv : string list ref
 val state_start_addr : int64 option ref
+val opt_fuzz_end_addr_with_count : (int64 * int) option ref
+val opt_measure_expr_influence : Vine.exp list ref
