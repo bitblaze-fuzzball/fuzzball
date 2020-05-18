@@ -123,9 +123,10 @@ let known_unknowns = (
     Hashtbl.replace h "Floating point binop" ();
     Hashtbl.replace h "Floating point triop" ();
     Hashtbl.replace h "floatcast" ();
-    Hashtbl.replace h "CCall: x86g_create_fpucw" ();
+    Hashtbl.replace h "CCall: x86g_create_fpucw" (); (* s/b handled now *)
     Hashtbl.replace h "CCall: x86g_calculate_FXAM" ();
-    Hashtbl.replace h "CCall: x86g_check_fldcw" ();
+    Hashtbl.replace h "CCall: x86g_check_fldcw" (); (* s/b handled now *)
+    Hashtbl.replace h "loadF80" ();
     h)
 
 (* Disable "unknown" statments it seems safe to ignore *)
@@ -138,6 +139,10 @@ let noop_known_unknowns (dl, sl) =
 	    V.Move(lhs, V.Constant(V.Int(ty, 0L)))
 	| V.ExpStmt(V.Unknown("Unknown: PutI")) ->
 	    V.Comment("Unknown: PutI")
+	| V.ExpStmt(V.Unknown("Unknown: loadF80")) ->
+	    V.Comment("Unknown: loadF80")
+	| V.ExpStmt(V.Unknown("Unknown: storeF80")) ->
+	    V.Comment("Unknown: storeF80")
 	| s -> s) sl)
 
 let trans_cache = Hashtbl.create 100001
@@ -157,12 +162,6 @@ let with_trans_cache (eip:int64) fn =
 	    (Frag_simplify.simplify_frag (noop_known_unknowns (dl, sl)));
 	  Hashtbl.find trans_cache eip
 
-let skip_strings = 
-  (let h = Hashtbl.create 2 in
-     Hashtbl.replace h "NoOp" ();
-     Hashtbl.replace h "x86g_use_seg_selector" ();
-     h)
-
 let print_insns start_eip (_, sl) insn_num endl =
   let eip = ref (Some start_eip) in
   let print_eip () = 
@@ -175,10 +174,7 @@ let print_insns start_eip (_, sl) insn_num endl =
     List.iter
       (function
 	 | V.Comment(s) ->
-	     if not (Hashtbl.mem skip_strings s) &&
-               ((String.length s < 13) ||
-                  (String.sub s 0 13) <> "eflags thunk:")
-	     then
+	     if FM.comment_is_insn s then
 	       (print_eip();
 		Printf.printf "%s%c" s endl)
 	 | V.Label(lab) ->

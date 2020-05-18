@@ -241,5 +241,87 @@ struct
   let cast64h16 (tg,v) = (unary_tag tg, D.cast64h16 v)
   let cast64h32 (tg,v) = (unary_tag tg, D.cast64h32 v)
 
+  let ite op (cond_tg, cond_v) (t_tg, t_v) (f_tg, f_v) =
+    ((binary_tag t_tg f_tg), (op cond_v t_v f_v))
+  let ite1  = ite D.ite1
+  let ite8  = ite D.ite8
+  let ite16 = ite D.ite16
+  let ite32 = ite D.ite32
+  let ite64 = ite D.ite64
+
+  let fplus32 rm (tg,v) (tg2,v2) = (binary_tag tg tg2, D.fplus32 rm v v2)
+  let fplus64 rm (tg,v) (tg2,v2) = (binary_tag tg tg2, D.fplus64 rm v v2)
+
+  let fminus32 rm (tg,v) (tg2,v2) = (binary_tag tg tg2, D.fminus32 rm v v2)
+  let fminus64 rm (tg,v) (tg2,v2) = (binary_tag tg tg2, D.fminus64 rm v v2)
+
+  let ftimes32 rm (tg,v) (tg2,v2) = (binary_tag tg tg2, D.ftimes32 rm v v2)
+  let ftimes64 rm (tg,v) (tg2,v2) = (binary_tag tg tg2, D.ftimes64 rm v v2)
+
+  let fdivide32 rm (tg,v) (tg2,v2) = (binary_tag tg tg2, D.fdivide32 rm v v2)
+  let fdivide64 rm (tg,v) (tg2,v2) = (binary_tag tg tg2, D.fdivide64 rm v v2)
+
+  let feq32 rm (tg,v) (tg2,v2) = (binary_tag tg tg2, D.feq32 rm v v2)
+  let feq64 rm (tg,v) (tg2,v2) = (binary_tag tg tg2, D.feq64 rm v v2)
+
+  let fneq32 rm (tg,v) (tg2,v2) = (binary_tag tg tg2, D.fneq32 rm v v2)
+  let fneq64 rm (tg,v) (tg2,v2) = (binary_tag tg tg2, D.fneq64 rm v v2)
+
+  let flt32 rm (tg,v) (tg2,v2) = (binary_tag tg tg2, D.flt32 rm v v2)
+  let flt64 rm (tg,v) (tg2,v2) = (binary_tag tg tg2, D.flt64 rm v v2)
+
+  let fle32 rm (tg,v) (tg2,v2) = (binary_tag tg tg2, D.fle32 rm v v2)
+  let fle64 rm (tg,v) (tg2,v2) = (binary_tag tg tg2, D.fle64 rm v v2)
+
+  let fneg32 rm (tg,v) = (unary_tag tg, D.fneg32 rm v)
+  let fneg64 rm (tg,v) = (unary_tag tg, D.fneg64 rm v)
+
+  let float1s32  rm (tg,v) = (unary_tag tg, D.float1s32  rm v)
+  let float8s32  rm (tg,v) = (unary_tag tg, D.float8s32  rm v)
+  let float16s32 rm (tg,v) = (unary_tag tg, D.float16s32 rm v)
+  let float32s32 rm (tg,v) = (unary_tag tg, D.float32s32 rm v)
+  let float64s32 rm (tg,v) = (unary_tag tg, D.float64s32 rm v)
+  let float1s64  rm (tg,v) = (unary_tag tg, D.float1s64  rm v)
+  let float8s64  rm (tg,v) = (unary_tag tg, D.float8s64  rm v)
+  let float16s64 rm (tg,v) = (unary_tag tg, D.float16s64 rm v)
+  let float32s64 rm (tg,v) = (unary_tag tg, D.float32s64 rm v)
+  let float64s64 rm (tg,v) = (unary_tag tg, D.float64s64 rm v)
+
+  let float1u32  rm (tg,v) = (unary_tag tg, D.float1u32  rm v)
+  let float8u32  rm (tg,v) = (unary_tag tg, D.float8u32  rm v)
+  let float16u32 rm (tg,v) = (unary_tag tg, D.float16u32 rm v)
+  let float32u32 rm (tg,v) = (unary_tag tg, D.float32u32 rm v)
+  let float64u32 rm (tg,v) = (unary_tag tg, D.float64u32 rm v)
+  let float1u64  rm (tg,v) = (unary_tag tg, D.float1u64  rm v)
+  let float8u64  rm (tg,v) = (unary_tag tg, D.float8u64  rm v)
+  let float16u64 rm (tg,v) = (unary_tag tg, D.float16u64 rm v)
+  let float32u64 rm (tg,v) = (unary_tag tg, D.float32u64 rm v)
+  let float64u64 rm (tg,v) = (unary_tag tg, D.float64u64 rm v)
+
+  let fix32s1  rm (tg,v) = (unary_tag tg, D.fix32s1  rm v)
+  let fix32s8  rm (tg,v) = (unary_tag tg, D.fix32s8  rm v)
+  let fix32s16 rm (tg,v) = (unary_tag tg, D.fix32s16 rm v)
+  let fix32s32 rm (tg,v) = (unary_tag tg, D.fix32s32 rm v)
+  let fix32s64 rm (tg,v) = (unary_tag tg, D.fix32s64 rm v)
+  let fix64s1  rm (tg,v) = (unary_tag tg, D.fix64s1  rm v)
+  let fix64s8  rm (tg,v) = (unary_tag tg, D.fix64s8  rm v)
+  let fix64s16 rm (tg,v) = (unary_tag tg, D.fix64s16 rm v)
+  let fix64s32 rm (tg,v) = (unary_tag tg, D.fix64s32 rm v)
+  let fix64s64 rm (tg,v) = (unary_tag tg, D.fix64s64 rm v)
+
+  let fix32u1  rm (tg,v) = (unary_tag tg, D.fix32u1  rm v)
+  let fix32u8  rm (tg,v) = (unary_tag tg, D.fix32u8  rm v)
+  let fix32u16 rm (tg,v) = (unary_tag tg, D.fix32u16 rm v)
+  let fix32u32 rm (tg,v) = (unary_tag tg, D.fix32u32 rm v)
+  let fix32u64 rm (tg,v) = (unary_tag tg, D.fix32u64 rm v)
+  let fix64u1  rm (tg,v) = (unary_tag tg, D.fix64u1  rm v)
+  let fix64u8  rm (tg,v) = (unary_tag tg, D.fix64u8  rm v)
+  let fix64u16 rm (tg,v) = (unary_tag tg, D.fix64u16 rm v)
+  let fix64u32 rm (tg,v) = (unary_tag tg, D.fix64u32 rm v)
+  let fix64u64 rm (tg,v) = (unary_tag tg, D.fix64u64 rm v)
+
+  let fwiden32to64  rm (tg,v) = (unary_tag tg, D.fwiden32to64  rm v)
+  let fnarrow64to32 rm (tg,v) = (unary_tag tg, D.fnarrow64to32 rm v)
+
   let get_tag (tg,v) = tg
 end

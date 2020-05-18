@@ -11,10 +11,14 @@ open Fragment_machine
 open Exec_run_common
 
 let call_replacements fm last_eip eip =
-  let ret_reg = match !opt_arch with
-    | X86 -> R_EAX
-    | X64 -> R_RAX
-    | ARM -> R0
+  let (ret_reg, set_reg_conc, set_reg_sym, set_reg_fresh) =
+    match !opt_arch with
+    | X86 -> (R_EAX, fm#set_word_var, fm#set_word_reg_symbolic,
+	      fm#set_word_reg_fresh_symbolic)
+    | X64 -> (R_RAX, fm#set_long_var, fm#set_long_reg_symbolic,
+	      fm#set_long_reg_fresh_symbolic)
+    | ARM -> (R0, fm#set_word_var, fm#set_word_reg_symbolic,
+	      fm#set_word_reg_fresh_symbolic)
   in
   let canon_eip eip =
     match !opt_arch with
@@ -33,21 +37,24 @@ let call_replacements fm last_eip eip =
 	   (lookup eip      !opt_skip_func_addr_region),
 	   (lookup last_eip !opt_skip_call_addr),
 	   (lookup last_eip !opt_skip_call_addr_symbol),
+	   (lookup last_eip !opt_skip_call_addr_symbol_once),
 	   (lookup last_eip !opt_skip_call_addr_region))
     with
-      | (None, None, None, None, None, None) -> None
-      | (Some sfa_val, None, None, None, None, None) ->
-	  Some (fun () -> fm#set_word_var ret_reg sfa_val)
-      | (None, Some sfas_sym, None, None, None, None) ->
-	  Some (fun () -> fm#set_word_reg_fresh_symbolic ret_reg sfas_sym)
-      | (None, None, Some sfar_sym, None, None, None) ->
-	  Some (fun () -> fm#set_word_reg_fresh_region ret_reg sfar_sym)
-      | (None, None, None, Some cfa_val, None, None) ->
-	  Some (fun () -> fm#set_word_var ret_reg cfa_val)
-      | (None, None, None, None, Some cfas_sym, None) ->
-	  Some (fun () -> fm#set_word_reg_fresh_symbolic ret_reg cfas_sym)
-      | (None, None, None, None, None, Some cfar_sym) ->
-	  Some (fun () -> fm#set_word_reg_fresh_region ret_reg cfar_sym)
+      | (None, None, None, None, None, None, None) -> None
+      | (Some sfa_val, None, None, None, None, None, None) ->
+	  Some (fun () -> set_reg_conc ret_reg sfa_val)
+      | (None, Some sfas_sym, None, None, None, None, None) ->
+	  Some (fun () -> ignore(set_reg_fresh ret_reg sfas_sym))
+      | (None, None, Some sfar_sym, None, None, None, None) ->
+	  Some (fun () -> fm#set_reg_fresh_region ret_reg sfar_sym)
+      | (None, None, None, Some cfa_val, None, None, None) ->
+	  Some (fun () -> set_reg_conc ret_reg cfa_val)
+      | (None, None, None, None, Some cfas_sym, None, None) ->
+	  Some (fun () -> ignore(set_reg_fresh ret_reg cfas_sym))
+      | (None, None, None, None, None, Some cfaso_sym, None) ->
+	  Some (fun () -> set_reg_sym ret_reg cfaso_sym)
+      | (None, None, None, None, None, None, Some cfar_sym) ->
+	  Some (fun () -> fm#set_reg_fresh_region ret_reg cfar_sym)
       | _ -> failwith "Contradictory replacement options"
 
 let loop_detect = Hashtbl.create 1000
@@ -64,7 +71,12 @@ let decode_insn_at fm gamma eipT =
 	    eipT
       | _ -> eipT
     in
-    let bytes = Array.init 16
+    (* The number of bytes read must be long enough to cover any
+       single instruction. Naively you might think that 16 bytes
+       would be enough, but Valgrind client requests count as single
+       instructions for VEX, and they can be up to 19 bytes on
+       x86-64 and 20 bytes on ARM. *)
+    let bytes = Array.init 20
       (fun i -> Char.chr (fm#load_byte_conc
 			    (Int64.add insn_addr (Int64.of_int i))))
     in
@@ -103,7 +115,7 @@ let decode_insns_cached fm gamma eip =
   with_trans_cache eip (fun () -> decode_insns fm gamma eip bb_size true)
 
 let rec runloop (fm : fragment_machine) eip asmir_gamma until =
-  let rec loop last_eip eip =
+  let rec loop last_eip eip is_final_loop num_insns_executed =
     (let old_count =
        (try
 	  Hashtbl.find loop_detect eip
@@ -112,7 +124,9 @@ let rec runloop (fm : fragment_machine) eip asmir_gamma until =
 	  1L)
      in
        Hashtbl.replace loop_detect eip (Int64.succ old_count);
-       if old_count > !opt_iteration_limit then raise TooManyIterations);
+       (match !opt_iteration_limit_enforced with
+       | Some lim -> if old_count > lim then raise TooManyIterations
+       | _ -> ()););
     let (dl, sl) = decode_insns_cached fm asmir_gamma eip in
     let prog = (dl, sl) in
       let prog' = match call_replacements fm last_eip eip with
@@ -135,10 +149,17 @@ let rec runloop (fm : fragment_machine) eip asmir_gamma until =
 	fm#set_frag prog';
 	(* flush stdout; *)
 	let new_eip = label_to_eip (fm#run ()) in
-	  match (new_eip, until) with
-	    | (e1, e2) when e2 e1 -> ()
-	    | (0L, _) -> raise JumpToNull
-	    | _ -> loop eip new_eip
+	  if is_final_loop then
+	    Printf.printf "End jump to: %Lx\n" new_eip
+	  else if num_insns_executed = !opt_insn_limit then
+	    Printf.printf "Stopping after %Ld insns\n" !opt_insn_limit
+	  else
+	    match (new_eip, until, !opt_trace_end_jump) with
+	      | (e1, e2, Some e3) when e1 = e3 ->
+	          loop eip new_eip true (Int64.succ num_insns_executed)
+	      | (e1, e2, _) when e2 e1 -> ()
+	      | (0L, _, _) -> raise JumpToNull
+	      | _ -> loop eip new_eip false (Int64.succ num_insns_executed)
   in
     Hashtbl.clear loop_detect;
-    loop (0L) eip
+    loop (0L) eip false 1L

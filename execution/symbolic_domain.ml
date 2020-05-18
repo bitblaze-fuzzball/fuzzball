@@ -131,25 +131,9 @@ module SymbolicDomain : Exec_domain.DOMAIN = struct
 	    | 4 -> V.Cast(V.CAST_HIGH, V.REG_32, e)
 	    | _ -> failwith "bad which in extract_32_from_64"
 
-  let assemble16 e e2 =
-    V.BinOp(V.BITOR,
-	    V.Cast(V.CAST_UNSIGNED, V.REG_16, e),
-	    V.BinOp(V.LSHIFT,
-		    V.Cast(V.CAST_UNSIGNED, V.REG_16, e2),
-		    (from_concrete_8 8)))
-  let assemble32 e e2 =
-    V.BinOp(V.BITOR,
-	    V.Cast(V.CAST_UNSIGNED, V.REG_32, e),
-	    V.BinOp(V.LSHIFT,
-		    V.Cast(V.CAST_UNSIGNED, V.REG_32, e2),
-		    (from_concrete_8 16)))
-
-  let assemble64 e e2 =
-    V.BinOp(V.BITOR,
-	    V.Cast(V.CAST_UNSIGNED, V.REG_64, e),
-	    V.BinOp(V.LSHIFT,
-		    V.Cast(V.CAST_UNSIGNED, V.REG_64, e2),
-		    (from_concrete_8 32)))
+  let assemble16 e e2 = V.BinOp(V.CONCAT, e2, e)
+  let assemble32 e e2 = V.BinOp(V.CONCAT, e2, e)
+  let assemble64 e e2 = V.BinOp(V.CONCAT, e2, e)
 
   let reassemble16 e e2 =
     match (e, e2) with
@@ -160,6 +144,10 @@ module SymbolicDomain : Exec_domain.DOMAIN = struct
 	  when v1 = v2 && (Int64.sub addr2 addr1) = 1L
 	    ->
 	  V.Lval(V.Mem(v1, V.Constant(V.Int(V.REG_32, addr1)), V.REG_16))
+      | (V.Cast(V.CAST_LOW, V.REG_8, s1), (V.Cast(V.CAST_HIGH, V.REG_8, s2)))
+	  when s1 = s2 && (Vine_typecheck.infer_type_fast s1) = V.REG_16
+	    ->
+	  s1
       | _ -> assemble16 e e2
 
   let reassemble32 e e2 =
@@ -171,6 +159,10 @@ module SymbolicDomain : Exec_domain.DOMAIN = struct
 	  when v1 = v2 && (Int64.sub addr2 addr1) = 2L
 	    ->
 	  V.Lval(V.Mem(v1, V.Constant(V.Int(V.REG_32, addr1)), V.REG_32))
+      | (V.Cast(V.CAST_LOW, V.REG_16, w1), (V.Cast(V.CAST_HIGH, V.REG_16, w2)))
+	  when w1 = w2 && (Vine_typecheck.infer_type_fast w1) = V.REG_32
+	    ->
+	  w1
       | _ -> assemble32 e e2
 
   let reassemble64 e e2 =
@@ -182,6 +174,10 @@ module SymbolicDomain : Exec_domain.DOMAIN = struct
 	  when v1 = v2 && (Int64.sub addr2 addr1) = 4L
 	    ->
 	  V.Lval(V.Mem(v1, V.Constant(V.Int(V.REG_32, addr1)), V.REG_64))
+      | (V.Cast(V.CAST_LOW, V.REG_32, l1), (V.Cast(V.CAST_HIGH, V.REG_32, l2)))
+	  when l1 = l2 && (Vine_typecheck.infer_type_fast l1) = V.REG_64
+	    ->
+	  l1
       | _ -> assemble64 e e2
 
   let to_string e = V.exp_to_string e
@@ -380,6 +376,94 @@ module SymbolicDomain : Exec_domain.DOMAIN = struct
   let cast32h16 = cast V.CAST_HIGH V.REG_16
   let cast64h16 = cast V.CAST_HIGH V.REG_16
   let cast64h32 = cast V.CAST_HIGH V.REG_32
+
+  let ite cond t f = V.Ite(cond, t, f)
+
+  let ite1  = ite
+  let ite8  = ite
+  let ite16 = ite
+  let ite32 = ite
+  let ite64 = ite
+
+  let fbinop op rm v1 v2 = V.FBinOp(op, rm, v1, v2)
+
+  let fplus32 = fbinop V.FPLUS
+  let fplus64 = fbinop V.FPLUS
+
+  let fminus32 = fbinop V.FMINUS
+  let fminus64 = fbinop V.FMINUS
+
+  let ftimes32 = fbinop V.FTIMES
+  let ftimes64 = fbinop V.FTIMES
+
+  let fdivide32 = fbinop V.FDIVIDE
+  let fdivide64 = fbinop V.FDIVIDE
+
+  let feq32 = fbinop V.FEQ
+  let feq64 = fbinop V.FEQ
+
+  let fneq32 = fbinop V.FNEQ
+  let fneq64 = fbinop V.FNEQ
+
+  let flt32 = fbinop V.FLT
+  let flt64 = fbinop V.FLT
+
+  let fle32 = fbinop V.FLE
+  let fle64 = fbinop V.FLE
+
+  let funop op rm v1 = V.FUnOp(op, rm, v1)
+
+  let fneg32 = funop V.FNEG
+  let fneg64 = funop V.FNEG
+
+  let fcast op ty rm v = V.FCast(op, rm, ty, v)
+
+  let float1s32  = fcast V.CAST_SFLOAT V.REG_32
+  let float8s32  = fcast V.CAST_SFLOAT V.REG_32
+  let float16s32 = fcast V.CAST_SFLOAT V.REG_32
+  let float32s32 = fcast V.CAST_SFLOAT V.REG_32
+  let float64s32 = fcast V.CAST_SFLOAT V.REG_32
+  let float1s64  = fcast V.CAST_SFLOAT V.REG_64
+  let float8s64  = fcast V.CAST_SFLOAT V.REG_64
+  let float16s64 = fcast V.CAST_SFLOAT V.REG_64
+  let float32s64 = fcast V.CAST_SFLOAT V.REG_64
+  let float64s64 = fcast V.CAST_SFLOAT V.REG_64
+
+  let float1u32  = fcast V.CAST_UFLOAT V.REG_32
+  let float8u32  = fcast V.CAST_UFLOAT V.REG_32
+  let float16u32 = fcast V.CAST_UFLOAT V.REG_32
+  let float32u32 = fcast V.CAST_UFLOAT V.REG_32
+  let float64u32 = fcast V.CAST_UFLOAT V.REG_32
+  let float1u64  = fcast V.CAST_UFLOAT V.REG_64
+  let float8u64  = fcast V.CAST_UFLOAT V.REG_64
+  let float16u64 = fcast V.CAST_UFLOAT V.REG_64
+  let float32u64 = fcast V.CAST_UFLOAT V.REG_64
+  let float64u64 = fcast V.CAST_UFLOAT V.REG_64
+
+  let fix32s1  = fcast V.CAST_SFIX V.REG_1
+  let fix32s8  = fcast V.CAST_SFIX V.REG_8
+  let fix32s16 = fcast V.CAST_SFIX V.REG_16
+  let fix32s32 = fcast V.CAST_SFIX V.REG_32
+  let fix32s64 = fcast V.CAST_SFIX V.REG_64
+  let fix64s1  = fcast V.CAST_SFIX V.REG_1
+  let fix64s8  = fcast V.CAST_SFIX V.REG_8
+  let fix64s16 = fcast V.CAST_SFIX V.REG_16
+  let fix64s32 = fcast V.CAST_SFIX V.REG_32
+  let fix64s64 = fcast V.CAST_SFIX V.REG_64
+
+  let fix32u1  = fcast V.CAST_UFIX V.REG_1
+  let fix32u8  = fcast V.CAST_UFIX V.REG_8
+  let fix32u16 = fcast V.CAST_UFIX V.REG_16
+  let fix32u32 = fcast V.CAST_UFIX V.REG_32
+  let fix32u64 = fcast V.CAST_UFIX V.REG_64
+  let fix64u1  = fcast V.CAST_UFIX V.REG_1
+  let fix64u8  = fcast V.CAST_UFIX V.REG_8
+  let fix64u16 = fcast V.CAST_UFIX V.REG_16
+  let fix64u32 = fcast V.CAST_UFIX V.REG_32
+  let fix64u64 = fcast V.CAST_UFIX V.REG_64
+
+  let fwiden32to64  = fcast V.CAST_FWIDEN  V.REG_64
+  let fnarrow64to32 = fcast V.CAST_FNARROW V.REG_32
 
   let get_tag v = 0L
 end

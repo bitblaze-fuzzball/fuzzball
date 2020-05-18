@@ -18,7 +18,8 @@ module VH = Vine.VarHash
 type ctx = Stpvc.exp VH.t
 type revctx = (string, Vine.var) Hashtbl.t
 
-(* note: this is different than Vine.is_not_memory *)
+(* note: this is different than Vine.is_not_memory, because arrays are
+   true here versus false there. *)
 let is_not_mem (_,_,t) =
   match (unwind_type t) with
       TMem _ -> false
@@ -103,6 +104,7 @@ let rec vine_to_stp vc ctx e =
 	  let tobv f = (fun vc x y -> (e_boolbv vc (f vc x y))) in
 	  let ty = match bop with
 	    | EQ | NEQ | LT | LE | SLT | SLE -> REG_1
+	    | CONCAT -> double_width ty1
 	    | _ -> ty1
 	  in
 	  let constr = match bop with
@@ -116,6 +118,7 @@ let rec vine_to_stp vc ctx e =
 	    | BITAND -> e_bvand vc
 	    | BITOR -> e_bvor vc
 	    | XOR -> e_bvxor vc
+	    | CONCAT -> e_bvconcat vc
 	    | EQ -> tobv e_eq vc
 	    | NEQ -> (fun x y -> e_boolbv vc (e_not vc (e_eq vc x y)))
 	    | LT -> tobv e_bvlt vc 
@@ -145,16 +148,31 @@ let rec vine_to_stp vc ctx e =
 	  tr_let [] e
       | Let(Mem(memname,_,_), _, _) when is_not_mem memname ->
 	  tr_let [] e
+      | Let(Mem(_,_,_), _, _) ->
+	  failwith "Unsupported let-mem in vine_stpvc"
       | Lval(Temp ((n,s,t) as v)) ->
 	  (VH.find ctx v), t
       | Lval(Mem(memname,a,t)) when is_not_mem memname->
 	  let a' = Cast(CAST_UNSIGNED,REG_64, a) in
 	  let (s_a, _) = tr a' in
 	    (e_read vc (VH.find ctx memname) s_a), t
+      | Lval(Mem(_,_,_)) ->
+	  failwith "Unsupported memory lvalue in vine_stpvc"
       | Name _ -> failwith "vine_stpvc: translation from Name unsupported"
 (*      | Phi _ -> failwith "vine_stpvc: Phi unsupported" *)
+      | FUnOp(_, _, _)
+      | FBinOp(_, _, _, _)
+      | FCast(_, _, _, _)
+	-> failwith "vine_stpvc: STP does not support floating point"
+      | Ite(ce, te, fe) ->
+	  let (s1, ty1) = tr ce and
+	      (s2, ty2) = tr te and
+	      (s3, ty3) = tr fe in
+	    assert(ty1 = REG_1);
+	    assert(ty2 = ty3);
+	    let cond_s = e_eq vc s1 (e_bv_of_int vc 1 1) in
+	      (e_ite vc cond_s s2 s3), ty2
       | Unknown _ -> failwith "vine_stpvc: Unknown unsupported"
-      | _ -> failwith "vine_stpvc: unsupported operation"
   and tr_let to_remove e =
     match e with
 	Let(Temp n, e1, e2) ->

@@ -33,7 +33,7 @@ let main argv =
 		@ Exec_set_options.fuzzball_cmdline_opts
 		@ Options_solver.solver_cmdline_opts
 		@ Exec_set_options.influence_cmdline_opts))
-    (fun arg -> Exec_set_options.set_program_name arg)
+    (fun arg -> Exec_set_options.set_program_name_guess_arch arg)
     "fuzzball [options]* program\n";
   let dt = ((new Binary_decision_tree.binary_decision_tree)
 	    :> Decision_tree.decision_tree)#init in

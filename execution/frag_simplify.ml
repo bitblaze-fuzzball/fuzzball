@@ -5,6 +5,7 @@
 module V = Vine;;
 
 open Exec_exceptions;;
+open Exec_options;;
 
 let rec constant_fold_rec e =
   match e with
@@ -18,6 +19,10 @@ let rec constant_fold_rec e =
 	Vine_opt.constant_fold_more (fun _ -> None)
 	  (V.Cast(op, ty, constant_fold_rec e))
     | V.Lval(lv) -> V.Lval(constant_fold_rec_lv lv)
+    | V.Ite(ce, te, fe) ->
+	Vine_opt.constant_fold_more (fun _ -> None)
+	  (V.Ite(constant_fold_rec ce, constant_fold_rec te,
+		 constant_fold_rec fe))
     | _ -> e
 and constant_fold_rec_lv lv =
   match lv with
@@ -144,11 +149,12 @@ let rec simplify_rec e =
     | V.BinOp(V.EQ, V.BinOp(V.PLUS, e1, (V.Constant(_) as k1)),
 	      (V.Constant(_) as k2)) ->
 	simplify_rec (V.BinOp(V.EQ, e1, (V.BinOp(V.MINUS, k2, k1))))
-    (* cast(-x + y)H:reg1_t => y - x < 0 => y < x *)
-    | V.Cast(V.CAST_HIGH, V.REG_1,
-	     V.BinOp(V.PLUS, V.UnOp(V.NEG, x), y))
-      ->
-	V.BinOp(V.LT, y, x)
+    (* We previously had a rule here like: *)
+    (* cast(-x + y)H:reg1_t ===> y <$ x *)
+    (* This transformation seems correct when x and y aren't too big, *)
+    (* but it gives the wrong result when the subtraction has signed *)
+    (* overflow. Now that we translate overflow flags using <$, *)
+    (* the need to introduce it with rewriting should be less. *)
     | V.BinOp(op, e1, e2) ->
 	Vine_opt.constant_fold_more (fun _ -> None)
 	  (V.BinOp(op, simplify_rec e1, simplify_rec e2))
@@ -158,7 +164,19 @@ let rec simplify_rec e =
     | V.Cast(op, ty, e) ->
 	Vine_opt.constant_fold_more (fun _ -> None)
 	  (V.Cast(op, ty, simplify_rec e))
+    | V.FBinOp(op, rm, e1, e2) ->
+	Vine_opt.constant_fold_more (fun _ -> None)
+	  (V.FBinOp(op, rm, simplify_rec e1, simplify_rec e2))
+    | V.FUnOp(op, rm, e) ->
+	Vine_opt.constant_fold_more (fun _ -> None)
+	  (V.FUnOp(op, rm, simplify_rec e))
+    | V.FCast(op, rm, ty, e) ->
+	Vine_opt.constant_fold_more (fun _ -> None)
+	  (V.FCast(op, rm, ty, simplify_rec e))
     | V.Lval(lv) -> V.Lval(simplify_rec_lv lv)
+    | V.Ite(ce, te, fe) ->
+	Vine_opt.constant_fold_more (fun _ -> None)
+	  (V.Ite(simplify_rec ce, simplify_rec te, simplify_rec fe))
     | _ -> e
 and simplify_rec_lv lv =
   match lv with
@@ -168,8 +186,9 @@ and simplify_rec_lv lv =
 let rec simplify_fp e =
   let rec loop e n =
     let e' = simplify_rec e in
-      (* Printf.printf "Simplified %s -> %s\n"
-	(V.exp_to_string e) (V.exp_to_string e'); *)
+      if !opt_trace_simplify && e <> e' then
+	Printf.printf "Simplified %s -> %s\n"
+	  (V.exp_to_string e) (V.exp_to_string e');
       assert(n < 100);
       if e = e' then
 	e'
@@ -181,16 +200,20 @@ let rec simplify_fp e =
 let rec expr_size e =
   match e with
     | V.BinOp(_, e1, e2) -> 1 + (expr_size e1) + (expr_size e2)
+    | V.FBinOp(_, _, e1, e2) -> 1 + (expr_size e1) + (expr_size e2)
     | V.UnOp(_, e1) -> 1 + (expr_size e1)
+    | V.FUnOp(_, _, e1) -> 1 + (expr_size e1)
     | V.Constant(_) -> 1
     | V.Lval(V.Temp(_)) -> 2
     | V.Lval(V.Mem(_, e1, _)) -> 2 + (expr_size e1)
     | V.Name(_) -> 1
     | V.Cast(_, _, e1) -> 1 + (expr_size e1)
+    | V.FCast(_, _, _, e1) -> 1 + (expr_size e1)
     | V.Unknown(_) -> 1
     | V.Let(V.Temp(_), e1, e2) -> 2 + (expr_size e1) + (expr_size e2)
     | V.Let(V.Mem(_,e0,_), e1, e2) ->
 	2 + (expr_size e0) + (expr_size e1) + (expr_size e2)
+    | V.Ite(ce, te, fe) -> 1 + (expr_size ce) + (expr_size te) + (expr_size fe)
 
 let rec stmt_size = function
   | V.Jmp(e) -> 1 + (expr_size e)
@@ -232,6 +255,9 @@ let rec cfold_with_type e =
     | V.UnOp(op, e1) ->
 	let (e1', ty1) = cfold_with_type e1 in
 	  (V.UnOp(op, e1'), ty1)
+    | V.FUnOp(op, rm, e1) ->
+	let (e1', ty1) = cfold_with_type e1 in
+	  (V.FUnOp(op, rm, e1'), ty1)
     | V.BinOp(op, e1, e2) ->
 	let (e1', ty1) = cfold_with_type e1 and
 	    (e2', ty2) = cfold_with_type e2 in
@@ -244,9 +270,21 @@ let rec cfold_with_type e =
 	     | V.LSHIFT | V.RSHIFT | V.ARSHIFT
 		 -> ty1
 	     | V.EQ | V.NEQ | V.LT | V.LE | V.SLT | V.SLE
-		 -> assert(ty1 = ty2); V.REG_1)
+		 -> assert(ty1 = ty2); V.REG_1
+	     | V.CONCAT -> assert(ty1 = ty2); V.double_width ty1)
 	in
 	  (V.BinOp(op, e1', e2'), ty)
+    | V.FBinOp(op, rm, e1, e2) ->
+	let (e1', ty1) = cfold_with_type e1 and
+	    (e2', ty2) = cfold_with_type e2 in
+	let ty =
+	  (match op with
+	     | V.FPLUS | V.FMINUS | V.FTIMES | V.FDIVIDE
+		 -> assert(ty1 = ty2); ty1
+	     | V.FEQ | V.FNEQ | V.FLT | V.FLE
+		 -> assert(ty1 = ty2); V.REG_1)
+	in
+	  (V.FBinOp(op, rm, e1', e2'), ty)
     | V.Constant(V.Int(ty, _)) -> (e, ty)
     | V.Constant(V.Str(_)) -> (e, V.TString)
     | V.Lval(V.Temp(_,_,ty)) -> (e, ty)
@@ -257,6 +295,10 @@ let rec cfold_with_type e =
     | V.Cast(kind, ty, e1) ->
 	let (e1', ty1) = cfold_with_type e1 in
 	let e' = if ty = ty1 then e1' else V.Cast(kind, ty, e1') in
+	  (e', ty)
+    | V.FCast(kind, rm, ty, e1) ->
+	let (e1', ty1) = cfold_with_type e1 in
+	let e' = V.FCast(kind, rm, ty, e1') in
 	  (e', ty)
     | V.Unknown("rdtsc") -> (e, V.REG_64)
     | V.Unknown("Unknown: Dirty") ->
@@ -272,6 +314,14 @@ let rec cfold_with_type e =
 	    (e1', _) = cfold_with_type e1 and
 	    (e2', ty2) = cfold_with_type e2 in
 	  (V.Let(V.Mem(mem,e0',mem_ty), e1', e2), ty2)
+    | V.Ite(ce, te, fe) ->
+	let (ce', ty_c) = cfold_with_type ce and
+	    (te', ty_t) = cfold_with_type te and
+	    (fe', ty_f) = cfold_with_type fe
+	in
+	  assert(ty_c = V.REG_1);
+	  assert(ty_t = ty_f);
+	  (V.Ite(ce', te', fe'), ty_t)
 
 let cfold_exprs_w_type (dl, sl) =
   let fold e =
@@ -299,7 +349,7 @@ let rm_unused_stmts sl =
        | V.Move(V.Temp(_,"R_CC_DEP2",_),_) -> false
        | V.Move(V.Temp(_,"R_CC_NDEP",_),_) -> false
        | V.Move(V.Temp(_,("R_PF"|"R_AF"),_),_)
-	   when !Exec_options.opt_omit_pf_af -> false
+	   when !opt_omit_pf_af -> false
        | _ -> true)
     sl
 
@@ -345,12 +395,20 @@ let rm_unused_labels sl =
 let rec count_uses_e var e =
   match e with
     | V.BinOp(_, e1, e2) -> (count_uses_e var e1) + (count_uses_e var e2)
+    | V.FBinOp(_,_, e1, e2) -> (count_uses_e var e1) + (count_uses_e var e2)
     | V.UnOp(_, e) -> count_uses_e var e
+    | V.FUnOp(_, _, e) -> count_uses_e var e
     | V.Cast(_, _, e) -> count_uses_e var e
+    | V.FCast(_, _, _, e) -> count_uses_e var e
     | V.Lval(lv) -> count_uses_lv var lv
     | V.Let(lv, e1, e2) ->
 	(count_uses_lv var lv) + (count_uses_e var e1) + (count_uses_e var e2)
-    | _ -> 0
+    | V.Ite(ce, te, fe) -> (count_uses_e var ce) + (count_uses_e var te)
+	+ (count_uses_e var fe)
+    | V.Unknown(_)
+    | V.Name(_)
+    | V.Constant(_)
+      -> 0
 and count_uses_lv var lv =
   match lv with
     | V.Temp(v) -> (if v = var then 1 else 0)
@@ -399,7 +457,7 @@ let rm_unused_vars (dl, sl) =
     (* print_string "{";
        List.iter print_int uses;
        print_string "}\n"; *)
-  let (dl', to_rm) = partition2 (fun n -> n != 0) dl uses in
+  let (dl', to_rm) = partition2 (fun n -> n <> 0) dl uses in
   let sl' = List.fold_right rm_defs to_rm sl in
     (dl', sl')
 
@@ -412,12 +470,20 @@ let copy_const_prop (dl, sl) =
     match expr with
       | V.BinOp(op, e1, e2) ->
 	  V.BinOp(op, replace_uses_e e1, replace_uses_e e2)
+      | V.FBinOp(op, rm, e1, e2) ->
+	  V.FBinOp(op, rm, replace_uses_e e1, replace_uses_e e2)
       | V.UnOp(op, e) ->
 	  V.UnOp(op, replace_uses_e e)
+      | V.FUnOp(op, rm, e) ->
+	  V.FUnOp(op, rm, replace_uses_e e)
       | V.Cast(op, ty, e) ->
 	  V.Cast(op, ty, replace_uses_e e)
+      | V.FCast(op, rm, ty, e) ->
+	  V.FCast(op, rm, ty, replace_uses_e e)
       | V.Lval(V.Temp(v)) when V.VarHash.mem map v ->
 	  V.VarHash.find map v
+      | V.Lval(V.Temp(_)) ->
+	  expr
       | V.Lval(V.Mem(v, idx, ty)) ->
 	  V.Lval(V.Mem(v, replace_uses_e idx, ty))
       | V.Let(V.Temp(v), e1, e2) ->
@@ -427,7 +493,12 @@ let copy_const_prop (dl, sl) =
 	  assert(not (V.VarHash.mem map v));
 	  V.Let(V.Mem(v, (replace_uses_e idx), mem_ty),
 		(replace_uses_e e1), (replace_uses_e e2))
-      | _ -> expr
+      | V.Ite(ce, te, fe) ->
+	  V.Ite(replace_uses_e ce, replace_uses_e te, replace_uses_e fe)
+      | V.Unknown(_)
+      | V.Name(_)
+      | V.Constant(_)
+	-> expr
   in
   let replace_uses st =
     match st with
@@ -450,7 +521,7 @@ let copy_const_prop (dl, sl) =
   let invalidate_uses vh bad_var =
     V.VarHash.iter
       (fun lhs rhs ->
-	 if (count_uses_e bad_var rhs) != 0 then	   
+	 if (count_uses_e bad_var rhs) <> 0 then
 	   (V.VarHash.remove vh lhs))
       vh
   in
@@ -488,14 +559,24 @@ let copy_const_prop (dl, sl) =
 let rec rm_set_used_e hash e =
   match e with
     | V.BinOp(_, e1, e2) -> (rm_set_used_e hash e1); (rm_set_used_e hash e2)
+    | V.FBinOp(_,_, e1, e2) -> (rm_set_used_e hash e1); (rm_set_used_e hash e2)
     | V.UnOp(_, e) -> rm_set_used_e hash e
+    | V.FUnOp(_, _, e) -> rm_set_used_e hash e
     | V.Cast(_, _, e) -> rm_set_used_e hash e
+    | V.FCast(_, _, _, e) -> rm_set_used_e hash e
     | V.Lval(lv) -> rm_set_used_lv hash lv
     | V.Let(lv, e1, e2) ->
 	(rm_set_used_lv hash lv) ;
 	(rm_set_used_e hash e1);
 	(rm_set_used_e hash e2)
-    | _ -> ()
+    | V.Ite(ce, te, fe) ->
+	rm_set_used_e hash ce;
+	rm_set_used_e hash te;
+	rm_set_used_e hash fe
+    | V.Unknown(_)
+    | V.Name(_)
+    | V.Constant(_)
+      -> ()
 and rm_set_used_lv hash lv =
   match lv with
     | V.Temp(v) -> Hashtbl.remove hash v
@@ -596,10 +677,18 @@ let split_divmod (dl, sl) =
 	when V.VarHash.mem vars t1 ->
 	let (div_var, _) = V.VarHash.find vars t1 in
 	  V.Lval(V.Temp(div_var))
+    | V.Cast(_, _, _) as other -> other
+    | V.FCast(_, _, _, _) as other -> other
     | V.BinOp(op, e1, e2) -> V.BinOp(op, (walk e1), (walk e2))
+    | V.FBinOp(_, _, _, _) as other -> other
     | V.UnOp(op, e1) -> V.UnOp(op, (walk e1))
+    | V.FUnOp(_, _, _) as other -> other
     | V.Let(lv, e1, e2) -> V.Let(lv, (walk e1), (walk e2))
-    | other -> other
+    | V.Ite(ce, te, fe) -> V.Ite((walk ce), (walk te), (walk fe))
+    | V.Unknown(_) as other -> other
+    | V.Name(_) as other -> other
+    | V.Lval(_) as other -> other
+    | V.Constant(_) as other -> other
   in
   let rec stmt_loop sl =
       match sl with
@@ -664,9 +753,16 @@ let lets_to_moves (dl, sl) =
 	let (bl1, e1') = expr_loop e1 in
 	let (bl2, e2') = expr_loop e2 in
 	  (bl1 @ bl2, (V.BinOp(op, e1', e2')))
+    | V.FBinOp(op, rm, e1, e2) ->
+	let (bl1, e1') = expr_loop e1 in
+	let (bl2, e2') = expr_loop e2 in
+	  (bl1 @ bl2, (V.FBinOp(op, rm, e1', e2')))
     | V.UnOp(op, e1) ->
 	let (bl1, e1') = expr_loop e1 in
 	  (bl1, V.UnOp(op, e1'))
+    | V.FUnOp(op, rm, e1) ->
+	let (bl1, e1') = expr_loop e1 in
+	  (bl1, V.FUnOp(op, rm, e1'))
     | V.Constant(_) as e -> ([], e)
     | V.Lval(V.Temp(_)) as e -> ([], e)
     | V.Lval(V.Mem(v, e1, ty)) ->
@@ -676,6 +772,9 @@ let lets_to_moves (dl, sl) =
     | V.Cast(ct, ty, e1) ->
 	let (bl1, e1') = expr_loop e1 in
 	  (bl1, (V.Cast(ct, ty, e1')))
+    | V.FCast(ct, rm, ty, e1) ->
+	let (bl1, e1') = expr_loop e1 in
+	  (bl1, (V.FCast(ct, rm, ty, e1')))
     | V.Unknown(_) as e -> ([], e)
     | V.Let(V.Temp(v), e1, e2) ->
 	let (bl1, e1') = expr_loop e1 in
@@ -683,6 +782,11 @@ let lets_to_moves (dl, sl) =
 	  (bl1 @ [v, e1'] @ bl2, e2')
     | V.Let(V.Mem(_,_,_), _, _) ->
 	failwith "Let mem unhandled in lets_to_moves"
+    | V.Ite(ce, te, fe) ->
+	let (bl1, ce') = expr_loop ce in
+	let (bl2, te') = expr_loop te in
+	let (bl3, fe') = expr_loop fe in
+	  (bl1 @ bl2 @ bl3, V.Ite(ce', te', fe'))
   in
   let rec stmt_loop = function
     | st :: rest ->
@@ -739,8 +843,29 @@ let lets_to_moves (dl, sl) =
 
 let simplify_frag (orig_dl, orig_sl) =
   (* V.pp_program print_string (orig_dl, orig_sl); *)
-  (* let extra_dl = Asmir.decls_for_arch (Exec_options.asmir_arch ()) in
-    Vine_typecheck.typecheck (orig_dl @ extra_dl, orig_sl); *)
+  if !opt_sanity_checks then
+    (let extra_dl = Asmir.decls_for_arch (asmir_arch ()) in
+       try
+	 (* Run the Vine typechecker on the IR that we got from
+	    libasmir. This has a noticeable runtime cost. But other
+	    places in FuzzBALL assume that expressions are type-correct,
+	    so this can sometimes catch problems that would otherwise be
+	    hard to track down. Unfortunately at the moment there are
+	    also some known failures. *)
+	 Vine_typecheck.typecheck (orig_dl @ extra_dl, orig_sl)
+       with
+	 (* rdtsc is a wart right now: it should be more like a
+	    Special than an Unknown because we do deal with it, just in a
+	    special way. But it should be more like an expression than a
+	    statement because it produces a value. *)
+	 | Vine.TypeError("Cannot typecheck unknown: rdtsc") -> ()
+	 (* The old Vine typechecker currently can't deal with
+	    addresses being REG_64, which is one of the things that can
+	    lead to errors like this. *)
+	 | Vine.TypeError(s) when (String.length s) > 30
+	     && (String.sub s 0 30) = "Type error: Invalid jmp target"
+	     -> ()
+    );
   let (dl, sl) = (orig_dl, orig_sl) in
   let (dl, sl) = lets_to_moves (dl, sl) in
   let sl = rm_unused_stmts sl in

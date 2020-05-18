@@ -25,11 +25,14 @@ export SOURCES = \
 	exec_options.mli exec_options.ml \
 	frag_simplify.mli frag_simplify.ml \
 	frag_marshal.mli frag_marshal.ml \
+	query_engine.mli query_engine.ml \
 	formula_manager.mli formula_manager.ml \
 	symbolic_domain.mli symbolic_domain.ml \
-	query_engine.mli query_engine.ml \
 	stpvc_engine.mli stpvc_engine.ml \
+        solvers_common.mli solvers_common.ml \
 	stp_external_engine.mli stp_external_engine.ml \
+	smtlib_external_engine.mli smtlib_external_engine.ml \
+	smtlib_batch_engine.mli smtlib_batch_engine.ml \
 	concrete_memory.mli concrete_memory.ml \
 	granular_memory.mli granular_memory.ml \
 	fragment_machine.mli fragment_machine.ml \
@@ -40,6 +43,7 @@ export SOURCES = \
 	sym_path_frag_machine.mli sym_path_frag_machine.ml \
 	sym_region_frag_machine.mli sym_region_frag_machine.ml \
 	special_handlers.mli special_handlers.ml \
+	noop_syscalls.mli noop_syscalls.ml \
 	linux_syscalls.mli linux_syscalls.ml \
 	linux_loader.mli linux_loader.ml \
 	state_loader.mli state_loader.ml \
@@ -66,13 +70,13 @@ export LDFLAGS = $(LIBASMIR_LDFLAGS)
 export CLIBFLAGS= $(LDFLAGS)
 export LIBDIRS = $(LIBASMIR)/src # ../appreplay ../stp ../stp/ocaml
 
-OCAMLFLAGS = -warn-error Aelz  #-w A
+OCAMLFLAGS = -warn-error Aelz-3  #-w A
 # merge everything but descriptions.
 OCAMLDOCFLAGS = -m avlsoper
 
 # Fast enough that it's better to just always remake it than
 # worry about whether it's up to date.
-UNUSED := $(shell perl update-git-version.pl >/dev/tty)
+UNUSED := $(shell perl update-git-version.pl >&2)
 
 all: dncl
 

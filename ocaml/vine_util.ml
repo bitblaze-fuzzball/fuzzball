@@ -313,6 +313,44 @@ let int64_u_of_float x =
   else
     Int64.add 0x8000000000000000L (Int64.of_float (x -. (2.0 ** 63.0)))
 
+(** Like Int64.of_string, but convert decimal values greater than
+    2**63-1 to unsigned (negative) int64s *)
+let int64_u_of_string s =
+  let len = String.length s in
+    if len <= 18 then
+      Int64.of_string s (* Small enough to handle *)
+    else if len >= 3 &&
+      (String.sub s 0 2 = "0x" ||
+	  String.sub s 0 2 = "0b" ||
+	  String.sub s 0 2 = "0o") then
+	Int64.of_string s (* Non-decimal is OK *)
+    else
+      (* Split and recombine to avoid values large enough to be negative *)
+      let low_s = String.sub s (len - 18) 18 and
+	  high_s = String.sub s 0 (len - 18) in
+      let low_v  = Int64.of_string low_s and
+	  high_v = Int64.of_string high_s in
+	Int64.add low_v (Int64.mul high_v 1000000000000000000L)
+
+let int64_floor_log2 i =
+  let rec loop = function
+    | 0L -> -1
+    | 1L -> 0
+    | 2L|3L -> 1
+    | 4L|5L|6L|7L -> 2
+    | i when i < 16L -> 2 + loop(Int64.shift_right_logical i 2)
+    | i when i < 256L -> 4 + loop(Int64.shift_right_logical i 4)
+    | i when i < 65536L -> 8 + loop(Int64.shift_right_logical i 8)
+    | i when i < 0x100000000L -> 16 + loop(Int64.shift_right_logical i 16)
+    | _ -> 32 + loop(Int64.shift_right_logical i 32)
+  in
+    loop i
+
+let int64_ceil_log2 i =
+  match i with
+    | 0L -> -1
+    | _ -> 1 + (int64_floor_log2 (Int64.pred i))
+
 (* end stuff that should be in Int64 *)
 
 (** execute f with fd_from remapped to fd_to.
@@ -331,4 +369,57 @@ let run_with_remapped_fd fd_from fd_to f =
   Unix.close fd_to_saved;
 
   rv
+
+(* Floating point operations on raw IEEE single and double precision
+   values represented as Int32s and Int64s. The current implementation
+   is not ideal: in particular we should actually pay attention to the
+   rounding mode, though AFAIK OCaml's builtins don't support that. *)
+
+(* This is the list from the SMT-LIB 2 floating point theory; VEX
+   has a superset of these *)
+type round_mode = | ROUND_NEAREST (* ties to even *)
+		  | ROUND_NEAREST_AWAY_ZERO
+		  | ROUND_POSITIVE
+		  | ROUND_NEGATIVE
+		  | ROUND_ZERO
+
+let wrap_f32_unop f a =
+  Int32.bits_of_float (f (Int32.float_of_bits a))
+
+let wrap_f32_binpred f a b =
+  f (Int32.float_of_bits a) (Int32.float_of_bits b)
+
+let wrap_f32_binop f a b =
+  Int32.bits_of_float (f (Int32.float_of_bits a) (Int32.float_of_bits b))
+
+let f32_neg (rm:round_mode) = ignore(rm); wrap_f32_unop (~-.)
+let f32_eq (rm:round_mode) = ignore(rm); wrap_f32_binpred (=)
+let f32_ne (rm:round_mode) = ignore(rm); wrap_f32_binpred (<>)
+let f32_lt (rm:round_mode) = ignore(rm); wrap_f32_binpred (<)
+let f32_le (rm:round_mode) = ignore(rm); wrap_f32_binpred (<=)
+let f32_add (rm:round_mode) = ignore(rm); wrap_f32_binop (+.)
+let f32_sub (rm:round_mode) = ignore(rm); wrap_f32_binop (-.)
+let f32_mul (rm:round_mode) = ignore(rm); wrap_f32_binop ( *. )
+let f32_div (rm:round_mode) = ignore(rm); wrap_f32_binop (/.)
+let f32_rem (rm:round_mode) = ignore(rm); wrap_f32_binop mod_float
+
+let wrap_f64_unop f a =
+  Int64.bits_of_float (f (Int64.float_of_bits a))
+
+let wrap_f64_binpred f a b =
+  f (Int64.float_of_bits a) (Int64.float_of_bits b)
+
+let wrap_f64_binop f a b =
+  Int64.bits_of_float (f (Int64.float_of_bits a) (Int64.float_of_bits b))
+
+let f64_neg (rm:round_mode) = ignore(rm); wrap_f64_unop (~-.)
+let f64_eq (rm:round_mode) = ignore(rm); wrap_f64_binpred (=)
+let f64_ne (rm:round_mode) = ignore(rm); wrap_f64_binpred (<>)
+let f64_lt (rm:round_mode) = ignore(rm); wrap_f64_binpred (<)
+let f64_le (rm:round_mode) = ignore(rm); wrap_f64_binpred (<=)
+let f64_add (rm:round_mode) = ignore(rm); wrap_f64_binop (+.)
+let f64_sub (rm:round_mode) = ignore(rm); wrap_f64_binop (-.)
+let f64_mul (rm:round_mode) = ignore(rm); wrap_f64_binop ( *. )
+let f64_div (rm:round_mode) = ignore(rm); wrap_f64_binop (/.)
+let f64_rem (rm:round_mode) = ignore(rm); wrap_f64_binop mod_float
 

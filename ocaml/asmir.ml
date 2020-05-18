@@ -35,6 +35,9 @@ let tr_unop = function
     Libasmir.NEG -> NEG
   | Libasmir.NOT -> NOT
 
+let tr_funop = function
+  | Libasmir.FNEG -> FNEG
+
 (** Translate a type *)
 let tr_regtype = function
     Libasmir.REG_1   -> REG_1 
@@ -108,9 +111,14 @@ let rec tr_exp g e =
     match Libasmir.exp_type e with
     | BINOP ->
 	tr_binop g (Libasmir.binop_type e) (Libasmir.binop_lhs e) (Libasmir.binop_rhs e)
+    | FBINOP ->
+	tr_fbinop g (Libasmir.fbinop_type e) (Libasmir.fbinop_lhs e) (Libasmir.fbinop_rhs e)
     | UNOP ->
         UnOp(tr_unop(Libasmir.unop_type e),
 	     tr_exp g (Libasmir.unop_subexp e) )
+    | FUNOP ->
+        FUnOp(tr_funop(Libasmir.funop_type e), ROUND_NEAREST,
+	      tr_exp g (Libasmir.funop_subexp e) )
     | CONSTANT ->
         Constant(Int (tr_regtype (constant_regtype e), 
 		      Libasmir.constant_val e))
@@ -136,12 +144,20 @@ let rec tr_exp g e =
 	 | Libasmir.CAST_SIGNED   -> Cast(CAST_SIGNED, newt, sube)
 	 | Libasmir.CAST_HIGH	   -> Cast(CAST_HIGH, newt, sube)
 	 | Libasmir.CAST_LOW	   -> Cast(CAST_LOW, newt, sube)
-	 | Libasmir.CAST_FLOAT
-	 | Libasmir.CAST_INTEGER
-	 | Libasmir.CAST_RFLOAT
-	 | Libasmir.CAST_RINTEGER ->
-	     (prerr_string "Warning: Ignoring deprecated cast type\n"; sube)
 	)
+    | FCAST ->
+        let sube = tr_exp g (fcast_subexp e) in
+        let newt = tr_regtype(fcast_width e) in
+	let vine_ct =
+	  (match fcast_casttype e with
+	     | Libasmir.CAST_SFLOAT -> CAST_SFLOAT
+	     | Libasmir.CAST_UFLOAT -> CAST_UFLOAT
+	     | Libasmir.CAST_SFIX -> CAST_SFIX
+	     | Libasmir.CAST_UFIX -> CAST_UFIX
+	     | Libasmir.CAST_FWIDEN -> CAST_FWIDEN
+	     | Libasmir.CAST_FNARROW -> CAST_FNARROW)
+	in
+	  FCast(vine_ct, ROUND_NEAREST, newt, sube)
     | NAME ->
         Name(name_string e)
     | UNKNOWN ->
@@ -159,8 +175,14 @@ let rec tr_exp g e =
         let letin = tr_exp g (let_in e) in 
 	  unextend();
 	  Let(letv, lete, letin)
+    | ITE ->
+	let cond_e = tr_exp g (ite_cond e) and
+	    true_e = tr_exp g (ite_true_e e) and
+	    false_e = tr_exp g (ite_false_e e) in
+	  Ite(cond_e, true_e, false_e)
     | EXTENSION ->
         failwith "Unknown extension type."
+    | VECTOR -> failwith "LibASMIR Vector should not escape to OCaml"
     | _ -> failwith "Unsupported stmt type"
   in
   if !exp_cache_enabled then
@@ -215,20 +237,27 @@ and tr_binop g b lhs rhs =
     | Libasmir.XOR	-> BinOp(XOR     , lhs, rhs)
     | Libasmir.EQ	-> BinOp(EQ      , lhs, rhs)
     | Libasmir.NEQ	-> BinOp(NEQ     , lhs, rhs)
-	(* VEX has both signed and unsigned comparisons, but asmir
-	   only has unsigned, which is sufficient in our current
-	   translation strategy (if you have a signed comparison in your
-	   original code, the translation via EFLAGS bits is equivalent
-	   to but doesn't syntactically include a signed
-	   comparison). Since Vine has signed comparison it would be
-	   straightforward to add in the future.  *)
     | Libasmir.LT	-> BinOp(LT, lhs, rhs)
     | Libasmir.LE       -> BinOp(LE, lhs, rhs)
+    | Libasmir.SLT	-> BinOp(SLT, lhs, rhs)
+    | Libasmir.SLE      -> BinOp(SLE, lhs, rhs)
 	(* At the moment, we only use < and <= (which is generally
 	   VEX's strategy as well). But > and >= can be easily reduced
 	   if needed: *)
     | Libasmir.GT	-> BinOp(LT, rhs, lhs) (* (x > y) <-> (y < x) *)
     | Libasmir.GE	-> BinOp(LE, rhs, lhs) (* (x >= y) <-> (y <= x) *)
+
+and tr_fbinop g b lhs rhs =
+  let (lhs,rhs) = (tr_exp g lhs, tr_exp g rhs) in
+  match b with
+    | Libasmir.FPLUS   -> FBinOp(FPLUS,   ROUND_NEAREST, lhs, rhs)
+    | Libasmir.FMINUS  -> FBinOp(FMINUS,  ROUND_NEAREST, lhs, rhs)
+    | Libasmir.FTIMES  -> FBinOp(FTIMES,  ROUND_NEAREST, lhs, rhs)
+    | Libasmir.FDIVIDE -> FBinOp(FDIVIDE, ROUND_NEAREST, lhs, rhs)
+    | Libasmir.FEQ     -> FBinOp(FEQ,     ROUND_NEAREST, lhs, rhs)
+    | Libasmir.FNEQ    -> FBinOp(FNEQ,    ROUND_NEAREST, lhs, rhs)
+    | Libasmir.FLT     -> FBinOp(FLT,     ROUND_NEAREST, lhs, rhs)
+    | Libasmir.FLE     -> FBinOp(FLE,     ROUND_NEAREST, lhs, rhs)
 
 (** Translate an lvalue *)
 and tr_lval g e =
@@ -451,6 +480,24 @@ let x86_regs : decl list =
   ("R_FTOP", REG_32);
   ("R_FPROUND", REG_32);
   ("R_FC3210", REG_32);
+  (* main x87 FP registers, pretending they're 64-bit as VEX does *)
+  ("R_FPREG0", REG_64);
+  ("R_FPREG1", REG_64);
+  ("R_FPREG2", REG_64);
+  ("R_FPREG3", REG_64);
+  ("R_FPREG4", REG_64);
+  ("R_FPREG5", REG_64);
+  ("R_FPREG6", REG_64);
+  ("R_FPREG7", REG_64);
+  (* In-use tags for the above *)
+  ("R_FPTAG0", REG_8);
+  ("R_FPTAG1", REG_8);
+  ("R_FPTAG2", REG_8);
+  ("R_FPTAG3", REG_8);
+  ("R_FPTAG4", REG_8);
+  ("R_FPTAG5", REG_8);
+  ("R_FPTAG6", REG_8);
+  ("R_FPTAG7", REG_8);
 
   (* SIMD instructions *)
   ("R_SSEROUND", REG_32);
@@ -458,6 +505,24 @@ let x86_regs : decl list =
   (* more recent VEX quirks *)
   ("R_EMWARN", REG_32);
   ("R_IP_AT_SYSCALL", REG_32);
+
+  (* SSE registers, each divided in half since REG_64 is our biggest *)
+  ("R_XMM0L", REG_64);
+  ("R_XMM0H", REG_64);
+  ("R_XMM1L", REG_64);
+  ("R_XMM1H", REG_64);
+  ("R_XMM2L", REG_64);
+  ("R_XMM2H", REG_64);
+  ("R_XMM3L", REG_64);
+  ("R_XMM3H", REG_64);
+  ("R_XMM4L", REG_64);
+  ("R_XMM4H", REG_64);
+  ("R_XMM5L", REG_64);
+  ("R_XMM5H", REG_64);
+  ("R_XMM6L", REG_64);
+  ("R_XMM6H", REG_64);
+  ("R_XMM7L", REG_64);
+  ("R_XMM7H", REG_64);
 ]
 
 
@@ -490,6 +555,11 @@ let x64_regs : decl list =
      through R_OF below *)
   ("R_RFLAGSREST", REG_64);
 
+  (* Limited 64-bit segments support: just a base address for %fs and
+     %gs *)
+  ("R_FS_BASE", REG_64);
+  ("R_GS_BASE", REG_64);
+
   (* condition flag bits *)
   ("R_CF", REG_1);
   ("R_PF", REG_1);
@@ -514,9 +584,61 @@ let x64_regs : decl list =
   ("R_FTOP", REG_32);
   ("R_FPROUND", REG_64);
   ("R_FC3210", REG_64);
+  (* main x87 FP registers, pretending they're 64-bit as VEX does *)
+  ("R_FPREG0", REG_64);
+  ("R_FPREG1", REG_64);
+  ("R_FPREG2", REG_64);
+  ("R_FPREG3", REG_64);
+  ("R_FPREG4", REG_64);
+  ("R_FPREG5", REG_64);
+  ("R_FPREG6", REG_64);
+  ("R_FPREG7", REG_64);
+  (* In-use tags for the above *)
+  ("R_FPTAG0", REG_8);
+  ("R_FPTAG1", REG_8);
+  ("R_FPTAG2", REG_8);
+  ("R_FPTAG3", REG_8);
+  ("R_FPTAG4", REG_8);
+  ("R_FPTAG5", REG_8);
+  ("R_FPTAG6", REG_8);
+  ("R_FPTAG7", REG_8);
 
   (* SIMD instructions *)
   ("R_SSEROUND", REG_64);
+
+  (* SSE registers, each divided in 4 since REG_64 is our biggest *)
+  ( "R_YMM0_0", REG_64); ( "R_YMM0_1", REG_64);
+  ( "R_YMM0_2", REG_64); ( "R_YMM0_3", REG_64);
+  ( "R_YMM1_0", REG_64); ( "R_YMM1_1", REG_64);
+  ( "R_YMM1_2", REG_64); ( "R_YMM1_3", REG_64);
+  ( "R_YMM2_0", REG_64); ( "R_YMM2_1", REG_64);
+  ( "R_YMM2_2", REG_64); ( "R_YMM2_3", REG_64);
+  ( "R_YMM3_0", REG_64); ( "R_YMM3_1", REG_64);
+  ( "R_YMM3_2", REG_64); ( "R_YMM3_3", REG_64);
+  ( "R_YMM4_0", REG_64); ( "R_YMM4_1", REG_64);
+  ( "R_YMM4_2", REG_64); ( "R_YMM4_3", REG_64);
+  ( "R_YMM5_0", REG_64); ( "R_YMM5_1", REG_64);
+  ( "R_YMM5_2", REG_64); ( "R_YMM5_3", REG_64);
+  ( "R_YMM6_0", REG_64); ( "R_YMM6_1", REG_64);
+  ( "R_YMM6_2", REG_64); ( "R_YMM6_3", REG_64);
+  ( "R_YMM7_0", REG_64); ( "R_YMM7_1", REG_64);
+  ( "R_YMM7_2", REG_64); ( "R_YMM7_3", REG_64);
+  ( "R_YMM8_0", REG_64); ( "R_YMM8_1", REG_64);
+  ( "R_YMM8_2", REG_64); ( "R_YMM8_3", REG_64);
+  ( "R_YMM9_0", REG_64); ( "R_YMM9_1", REG_64);
+  ( "R_YMM9_2", REG_64); ( "R_YMM9_3", REG_64);
+  ("R_YMM10_0", REG_64); ("R_YMM10_1", REG_64);
+  ("R_YMM10_2", REG_64); ("R_YMM10_3", REG_64);
+  ("R_YMM11_0", REG_64); ("R_YMM11_1", REG_64);
+  ("R_YMM11_2", REG_64); ("R_YMM11_3", REG_64);
+  ("R_YMM12_0", REG_64); ("R_YMM12_1", REG_64);
+  ("R_YMM12_2", REG_64); ("R_YMM12_3", REG_64);
+  ("R_YMM13_0", REG_64); ("R_YMM13_1", REG_64);
+  ("R_YMM13_2", REG_64); ("R_YMM13_3", REG_64);
+  ("R_YMM14_0", REG_64); ("R_YMM14_1", REG_64);
+  ("R_YMM14_2", REG_64); ("R_YMM14_3", REG_64);
+  ("R_YMM15_0", REG_64); ("R_YMM15_1", REG_64);
+  ("R_YMM15_2", REG_64); ("R_YMM15_3", REG_64);
 
   (* more recent VEX quirks *)
   ("R_EMNOTE", REG_32);

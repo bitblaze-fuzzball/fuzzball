@@ -27,10 +27,13 @@ let loop_w_stats count fn =
        do
 	 iter := Int64.add !iter 1L;
 	 let old_wtime = Unix.gettimeofday () and
-             old_ctime = Sys.time () in
+             old_ctime = Sys.time () and
+	     is_final = ref false in
 	   if !opt_trace_iterations then 
-	     Printf.printf "Iteration %Ld:\n" !iter;
-	   fn !iter;
+	     Printf.printf "Iteration %Ld:\n%!" !iter;
+	   (try
+	      fn !iter;
+	    with LastIteration -> is_final := true);
 	   let wtime = Unix.gettimeofday() in
 	     if !opt_time_stats then
 	       ((let ctime = Sys.time() in
@@ -39,12 +42,13 @@ let loop_w_stats count fn =
 		(Printf.printf "Wall time %f sec, %f total\n"
 		   (wtime -. old_wtime) (wtime -. start_wtime)));
 	     flush stdout;
-	     match !opt_total_timeout with
-	       | None -> ()
-	       | Some t ->
-		   if (wtime -. start_wtime) > t then
-		     (Printf.printf "Total exploration time timeout.\n";
-		      raise LastIteration)
+	     (match !opt_total_timeout with
+		| None -> ()
+		| Some t ->
+		    if (wtime -. start_wtime) > t then
+		      (Printf.printf "Total exploration time timeout.\n";
+		       raise LastIteration));
+	     if !is_final then raise LastIteration
        done
      with
 	 LastIteration -> ());
@@ -85,13 +89,25 @@ let fuzz start_eip opt_fuzz_start_eip end_eips
 	     (fun a ->
 		if a = opt_fuzz_start_eip then
 		  (decr opt_fuzz_start_addr_count;
-		   !opt_fuzz_start_addr_count = 0)
+		   if !opt_fuzz_start_addr_count = 0 then 
+		     opt_iteration_limit_enforced := Some !opt_iteration_limit;
+		   !opt_fuzz_start_addr_count = 0
+		  )
 		else
 		  false))
       with
 	| StartSymbolic(eip, setup) ->
 	    fuzz_start_eip := eip;
-	    extra_setup := setup);
+	    extra_setup := setup
+	| SimulatedExit(code) ->
+	    Printf.printf "Program exited (code %Ld) before reaching fuzz-start-addr\n" code;
+	    Printf.printf "(Maybe recheck your fuzz start address?)\n";
+	    exit 2 (* This used to be an uncaught exception *)
+     );
+     let path_cond = fm#get_path_cond in
+     if path_cond <> [] then 
+       failwith ("The path condition is non-empty before fm#start_symbolic,"^
+	 "you may want to re-run fuzzball with the -zero-memory option");
      fm#start_symbolic;
      if !opt_trace_setup then
        (Printf.printf "Setting up symbolic values:\n"; flush stdout);
@@ -120,6 +136,10 @@ let fuzz start_eip opt_fuzz_start_eip end_eips
 		  | DeepPath -> stop "on too-deep path"
 		  | SymbolicJump -> stop "at symbolic jump"
 		  | NullDereference -> stop "at null deref"
+		  | SimulatedSegfault(addr, is_store) -> stop
+		      ("at illegal " ^
+			 (if is_store then "store to" else "load from")
+		       ^ " address 0x" ^ (Printf.sprintf "%08Lx" addr))
 		  | JumpToNull -> stop "at jump to null"
 		  | DivideByZero -> stop "at division by zero"
 		  | TooManyIterations -> stop "after too many loop iterations"
@@ -133,6 +153,7 @@ let fuzz start_eip opt_fuzz_start_eip end_eips
 		  | ReachedInfluenceBound -> stop "at influence bound"
 		  | DisqualifiedPath -> stop "on disqualified path"
 		  | BranchLimit -> stop "on branch limit"
+		  | FinishNow -> stop "on finish immediately"
 		  | SolverFailure when !opt_nonfatal_solver
 		      -> stop "on solver failure"
 		  | UnproductivePath -> stop "on unproductive path"
@@ -147,12 +168,15 @@ let fuzz start_eip opt_fuzz_start_eip end_eips
 	       periodic_stats fm false false;
 	       if not fm#finish_path then raise LastIteration;
 	       if !opt_concrete_path then raise LastIteration;
-	       (match !Fragment_machine.fuzz_finish_reason with
-		  | Some s ->
+	       (match fm#finish_reasons with
+		  | (s :: rest) as l
+		      when (List.length l) >= !opt_finish_reasons_needed
+			->
 		      if !opt_trace_stopping then
-			Printf.printf "Finished, %s\n" s;
+			Printf.printf "Finished, %s\n"
+			  (String.concat ", " l);
 		      raise LastIteration
-		  | None -> ());
+		  | _ -> ());
 	       if !opt_concrete_path_simulate then
 		 opt_concrete_path_simulate := false; (* First iter. only *)
 	       reset_cb ();

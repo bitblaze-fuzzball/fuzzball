@@ -18,17 +18,48 @@ open Granular_memory;;
 
 let bool64 f = fun a b -> if (f a b) then 1L else 0L
 
+(* Like String.trim, but compatible with OCaml 3.12 *)
+let str_trim s =
+  let is_space = function
+    | ' ' | '\012' | '\n' | '\r' | '\t' -> true
+    | _ -> false
+  in
+  let len = String.length s in
+  let i = ref 0 in
+  while !i < len && is_space s.[!i] do incr i done;
+  let j = ref (len - 1) in
+  while !j >= !i && is_space s.[!j] do decr j done;
+  if !i = 0 && !j = len - 1 then
+    s
+  else if !j >= !i then
+    String.sub s !i (!j - !i + 1)
+  else
+    ""
+
+(* It's a bit inefficient to use the pretty-printer when the whole
+   point is that we don't want extra whitespace. *)
+let stmt_to_string_compact st =
+  str_trim (V.stmt_to_string st)
+
 let move_hash src dest =
   V.VarHash.clear dest;
   V.VarHash.iter (fun a b -> V.VarHash.add dest a b) src
 
-let fuzz_finish_reason = ref None
+let skip_strings =
+  (let h = Hashtbl.create 2 in
+     Hashtbl.replace h "NoOp" ();
+     Hashtbl.replace h "x86g_use_seg_selector" ();
+     Hashtbl.replace h "Skipped: AbiHint" ();
+     h)
 
-let finish_fuzz s =
-  assert(!fuzz_finish_reason = None);
-  fuzz_finish_reason := Some s;
-  if !opt_trace_stopping then
-    Printf.printf "Final iteration, %s\n" s
+(* The interface for Vine to give us the disassembly of an instruction
+   is to put it in a comment, but it uses comments for other things as
+   well. So this code tries to filter out all the things that are not
+   instruction disassemblies. It would be cleaner to have a special
+   syntax. *)
+let comment_is_insn s =
+  (not (Hashtbl.mem skip_strings s))
+  && ((String.length s < 13) || (String.sub s 0 13) <> "eflags thunk:")
 
 class virtual special_handler = object(self)
   method virtual handle_special : string -> V.stmt list option
@@ -47,6 +78,15 @@ type register_name =
   | R_DFLAG | R_IDFLAG | R_ACFLAG
   | R_CS | R_DS| R_ES | R_FS | R_GS | R_SS
   | R_FTOP | R_FPROUND | R_FC3210 | R_SSEROUND 
+  (* x87 FP, currently only supported on x86: *)
+  | R_FPREG0 | R_FPREG1 | R_FPREG2 | R_FPREG3
+  | R_FPREG4 | R_FPREG5 | R_FPREG6 | R_FPREG7
+  | R_FPTAG0 | R_FPTAG1 | R_FPTAG2 | R_FPTAG3
+  | R_FPTAG4 | R_FPTAG5 | R_FPTAG6 | R_FPTAG7
+  (* SSE, 32-bit-x86-style 128 bit: *)
+  | R_XMM0L | R_XMM0H | R_XMM1L | R_XMM1H | R_XMM2L | R_XMM2H
+  | R_XMM3L | R_XMM3H | R_XMM4L | R_XMM4H | R_XMM5L | R_XMM5H
+  | R_XMM6L | R_XMM6H | R_XMM7L | R_XMM7H
   (* x86 *)
   | R_EBP | R_ESP | R_ESI | R_EDI | R_EIP | R_EAX | R_EBX | R_ECX | R_EDX
   | EFLAGSREST | R_LDT | R_GDT 
@@ -54,6 +94,24 @@ type register_name =
   | R_RBP | R_RSP | R_RSI | R_RDI | R_RIP | R_RAX | R_RBX | R_RCX | R_RDX
   | R_R8 | R_R9 | R_R10 | R_R11 | R_R12 | R_R13 | R_R14 | R_R15
   | R_RFLAGSREST
+  | R_FS_BASE | R_GS_BASE
+  (* SSE, x64-style expanded: *)
+  | R_YMM0_0 | R_YMM0_1 | R_YMM0_2 | R_YMM0_3
+  | R_YMM1_0 | R_YMM1_1 | R_YMM1_2 | R_YMM1_3
+  | R_YMM2_0 | R_YMM2_1 | R_YMM2_2 | R_YMM2_3
+  | R_YMM3_0 | R_YMM3_1 | R_YMM3_2 | R_YMM3_3
+  | R_YMM4_0 | R_YMM4_1 | R_YMM4_2 | R_YMM4_3
+  | R_YMM5_0 | R_YMM5_1 | R_YMM5_2 | R_YMM5_3
+  | R_YMM6_0 | R_YMM6_1 | R_YMM6_2 | R_YMM6_3
+  | R_YMM7_0 | R_YMM7_1 | R_YMM7_2 | R_YMM7_3
+  | R_YMM8_0 | R_YMM8_1 | R_YMM8_2 | R_YMM8_3
+  | R_YMM9_0 | R_YMM9_1 | R_YMM9_2 | R_YMM9_3
+  | R_YMM10_0 | R_YMM10_1 | R_YMM10_2 | R_YMM10_3
+  | R_YMM11_0 | R_YMM11_1 | R_YMM11_2 | R_YMM11_3
+  | R_YMM12_0 | R_YMM12_1 | R_YMM12_2 | R_YMM12_3
+  | R_YMM13_0 | R_YMM13_1 | R_YMM13_2 | R_YMM13_3
+  | R_YMM14_0 | R_YMM14_1 | R_YMM14_2 | R_YMM14_3
+  | R_YMM15_0 | R_YMM15_1 | R_YMM15_2 | R_YMM15_3
   (* ARM *)
   | R0 | R1 |  R2 |  R3 |  R4 |  R5 |  R6 |  R7
   | R8 | R9 | R10 | R11 | R12 | R13 | R14 | R15 | R15T
@@ -76,6 +134,7 @@ let reg_to_regstr reg = match reg with
   | R_R8 -> "R_R8" | R_R9 -> "R_R9" | R_R10 -> "R_R10" | R_R11 -> "R_R11"
   | R_R12 -> "R_R12" | R_R13 -> "R_R13" | R_R14 -> "R_R14" | R_R15 -> "R_R15"
   | R_RFLAGSREST -> "R_RFLAGSREST"
+  | R_FS_BASE -> "R_FS_BASE" | R_GS_BASE -> "R_GS_BASE"
   | EFLAGSREST -> "EFLAGSREST" | R_CF -> "R_CF" | R_PF -> "R_PF"
   | R_AF -> "R_AF"| R_ZF -> "R_ZF" | R_SF -> "R_SF" | R_OF -> "R_OF"
   | R_CC_OP -> "R_CC_OP" | R_CC_DEP1 -> "R_CC_DEP1"
@@ -85,7 +144,55 @@ let reg_to_regstr reg = match reg with
   | R_LDT -> "R_LDT" | R_GDT -> "R_GDT" | R_CS -> "R_CS" | R_DS -> "R_DS"
   | R_ES -> "R_ES" | R_FS -> "R_FS" | R_GS -> "R_GS"| R_SS -> "R_SS"
   | R_FTOP -> "R_FTOP" | R_FPROUND -> "R_FPROUND" | R_FC3210  -> "R_FC3210"
+  | R_FPREG0 -> "R_FPREG0" | R_FPREG1 -> "R_FPREG1"
+  | R_FPREG2 -> "R_FPREG2" | R_FPREG3 -> "R_FPREG3"
+  | R_FPREG4 -> "R_FPREG4" | R_FPREG5 -> "R_FPREG5"
+  | R_FPREG6 -> "R_FPREG6" | R_FPREG7 -> "R_FPREG7"
+  | R_FPTAG0 -> "R_FPTAG0" | R_FPTAG1 -> "R_FPTAG1"
+  | R_FPTAG2 -> "R_FPTAG2" | R_FPTAG3 -> "R_FPTAG3"
+  | R_FPTAG4 -> "R_FPTAG4" | R_FPTAG5 -> "R_FPTAG5"
+  | R_FPTAG6 -> "R_FPTAG6" | R_FPTAG7 -> "R_FPTAG7"
   | R_SSEROUND -> "R_SSEROUND" | R_IP_AT_SYSCALL -> "R_IP_AT_SYSCALL"
+  | R_XMM0L -> "R_XMM0L" | R_XMM0H -> "R_XMM0H"
+  | R_XMM1L -> "R_XMM1L" | R_XMM1H -> "R_XMM1H"
+  | R_XMM2L -> "R_XMM2L" | R_XMM2H -> "R_XMM2H"
+  | R_XMM3L -> "R_XMM3L" | R_XMM3H -> "R_XMM3H"
+  | R_XMM4L -> "R_XMM4L" | R_XMM4H -> "R_XMM4H"
+  | R_XMM5L -> "R_XMM5L" | R_XMM5H -> "R_XMM5H"
+  | R_XMM6L -> "R_XMM6L" | R_XMM6H -> "R_XMM6H"
+  | R_XMM7L -> "R_XMM7L" | R_XMM7H -> "R_XMM7H"
+  | R_YMM0_0 -> "R_YMM0_0" | R_YMM0_1 -> "R_YMM0_1"
+  | R_YMM0_2 -> "R_YMM0_2" | R_YMM0_3 -> "R_YMM0_3"
+  | R_YMM1_0 -> "R_YMM1_0" | R_YMM1_1 -> "R_YMM1_1"
+  | R_YMM1_2 -> "R_YMM1_2" | R_YMM1_3 -> "R_YMM1_3"
+  | R_YMM2_0 -> "R_YMM2_0" | R_YMM2_1 -> "R_YMM2_1"
+  | R_YMM2_2 -> "R_YMM2_2" | R_YMM2_3 -> "R_YMM2_3"
+  | R_YMM3_0 -> "R_YMM3_0" | R_YMM3_1 -> "R_YMM3_1"
+  | R_YMM3_2 -> "R_YMM3_2" | R_YMM3_3 -> "R_YMM3_3"
+  | R_YMM4_0 -> "R_YMM4_0" | R_YMM4_1 -> "R_YMM4_1"
+  | R_YMM4_2 -> "R_YMM4_2" | R_YMM4_3 -> "R_YMM4_3"
+  | R_YMM5_0 -> "R_YMM5_0" | R_YMM5_1 -> "R_YMM5_1"
+  | R_YMM5_2 -> "R_YMM5_2" | R_YMM5_3 -> "R_YMM5_3"
+  | R_YMM6_0 -> "R_YMM6_0" | R_YMM6_1 -> "R_YMM6_1"
+  | R_YMM6_2 -> "R_YMM6_2" | R_YMM6_3 -> "R_YMM6_3"
+  | R_YMM7_0 -> "R_YMM7_0" | R_YMM7_1 -> "R_YMM7_1"
+  | R_YMM7_2 -> "R_YMM7_2" | R_YMM7_3 -> "R_YMM7_3"
+  | R_YMM8_0 -> "R_YMM8_0" | R_YMM8_1 -> "R_YMM8_1"
+  | R_YMM8_2 -> "R_YMM8_2" | R_YMM8_3 -> "R_YMM8_3"
+  | R_YMM9_0 -> "R_YMM9_0" | R_YMM9_1 -> "R_YMM9_1"
+  | R_YMM9_2 -> "R_YMM9_2" | R_YMM9_3 -> "R_YMM9_3"
+  | R_YMM10_0 -> "R_YMM10_0" | R_YMM10_1 -> "R_YMM10_1"
+  | R_YMM10_2 -> "R_YMM10_2" | R_YMM10_3 -> "R_YMM10_3"
+  | R_YMM11_0 -> "R_YMM11_0" | R_YMM11_1 -> "R_YMM11_1"
+  | R_YMM11_2 -> "R_YMM11_2" | R_YMM11_3 -> "R_YMM11_3"
+  | R_YMM12_0 -> "R_YMM12_0" | R_YMM12_1 -> "R_YMM12_1"
+  | R_YMM12_2 -> "R_YMM12_2" | R_YMM12_3 -> "R_YMM12_3"
+  | R_YMM13_0 -> "R_YMM13_0" | R_YMM13_1 -> "R_YMM13_1"
+  | R_YMM13_2 -> "R_YMM13_2" | R_YMM13_3 -> "R_YMM13_3"
+  | R_YMM14_0 -> "R_YMM14_0" | R_YMM14_1 -> "R_YMM14_1"
+  | R_YMM14_2 -> "R_YMM14_2" | R_YMM14_3 -> "R_YMM14_3"
+  | R_YMM15_0 -> "R_YMM15_0" | R_YMM15_1 -> "R_YMM15_1"
+  | R_YMM15_2 -> "R_YMM15_2" | R_YMM15_3 -> "R_YMM15_3"
   | R0  ->  "R0" | R1  ->  "R1" |  R2 ->  "R2" | R3  -> "R3"
   | R4  ->  "R4" | R5  ->  "R5" |  R6 ->  "R6" | R7  -> "R7"
   | R8  ->  "R8" | R9  ->  "R9" | R10 -> "R10" | R11 -> "R11"
@@ -117,6 +224,7 @@ let regstr_to_reg s = match s with
   | "R_R8" -> R_R8 | "R_R9" -> R_R9 | "R_R10" -> R_R10 | "R_R11" -> R_R11
   | "R_R12" -> R_R12 | "R_R13" -> R_R13 | "R_R14" -> R_R14 | "R_R15" -> R_R15
   | "R_RFLAGSREST" -> R_RFLAGSREST
+  | "R_FS_BASE" -> R_FS_BASE | "R_GS_BASE" -> R_GS_BASE
   | "EFLAGSREST" -> EFLAGSREST | "R_CF" -> R_CF | "R_PF" -> R_PF
   | "R_AF" -> R_AF| "R_ZF" -> R_ZF | "R_SF" -> R_SF | "R_OF" -> R_OF
   | "R_CC_OP" -> R_CC_OP | "R_CC_DEP1" -> R_CC_DEP1
@@ -126,7 +234,55 @@ let regstr_to_reg s = match s with
   | "R_LDT" -> R_LDT | "R_GDT" -> R_GDT | "R_CS" -> R_CS | "R_DS" -> R_DS
   | "R_ES" -> R_ES | "R_FS" -> R_FS | "R_GS" -> R_GS| "R_SS" -> R_SS
   | "R_FTOP" -> R_FTOP | "R_FPROUND" -> R_FPROUND | "R_FC3210"  -> R_FC3210
+  | "R_FPREG0" -> R_FPREG0 | "R_FPREG1" -> R_FPREG1
+  | "R_FPREG2" -> R_FPREG2 | "R_FPREG3" -> R_FPREG3
+  | "R_FPREG4" -> R_FPREG4 | "R_FPREG5" -> R_FPREG5
+  | "R_FPREG6" -> R_FPREG6 | "R_FPREG7" -> R_FPREG7
+  | "R_FPTAG0" -> R_FPTAG0 | "R_FPTAG1" -> R_FPTAG1
+  | "R_FPTAG2" -> R_FPTAG2 | "R_FPTAG3" -> R_FPTAG3
+  | "R_FPTAG4" -> R_FPTAG4 | "R_FPTAG5" -> R_FPTAG5
+  | "R_FPTAG6" -> R_FPTAG6 | "R_FPTAG7" -> R_FPTAG7
   | "R_SSEROUND" -> R_SSEROUND | "R_IP_AT_SYSCALL" -> R_IP_AT_SYSCALL
+  | "R_XMM0L" -> R_XMM0L | "R_XMM0H" -> R_XMM0H
+  | "R_XMM1L" -> R_XMM1L | "R_XMM1H" -> R_XMM1H
+  | "R_XMM2L" -> R_XMM2L | "R_XMM2H" -> R_XMM2H
+  | "R_XMM3L" -> R_XMM3L | "R_XMM3H" -> R_XMM3H
+  | "R_XMM4L" -> R_XMM4L | "R_XMM4H" -> R_XMM4H
+  | "R_XMM5L" -> R_XMM5L | "R_XMM5H" -> R_XMM5H
+  | "R_XMM6L" -> R_XMM6L | "R_XMM6H" -> R_XMM6H
+  | "R_XMM7L" -> R_XMM7L | "R_XMM7H" -> R_XMM7H
+  | "R_YMM0_0" -> R_YMM0_0 | "R_YMM0_1" -> R_YMM0_1
+  | "R_YMM0_2" -> R_YMM0_2 | "R_YMM0_3" -> R_YMM0_3
+  | "R_YMM1_0" -> R_YMM1_0 | "R_YMM1_1" -> R_YMM1_1
+  | "R_YMM1_2" -> R_YMM1_2 | "R_YMM1_3" -> R_YMM1_3
+  | "R_YMM2_0" -> R_YMM2_0 | "R_YMM2_1" -> R_YMM2_1
+  | "R_YMM2_2" -> R_YMM2_2 | "R_YMM2_3" -> R_YMM2_3
+  | "R_YMM3_0" -> R_YMM3_0 | "R_YMM3_1" -> R_YMM3_1
+  | "R_YMM3_2" -> R_YMM3_2 | "R_YMM3_3" -> R_YMM3_3
+  | "R_YMM4_0" -> R_YMM4_0 | "R_YMM4_1" -> R_YMM4_1
+  | "R_YMM4_2" -> R_YMM4_2 | "R_YMM4_3" -> R_YMM4_3
+  | "R_YMM5_0" -> R_YMM5_0 | "R_YMM5_1" -> R_YMM5_1
+  | "R_YMM5_2" -> R_YMM5_2 | "R_YMM5_3" -> R_YMM5_3
+  | "R_YMM6_0" -> R_YMM6_0 | "R_YMM6_1" -> R_YMM6_1
+  | "R_YMM6_2" -> R_YMM6_2 | "R_YMM6_3" -> R_YMM6_3
+  | "R_YMM7_0" -> R_YMM7_0 | "R_YMM7_1" -> R_YMM7_1
+  | "R_YMM7_2" -> R_YMM7_2 | "R_YMM7_3" -> R_YMM7_3
+  | "R_YMM8_0" -> R_YMM8_0 | "R_YMM8_1" -> R_YMM8_1
+  | "R_YMM8_2" -> R_YMM8_2 | "R_YMM8_3" -> R_YMM8_3
+  | "R_YMM9_0" -> R_YMM9_0 | "R_YMM9_1" -> R_YMM9_1
+  | "R_YMM9_2" -> R_YMM9_2 | "R_YMM9_3" -> R_YMM9_3
+  | "R_YMM10_0" -> R_YMM10_0 | "R_YMM10_1" -> R_YMM10_1
+  | "R_YMM10_2" -> R_YMM10_2 | "R_YMM10_3" -> R_YMM10_3
+  | "R_YMM11_0" -> R_YMM11_0 | "R_YMM11_1" -> R_YMM11_1
+  | "R_YMM11_2" -> R_YMM11_2 | "R_YMM11_3" -> R_YMM11_3
+  | "R_YMM12_0" -> R_YMM12_0 | "R_YMM12_1" -> R_YMM12_1
+  | "R_YMM12_2" -> R_YMM12_2 | "R_YMM12_3" -> R_YMM12_3
+  | "R_YMM13_0" -> R_YMM13_0 | "R_YMM13_1" -> R_YMM13_1
+  | "R_YMM13_2" -> R_YMM13_2 | "R_YMM13_3" -> R_YMM13_3
+  | "R_YMM14_0" -> R_YMM14_0 | "R_YMM14_1" -> R_YMM14_1
+  | "R_YMM14_2" -> R_YMM14_2 | "R_YMM14_3" -> R_YMM14_3
+  | "R_YMM15_0" -> R_YMM15_0 | "R_YMM15_1" -> R_YMM15_1
+  | "R_YMM15_2" -> R_YMM15_2 | "R_YMM15_3" -> R_YMM15_3
   | "R0"  ->  R0 | "R1"  ->  R1 |  "R2" ->  R2 | "R3"  -> R3
   | "R4"  ->  R4 | "R5"  ->  R5 |  "R6" ->  R6 | "R7"  -> R7
   | "R8"  ->  R8 | "R9"  ->  R9 | "R10" -> R10 | "R11" -> R11
@@ -154,11 +310,15 @@ class virtual fragment_machine = object
   method virtual set_frag : Vine.program -> unit
   method virtual concretize_misc : unit
   method virtual add_extra_eip_hook :
-    (fragment_machine -> int64 -> unit) -> unit
+      (fragment_machine -> int64 -> unit) -> unit
+  method virtual add_range_opt : string -> bool ref -> unit
   method virtual eip_hook : int64 -> unit
   method virtual get_eip : int64
   method virtual set_eip : int64 -> unit
   method virtual run_eip_hooks : unit
+  method virtual get_esp : int64
+  method virtual jump_hook : string -> int64 -> int64 -> unit
+  method virtual run_jump_hooks : string -> int64 -> int64 -> unit
   
   method virtual set_cjmp_heuristic :
     (int64 -> int64 -> int64 -> float -> bool option -> bool option) -> unit
@@ -171,6 +331,8 @@ class virtual fragment_machine = object
   method virtual make_regs_symbolic : unit
   method virtual load_x86_user_regs : Temu_state.userRegs -> unit
   method virtual print_regs : unit
+  method virtual printable_word_reg : register_name -> string
+  method virtual printable_long_reg : register_name -> string
 
   method virtual store_byte_conc  : int64 -> int   -> unit
   method virtual store_short_conc : int64 -> int   -> unit
@@ -192,6 +354,10 @@ class virtual fragment_machine = object
   method virtual started_symbolic : bool
   method virtual maybe_start_symbolic : (unit -> unit) -> unit
   method virtual start_symbolic : unit
+
+  method virtual finish_fuzz : string -> unit
+  method virtual unfinish_fuzz : string -> unit
+  method virtual finish_reasons : string list
 
   method virtual make_snap : unit -> unit
   method virtual reset : unit -> unit
@@ -223,8 +389,13 @@ class virtual fragment_machine = object
   method virtual set_word_reg_symbolic : register_name -> string -> unit
   method virtual set_word_reg_concolic :
     register_name -> string -> int64 -> unit
-  method virtual set_word_reg_fresh_symbolic : register_name -> string -> unit
-  method virtual set_word_reg_fresh_region : register_name -> string -> unit
+  method virtual set_word_reg_fresh_symbolic : register_name -> string
+    -> string
+  method virtual set_reg_fresh_region : register_name -> string -> unit
+
+  method virtual set_long_reg_symbolic : register_name -> string -> unit
+  method virtual set_long_reg_fresh_symbolic : register_name -> string
+    -> string
 
   method virtual run_sl : (string -> bool) -> Vine.stmt list -> string
 		  
@@ -242,10 +413,13 @@ class virtual fragment_machine = object
 
   method virtual store_str : int64 -> int64 -> string -> unit
 
-  method virtual make_symbolic_region : int64 -> int -> unit
+  method virtual make_symbolic_region : int64 -> int -> string -> int -> unit
+  method virtual make_fresh_symbolic_region : int64 -> int -> unit
 
   method virtual store_symbolic_cstr : int64 -> int -> bool -> bool -> unit
   method virtual store_concolic_cstr : int64 -> string -> bool -> unit
+  method virtual store_concolic_name_str :
+                   int64 -> string -> string -> int -> unit
 
   method virtual store_symbolic_wcstr : int64 -> int -> unit
 
@@ -305,13 +479,15 @@ class virtual fragment_machine = object
   method virtual set_query_engine : Query_engine.query_engine -> unit
 
   method virtual query_with_path_cond : Vine.exp -> bool
-    -> (bool * (string * int64) list)
+    -> (bool * Query_engine.sat_assign)
 
   method virtual match_input_var : string -> int option
 
   method virtual print_tree : out_channel -> unit
 
   method virtual set_iter_seed : int -> unit
+
+  method virtual random_byte : int
 
   method virtual finish_path : bool
 
@@ -324,9 +500,13 @@ class virtual fragment_machine = object
   method virtual get_word_var_concretize :
     register_name -> bool -> string -> int64
 
+  method virtual get_long_var_concretize :
+    register_name -> bool -> string -> int64
+
   method virtual load_byte_concretize  : int64 -> bool -> string -> int
   method virtual load_short_concretize : int64 -> bool -> string -> int
   method virtual load_word_concretize  : int64 -> bool -> string -> int64
+  method virtual load_long_concretize  : int64 -> bool -> string -> int64
 
   method virtual make_sink_region : string -> int64 -> unit
 end
@@ -344,7 +524,7 @@ struct
       | Some x -> construct x
     in
     let o0 = D.extract_8_from_16 d 0 and
-	o1 = D.extract_8_from_16 d 1in
+	o1 = D.extract_8_from_16 d 1 in
     let b0 = select o0 bytes.(0) and
 	b1 = select o1 bytes.(1) in
       form_man#simplify16 (D.reassemble16 b0 b1)
@@ -450,6 +630,11 @@ struct
 
     val mutable insn_count = 0L
 
+    val range_opts_tbl = Hashtbl.create 2
+
+    method add_range_opt opt_str opt =
+      Hashtbl.replace range_opts_tbl opt_str opt	
+
     method eip_hook eip =
       (* Shouldn't be needed; we instead simplify the registers when
 	 writing to them: *)
@@ -473,22 +658,108 @@ struct
 	 print_string "\n"; *)
       List.iter (fun fn -> (fn (self :> fragment_machine) eip))
 	extra_eip_hooks;
+      let control_range_opts opts_list range_val other_val =
+	List.iter (
+	  fun (opt_str, eip1, eip2) ->
+	    let opt = Hashtbl.find range_opts_tbl opt_str in
+	    if eip = eip1 then
+	      opt := range_val
+	    else if eip = eip2 then 
+	      opt := other_val
+	) opts_list in
+      control_range_opts !opt_turn_opt_off_range false true;
+      control_range_opts !opt_turn_opt_on_range true false;
       self#watchpoint
 
     method get_eip =
       match !opt_arch with
 	| X86 -> self#get_word_var R_EIP
-	| X64 -> self#get_word_var R_RIP
+	| X64 -> self#get_long_var R_RIP
 	| ARM -> self#get_word_var R15T
 
     method set_eip eip =
       match !opt_arch with
 	| X86 -> self#set_word_var R_EIP eip
-	| X64 -> self#set_word_var R_RIP eip
+	| X64 -> self#set_long_var R_RIP eip
 	| ARM -> self#set_word_var R15T eip
 
     method run_eip_hooks =
       self#eip_hook (self#get_eip)
+
+    method get_esp =
+      match !opt_arch with
+	| X86 -> self#get_word_var R_ESP
+	| X64 -> self#get_long_var R_RSP
+	| ARM -> self#get_word_var R13
+
+    val mutable call_stack = []
+
+    method private trace_callstack last_insn last_eip eip =
+      let pop_callstack esp =
+	while match call_stack with
+	  | (old_esp, _, _, _) :: _ when old_esp < esp -> true
+	  | _ -> false do
+	      call_stack <- List.tl call_stack
+	done
+      in
+      let get_retaddr esp =
+	match !opt_arch with
+	  | X86 -> self#load_word_conc esp
+	  | X64 -> self#load_long_conc esp
+	  | ARM -> self#get_word_var R14
+      in
+      let size = match !opt_arch with
+	| X86 -> 4L
+	| X64 -> 8L
+	| ARM -> 4L
+      in
+      let kind =
+	match !opt_arch with
+	  | X86 | X64 ->
+	      let s = last_insn ^ "    " in
+		if (String.sub s 0 4) = "call" then
+		  "call"
+		else if ((String.sub s 0 3) = "ret")
+                  || ((String.length s >= 8) &&  ((String.sub s 0 8) = "repz ret"))
+                then
+		  "return"
+		else if (String.sub s 0 3) = "jmp" then
+		  "unconditional jump"
+		else if (String.sub s 0 1) = "j" then
+		  "conditional jump"
+		else
+		  "not a jump"
+	  | ARM ->
+	      (* TODO: add similar parsing for ARM mnemonics *)
+	      "not a jump"
+      in
+	match kind with
+	  | "call" ->
+	      let esp = self#get_esp in
+	      let depth = List.length call_stack and
+		  ret_addr = get_retaddr esp
+	      in
+		for i = 0 to depth - 1 do Printf.printf " " done;
+		Printf.printf
+		  "Call from 0x%08Lx to 0x%08Lx (return to 0x%08Lx)\n"
+		  last_eip eip ret_addr;
+		call_stack <- (esp, last_eip, eip, ret_addr) :: call_stack;
+	  | "return" ->
+	      let esp = self#get_esp in
+		pop_callstack (Int64.sub esp size);
+		let depth = List.length call_stack in
+		  for i = 0 to depth - 2 do Printf.printf " " done;
+		  Printf.printf "Return from 0x%08Lx to 0x%08Lx\n"
+		    last_eip eip;
+		  pop_callstack esp;
+	  | _ -> ()
+
+    method jump_hook last_insn last_eip eip =
+      if !opt_trace_callstack then
+	self#trace_callstack last_insn last_eip eip
+
+    method run_jump_hooks last_insn last_eip eip =
+      self#jump_hook last_insn last_eip eip
 
     method set_cjmp_heuristic
       (func:(int64 -> int64 -> int64 -> float -> bool option -> bool option))
@@ -542,7 +813,24 @@ struct
 	reg R_SF (D.from_concrete_1 0);
 	reg R_OF (D.from_concrete_1 0);
 	reg R_ZF (D.from_concrete_1 0);
-	reg R_FTOP (D.from_concrete_32 0L);	
+	reg R_FTOP (D.from_concrete_32 0L);
+	reg R_FC3210 (D.from_concrete_32 0L);
+	reg R_FPREG0 (D.from_concrete_64 0L);
+	reg R_FPREG1 (D.from_concrete_64 0L);
+	reg R_FPREG2 (D.from_concrete_64 0L);
+	reg R_FPREG3 (D.from_concrete_64 0L);
+	reg R_FPREG4 (D.from_concrete_64 0L);
+	reg R_FPREG5 (D.from_concrete_64 0L);
+	reg R_FPREG6 (D.from_concrete_64 0L);
+	reg R_FPREG7 (D.from_concrete_64 0L);
+	reg R_FPTAG0 (D.from_concrete_8 0);
+	reg R_FPTAG1 (D.from_concrete_8 0);
+	reg R_FPTAG2 (D.from_concrete_8 0);
+	reg R_FPTAG3 (D.from_concrete_8 0);
+	reg R_FPTAG4 (D.from_concrete_8 0);
+	reg R_FPTAG5 (D.from_concrete_8 0);
+	reg R_FPTAG6 (D.from_concrete_8 0);
+	reg R_FPTAG7 (D.from_concrete_8 0);
 	reg EFLAGSREST (D.from_concrete_32 0L);
 	reg R_LDT (D.from_concrete_32 0x00000000L);
 	reg R_GDT (D.from_concrete_32 0x00000000L);
@@ -553,7 +841,24 @@ struct
 	reg R_CC_DEP1 (D.from_concrete_32 0L);
 	reg R_CC_DEP2 (D.from_concrete_32 0L);
 	reg R_CC_NDEP (D.from_concrete_32 0L);
-	reg R_SSEROUND (D.from_concrete_32 0L);
+	reg R_FPROUND (D.from_concrete_32 0L); (* to nearest *)
+	reg R_SSEROUND (D.from_concrete_32 0L); (* to nearest *)
+	reg R_XMM0L (D.from_concrete_64 0L);
+	reg R_XMM0H (D.from_concrete_64 0L);
+	reg R_XMM1L (D.from_concrete_64 0L);
+	reg R_XMM1H (D.from_concrete_64 0L);
+	reg R_XMM2L (D.from_concrete_64 0L);
+	reg R_XMM2H (D.from_concrete_64 0L);
+	reg R_XMM3L (D.from_concrete_64 0L);
+	reg R_XMM3H (D.from_concrete_64 0L);
+	reg R_XMM4L (D.from_concrete_64 0L);
+	reg R_XMM4H (D.from_concrete_64 0L);
+	reg R_XMM5L (D.from_concrete_64 0L);
+	reg R_XMM5H (D.from_concrete_64 0L);
+	reg R_XMM6L (D.from_concrete_64 0L);
+	reg R_XMM6H (D.from_concrete_64 0L);
+	reg R_XMM7L (D.from_concrete_64 0L);
+	reg R_XMM7H (D.from_concrete_64 0L);
 	()
 
     method private make_x64_regs_zero =
@@ -576,13 +881,32 @@ struct
 	reg R_R13 (D.from_concrete_64 0x0000000000000000L);
 	reg R_R14 (D.from_concrete_64 0x0000000000000000L);
 	reg R_R15 (D.from_concrete_64 0x0000000000000000L);
+	reg R_FS_BASE (D.from_concrete_64 0x0000000060000000L);
+	reg R_GS_BASE (D.from_concrete_64 0x0000000061000000L);
 	reg R_PF (D.from_concrete_1 0);
 	reg R_CF (D.from_concrete_1 0);
 	reg R_AF (D.from_concrete_1 0);
 	reg R_SF (D.from_concrete_1 0);
 	reg R_OF (D.from_concrete_1 0);
 	reg R_ZF (D.from_concrete_1 0);
-	reg R_FTOP (D.from_concrete_32 0L);	
+	reg R_FTOP (D.from_concrete_32 7L);
+	reg R_FC3210 (D.from_concrete_32 0L);
+	reg R_FPREG0 (D.from_concrete_64 0L);
+	reg R_FPREG1 (D.from_concrete_64 0L);
+	reg R_FPREG2 (D.from_concrete_64 0L);
+	reg R_FPREG3 (D.from_concrete_64 0L);
+	reg R_FPREG4 (D.from_concrete_64 0L);
+	reg R_FPREG5 (D.from_concrete_64 0L);
+	reg R_FPREG6 (D.from_concrete_64 0L);
+	reg R_FPREG7 (D.from_concrete_64 0L);
+	reg R_FPTAG0 (D.from_concrete_8 0);
+	reg R_FPTAG1 (D.from_concrete_8 0);
+	reg R_FPTAG2 (D.from_concrete_8 0);
+	reg R_FPTAG3 (D.from_concrete_8 0);
+	reg R_FPTAG4 (D.from_concrete_8 0);
+	reg R_FPTAG5 (D.from_concrete_8 0);
+	reg R_FPTAG6 (D.from_concrete_8 0);
+	reg R_FPTAG7 (D.from_concrete_8 0);
 	reg R_RFLAGSREST (D.from_concrete_64 0L);
 	reg R_DFLAG (D.from_concrete_64 1L);
 	reg R_IDFLAG (D.from_concrete_64 0L);
@@ -591,7 +915,72 @@ struct
 	reg R_CC_DEP1 (D.from_concrete_64 0L);
 	reg R_CC_DEP2 (D.from_concrete_64 0L);
 	reg R_CC_NDEP (D.from_concrete_64 0L);
-	reg R_SSEROUND (D.from_concrete_64 0L);
+	reg R_FPROUND (D.from_concrete_64 0L); (* to nearest *)
+	reg R_YMM0_0 (D.from_concrete_64 0L);
+	reg R_YMM0_1 (D.from_concrete_64 0L);
+	reg R_YMM0_2 (D.from_concrete_64 0L);
+	reg R_YMM0_3 (D.from_concrete_64 0L);
+	reg R_YMM1_0 (D.from_concrete_64 0L);
+	reg R_YMM1_1 (D.from_concrete_64 0L);
+	reg R_YMM1_2 (D.from_concrete_64 0L);
+	reg R_YMM1_3 (D.from_concrete_64 0L);
+	reg R_YMM2_0 (D.from_concrete_64 0L);
+	reg R_YMM2_1 (D.from_concrete_64 0L);
+	reg R_YMM2_2 (D.from_concrete_64 0L);
+	reg R_YMM2_3 (D.from_concrete_64 0L);
+	reg R_YMM3_0 (D.from_concrete_64 0L);
+	reg R_YMM3_1 (D.from_concrete_64 0L);
+	reg R_YMM3_2 (D.from_concrete_64 0L);
+	reg R_YMM3_3 (D.from_concrete_64 0L);
+	reg R_YMM4_0 (D.from_concrete_64 0L);
+	reg R_YMM4_1 (D.from_concrete_64 0L);
+	reg R_YMM4_2 (D.from_concrete_64 0L);
+	reg R_YMM4_3 (D.from_concrete_64 0L);
+	reg R_YMM5_0 (D.from_concrete_64 0L);
+	reg R_YMM5_1 (D.from_concrete_64 0L);
+	reg R_YMM5_2 (D.from_concrete_64 0L);
+	reg R_YMM5_3 (D.from_concrete_64 0L);
+	reg R_YMM6_0 (D.from_concrete_64 0L);
+	reg R_YMM6_1 (D.from_concrete_64 0L);
+	reg R_YMM6_2 (D.from_concrete_64 0L);
+	reg R_YMM6_3 (D.from_concrete_64 0L);
+	reg R_YMM7_0 (D.from_concrete_64 0L);
+	reg R_YMM7_1 (D.from_concrete_64 0L);
+	reg R_YMM7_2 (D.from_concrete_64 0L);
+	reg R_YMM7_3 (D.from_concrete_64 0L);
+	reg R_YMM8_0 (D.from_concrete_64 0L);
+	reg R_YMM8_1 (D.from_concrete_64 0L);
+	reg R_YMM8_2 (D.from_concrete_64 0L);
+	reg R_YMM8_3 (D.from_concrete_64 0L);
+	reg R_YMM9_0 (D.from_concrete_64 0L);
+	reg R_YMM9_1 (D.from_concrete_64 0L);
+	reg R_YMM9_2 (D.from_concrete_64 0L);
+	reg R_YMM9_3 (D.from_concrete_64 0L);
+	reg R_YMM10_0 (D.from_concrete_64 0L);
+	reg R_YMM10_1 (D.from_concrete_64 0L);
+	reg R_YMM10_2 (D.from_concrete_64 0L);
+	reg R_YMM10_3 (D.from_concrete_64 0L);
+	reg R_YMM11_0 (D.from_concrete_64 0L);
+	reg R_YMM11_1 (D.from_concrete_64 0L);
+	reg R_YMM11_2 (D.from_concrete_64 0L);
+	reg R_YMM11_3 (D.from_concrete_64 0L);
+	reg R_YMM12_0 (D.from_concrete_64 0L);
+	reg R_YMM12_1 (D.from_concrete_64 0L);
+	reg R_YMM12_2 (D.from_concrete_64 0L);
+	reg R_YMM12_3 (D.from_concrete_64 0L);
+	reg R_YMM13_0 (D.from_concrete_64 0L);
+	reg R_YMM13_1 (D.from_concrete_64 0L);
+	reg R_YMM13_2 (D.from_concrete_64 0L);
+	reg R_YMM13_3 (D.from_concrete_64 0L);
+	reg R_YMM14_0 (D.from_concrete_64 0L);
+	reg R_YMM14_1 (D.from_concrete_64 0L);
+	reg R_YMM14_2 (D.from_concrete_64 0L);
+	reg R_YMM14_3 (D.from_concrete_64 0L);
+	reg R_YMM15_0 (D.from_concrete_64 0L);
+	reg R_YMM15_1 (D.from_concrete_64 0L);
+	reg R_YMM15_2 (D.from_concrete_64 0L);
+	reg R_YMM15_3 (D.from_concrete_64 0L);
+	reg R_SSEROUND (D.from_concrete_64 0L); (* to nearest *)
 	()
 
     method private make_arm_regs_zero =
@@ -614,6 +1003,38 @@ struct
 	reg R13  (D.from_concrete_32 0x00000000L);
 	reg R14  (D.from_concrete_32 0x00000000L);
 	reg R15T (D.from_concrete_32 0x00000000L);
+        reg R_D0  (D.from_concrete_64 0x0L);
+        reg R_D1  (D.from_concrete_64 0x0L);
+        reg R_D2  (D.from_concrete_64 0x0L);
+        reg R_D3  (D.from_concrete_64 0x0L);
+        reg R_D4  (D.from_concrete_64 0x0L);
+        reg R_D5  (D.from_concrete_64 0x0L);
+        reg R_D6  (D.from_concrete_64 0x0L);
+        reg R_D7  (D.from_concrete_64 0x0L);
+        reg R_D8  (D.from_concrete_64 0x0L);
+        reg R_D9  (D.from_concrete_64 0x0L);
+        reg R_D10 (D.from_concrete_64 0x0L);
+        reg R_D11 (D.from_concrete_64 0x0L);
+        reg R_D12 (D.from_concrete_64 0x0L);
+        reg R_D13 (D.from_concrete_64 0x0L);
+        reg R_D14 (D.from_concrete_64 0x0L);
+        reg R_D15 (D.from_concrete_64 0x0L);
+        reg R_D16 (D.from_concrete_64 0x0L);
+        reg R_D17 (D.from_concrete_64 0x0L);
+        reg R_D18 (D.from_concrete_64 0x0L);
+        reg R_D19 (D.from_concrete_64 0x0L);
+        reg R_D20 (D.from_concrete_64 0x0L);
+        reg R_D21 (D.from_concrete_64 0x0L);
+        reg R_D22 (D.from_concrete_64 0x0L);
+        reg R_D23 (D.from_concrete_64 0x0L);
+        reg R_D24 (D.from_concrete_64 0x0L);
+        reg R_D25 (D.from_concrete_64 0x0L);
+        reg R_D26 (D.from_concrete_64 0x0L);
+        reg R_D27 (D.from_concrete_64 0x0L);
+        reg R_D28 (D.from_concrete_64 0x0L);
+        reg R_D29 (D.from_concrete_64 0x0L);
+        reg R_D30 (D.from_concrete_64 0x0L);
+        reg R_D31 (D.from_concrete_64 0x0L);
 	reg R_NF (D.from_concrete_1 0);
 	reg R_ZF (D.from_concrete_1 0);
 	reg R_CF (D.from_concrete_1 0);
@@ -658,8 +1079,41 @@ struct
 	reg R_SF (D.from_concrete_1 0);
 	reg R_OF (D.from_concrete_1 0);
 	reg R_ZF (D.from_concrete_1 0);
+	reg R_XMM0L (D.from_concrete_64 0L);
+	reg R_XMM0H (D.from_concrete_64 0L);
+	reg R_XMM1L (D.from_concrete_64 0L);
+	reg R_XMM1H (D.from_concrete_64 0L);
+	reg R_XMM2L (D.from_concrete_64 0L);
+	reg R_XMM2H (D.from_concrete_64 0L);
+	reg R_XMM3L (D.from_concrete_64 0L);
+	reg R_XMM3H (D.from_concrete_64 0L);
+	reg R_XMM4L (D.from_concrete_64 0L);
+	reg R_XMM4H (D.from_concrete_64 0L);
+	reg R_XMM5L (D.from_concrete_64 0L);
+	reg R_XMM5H (D.from_concrete_64 0L);
+	reg R_XMM6L (D.from_concrete_64 0L);
+	reg R_XMM6H (D.from_concrete_64 0L);
+	reg R_XMM7L (D.from_concrete_64 0L);
+	reg R_XMM7H (D.from_concrete_64 0L);
 	(* reg EFLAGSREST (form_man#fresh_symbolic_32 "initial_eflagsrest");*)
 	reg R_FTOP (D.from_concrete_32 0L);
+	reg R_FC3210 (D.from_concrete_32 0L);
+	reg R_FPREG0 (D.from_concrete_64 0L);
+	reg R_FPREG1 (D.from_concrete_64 0L);
+	reg R_FPREG2 (D.from_concrete_64 0L);
+	reg R_FPREG3 (D.from_concrete_64 0L);
+	reg R_FPREG4 (D.from_concrete_64 0L);
+	reg R_FPREG5 (D.from_concrete_64 0L);
+	reg R_FPREG6 (D.from_concrete_64 0L);
+	reg R_FPREG7 (D.from_concrete_64 0L);
+	reg R_FPTAG0 (D.from_concrete_8 0);
+	reg R_FPTAG1 (D.from_concrete_8 0);
+	reg R_FPTAG2 (D.from_concrete_8 0);
+	reg R_FPTAG3 (D.from_concrete_8 0);
+	reg R_FPTAG4 (D.from_concrete_8 0);
+	reg R_FPTAG5 (D.from_concrete_8 0);
+	reg R_FPTAG6 (D.from_concrete_8 0);
+	reg R_FPTAG7 (D.from_concrete_8 0);
 	(* Linux user space CS segment: *)
 	self#store_byte_conc 0x60000020L 0xff;
 	self#store_byte_conc 0x60000021L 0xff;
@@ -753,6 +1207,8 @@ struct
 	reg R_R13 (form_man#fresh_symbolic_64 "initial_r13");
 	reg R_R14 (form_man#fresh_symbolic_64 "initial_r14");
 	reg R_R15 (form_man#fresh_symbolic_64 "initial_r15");
+	reg R_FS_BASE (form_man#fresh_symbolic_64 "fs_base");
+	reg R_GS_BASE (form_man#fresh_symbolic_64 "gs_base");
 	reg R_DFLAG (D.from_concrete_64 1L);
 	reg R_ACFLAG (D.from_concrete_64 0L);
 	reg R_IDFLAG (D.from_concrete_64 0L);
@@ -763,7 +1219,88 @@ struct
 	reg R_SF (D.from_concrete_1 0);
 	reg R_OF (D.from_concrete_1 0);
 	reg R_ZF (D.from_concrete_1 0);
-	reg R_FTOP (D.from_concrete_32 0L);
+	reg R_YMM0_0 (form_man#fresh_symbolic_64 "initial_ymm0_0");
+	reg R_YMM0_1 (form_man#fresh_symbolic_64 "initial_ymm0_1");
+	reg R_YMM0_2 (form_man#fresh_symbolic_64 "initial_ymm0_2");
+	reg R_YMM0_3 (form_man#fresh_symbolic_64 "initial_ymm0_3");
+	reg R_YMM1_0 (form_man#fresh_symbolic_64 "initial_ymm1_0");
+	reg R_YMM1_1 (form_man#fresh_symbolic_64 "initial_ymm1_1");
+	reg R_YMM1_2 (form_man#fresh_symbolic_64 "initial_ymm1_2");
+	reg R_YMM1_3 (form_man#fresh_symbolic_64 "initial_ymm1_3");
+	reg R_YMM2_0 (form_man#fresh_symbolic_64 "initial_ymm2_0");
+	reg R_YMM2_1 (form_man#fresh_symbolic_64 "initial_ymm2_1");
+	reg R_YMM2_2 (form_man#fresh_symbolic_64 "initial_ymm2_2");
+	reg R_YMM2_3 (form_man#fresh_symbolic_64 "initial_ymm2_3");
+	reg R_YMM3_0 (form_man#fresh_symbolic_64 "initial_ymm3_0");
+	reg R_YMM3_1 (form_man#fresh_symbolic_64 "initial_ymm3_1");
+	reg R_YMM3_2 (form_man#fresh_symbolic_64 "initial_ymm3_2");
+	reg R_YMM3_3 (form_man#fresh_symbolic_64 "initial_ymm3_3");
+	reg R_YMM4_0 (form_man#fresh_symbolic_64 "initial_ymm4_0");
+	reg R_YMM4_1 (form_man#fresh_symbolic_64 "initial_ymm4_1");
+	reg R_YMM4_2 (form_man#fresh_symbolic_64 "initial_ymm4_2");
+	reg R_YMM4_3 (form_man#fresh_symbolic_64 "initial_ymm4_3");
+	reg R_YMM5_0 (form_man#fresh_symbolic_64 "initial_ymm5_0");
+	reg R_YMM5_1 (form_man#fresh_symbolic_64 "initial_ymm5_1");
+	reg R_YMM5_2 (form_man#fresh_symbolic_64 "initial_ymm5_2");
+	reg R_YMM5_3 (form_man#fresh_symbolic_64 "initial_ymm5_3");
+	reg R_YMM6_0 (form_man#fresh_symbolic_64 "initial_ymm6_0");
+	reg R_YMM6_1 (form_man#fresh_symbolic_64 "initial_ymm6_1");
+	reg R_YMM6_2 (form_man#fresh_symbolic_64 "initial_ymm6_2");
+	reg R_YMM6_3 (form_man#fresh_symbolic_64 "initial_ymm6_3");
+	reg R_YMM7_0 (form_man#fresh_symbolic_64 "initial_ymm7_0");
+	reg R_YMM7_1 (form_man#fresh_symbolic_64 "initial_ymm7_1");
+	reg R_YMM7_2 (form_man#fresh_symbolic_64 "initial_ymm7_2");
+	reg R_YMM7_3 (form_man#fresh_symbolic_64 "initial_ymm7_3");
+	reg R_YMM8_0 (form_man#fresh_symbolic_64 "initial_ymm8_0");
+	reg R_YMM8_1 (form_man#fresh_symbolic_64 "initial_ymm8_1");
+	reg R_YMM8_2 (form_man#fresh_symbolic_64 "initial_ymm8_2");
+	reg R_YMM8_3 (form_man#fresh_symbolic_64 "initial_ymm8_3");
+	reg R_YMM9_0 (form_man#fresh_symbolic_64 "initial_ymm9_0");
+	reg R_YMM9_1 (form_man#fresh_symbolic_64 "initial_ymm9_1");
+	reg R_YMM9_2 (form_man#fresh_symbolic_64 "initial_ymm9_2");
+	reg R_YMM9_3 (form_man#fresh_symbolic_64 "initial_ymm9_3");
+	reg R_YMM10_0 (form_man#fresh_symbolic_64 "initial_ymm10_0");
+	reg R_YMM10_1 (form_man#fresh_symbolic_64 "initial_ymm10_1");
+	reg R_YMM10_2 (form_man#fresh_symbolic_64 "initial_ymm10_2");
+	reg R_YMM10_3 (form_man#fresh_symbolic_64 "initial_ymm10_3");
+	reg R_YMM11_0 (form_man#fresh_symbolic_64 "initial_ymm11_0");
+	reg R_YMM11_1 (form_man#fresh_symbolic_64 "initial_ymm11_1");
+	reg R_YMM11_2 (form_man#fresh_symbolic_64 "initial_ymm11_2");
+	reg R_YMM11_3 (form_man#fresh_symbolic_64 "initial_ymm11_3");
+	reg R_YMM12_0 (form_man#fresh_symbolic_64 "initial_ymm12_0");
+	reg R_YMM12_1 (form_man#fresh_symbolic_64 "initial_ymm12_1");
+	reg R_YMM12_2 (form_man#fresh_symbolic_64 "initial_ymm12_2");
+	reg R_YMM12_3 (form_man#fresh_symbolic_64 "initial_ymm12_3");
+	reg R_YMM13_0 (form_man#fresh_symbolic_64 "initial_ymm13_0");
+	reg R_YMM13_1 (form_man#fresh_symbolic_64 "initial_ymm13_1");
+	reg R_YMM13_2 (form_man#fresh_symbolic_64 "initial_ymm13_2");
+	reg R_YMM13_3 (form_man#fresh_symbolic_64 "initial_ymm13_3");
+	reg R_YMM14_0 (form_man#fresh_symbolic_64 "initial_ymm14_0");
+	reg R_YMM14_1 (form_man#fresh_symbolic_64 "initial_ymm14_1");
+	reg R_YMM14_2 (form_man#fresh_symbolic_64 "initial_ymm14_2");
+	reg R_YMM14_3 (form_man#fresh_symbolic_64 "initial_ymm14_3");
+	reg R_YMM15_0 (form_man#fresh_symbolic_64 "initial_ymm15_0");
+	reg R_YMM15_1 (form_man#fresh_symbolic_64 "initial_ymm15_1");
+	reg R_YMM15_2 (form_man#fresh_symbolic_64 "initial_ymm15_2");
+	reg R_YMM15_3 (form_man#fresh_symbolic_64 "initial_ymm15_3");
+	reg R_FTOP (D.from_concrete_32 7L);
+	reg R_FC3210 (D.from_concrete_32 0L);
+	reg R_FPREG0 (D.from_concrete_64 0L);
+	reg R_FPREG1 (D.from_concrete_64 0L);
+	reg R_FPREG2 (D.from_concrete_64 0L);
+	reg R_FPREG3 (D.from_concrete_64 0L);
+	reg R_FPREG4 (D.from_concrete_64 0L);
+	reg R_FPREG5 (D.from_concrete_64 0L);
+	reg R_FPREG6 (D.from_concrete_64 0L);
+	reg R_FPREG7 (D.from_concrete_64 0L);
+	reg R_FPTAG0 (D.from_concrete_8 0);
+	reg R_FPTAG1 (D.from_concrete_8 0);
+	reg R_FPTAG2 (D.from_concrete_8 0);
+	reg R_FPTAG3 (D.from_concrete_8 0);
+	reg R_FPTAG4 (D.from_concrete_8 0);
+	reg R_FPTAG5 (D.from_concrete_8 0);
+	reg R_FPTAG6 (D.from_concrete_8 0);
+	reg R_FPTAG7 (D.from_concrete_8 0);
 
     method private make_arm_regs_symbolic =
       let reg r v =
@@ -823,17 +1360,46 @@ struct
       self#set_short_var R_GS (Int32.to_int regs.Temu_state.xgs);
       self#set_short_var R_SS (Int32.to_int regs.Temu_state.xss)
 
+    method printable_word_reg r =
+      D.to_string_32 (self#get_int_var (Hashtbl.find reg_to_var r))
+
+    method printable_long_reg r =
+      D.to_string_64 (self#get_int_var (Hashtbl.find reg_to_var r))
+
     method private print_reg32 str r = 
 	Printf.printf "%s: " str;
-	Printf.printf "%s\n"
-	  (D.to_string_32 
-	     (self#get_int_var (Hashtbl.find reg_to_var r)))
+	Printf.printf "%s\n" (self#printable_word_reg r)
      
     method private print_reg1 str r = 
 	Printf.printf "%s: " str;
 	Printf.printf "%s\n"
 	  (D.to_string_1 
 	     (self#get_int_var (Hashtbl.find reg_to_var r)))
+
+    method private print_reg64 str r =
+	Printf.printf "%s: " str;
+	Printf.printf "%s\n" (self#printable_long_reg r)
+
+    method private print_x87_fpreg idx reg tag =
+      let val_d = self#get_int_var (Hashtbl.find reg_to_var reg) in
+      let as_float = try
+	let f = Int64.float_of_bits (D.to_concrete_64 val_d) in
+	  Printf.sprintf " (%.30g)" f;
+      with
+	| NotConcrete(_) -> ""
+      in
+	(Printf.printf "FP%d[%s]: %s%s\n" idx
+	   (D.to_string_8
+	      (self#get_int_var (Hashtbl.find reg_to_var tag)))
+	   (D.to_string_64 val_d)) as_float
+
+    method private print_reg128 str rh rl =
+      Printf.printf "%s: " str;
+      Printf.printf "%s %s\n"
+	(D.to_string_64
+	   (self#get_int_var (Hashtbl.find reg_to_var rh)))
+	(D.to_string_64
+	   (self#get_int_var (Hashtbl.find reg_to_var rl)));
 
     method private print_x86_regs =
       self#print_reg32 "%eax" R_EAX;
@@ -849,13 +1415,26 @@ struct
       self#print_reg1 "AF" R_AF;
       self#print_reg1 "ZF" R_ZF;
       self#print_reg1 "SF" R_SF;
-      self#print_reg1 "OF" R_OF
-
-    method private print_reg64 str r = 
-	Printf.printf "%s: " str;
-	Printf.printf "%s\n"
-	  (D.to_string_64
-	     (self#get_int_var (Hashtbl.find reg_to_var r)))
+      self#print_reg1 "OF" R_OF;
+      self#print_reg128 "XMM0" R_XMM0H R_XMM0L;
+      self#print_reg128 "XMM1" R_XMM1H R_XMM1L;
+      self#print_reg128 "XMM2" R_XMM2H R_XMM2L;
+      self#print_reg128 "XMM3" R_XMM3H R_XMM3L;
+      self#print_reg128 "XMM4" R_XMM4H R_XMM4L;
+      self#print_reg128 "XMM5" R_XMM5H R_XMM5L;
+      self#print_reg128 "XMM6" R_XMM6H R_XMM6L;
+      self#print_reg128 "XMM7" R_XMM7H R_XMM7L;
+      self#print_reg32 "FTOP" R_FTOP;
+      self#print_reg32 "FC3210" R_FC3210;
+      self#print_x87_fpreg 0 R_FPREG0 R_FPTAG0;
+      self#print_x87_fpreg 1 R_FPREG1 R_FPTAG1;
+      self#print_x87_fpreg 2 R_FPREG2 R_FPTAG2;
+      self#print_x87_fpreg 3 R_FPREG3 R_FPTAG3;
+      self#print_x87_fpreg 4 R_FPREG4 R_FPTAG4;
+      self#print_x87_fpreg 5 R_FPREG5 R_FPTAG5;
+      self#print_x87_fpreg 6 R_FPREG6 R_FPTAG6;
+      self#print_x87_fpreg 7 R_FPREG7 R_FPTAG7;
+      ()
 
     method private print_x64_regs =
       self#print_reg64 "%rax" R_RAX;
@@ -874,6 +1453,21 @@ struct
       self#print_reg64 "%r13" R_R13;
       self#print_reg64 "%r14" R_R14;
       self#print_reg64 "%r15" R_R15;
+      (* self#print_reg64 "FS_BASE" R_FS_BASE; *)
+      (* Here's how you would print the low 128 bits of the low 8 XMM
+         registers, analogous to what we currently do on 32-bit. In
+         many cases on x64 though you'd really want to print 16
+         registers, and each is really 256 bits, but that would make
+         this output even more unwieldy. Leave this disabled for now.
+      self#print_reg128 "XMM0" R_YMM0_1 R_YMM0_0;
+      self#print_reg128 "XMM1" R_YMM1_1 R_YMM1_0;
+      self#print_reg128 "XMM2" R_YMM2_1 R_YMM2_0;
+      self#print_reg128 "XMM3" R_YMM3_1 R_YMM3_0;
+      self#print_reg128 "XMM4" R_YMM4_1 R_YMM4_0;
+      self#print_reg128 "XMM5" R_YMM5_1 R_YMM5_0;
+      self#print_reg128 "XMM6" R_YMM6_1 R_YMM6_0;
+      self#print_reg128 "XMM7" R_YMM7_1 R_YMM7_0;
+       *)
       self#print_reg1 "CF" R_CF;
       self#print_reg1 "PF" R_PF;
       self#print_reg1 "AF" R_AF;
@@ -919,6 +1513,14 @@ struct
       let var = Hashtbl.find reg_to_var r in
 	self#set_int_var var (form_man#simplify1 (self#get_int_var var))
 
+    method private simplify_reg8 r =
+      let var = Hashtbl.find reg_to_var r in
+	self#set_int_var var (form_man#simplify8 (self#get_int_var var))
+
+    method private simplify_reg64 r =
+      let var = Hashtbl.find reg_to_var r in
+	self#set_int_var var (form_man#simplify64 (self#get_int_var var))
+
     method private simplify_x86_regs =
       self#simplify_reg32 R_EAX;
       self#simplify_reg32 R_EBX;
@@ -934,11 +1536,31 @@ struct
       self#simplify_reg1 R_ZF;
       self#simplify_reg1 R_SF;
       self#simplify_reg1 R_OF;
+      self#simplify_reg64 R_XMM0L; self#simplify_reg64 R_XMM0H;
+      self#simplify_reg64 R_XMM1L; self#simplify_reg64 R_XMM1H;
+      self#simplify_reg64 R_XMM2L; self#simplify_reg64 R_XMM2H;
+      self#simplify_reg64 R_XMM3L; self#simplify_reg64 R_XMM3H;
+      self#simplify_reg64 R_XMM4L; self#simplify_reg64 R_XMM4H;
+      self#simplify_reg64 R_XMM5L; self#simplify_reg64 R_XMM5H;
+      self#simplify_reg64 R_XMM6L; self#simplify_reg64 R_XMM6H;
+      self#simplify_reg64 R_XMM7L; self#simplify_reg64 R_XMM7H;
+      self#simplify_reg64 R_FPREG0;
+      self#simplify_reg64 R_FPREG1;
+      self#simplify_reg64 R_FPREG2;
+      self#simplify_reg64 R_FPREG3;
+      self#simplify_reg64 R_FPREG4;
+      self#simplify_reg64 R_FPREG5;
+      self#simplify_reg64 R_FPREG6;
+      self#simplify_reg64 R_FPREG7;
+      self#simplify_reg8 R_FPTAG0;
+      self#simplify_reg8 R_FPTAG1;
+      self#simplify_reg8 R_FPTAG2;
+      self#simplify_reg8 R_FPTAG3;
+      self#simplify_reg8 R_FPTAG4;
+      self#simplify_reg8 R_FPTAG5;
+      self#simplify_reg8 R_FPTAG6;
+      self#simplify_reg8 R_FPTAG7;
       ()
-
-    method private simplify_reg64 r =
-      let var = Hashtbl.find reg_to_var r in
-	self#set_int_var var (form_man#simplify64 (self#get_int_var var))
 
     method private simplify_x64_regs =
       self#simplify_reg64 R_RAX;
@@ -1047,28 +1669,52 @@ struct
       snap <- (V.VarHash.copy reg_store, V.VarHash.copy temps);
       List.iter (fun h -> h#make_snap) special_handler_list
 
+    val mutable fuzz_finish_reasons = []
+    val mutable disqualified = false
+
+    method finish_fuzz s =
+      if not disqualified then
+	(fuzz_finish_reasons <- s :: fuzz_finish_reasons;
+	 if !opt_finish_immediately then
+	   (Printf.eprintf "Finishing (immediately), %s\n" s;
+	    raise FinishNow);
+	 if !opt_trace_stopping then
+	   Printf.printf "Final iteration, %s\n" s)
+
+    method unfinish_fuzz s =
+      fuzz_finish_reasons <- [];
+      disqualified <- true;
+      if !opt_trace_stopping then
+	Printf.printf "Non-finish condition %s\n" s
+
+    method finish_reasons =
+      if disqualified then
+	[]
+      else
+	fuzz_finish_reasons
+
     method reset () =
       mem#reset ();
       (match snap with (r, t) ->
 	 move_hash r reg_store;
 	 move_hash t temps);
+      fuzz_finish_reasons <- [];
+      disqualified <- false;
       List.iter (fun h -> h#reset) special_handler_list
 
     method add_special_handler (h:special_handler) =
       special_handler_list <- h :: special_handler_list
 
     method handle_special str =
-      try
-	let sl_r = ref [] in
-	  ignore(List.find
-		   (fun h ->
-		      match h#handle_special str with
-			| None -> false
-			| Some sl -> sl_r := sl; true)
-		   special_handler_list);
-	  Some !sl_r
-      with
-	  Not_found -> None
+      let rec loop =
+	function
+	  | h :: rest ->
+	      (match h#handle_special str with
+		 | (Some sl) as slr -> slr
+		 | None -> loop rest)
+	  | [] -> None
+      in
+	loop special_handler_list
 
     method private get_int_var ((_,vname,ty) as var) =
       try
@@ -1170,6 +1816,10 @@ struct
       self#set_int_var (Hashtbl.find reg_to_var reg)
 	(form_man#fresh_symbolic_32 s);
 
+    method set_long_reg_symbolic reg s =
+      self#set_int_var (Hashtbl.find reg_to_var reg)
+	(form_man#fresh_symbolic_64 s);
+
     method set_word_reg_concolic reg s i64 =
       self#set_int_var (Hashtbl.find reg_to_var reg)
 	(form_man#make_concolic_32 s i64)
@@ -1177,10 +1827,18 @@ struct
     val mutable symbol_uniq = 0
       
     method set_word_reg_fresh_symbolic reg s =
-      self#set_word_reg_symbolic reg (s ^ "_" ^ (string_of_int symbol_uniq)); 
-      symbol_uniq <- symbol_uniq + 1
+      let s' = (s ^ "_" ^ (string_of_int symbol_uniq)) in
+	self#set_word_reg_symbolic reg s';
+	symbol_uniq <- symbol_uniq + 1;
+	s' ^ ":reg32_t"
 
-    method set_word_reg_fresh_region reg s =
+    method set_long_reg_fresh_symbolic reg s : string =
+      let s' = (s ^ "_" ^ (string_of_int symbol_uniq)) in
+	self#set_long_reg_symbolic reg s';
+	symbol_uniq <- symbol_uniq + 1;
+	s' ^ ":reg64_t"
+
+    method set_reg_fresh_region reg s =
       let name = s ^ "_" ^ (string_of_int symbol_uniq) in
       (* Make up a fake value for things like null and alignment checks,
 	 in case this run is concolic. *)
@@ -1191,26 +1849,56 @@ struct
 	  (form_man#fresh_region_base_concolic name addr);
 	symbol_uniq <- symbol_uniq + 1
 
+    (* This relatively simple-looking "handle_load" method is used in
+       the concrete-only "vinegrind" tool. In full-fledged FuzzBALL it's
+       is overridden by a more complicated version in
+       sym_region_frag_machine.ml. *)
     method private handle_load addr_e ty =
       let addr = self#eval_addr_exp addr_e in
-      let v =
+      let (v, to_str) =
 	(match ty with
-	   | V.REG_8 -> self#load_byte addr
-	   | V.REG_16 -> self#load_short addr
-	   | V.REG_32 -> self#load_word addr
-	   | V.REG_64 -> self#load_long addr
+	   | V.REG_8  -> (self#load_byte addr,  D.to_string_8)
+	   | V.REG_16 -> (self#load_short addr, D.to_string_16)
+	   | V.REG_32 -> (self#load_word addr,  D.to_string_32)
+	   | V.REG_64 -> (self#load_long addr,  D.to_string_64)
 	   | _ -> failwith "Unsupported memory type") in
+	(if !opt_trace_loads then
+	   (if !opt_trace_eval then
+	      Printf.printf "    "; (* indent to match other details *)
+	    Printf.printf "Load from conc. mem ";
+	    Printf.printf "%08Lx = %s" addr (to_str v);
+	    (if !opt_use_tags then
+	       Printf.printf " (%Ld @ %08Lx)" (D.get_tag v) (self#get_eip));
+	    Printf.printf "\n"));
+	if addr >= 0L && addr < 4096L then
+	  raise NullDereference;
 	(v, ty)
 
+    (* This relatively simple-looking "handle_store" method is used in
+       the concrete-only "vinegrind" tool. In full-fledged FuzzBALL it's
+       is overridden by a more complicated version in
+       sym_region_frag_machine.ml. *)
     method private handle_store addr_e ty rhs_e =
       let addr = self#eval_addr_exp addr_e and
 	  value = self#eval_int_exp_simplify rhs_e in
+      let (_, to_str) =
 	match ty with
-	  | V.REG_8 -> self#store_byte addr value
-	  | V.REG_16 -> self#store_short addr value
-	  | V.REG_32 -> self#store_word addr value
-	  | V.REG_64 -> self#store_long addr value
-	  | _ -> failwith "Unsupported type in memory move"
+	  | V.REG_8  -> (self#store_byte  addr value, D.to_string_8)
+	  | V.REG_16 -> (self#store_short addr value, D.to_string_16)
+	  | V.REG_32 -> (self#store_word  addr value, D.to_string_32)
+	  | V.REG_64 -> (self#store_long  addr value, D.to_string_64)
+	  | _ -> failwith "Unsupported type in memory store"
+      in
+	if !opt_trace_stores then
+	  (if !opt_trace_eval then
+	     Printf.printf "    "; (* indent to match other details *)
+	   Printf.printf "Store to conc. mem ";
+	   Printf.printf "%08Lx = %s" addr (to_str value);
+	   (if !opt_use_tags then
+	      Printf.printf " (%Ld @ %08Lx)" (D.get_tag value) (self#get_eip));
+	   Printf.printf "\n");
+	if addr >= 0L && addr < 4096L then
+	  raise NullDereference
 
     method private maybe_concretize_binop op v1 v2 ty1 ty2 =
       (v1, v2)
@@ -1224,6 +1912,7 @@ struct
 	       -> assert(ty1 = ty2); ty1
 	   | V.LSHIFT | V.RSHIFT | V.ARSHIFT
 	       -> ty1
+	   | V.CONCAT -> assert(ty1 = ty2); V.double_width ty1
 	   | V.EQ | V.NEQ | V.LT | V.LE | V.SLT | V.SLE
 	       -> assert(ty1 = ty2); V.REG_1) in
       let func =
@@ -1293,6 +1982,9 @@ struct
 	   | (V.XOR, V.REG_16) -> D.xor16
 	   | (V.XOR, V.REG_32) -> D.xor32
 	   | (V.XOR, V.REG_64) -> D.xor64
+	   | (V.CONCAT, V.REG_8)  -> (fun e1 e2 -> D.assemble16 e2 e1)
+	   | (V.CONCAT, V.REG_16) -> (fun e1 e2 -> D.assemble16 e2 e1)
+	   | (V.CONCAT, V.REG_32) -> (fun e1 e2 -> D.assemble16 e2 e1)
 	   | (V.EQ, V.REG_1)  -> D.eq1 
 	   | (V.EQ, V.REG_8)  -> D.eq8 
 	   | (V.EQ, V.REG_16) -> D.eq16
@@ -1328,6 +2020,35 @@ struct
       let (v1', v2') = self#maybe_concretize_binop op v1 v2 ty1 ty2 in
 	(func v1' v2'), ty
 
+    method private eval_fbinop op rm v1 ty1 v2 ty2 =
+      let ty =
+	(match op with
+	   | V.FPLUS | V.FMINUS | V.FTIMES | V.FDIVIDE
+	       -> assert(ty1 = ty2); ty1
+	   | V.FEQ | V.FNEQ | V.FLT | V.FLE
+	       -> assert(ty1 = ty2); V.REG_1) in
+      let func =
+	(match (op, ty1) with
+	   | (V.FPLUS, V.REG_32) -> D.fplus32
+	   | (V.FPLUS, V.REG_64) -> D.fplus64
+	   | (V.FMINUS, V.REG_32) -> D.fminus32
+	   | (V.FMINUS, V.REG_64) -> D.fminus64
+	   | (V.FTIMES, V.REG_32) -> D.ftimes32
+	   | (V.FTIMES, V.REG_64) -> D.ftimes64
+	   | (V.FDIVIDE, V.REG_32) -> D.fdivide32
+	   | (V.FDIVIDE, V.REG_64) -> D.fdivide64
+	   | (V.FEQ, V.REG_32) -> D.feq32
+	   | (V.FEQ, V.REG_64) -> D.feq64
+	   | (V.FNEQ, V.REG_32) -> D.fneq32
+	   | (V.FNEQ, V.REG_64) -> D.fneq64
+	   | (V.FLT, V.REG_32) -> D.flt32
+	   | (V.FLT, V.REG_64) -> D.flt64
+	   | (V.FLE, V.REG_32) -> D.fle32
+	   | (V.FLE, V.REG_64) -> D.fle64
+	   | _ -> failwith "unexpected fbinop/type in eval_fbinop")
+      in
+	(func rm v1 v2), ty
+
     method private eval_unop op v1 ty1 =
       let result = 
 	(match (op, ty1) with
@@ -1342,6 +2063,18 @@ struct
 	   | (V.NOT, V.REG_32) -> D.not32 v1
 	   | (V.NOT, V.REG_64) -> D.not64 v1
 	   | _ -> failwith "unexpected unop/type in eval_int_exp_ty")
+      in
+	if !opt_trace_eval then
+	  Printf.printf "    %s(%s) = %s\n" (V.unop_to_string op)
+	    (D.to_string_32 v1) (D.to_string_32 result);
+	result, ty1
+
+    method private eval_funop op rm v1 ty1 =
+      let result =
+	(match (op, ty1) with
+	   | (V.FNEG, V.REG_32) -> D.fneg32 rm v1
+	   | (V.FNEG, V.REG_64) -> D.fneg64 rm v1
+	   | _ -> failwith "unexpected funop/type in eval_funop")
       in
 	result, ty1
 
@@ -1392,15 +2125,87 @@ struct
       in
 	((func v1), ty)
 
+    method private eval_fcast kind rm ty v1 ty1 =
+      let func =
+	match (kind, ty1, ty) with
+	  | (V.CAST_SFLOAT, V.REG_1,  V.REG_32) -> D.float1s32
+	  | (V.CAST_SFLOAT, V.REG_8,  V.REG_32) -> D.float8s32
+	  | (V.CAST_SFLOAT, V.REG_16, V.REG_32) -> D.float16s32
+	  | (V.CAST_SFLOAT, V.REG_32, V.REG_32) -> D.float32s32
+	  | (V.CAST_SFLOAT, V.REG_64, V.REG_32) -> D.float64s32
+	  | (V.CAST_SFLOAT, V.REG_1,  V.REG_64) -> D.float1s64
+	  | (V.CAST_SFLOAT, V.REG_8,  V.REG_64) -> D.float8s64
+	  | (V.CAST_SFLOAT, V.REG_16, V.REG_64) -> D.float16s64
+	  | (V.CAST_SFLOAT, V.REG_32, V.REG_64) -> D.float32s64
+	  | (V.CAST_SFLOAT, V.REG_64, V.REG_64) -> D.float64s64
+	  | (V.CAST_UFLOAT, V.REG_1,  V.REG_32) -> D.float1u32
+	  | (V.CAST_UFLOAT, V.REG_8,  V.REG_32) -> D.float8u32
+	  | (V.CAST_UFLOAT, V.REG_16, V.REG_32) -> D.float16u32
+	  | (V.CAST_UFLOAT, V.REG_32, V.REG_32) -> D.float32u32
+	  | (V.CAST_UFLOAT, V.REG_64, V.REG_32) -> D.float64u32
+	  | (V.CAST_UFLOAT, V.REG_1,  V.REG_64) -> D.float1u64
+	  | (V.CAST_UFLOAT, V.REG_8,  V.REG_64) -> D.float8u64
+	  | (V.CAST_UFLOAT, V.REG_16, V.REG_64) -> D.float16u64
+	  | (V.CAST_UFLOAT, V.REG_32, V.REG_64) -> D.float32u64
+	  | (V.CAST_UFLOAT, V.REG_64, V.REG_64) -> D.float64u64
+	  | (V.CAST_SFIX, V.REG_32, V.REG_1)  -> D.fix32s1
+	  | (V.CAST_SFIX, V.REG_32, V.REG_8)  -> D.fix32s8
+	  | (V.CAST_SFIX, V.REG_32, V.REG_16) -> D.fix32s16
+	  | (V.CAST_SFIX, V.REG_32, V.REG_32) -> D.fix32s32
+	  | (V.CAST_SFIX, V.REG_32, V.REG_64) -> D.fix32s64
+	  | (V.CAST_SFIX, V.REG_64, V.REG_1)  -> D.fix64s1
+	  | (V.CAST_SFIX, V.REG_64, V.REG_8)  -> D.fix64s8
+	  | (V.CAST_SFIX, V.REG_64, V.REG_16) -> D.fix64s16
+	  | (V.CAST_SFIX, V.REG_64, V.REG_32) -> D.fix64s32
+	  | (V.CAST_SFIX, V.REG_64, V.REG_64) -> D.fix64s64
+	  | (V.CAST_UFIX, V.REG_32, V.REG_1)  -> D.fix32u1
+	  | (V.CAST_UFIX, V.REG_32, V.REG_8)  -> D.fix32u8
+	  | (V.CAST_UFIX, V.REG_32, V.REG_16) -> D.fix32u16
+	  | (V.CAST_UFIX, V.REG_32, V.REG_32) -> D.fix32u32
+	  | (V.CAST_UFIX, V.REG_32, V.REG_64) -> D.fix32u64
+	  | (V.CAST_UFIX, V.REG_64, V.REG_1)  -> D.fix64u1
+	  | (V.CAST_UFIX, V.REG_64, V.REG_8)  -> D.fix64u8
+	  | (V.CAST_UFIX, V.REG_64, V.REG_16) -> D.fix64u16
+	  | (V.CAST_UFIX, V.REG_64, V.REG_32) -> D.fix64u32
+	  | (V.CAST_UFIX, V.REG_64, V.REG_64) -> D.fix64u64
+	  | (V.CAST_FWIDEN, V.REG_32, V.REG_64) -> D.fwiden32to64
+	  | (V.CAST_FNARROW, V.REG_64, V.REG_32) -> D.fnarrow64to32
+	  | _ -> failwith "bad fcast kind in eval_fcast"
+      in
+	((func rm v1), ty)
+
+    method eval_ite v_c v_t v_f ty_t =
+      let func =
+	match ty_t with
+	  | V.REG_1  -> D.ite1
+	  | V.REG_8  -> D.ite8
+	  | V.REG_16 -> D.ite16
+	  | V.REG_32 -> D.ite32
+	  | V.REG_64 -> D.ite64
+	  | _ -> failwith "unexpeceted type in eval_ite"
+      in
+	((func v_c v_t v_f), ty_t)
+
+    (* Since we don't make any type distinction between integers and
+       floats of the same size, the "eval_int" family of methods all
+       include floating point operations in addition to integer
+       ones. Perhaps misleading, but the names predated FP support. *)
     method eval_int_exp_ty exp =
       match exp with
 	| V.BinOp(op, e1, e2) ->
 	    let (v1, ty1) = self#eval_int_exp_ty e1 and
 		(v2, ty2) = self#eval_int_exp_ty e2 in
 	      self#eval_binop op v1 ty1 v2 ty2
+	| V.FBinOp(op, rm, e1, e2) ->
+	    let (v1, ty1) = self#eval_int_exp_ty e1 and
+		(v2, ty2) = self#eval_int_exp_ty e2 in
+	      self#eval_fbinop op rm v1 ty1 v2 ty2
 	| V.UnOp(op, e1) ->
 	    let (v1, ty1) = self#eval_int_exp_ty e1 in
 	      self#eval_unop op v1 ty1
+	| V.FUnOp(op, rm, e1) ->
+	    let (v1, ty1) = self#eval_int_exp_ty e1 in
+	      self#eval_funop op rm v1 ty1
 	| V.Constant(V.Int(V.REG_1, i)) ->
 	    (D.from_concrete_1 (Int64.to_int i)), V.REG_1
 	| V.Constant(V.Int(V.REG_8, i)) ->
@@ -1410,28 +2215,79 @@ struct
 	| V.Constant(V.Int(V.REG_32,i)) -> (D.from_concrete_32 i),V.REG_32
 	| V.Constant(V.Int(V.REG_64,i)) -> (D.from_concrete_64 i),V.REG_64
 	| V.Constant(V.Int(_,_)) -> failwith "unexpected integer constant type"
-	| V.Lval(V.Temp((_,_,ty) as var)) -> (self#get_int_var var), ty
+	| V.Lval(V.Temp((_,s,ty) as var)) ->
+	    let v = self#get_int_var var in
+	      if !opt_trace_eval then
+		Printf.printf "    %s is %s\n" s (D.to_string_32 v);
+	      (v, ty)
 	| V.Lval(V.Mem(memv, idx, ty)) ->
 	    self#handle_load idx ty
 	| V.Cast(kind, ty, e) ->
 	    let (v1, ty1) = self#eval_int_exp_ty e in
 	      self#eval_cast kind ty v1 ty1
-		(* XXX move this to something like a special handler: *)
+	| V.FCast(kind, rm, ty, e) ->
+	    let (v1, ty1) = self#eval_int_exp_ty e in
+	      self#eval_fcast kind rm ty v1 ty1
+	| V.Ite(cond, true_e, false_e) ->
+           let (v_c, ty_c) = self#eval_int_exp_ty cond in
+           (try
+              (* short-circuit evaluation if the condition is concrete *)
+              let v_c_conc = D.to_concrete_1 v_c in
+              if v_c_conc = 1 then
+                self#eval_int_exp_ty true_e
+              else
+                self#eval_int_exp_ty false_e
+            with NotConcrete _ ->
+              (* symbolic execution evaluates both sides *)
+	         let (v_t, ty_t) = self#eval_int_exp_ty true_e and
+		     (v_f, ty_f) = self#eval_int_exp_ty false_e in
+	         assert(ty_c = V.REG_1);
+	         assert(ty_t = ty_f);
+	         self#eval_ite v_c v_t v_f ty_t)
+	(* XXX move this to something like a special handler: *)
 	| V.Unknown("rdtsc") -> ((D.from_concrete_64 1L), V.REG_64) 
-	| _ -> failwith "Unsupported (or non-int) expr type in eval_int_exp_ty"
+	| V.Unknown(_) ->
+	    failwith "Unsupported unknown in eval_int_exp_ty"
+	| V.Let(_,_,_)
+	| V.Name(_)
+	| V.Constant(V.Str(_))
+	  -> failwith "Unsupported (or non-int) expr type in eval_int_exp_ty"
 	    
     method private eval_int_exp exp =
       let (v, _) = self#eval_int_exp_ty exp in
 	v
 
-    method eval_int_exp_simplify exp =
-      match self#eval_int_exp_ty exp with
+    method private eval_int_exp_simplify_ty exp =
+      let (v, ty) = self#eval_int_exp_ty exp in
+      let v' =  match (v, ty) with
 	| (v, V.REG_1) -> form_man#simplify1 v
 	| (v, V.REG_8) -> form_man#simplify8 v
 	| (v, V.REG_16) -> form_man#simplify16 v
 	| (v, V.REG_32) -> form_man#simplify32 v
 	| (v, V.REG_64) -> form_man#simplify64 v
 	| _ -> failwith "Unexpected type in eval_int_exp_simplify"
+      in
+	(v', ty)
+
+    method private eval_int_exp_tempify_ty exp =
+      let (v, ty) = self#eval_int_exp_ty exp in
+      let v' =  match (v, ty) with
+	| (v, V.REG_1) -> form_man#tempify1 v
+	| (v, V.REG_8) -> form_man#tempify8 v
+	| (v, V.REG_16) -> form_man#tempify16 v
+	| (v, V.REG_32) -> form_man#tempify32 v
+	| (v, V.REG_64) -> form_man#tempify64 v
+	| _ -> failwith "Unexpected type in eval_int_exp_tempify"
+      in
+	(v', ty)
+
+    method eval_int_exp_simplify exp =
+      let (v, _) = self#eval_int_exp_simplify_ty exp in
+	v
+
+    method eval_int_exp_tempify exp =
+      let (v, _) = self#eval_int_exp_tempify_ty exp in
+	v
 
     method eval_bool_exp exp =
       let v = self#eval_int_exp exp in
@@ -1459,24 +2315,43 @@ struct
 	  | st :: rest -> find_label lab rest 
       in
 	loop_cnt <- Int64.succ loop_cnt;
-	if loop_cnt > !opt_iteration_limit then raise TooManyIterations;
+        (match !opt_iteration_limit_enforced with
+	| Some lim -> if loop_cnt > lim then raise TooManyIterations;
+	| _ -> ());
 	let (_, sl) = frag in
 	  match find_label lab sl with
 	    | None -> lab
 	    | Some sl ->
 		self#run_sl do_jump sl
 
+    val mutable last_eip = -1L
+    val mutable last_insn = "none"
+    val mutable saw_jump = false
+
+    val mutable stmt_num = -1
+    method private get_stmt_num = stmt_num
+
     method run_sl do_jump sl =
       let jump lab =
+	saw_jump <- true;
 	if do_jump lab then
 	  self#jump do_jump lab
 	else
 	  lab
       in
-      let rec loop = 
+      let rec loop =
 	function
 	  | [] -> "fallthrough"
 	  | st :: rest ->
+	      if !opt_trace_stmts then
+		(Printf.printf "  %08Lx."
+		   (try self#get_eip with NotConcrete(_) -> 0L);
+		 (if stmt_num = -1 then
+		    Printf.printf "   "
+		  else
+		    Printf.printf "%03d" stmt_num);
+		 Printf.printf " %s\n" (stmt_to_string_compact st));
+	      stmt_num <- stmt_num + 1;
 	      (match st with
 		 | V.Jmp(l) -> jump (self#eval_label_exp l)
 		 | V.CJmp(cond, V.Name(l1), V.Name(l2))
@@ -1499,9 +2374,24 @@ struct
 			 jump (self#eval_label_exp l1)
 		       else
 			 jump (self#eval_label_exp l2)
-		 | V.Move(V.Temp(v), e) ->
-		     self#set_int_var v (self#eval_int_exp_simplify e);
-		     loop rest
+		 | V.Move(V.Temp((n,s,t) as v), e) ->
+		     let rhs = self#eval_int_exp_simplify e in
+		     let trace_eval () =
+		       Printf.printf "    %s <- %s\n" s (D.to_string_32 rhs)
+		     in
+		       if !opt_trace_eval then
+			 trace_eval ()
+		       else if !opt_trace_register_updates then
+			 if String.sub s 0 1 = "T" then
+			   () (* skip updates to temps *)
+			 else if String.length s = 4 &&
+			   String.sub s 0 2 = "R_" &&
+			   String.sub s 3 1 = "F" then
+			     () (* skip updates to flags *)
+			 else
+			   trace_eval ();
+		       self#set_int_var v rhs;
+		       loop rest
 		 | V.Move(V.Mem(memv, idx_e, ty), rhs_e) ->
 		     self#handle_store idx_e ty rhs_e;
 		     loop rest
@@ -1512,27 +2402,33 @@ struct
 			| Some sl -> 
 			    loop (sl @ rest)
 			| None ->
-			    Printf.printf "Unhandled special %s\n" str;
+			    Printf.printf "Unhandled special %s near 0x%Lx (%s)\n"
+			      str (self#get_eip) last_insn;
 			    failwith "Unhandled special")
 		 | V.Label(l) ->
 		     if ((String.length l > 5) && 
 			   (String.sub l 0 5) = "pc_0x") then
 		       (let eip = Vine.label_to_addr l in
 			  self#set_eip eip;
-			  self#run_eip_hooks);
+			  (* saw_jump will be set for the fallthrough
+			     from one instruction to the next unless it's
+			     optimized away (which it won't be when we
+			     translate one instruction at a time), so it's
+			     an overapproximation. *)
+			  if saw_jump then
+			    self#run_jump_hooks last_insn last_eip eip;
+			  self#run_eip_hooks;
+			  stmt_num <- 1;
+			  last_eip <- eip;
+			  saw_jump <- false);
 		     loop rest
 		 | V.ExpStmt(e) ->
 		     let v = self#eval_int_exp e in
 		       ignore(v);
 		       loop rest
-		 | V.Comment(s) -> 
-		     if (!opt_print_callrets) then (
-		       if (Str.string_match
-			     (Str.regexp ".*\\(call\\|ret\\).*") s 0) then (
-			 let eip = self#get_eip in
-			   Printf.printf "%s @ 0x%Lx\n" s eip
-		       );
-		     );
+		 | V.Comment(s) ->
+		     if comment_is_insn s then
+		       last_insn <- s;
 		     loop rest
 		 | V.Block(_,_) -> failwith "Block unsupported"
 		 | V.Function(_,_,_,_,_) -> failwith "Function unsupported"
@@ -1547,6 +2443,7 @@ struct
 		     let v = D.to_concrete_32 (self#eval_int_exp e) in
 		       Printf.sprintf "halt_%Ld" v)
       in
+	stmt_num <- -1;
 	loop sl
 
     method run () = self#run_sl (fun lab -> true) insns
@@ -1595,13 +2492,16 @@ struct
 
     val mutable symbolic_string_id = 0
 
-    method make_symbolic_region base len =
+    method make_symbolic_region base len varname pos =
+      for i = 0 to len - 1 do
+	self#store_byte (Int64.add base (Int64.of_int i))
+	  (form_man#fresh_symbolic_mem_8 varname (Int64.of_int (pos + i)))
+      done
+
+    method make_fresh_symbolic_region base len =
       let varname = "input" ^ (string_of_int symbolic_string_id) in
-	symbolic_string_id <- symbolic_string_id + 1;
-	for i = 0 to len - 1 do
-	  self#store_byte (Int64.add base (Int64.of_int i))
-	    (form_man#fresh_symbolic_mem_8 varname (Int64.of_int i))
-	done
+        symbolic_string_id <- symbolic_string_id + 1;
+        self#make_symbolic_region base len varname 0
 
     method store_symbolic_cstr base len fulllen terminate =
       let varname = "input" ^ (string_of_int symbolic_string_id) ^ "_" in
@@ -1629,6 +2529,14 @@ struct
 	done;
 	if terminate then
 	  self#store_byte_idx base len 0
+
+    method store_concolic_name_str base str varname pos =
+      let len = String.length str in
+      for i = 0 to len - 1 do
+	self#store_byte (Int64.add base (Int64.of_int i))
+	  (form_man#make_concolic_8 (varname ^ "_" ^ (string_of_int (pos + i)))
+	     (Char.code str.[i]))
+      done
 
     method store_symbolic_wcstr base len =
       let varname = "winput" ^ (string_of_int symbolic_string_id) ^ "_" in
@@ -1729,6 +2637,8 @@ struct
 	      (D.from_concrete_16 (Int64.to_int i)),V.REG_16
 	  | V.Constant(V.Int(V.REG_32,i)) -> (D.from_concrete_32 i),V.REG_32
 	  | V.Constant(V.Int(V.REG_64,i)) -> (D.from_concrete_64 i),V.REG_64
+	  | V.Constant(V.Int(_, _)) ->
+	      failwith "Unhandled weird-typed integer constant in concolic_exp"
 	  | V.BinOp(op, e1, e2) ->
 	      let (v1, ty1) = rw_loop e1 and
 		  (v2, ty2) = rw_loop e2 in
@@ -1739,7 +2649,20 @@ struct
 	  | V.Cast(kind, ty, e1) ->
 	      let (v1, ty1) = rw_loop e1 in
 		self#eval_cast kind ty v1 ty1
-	  | _ -> failwith "Unhandled expression type in concolic_exp"
+	  | V.Ite(ce, te, fe) ->
+	    let (v_c, ty_c) = rw_loop ce and
+		(v_t, ty_t) = rw_loop te and
+		(v_f, ty_f) = rw_loop fe in
+	      self#eval_ite v_c v_t v_f ty_t
+	  | V.FBinOp(_, _, _, _)
+	  | V.FUnOp(_, _, _)
+	  | V.FCast(_, _, _, _)
+	    -> failwith "FP op unsupported in concolic_exp"
+	  | V.Let(_, _, _)
+	  | V.Name(_)
+	  | V.Lval(_)
+	  | V.Constant(V.Str(_))
+	    -> failwith "Unhandled expression type in concolic_exp"
       in
 	rw_loop exp
 
@@ -1817,7 +2740,7 @@ struct
 	loop (self#get_word_var R_EBP)
 
     method private eval_expr_to_string e =
-      match self#eval_int_exp_ty e with
+      match self#eval_int_exp_simplify_ty e with
 	| (v, V.REG_1) -> D.to_string_1 v
 	| (v, V.REG_8) -> D.to_string_8 v
 	| (v, V.REG_16) -> D.to_string_16 v
@@ -1859,8 +2782,8 @@ struct
 	| _ -> failwith "Unexpected type in mem_val_as_string"
 
     method query_with_path_cond (e:Vine.exp) (v:bool)
-      : (bool * (string * int64) list) =
-      (false, [])
+      : (bool * Query_engine.sat_assign) =
+      (false, (Query_engine.ce_from_list []))
     method match_input_var (s:string) : int option = None
     method get_path_cond : Vine.exp list = []
     method on_missing_random : unit =
@@ -1868,6 +2791,7 @@ struct
     method set_query_engine (qe:Query_engine.query_engine) = ()
     method print_tree (oc:out_channel) = ()
     method set_iter_seed (i:int) = ()
+    method random_byte = Random.int 256
     method finish_path = false
     method after_exploration = ()
     method make_x86_segtables_symbolic = ()
@@ -1875,12 +2799,15 @@ struct
       : unit =
       failwith "store_word_special_region needs a symbolic region machine"
     method get_word_var_concretize r (b:bool) (s:string) = self#get_word_var r
+    method get_long_var_concretize r (b:bool) (s:string) = self#get_long_var r
     method load_byte_concretize  addr (b:bool) (s:string)
       = self#load_byte_conc addr
     method load_short_concretize addr (b:bool) (s:string)
       = self#load_short_conc addr
     method load_word_concretize  addr (b:bool) (s:string)
       = self#load_word_conc addr
+    method load_long_concretize  addr (b:bool) (s:string)
+      = self#load_long_conc addr
     method make_sink_region (s:string) (i:int64) = ()
   end
 end

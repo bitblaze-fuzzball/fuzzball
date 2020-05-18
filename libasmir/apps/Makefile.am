@@ -6,7 +6,7 @@ bin_PROGRAMS = \
 disassembler_SOURCES = disassembler.cpp
 print_ir_SOURCES = print-ir.cpp ir_printer.cpp
 insn_test_SOURCES = insn_test.cpp
-LDADD =  -lasmir -lvex -lbfd -lopcodes -liberty -lz
+LDADD =  -lasmir -lvex -lbfd -lopcodes -liberty -lz -ldl
 AM_LDFLAGS = -L../src -L@VEX_DIR@
 AM_CXXFLAGS = -I../src/include  -I@VEX_DIR@/pub -Wall # -Werror
 

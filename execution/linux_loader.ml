@@ -7,6 +7,13 @@ open Exec_options
 open Fragment_machine
 open Linux_syscalls
 
+let opt_hwcap : int64 option ref = ref None
+
+(* Our versions of ELF structures use int64 for any value that is
+   either always 32 bits, or 32 or 64 depending on the architecture. This
+   fits with FuzzBALL's general strategy of not bothering with int32s,
+   and also means we don't need separate 32-bit and 64-bit structure
+   versions. *)
 type elf_header = {
   eh_type : int;
   machine : int;
@@ -51,51 +58,96 @@ let read_ui32 i =
 let read_elf_header ic =
   let i = IO.input_channel ic in
   let ident = IO.really_nread i 16 in
-    assert(ident = "\x7fELF\001\001\001\000\000\000\000\000\000\000\000\000" ||
-	   ident = "\x7fELF\001\001\001\003\000\000\000\000\000\000\000\000");
-    (* OCaml structure initialization isn't guaranteed to happen
-       left to right, so we need to use a bunch of lets here: *)
-    let eh_type = IO.read_ui16 i in
-    let machine = IO.read_ui16 i in
-    let version = read_ui32 i in
-    let entry = read_ui32 i in
-    let phoff = read_ui32 i in
-    let shoff = read_ui32 i in
-    let eh_flags = read_ui32 i in
-    let ehsize = IO.read_ui16 i in
-    let phentsize = IO.read_ui16 i in
-    let phnum = IO.read_ui16 i in
-    let shentsize = IO.read_ui16 i in
-    let shnum = IO.read_ui16 i in
-    let shstrndx = IO.read_ui16 i in
-    let eh = {
-      eh_type = eh_type; machine = machine; version = version;
-      entry = entry; phoff = phoff; shoff = shoff; eh_flags = eh_flags;
-      ehsize = ehsize; phentsize = phentsize; phnum = phnum;
-      shentsize = shentsize; shnum = shnum; shstrndx = shstrndx }
-    in
-      assert(eh.ehsize = 16 + 36);
-      eh
+    match ident with
+      | ("\x7fELF\001\001\001\000\000\000\000\000\000\000\000\000"|
+	 "\x7fELF\001\001\001\003\000\000\000\000\000\000\000\000") ->
+	  (* 32-bit *)
+	  (* OCaml structure initialization isn't guaranteed to happen
+	     left to right, so we need to use a bunch of lets here: *)
+	  let eh_type = IO.read_ui16 i in
+	  let machine = IO.read_ui16 i in
+	  let version = read_ui32 i in
+	  let entry = read_ui32 i in
+	  let phoff = read_ui32 i in
+	  let shoff = read_ui32 i in
+	  let eh_flags = read_ui32 i in
+	  let ehsize = IO.read_ui16 i in
+	  let phentsize = IO.read_ui16 i in
+	  let phnum = IO.read_ui16 i in
+	  let shentsize = IO.read_ui16 i in
+	  let shnum = IO.read_ui16 i in
+	  let shstrndx = IO.read_ui16 i in
+	  let eh = {
+	    eh_type = eh_type; machine = machine; version = version;
+	    entry = entry; phoff = phoff; shoff = shoff; eh_flags = eh_flags;
+	    ehsize = ehsize; phentsize = phentsize; phnum = phnum;
+	    shentsize = shentsize; shnum = shnum; shstrndx = shstrndx }
+	  in
+	    assert(eh.ehsize = 16 + 36);
+	    eh
+      | ("\x7fELF\x02\x01\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00"|
+         "\x7fELF\x02\x01\x01\x03\x00\x00\x00\x00\x00\x00\x00\x00") ->
+	  (* 64-bit *)
+	  let eh_type = IO.read_ui16 i in
+	  let machine = IO.read_ui16 i in
+	  let version = read_ui32 i in
+	  let entry = IO.read_i64 i in
+	  let phoff = IO.read_i64 i in
+	  let shoff = IO.read_i64 i in
+	  let eh_flags = read_ui32 i in
+	  let ehsize = IO.read_ui16 i in
+	  let phentsize = IO.read_ui16 i in
+	  let phnum = IO.read_ui16 i in
+	  let shentsize = IO.read_ui16 i in
+	  let shnum = IO.read_ui16 i in
+	  let shstrndx = IO.read_ui16 i in
+	  let eh = {
+	    eh_type = eh_type; machine = machine; version = version;
+	    entry = entry; phoff = phoff; shoff = shoff; eh_flags = eh_flags;
+	    ehsize = ehsize; phentsize = phentsize; phnum = phnum;
+	    shentsize = shentsize; shnum = shnum; shstrndx = shstrndx }
+	  in
+	    assert(eh.ehsize = 16 + 48);
+	    eh
+      | _ ->
+	  failwith "Unrecognized identification bytes in ELF file"
 
 let read_program_headers ic eh =
-  assert(eh.phentsize = 32);
+  assert(eh.phentsize = 32 || eh.phentsize = 56);
   seek_in ic (Int64.to_int eh.phoff);
   let i = IO.input_channel ic in
     ExtList.List.init eh.phnum
-      (fun _ -> 
-	 let ph_type = read_ui32 i in
-	 let offset = read_ui32 i in
-	 let vaddr = read_ui32 i in
-	 let paddr = read_ui32 i in
-	 let filesz = read_ui32 i in
-	 let memsz = read_ui32 i in
-	 let ph_flags = read_ui32 i in
-	 let align = read_ui32 i in
-	   { ph_type = ph_type; offset = offset; vaddr = vaddr;
-	     paddr = paddr; filesz = filesz; memsz = memsz;
-	     ph_flags = ph_flags;
-	     align = align
-	   })
+      (fun _ ->
+	 match eh.phentsize with
+	   | 32 -> (* 32-bit *)
+	       let ph_type = read_ui32 i in
+	       let offset = read_ui32 i in
+	       let vaddr = read_ui32 i in
+	       let paddr = read_ui32 i in
+	       let filesz = read_ui32 i in
+	       let memsz = read_ui32 i in
+	       let ph_flags = read_ui32 i in
+	       let align = read_ui32 i in
+		 { ph_type = ph_type; offset = offset; vaddr = vaddr;
+		   paddr = paddr; filesz = filesz; memsz = memsz;
+		   ph_flags = ph_flags;
+		   align = align
+		 }
+	   | 56 -> (* 64-bit, n.b. slightly different order *)
+	       let ph_type = read_ui32 i in
+	       let ph_flags = read_ui32 i in
+	       let offset = IO.read_i64 i in
+	       let vaddr = IO.read_i64 i in
+	       let paddr = IO.read_i64 i in
+	       let filesz = IO.read_i64 i in
+	       let memsz = IO.read_i64 i in
+	       let align = IO.read_i64 i in
+		 { ph_type = ph_type; offset = offset; vaddr = vaddr;
+		   paddr = paddr; filesz = filesz; memsz = memsz;
+		   ph_flags = ph_flags;
+		   align = align
+		 }
+	   | _ -> failwith "Unsupported program header size")
 
 let store_page fm vaddr str =
   if Int64.rem vaddr 0x1000L = 0L && (String.length str) = 4096 then
@@ -200,7 +252,7 @@ let load_ldso fm dso vaddr =
     let phrs = read_program_headers ic dso_eh in
       (* If the loader already has a non-zero base address, disable
 	 our default offset. This can happen if it's prelinked. *)
-      if (List.hd phrs).vaddr <> 0L then
+      if (List.hd phrs).ph_type = 1L && (List.hd phrs).vaddr <> 0L then
 	vaddr := 0L;
       List.iter
 	(fun phr ->
@@ -208,7 +260,10 @@ let load_ldso fm dso vaddr =
 	     load_segment fm ic phr !vaddr false)
 	phrs;
       close_in ic;
-      Int64.add !vaddr dso_eh.entry
+      let r = Int64.add !vaddr dso_eh.entry in
+	if !opt_trace_setup then
+	  Printf.printf "Finished ldso loading, entry at 0x%08Lx\n" r;
+	r
 
 let load_x87_emulator fm emulator =
   let ic = open_in emulator in
@@ -231,9 +286,21 @@ let build_startup_state fm eh load_base ldso argv =
     fm#store_cstr !esp 0L s;
     !esp
   in
+  let _push_cstr_padded s =
+    let real_len = (String.length s) + 1 in
+    let padded_len = real_len + (-real_len land 31) in
+      esp := Int64.sub !esp (Int64.of_int padded_len);
+      fm#store_cstr !esp 0L s;
+      !esp
+  in
   let push_word i =
-    esp := Int64.sub !esp 4L;
-    fm#store_word_conc !esp i
+    match !opt_arch with
+      | (X86|ARM) ->
+	  esp := Int64.sub !esp 4L;
+	  fm#store_word_conc !esp i
+      | X64 ->
+	  esp := Int64.sub !esp 8L;
+	  fm#store_long_conc !esp i
   in
   let zero_pad_to new_sp =
     let old_sp = !esp in
@@ -269,12 +336,18 @@ let build_startup_state fm eh load_base ldso argv =
   in
   let env_locs = List.map push_cstr env in
   let argv_locs = List.map push_cstr argv in
-  let (platform_loc, hwcap) = match !opt_arch with
-    | X86 -> (push_cstr "i686", 0L) (* barebones HWCAP *)
-	  (* 0xbfebfbffL (* AT_HWCAP, Core 2 Duo *) *)
-    | X64 -> (push_cstr "x86_64", 0L) (* barebones HWCAP *)
-    | ARM -> (push_cstr "v5l", 0x1d7L)
+  let hwcap = match (!opt_hwcap, !opt_arch) with
+    | (Some h, _) -> h
+    | (None, X86) -> 0L (* minimal *)
+    | (None, X64) -> 0L (* minimal *)
+    | (None, ARM) -> 0x1d7L
   in
+  let platform_str = match !opt_arch with
+    | X86 -> "i686"
+    | X64 -> "x86_64"
+    | ARM -> "v5l"
+  in
+  let platform_loc = push_cstr platform_str in
   let reloc_entry = Int64.add eh.entry
     (if eh.eh_type = 3 then load_base else 0L)
   in
@@ -301,9 +374,14 @@ let build_startup_state fm eh load_base ldso argv =
     (* Arrange so that the program's initial %esp is page-aligned, and
        therefore unlikely to change with changes in argv or the
        environment. *)
-  let ptrs_len = 4 * (2 * ((List.length auxv) + ((List.length auxv) mod 2))
-		      + 1 + (List.length env_locs)
-		      + 1 + (List.length argv) + 1) in
+  let ptr_size = match !opt_arch with
+    | (X86|ARM) -> 4
+    | X64 -> 8
+  in
+  let ptrs_len =
+    ptr_size * (2 * ((List.length auxv) + ((List.length auxv) mod 2))
+		+ 1 + (List.length env_locs)
+		+ 1 + (List.length argv) + 1) in
     zero_pad_to (Int64.logand !esp (Int64.lognot 0xfL)); (* 16-byte align *)
     let pad_to = Int64.logand (Int64.sub !esp 0x2000L) (Int64.lognot 0xfffL) in
       zero_pad_to (Int64.add pad_to (Int64.of_int ptrs_len));
@@ -316,14 +394,60 @@ let build_startup_state fm eh load_base ldso argv =
       List.iter push_word (List.rev argv_locs);
       push_word (Int64.of_int (List.length argv)); (* argc *)
       if !opt_trace_setup then
-	Printf.printf "Initial ESP is 0x%08Lx\n" !esp;
-      let sp = match !opt_arch with
-	| X86 -> R_ESP
-	| X64 -> R_RSP
-	| ARM -> R13
-      in
-	fm#set_word_var sp !esp      
+	Printf.printf "Initial stack pointer is 0x%08Lx\n" !esp;
+      match !opt_arch with
+	| X86 -> fm#set_word_var R_ESP !esp
+	| ARM -> fm#set_word_var R13 !esp
+	| X64 -> fm#set_long_var R_RSP !esp
 
+(* Forgetting "-arch" is a common mistake, and setting it incorrectly
+   will also cause nothing good to happen. Thus this extra checking. I
+   can imagine some weid situations in which one might mix architectures,
+   so I've left the warning non-fatal in many cases. You could also argue
+   it would be better to just set the architecture automatically, but
+   that would require some more invasive code changes, and thinking about
+   the ISA doesn't seem like it should be a great burden. *)
+let check_elf_arch e_machine do_setup =
+  let (expected_str, expected_arch, weird) =
+    match e_machine with
+      | 0x03 -> ("x86", X86, false) (* EM_386 *)
+      | 0x28 -> ("arm", ARM, false) (* EM_ARM = 40 *)
+      | 0x3e -> ("x64", X64, false) (* EM_X64 = 62 *)
+      | _    -> ("",    X86, true)
+  in
+    if weird then
+      (Printf.printf "Unsupported e_machine architecture %d.\n" e_machine;
+       Printf.printf "FuzzBALL probably won't be able to run this binary.\n")
+    else if !opt_arch <> expected_arch then
+      (Printf.printf "Binary does not match configured architecture.\n";
+       Printf.printf "Perhaps you should have used the -arch %s option?\n"
+	 expected_str;
+       if do_setup then
+	 failwith "Refusing to continue with wrong architecture";)
+
+let detect_elf_arch fname =
+  let ic = open_in (chroot fname) in
+  let eh = read_elf_header ic in
+  let arch =
+    match eh.machine with
+      | 0x03 -> Some X86    (* EM_386 *)
+      | 0x28 -> Some ARM    (* EM_ARM = 40 *)
+      | 0x3e -> Some X64    (* EM_X64 = 62 *)
+      | _    -> None
+  in
+    close_in ic;
+    if !opt_trace_setup then
+      (Printf.printf "Attempting to detect CPU architecture from %s\n" fname;
+       match arch with
+	 | None -> Printf.printf "Failed to detect CPU architecture\n"
+	 | Some arch ->
+	     Printf.printf "Detected architecuture as %s\n"
+	       (string_of_execution_arch arch));
+    arch
+
+(* Despite the name, this function is currently used for statically
+   linked binaries as well as dynamically linked binaries and PIE
+   binaries. *)
 let load_dynamic_program (fm : fragment_machine) fname load_base
     data_too do_setup extras argv =
   let ic = open_in (chroot fname) in
@@ -331,17 +455,33 @@ let load_dynamic_program (fm : fragment_machine) fname load_base
   let ldso_base = ref 0xb7f00000L in
   let eh = read_elf_header ic in
   let entry_point = ref eh.entry in
+  let checked_load_base = ref false in
+  let check_load_base addr =
+    if !checked_load_base then
+      ()
+    else if addr <> load_base then
+      (Printf.printf "Unexpected first-segment load address.\n";
+       Printf.printf "Perhaps you need the -load-base 0x%Lx or -arch options\n"
+	 addr;
+       assert(addr = load_base))
+    else
+      checked_load_base := true
+  in
   let extra_vaddr = match eh.eh_type with
     | 2 -> 0L (* fixed-location executable *)
     | 3 -> load_base (* shared object or PIE *)
     | _ -> failwith "Unhandled ELF object type"
   in
+    check_elf_arch eh.machine do_setup;
+    if !opt_trace_setup then
+      Printf.printf "Loading executable from %s\n" (chroot fname);
     entry_point := eh.entry;
     List.iter
       (fun phr ->
 	 if phr.ph_type = 1L then (* PT_LOAD *)
-	   (if phr.ph_flags = 5L && extra_vaddr = 0L then
-	      assert(phr.vaddr = load_base);
+	   (if (phr.ph_flags = 4L || phr.ph_flags = 5L)
+	      && extra_vaddr = 0L then
+		check_load_base phr.vaddr;
 	    if data_too || (phr.ph_flags <> 6L && phr.ph_flags <> 7L) then
 	      load_segment fm ic phr extra_vaddr true)
 	 else if phr.ph_type = 3L then (* PT_INTERP *)
@@ -349,7 +489,7 @@ let load_dynamic_program (fm : fragment_machine) fname load_base
 	    let interp = IO.really_nread i ((Int64.to_int phr.filesz) - 1) in
 	      entry_point := load_ldso fm interp ldso_base;
 	      load_segment fm ic phr extra_vaddr true)
-	 else if phr.memsz != 0L then
+	 else if phr.memsz <> 0L then
 	   load_segment fm ic phr extra_vaddr true;
 	 List.iter
 	   (fun (base, size) ->
@@ -393,8 +533,43 @@ let read_core_note fm ic =
   let ntype = read_ui32 i in
   let namez = IO.really_nread i ((namesz + 3) land (lnot 3)) in
   let name = String.sub namez 0 (namesz - 1) in
-  let endpos = pos_in ic + descsz in
-    assert(descsz mod 4 = 0);
+  let endpos = pos_in ic + ((descsz + 3) land (lnot 3)) in
+  let type_str = match ntype with
+    |  1L -> "NT_PRSTATUS"
+    |  2L -> "NT_FPREGSET"
+    |  3L -> "NT_PRPSINFO"
+    |  4L -> "NT_PRXREG/NT_TASKSTRUCT"
+    |  5L -> "NT_PLATFORM"
+    |  6L -> "NT_AUXV"
+    |  7L -> "NT_GWINDOWS"
+    |  8L -> "NT_ASRS"
+    | 10L -> "NT_PSTATUS"
+    | 13L -> "NT_PSINFO"
+    | 14L -> "NT_PRCRED"
+    | 15L -> "NT_UTSNAME"
+    | 16L -> "NT_LWPSTATUS"
+    | 17L -> "NT_LWPSINFO"
+    | 20L -> "NT_PRFPXREG"
+    | 0x53494749L -> "NT_SIGINFO"
+    | 0x46494c45L -> "NT_FILE"
+    | 0x46e62b7fL -> "NT_PRXFPREG"
+    | 0x200L -> "NT_386_TLS"
+    | 0x201L -> "NT_386_IOPERM"
+    | 0x202L -> "NT_X86_XSTATE"
+    | 0x400L -> "NT_ARM_VFP"
+    | 0x401L -> "NT_ARM_TLS"
+    | 0x402L -> "NT_ARM_HW_BREAK"
+    | 0x403L -> "NT_ARM_HW_WATCH"
+    | _ -> "unknown"
+  in
+    if !opt_trace_setup then
+      Printf.printf "Core note of size 0x%x, type 0x%Lx (%s), name %s\n"
+	descsz ntype type_str name;
+    (* The ELF spec seems at some places to suggest that the contents
+       of notes will consist only of 4-bte values, but other parts of the
+       spec suggest otherwise, and modern Linux seems to generate
+       odd-sized NT_FILE notes. *)
+    (* assert(descsz mod 4 = 0); *)
     if name = "CORE" && ntype = 1L then
       (let si_signo = IO.read_i32 i in
        let si_code = IO.read_i32 i in

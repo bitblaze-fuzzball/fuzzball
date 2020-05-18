@@ -15,7 +15,7 @@ let main argv =
     (Arg.align (Exec_set_options.cmdline_opts
 		@ Exec_set_options.tags_cmdline_opts
 		@ Options_linux.linux_cmdline_opts))
-    (fun arg -> Exec_set_options.set_program_name arg)
+    (fun arg -> Exec_set_options.set_program_name_guess_arch arg)
     "vinegrind [options]* program\n";
   let fm = if !Exec_options.opt_use_tags then
     ((new FMTM.frag_machine) :> Fragment_machine.fragment_machine)

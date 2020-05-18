@@ -1,0 +1,52 @@
+diff --git a/exec_utils/Makefile b/exec_utils/Makefile
+index 464e365..5b235a4 100644
+--- a/exec_utils/Makefile
++++ b/exec_utils/Makefile
+@@ -19,7 +19,7 @@ export INCDIRS = $(VINE_OCAMLDIR) $(VINE_TRACEDIR) $(VINE_EXECDIR) \
+ export OCAMLDEP = ocamldep -I $(VINE_OCAMLDIR) -I $(VINE_TRACEDIR) \
+                    -I $(VINE_EXECDIR) -I $(STP_OCAMLDIR)
+ 
+-OCAMLFLAGS = -warn-error Aelz  #-w A
++OCAMLFLAGS = -warn-error Aelz -unsafe-string #-w A
+ 
+ # default subprojects to build
+ ifndef SUBPROJS
+diff --git a/execution/Makefile b/execution/Makefile
+index 213e286..8f1fbc5 100644
+--- a/execution/Makefile
++++ b/execution/Makefile
+@@ -70,7 +70,7 @@ export LDFLAGS = $(LIBASMIR_LDFLAGS)
+ export CLIBFLAGS= $(LDFLAGS)
+ export LIBDIRS = $(LIBASMIR)/src # ../appreplay ../stp ../stp/ocaml
+ 
+-OCAMLFLAGS = -warn-error Aelz-3  #-w A
++OCAMLFLAGS = -warn-error Aelz-3 -unsafe-string #-w A
+ # merge everything but descriptions.
+ OCAMLDOCFLAGS = -m avlsoper
+ 
+diff --git a/ocaml/Makefile b/ocaml/Makefile
+index 2e91e28..db30b4e 100644
+--- a/ocaml/Makefile
++++ b/ocaml/Makefile
+@@ -72,7 +72,7 @@ export LDFLAGS = $(LIBASMIR_LDFLAGS)
+ export CLIBFLAGS= $(LDFLAGS)
+ export LIBDIRS = $(LIBASMIR)/src # ../appreplay ../stp ../stp/ocaml
+ 
+-OCAMLFLAGS = -warn-error Aelz-3  #-w A
++OCAMLFLAGS = -warn-error Aelz-3 -unsafe-string #-w A
+ # merge everything but descriptions.
+ OCAMLDOCFLAGS = -m avlsoper
+ 
+diff --git a/trace/Makefile b/trace/Makefile
+index fe22c6a..d5cbb96 100644
+--- a/trace/Makefile
++++ b/trace/Makefile
+@@ -30,7 +30,7 @@ export LDFLAGS = $(LIBASMIR_LDFLAGS)
+ export CLIBFLAGS= $(LDFLAGS)
+ export LIBDIRS = $(LIBASMIR)/src # ../appreplay ../stp ../stp/ocaml
+ 
+-OCAMLFLAGS = -warn-error Aelz  #-w A
++OCAMLFLAGS = -warn-error Aelz -unsafe-string #-w A
+ # merge everything but descriptions.
+ OCAMLDOCFLAGS = -m avlsoper
+ 

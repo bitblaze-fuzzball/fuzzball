@@ -28,20 +28,18 @@ class stpvc_engine = object(self)
   method start_query =
     Libstp.vc_push vc    
 
-  method add_free_var v =
-    free_vars <- v :: free_vars
-
-  method add_temp_var v =
-    temp_vars <- v :: temp_vars
-
   method private ensure_ctx =
     match ctx with
       | Some c -> ()
       | None -> 
 	  ctx <- Some(Vine_stpvc.new_ctx vc (free_vars @ temp_vars))
 
-  method assert_eq var rhs =
-    eqns <- (var, rhs) :: eqns
+  method add_decl d =
+    match d with
+      | InputVar(v) -> free_vars <- v :: free_vars
+      | TempVar(v, e) -> eqns <- (v, e) :: eqns; temp_vars <- v :: temp_vars
+      | TempArray(v, el) ->
+	  failwith "-solver stpvc does not support -tables-as-arrays yet"
 
   method add_condition e =
     conds <- e :: conds;
@@ -86,7 +84,7 @@ class stpvc_engine = object(self)
     (* Printf.printf "STP formula is %s\n" (Stpvc.to_string s);
        flush stdout; *)
     let result = Stpvc.query vc s in
-    let ce = if result then [] else
+    let ce_list = if result then [] else
       (* Strategy 1: getTrueCounterExample. A custom interface that Vine
 	 has patched into STP for a while, but I don't know the reason
 	 why it's desirable. Probably better to avoid.
@@ -152,7 +150,7 @@ class stpvc_engine = object(self)
 		free_vars))
     in
       the_query <- Some s;
-      ((Some result), ce)
+      ((Some result), ce_from_list ce_list)
 
   val mutable filenum = 0
 

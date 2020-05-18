@@ -11,9 +11,8 @@ using namespace std;
 // in the string constructor. I couldn't tell whether that was a
 // real error or not, but I was able to make it go away (and presumably
 // save a trivial amount of time at startup) by constructing the
-// std::strings lazily. -SMcC
+// std::strings only on request. -SMcC
 
-// Do NOT change this. It is used in producing XML output.
 static const char *binopnames_strs[] = {
   "PLUS",
   "MINUS",
@@ -36,9 +35,11 @@ static const char *binopnames_strs[] = {
   "LT",
   "GE",
   "LE",
-  "SDIVIDE"
+  "SDIVIDE",
+  "SMOD",
+  "SLT",
+  "SLE",
 };
-static string *binopnames[sizeof(binopnames_strs)/sizeof(char *)];
 
 static const char *strs_strs[] = {
   "+",
@@ -62,9 +63,11 @@ static const char *strs_strs[] = {
   "<",
   ">=",
   "<=",
-  "/$" 
+  "/$",
+  "%$",
+  "<$",
+  "<=$",
 };
-static string *strs[sizeof(strs_strs)/sizeof(char *)];
 
 uint64_t
 Exp::cast_value(reg_t t, uint64_t v)
@@ -83,6 +86,8 @@ Exp::cast_value(reg_t t, uint64_t v)
   }
   assert(0); // eliminates warnings.
 }
+
+reg_t reg_address_t;
 
 uint32_t 
 Exp::reg_to_bits(const reg_t &reg)
@@ -111,15 +116,20 @@ void Exp::destroy( Exp *expr )
     switch ( expr->exp_type )
     {
     case BINOP:     BinOp::destroy((BinOp *)expr);          break;
+    case FBINOP:    FBinOp::destroy((FBinOp *)expr);        break;
     case UNOP:      UnOp::destroy((UnOp *)expr);            break;
+    case FUNOP:     FUnOp::destroy((FUnOp *)expr);          break;
     case CONSTANT:  Constant::destroy((Constant *)expr);    break;
     case MEM:       Mem::destroy((Mem *)expr);              break;
     case TEMP:      Temp::destroy((Temp *)expr);            break;
     case PHI:       Phi::destroy((Phi *)expr);              break;
     case UNKNOWN:   Unknown::destroy((Unknown *)expr);      break;
     case CAST:      Cast::destroy((Cast *)expr);            break;
+    case FCAST:     FCast::destroy((FCast *)expr);          break;
+    case VECTOR:    Vector::destroy((Vector *)expr);        break;
     case NAME:      Name::destroy((Name *)expr);            break;
     case LET:       Let::destroy((Let *)expr);              break; 
+    case ITE:       Ite::destroy((Ite *)expr);              break;
     case EXTENSION:   
       // Fixme: need to make a destroy virtual function that all
       // exp have. 
@@ -175,23 +185,19 @@ BinOp::tostring() const
 string
 BinOp::optype_to_string(const binop_type_t binop_type)
 {
-  if (!strs[binop_type])
-    strs[binop_type] = new string(strs_strs[binop_type]);
-  return *(strs[binop_type]);
+  return string(strs_strs[binop_type]);
 }
 
 string
 BinOp::optype_to_name(const binop_type_t binop_type)
 {
-  if (!binopnames[binop_type])
-    binopnames[binop_type] = new string(binopnames_strs[binop_type]);
-  return *(binopnames[binop_type]);
+  return string(binopnames_strs[binop_type]);
 }
 
 binop_type_t
 BinOp::string_to_optype(const string s)
 {
-  for(unsigned i = 0; i < sizeof(strs); i++){
+  for(unsigned i = 0; i < sizeof(strs_strs); i++){
     if(optype_to_string((binop_type_t)i) == s)
       return (binop_type_t) i;
   }
@@ -200,6 +206,92 @@ BinOp::string_to_optype(const string s)
 }
 
 void BinOp::destroy( BinOp *expr )
+{
+    assert(expr);
+
+    Exp::destroy(expr->lhs);
+    Exp::destroy(expr->rhs);
+
+    delete expr;
+}
+
+FBinOp::FBinOp(fbinop_type_t t, rounding_mode_t rm, Exp *l, Exp *r)
+  : Exp(FBINOP), lhs(l), rhs(r), fbinop_type(t), rounding_mode(rm)
+{
+
+}
+
+FBinOp::FBinOp(const FBinOp& copy)
+  : Exp(FBINOP), fbinop_type(copy.fbinop_type),
+    rounding_mode(copy.rounding_mode)
+{
+  lhs = copy.lhs->clone();
+  rhs = copy.rhs->clone();
+}
+
+FBinOp *
+FBinOp::clone() const
+{
+  return new FBinOp(*this);
+}
+
+string
+FBinOp::optype_to_string(const fbinop_type_t fbinop_type) {
+  string s;
+  switch (fbinop_type) {
+  case FPLUS:   s = "+.";  break;
+  case FMINUS:  s = "-.";  break;
+  case FTIMES:  s = "*.";  break;
+  case FDIVIDE: s = "/.";  break;
+  case FEQ:     s = "==."; break;
+  case FNEQ:    s = "<>."; break;
+  case FLT:     s = "<.";  break;
+  case FLE:     s = "<=."; break;
+  }
+  return s;
+}
+
+string
+rounding_mode_to_letter_string(const rounding_mode_t rm) {
+  char c = '?';
+  switch (rm) {
+  case ROUND_NEAREST:           c = 'e'; break;
+  case ROUND_NEAREST_AWAY_ZERO: c = 'a'; break;
+  case ROUND_POSITIVE:          c = 'P'; break;
+  case ROUND_NEGATIVE:          c = 'N'; break;
+  case ROUND_ZERO:              c = 'Z'; break;
+  }
+  return string(1, c);
+}
+
+string
+FBinOp::tostring() const
+{
+  string ret;
+  ret = lhs->tostring() + " " + optype_to_string(fbinop_type)
+    + rounding_mode_to_letter_string(rounding_mode) + " " + rhs->tostring();
+  ret = "(" + ret + ")";
+  return ret;
+}
+
+string
+FBinOp::optype_to_name(const fbinop_type_t fbinop_type)
+{
+  string s;
+  switch (fbinop_type) {
+  case FPLUS:   s = "FPLUS";   break;
+  case FMINUS:  s = "FMINUS";  break;
+  case FTIMES:  s = "FTIMES";  break;
+  case FDIVIDE: s = "FDIVIDE"; break;
+  case FEQ:     s = "FEQ";     break;
+  case FNEQ:    s = "FNEQ";    break;
+  case FLT:     s = "FLT";     break;
+  case FLE:     s = "FLE";     break;
+  }
+  return s;
+}
+
+void FBinOp::destroy( FBinOp *expr )
 {
     assert(expr);
 
@@ -275,11 +367,62 @@ void UnOp::destroy( UnOp *expr )
     delete expr;
 }
 
+FUnOp::FUnOp(const FUnOp& copy)
+  : Exp(FUNOP), funop_type(copy.funop_type), rounding_mode(copy.rounding_mode)
+{
+  exp = copy.exp->clone();
+}
+
+FUnOp::FUnOp(funop_type_t typ, rounding_mode_t rm, Exp *e)
+  : Exp(FUNOP), funop_type(typ), rounding_mode(rm), exp(e)
+{
+}
+
+FUnOp *
+FUnOp::clone() const
+{
+  return new FUnOp(*this);
+}
+
+string
+FUnOp::tostring() const
+{
+   string ret;
+   string rm_str = rounding_mode_to_letter_string(rounding_mode);
+   switch(funop_type){
+   case FNEG:
+     ret = "-." + rm_str + " " + exp->tostring();
+     break;
+   }
+   ret = "(" + ret + ")";
+   return ret;
+}
+
+string
+FUnOp::optype_to_string(const funop_type_t op)
+{
+  string ret;
+  switch(op){
+  case FNEG:
+    ret = "FNEG"; break;
+  }
+  return ret;
+}
+
+void FUnOp::destroy( FUnOp *expr )
+{
+    assert(expr);
+
+    Exp::destroy(expr->exp);
+
+    delete expr;
+}
+
 /*
 Mem::Mem(Exp *a)
   : Exp(MEM), addr(a)
 {
-  typ = REG_ADDRESS_T;
+  typ = reg_address_t;
 }
 */
 
@@ -426,6 +569,50 @@ void Phi::destroy( Phi *expr )
     delete expr;
 }
 
+Ite::Ite(Exp *c, Exp *t, Exp *f)
+  : Exp(ITE), cond(c), true_e(t), false_e(f)
+{
+
+}
+
+Ite::Ite(const Ite &copy)
+  : Exp(ITE)
+{
+  cond = copy.cond->clone();
+  true_e = copy.true_e->clone();
+  false_e = copy.false_e->clone();
+}
+
+Ite *
+Ite::clone() const
+{
+  return new Ite(*this);
+}
+
+string
+Ite::tostring() const
+{
+  string ret = "(";
+  ret += cond->tostring();
+  ret += " ? ";
+  ret += true_e->tostring();
+  ret += " : ";
+  ret += false_e->tostring();
+  ret += ")";
+  return ret;
+}
+
+void Ite::destroy( Ite *expr )
+{
+    assert(expr);
+
+    Exp::destroy(expr->cond);
+    Exp::destroy(expr->true_e);
+    Exp::destroy(expr->false_e);
+
+    delete expr;
+}
+
 Temp::Temp(reg_t t, string n) 
   : Exp(TEMP), typ(t), name(n)
 { }
@@ -482,12 +669,12 @@ void Unknown::destroy( Unknown *expr )
 
 Name::Name( string s ) : Exp(NAME), name(s)
 { 
-  //typ = REG_ADDRESS_T;
+  //typ = reg_address_t;
 }
 
 Name::Name( const Name &other ) : Exp(NAME), name(other.name)
 { 
-  //typ = REG_ADDRESS_T;
+  //typ = reg_address_t;
 }
 
 Name *
@@ -546,10 +733,6 @@ string Cast::tostring() const
     case CAST_SIGNED:   tstr = "S"; break;
     case CAST_HIGH:     tstr = "H"; break;
     case CAST_LOW:      tstr = "L"; break;
-    case CAST_FLOAT:    tstr = "F"; break;
-    case CAST_INTEGER:  tstr = "I"; break;
-    case CAST_RFLOAT:   tstr = "RF"; break;
-    case CAST_RINTEGER: tstr = "RI"; break;
     default: 
       cout << "Unrecognized cast type" << endl;
       assert(0);
@@ -563,17 +746,10 @@ string Cast::cast_type_to_string( const cast_t ctype )
   string  tstr;
   switch ( ctype )
   {
-  //!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-  // Do NOT change this. It is used in producing XML output.
-  //!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
     case CAST_UNSIGNED: tstr = "Unsigned"; break;
     case CAST_SIGNED:   tstr = "Signed"; break;
     case CAST_HIGH:     tstr = "High"; break;
     case CAST_LOW:      tstr = "Low"; break;
-    case CAST_FLOAT:    tstr = "Float"; break;
-    case CAST_INTEGER:  tstr = "Integer"; break;
-    case CAST_RFLOAT:   tstr = "ReinterpFloat"; break;
-    case CAST_RINTEGER: tstr = "ReinterpInteger"; break;
     default:
       cout << "Unrecognized cast type" << endl;
       assert(0);
@@ -581,6 +757,118 @@ string Cast::cast_type_to_string( const cast_t ctype )
 
   return tstr;
 }
+
+FCast::FCast( Exp *e, reg_t w, fcast_t t, rounding_mode_t rm )
+  : Exp(FCAST), exp(e), typ(w), fcast_type(t), rounding_mode(rm)
+{ }
+
+FCast::FCast( const FCast &other )
+  : Exp(FCAST), typ(other.typ), fcast_type(other.fcast_type),
+    rounding_mode(other.rounding_mode)
+{
+  exp = other.exp->clone();
+}
+
+FCast *
+FCast::clone() const
+{
+  return new FCast(*this);
+}
+
+void FCast::destroy( FCast *expr )
+{
+    assert(expr);
+
+    Exp::destroy(expr->exp);
+
+    delete expr;
+}
+
+string FCast::tostring() const
+{
+  string wstr, tstr;
+
+  wstr = Exp::string_type(this->typ);
+  string rm_str = rounding_mode_to_letter_string(rounding_mode);
+
+  switch ( fcast_type )
+  {
+    case CAST_SFLOAT:  tstr = "SFloat";  break;
+    case CAST_UFLOAT:  tstr = "UFloat";  break;
+    case CAST_SFIX:    tstr = "SFix";    break;
+    case CAST_UFIX:    tstr = "UFix";    break;
+    case CAST_FWIDEN:  tstr = "FWiden";  break;
+    case CAST_FNARROW: tstr = "FNarrow"; break;
+    default:
+      cout << "Unrecognized FP cast type" << fcast_type << endl;
+      assert(0);
+  }
+  string ret = "cast." + rm_str + "(" + exp->tostring() + ")"
+    + tstr + ":" + wstr;
+  return ret;
+}
+
+string FCast::fcast_type_to_string( const fcast_t ctype )
+{
+  string  tstr;
+  switch ( ctype )
+  {
+    case CAST_SFLOAT:  tstr = "SignedFloat";   break;
+    case CAST_UFLOAT:  tstr = "UnsignedFloat"; break;
+    case CAST_SFIX:    tstr = "SignedFix";     break;
+    case CAST_UFIX:    tstr = "UnsignedFix";   break;
+    case CAST_FWIDEN:  tstr = "FloatWiden";    break;
+    case CAST_FNARROW: tstr = "FloatNarrow";   break;
+    default:
+      cout << "Unrecognized FP cast type" << ctype << endl;
+      assert(0);
+  }
+
+  return tstr;
+}
+
+
+Vector::Vector(Exp *h, Exp *l)
+  : Exp(VECTOR)
+{
+  lanes[1] = h;
+  lanes[0] = l;
+}
+
+Vector::Vector(const Vector &copy)
+  : Exp(VECTOR)
+{
+  lanes[0] = copy.lanes[0]->clone();
+  lanes[1] = copy.lanes[1]->clone();
+}
+
+Vector *
+Vector::clone() const
+{
+  return new Vector(*this);
+}
+
+string
+Vector::tostring() const
+{
+  string ret = "[";
+  ret += lanes[1]->tostring();
+  ret += ", ";
+  ret += lanes[0]->tostring();
+  ret += "]";
+  return ret;
+}
+
+void Vector::destroy( Vector *expr )
+{
+    assert(expr);
+
+    Exp::destroy(expr->lanes[1]);
+    Exp::destroy(expr->lanes[0]);
+
+    delete expr;
+}
+
 
 ///////////////////////////// LET ////////////////////////////////
 Let::Let(Exp *v, Exp *e, Exp *i) : Exp(LET), var(v), exp(e), in(i)
@@ -646,6 +934,10 @@ Constant *ex_const64(uint64_t value )
   return new Constant(REG_64, value);
 }
 
+Constant *ex_addr_const(int64_t value) {
+  return new Constant(reg_address_t, value);
+}
+
 Constant *ex_const(reg_t t, const_val_t value )
 {
     return new Constant(t, value);
@@ -664,8 +956,19 @@ UnOp *_ex_not( Exp *arg )
 
 UnOp *ex_not( Exp *arg )
 {
-  arg = arg->clone();
+    arg = arg->clone();
     return _ex_not(arg);
+}
+
+UnOp *_ex_neg( Exp *arg )
+{
+    return new UnOp(NEG, arg);
+}
+
+UnOp *ex_neg( Exp *arg )
+{
+    arg = arg->clone();
+    return _ex_neg(arg);
 }
 
 BinOp *_ex_add( Exp *arg1, Exp *arg2 )
@@ -714,6 +1017,18 @@ BinOp *ex_div( Exp *arg1, Exp *arg2 )
   arg1 = arg1->clone();
   arg2 = arg2->clone();
   return _ex_div(arg1, arg2);
+}
+
+BinOp *_ex_mod( Exp *arg1, Exp *arg2 )
+{
+    return new BinOp(MOD, arg1, arg2);
+}
+
+BinOp *ex_mod( Exp *arg1, Exp *arg2 )
+{
+  arg1 = arg1->clone();
+  arg2 = arg2->clone();
+  return _ex_mod(arg1, arg2);
 }
 
 BinOp *_ex_and( Exp *arg1, Exp *arg2 )
@@ -862,6 +1177,11 @@ BinOp *_ex_shl( Exp *arg1, Exp *arg2 )
     return new BinOp(LSHIFT, arg1, arg2);
 }
 
+BinOp *_ex_shl( Exp *arg1, int arg2 )
+{
+    return new BinOp(LSHIFT, arg1, ex_const(arg2));
+}
+
 BinOp *ex_shl( Exp *arg1, Exp *arg2 )
 {
     arg1 = arg1->clone();
@@ -878,6 +1198,11 @@ BinOp *ex_shl( Exp *arg1, int arg2 )
 BinOp *_ex_shr( Exp *arg1, Exp *arg2 )
 {
     return new BinOp(RSHIFT, arg1, arg2);
+}
+
+BinOp *_ex_shr( Exp *arg1, int arg2 )
+{
+    return new BinOp(RSHIFT, arg1, ex_const(arg2));
 }
 
 BinOp *ex_shr( Exp *arg1, Exp *arg2 )
@@ -935,11 +1260,21 @@ BinOp *ex_neq( Exp *arg1, Exp *arg2 )
     return new BinOp(NEQ, arg1, arg2);
 }
 
+BinOp *_ex_gt( Exp *arg1, Exp *arg2 )
+{
+    return new BinOp(GT, arg1, arg2);
+}
+
 BinOp *ex_gt( Exp *arg1, Exp *arg2 )
 {
     arg1 = arg1->clone();
     arg2 = arg2->clone();
     return new BinOp(GT, arg1, arg2);
+}
+
+BinOp *_ex_lt( Exp *arg1, Exp *arg2 )
+{
+    return new BinOp(LT, arg1, arg2);
 }
 
 BinOp *ex_lt( Exp *arg1, Exp *arg2 )
@@ -949,6 +1284,11 @@ BinOp *ex_lt( Exp *arg1, Exp *arg2 )
     return new BinOp(LT, arg1, arg2);
 }
 
+BinOp *_ex_ge( Exp *arg1, Exp *arg2 )
+{
+    return new BinOp(GE, arg1, arg2);
+}
+
 BinOp *ex_ge( Exp *arg1, Exp *arg2 )
 {
     arg1 = arg1->clone();
@@ -956,11 +1296,40 @@ BinOp *ex_ge( Exp *arg1, Exp *arg2 )
     return new BinOp(GE, arg1, arg2);
 }
 
+BinOp *_ex_le( Exp *arg1, Exp *arg2 )
+{
+    return new BinOp(LE, arg1, arg2);
+}
+
 BinOp *ex_le( Exp *arg1, Exp *arg2 )
 {   
     arg1 = arg1->clone();
     arg2 = arg2->clone();
     return new BinOp(LE, arg1, arg2);
+}
+
+BinOp *_ex_slt( Exp *arg1, Exp *arg2 )
+{
+    return new BinOp(SLT, arg1, arg2);
+}
+
+BinOp *ex_slt( Exp *arg1, Exp *arg2 )
+{
+    arg1 = arg1->clone();
+    arg2 = arg2->clone();
+    return new BinOp(SLT, arg1, arg2);
+}
+
+BinOp *_ex_sle( Exp *arg1, Exp *arg2 )
+{
+    return new BinOp(SLE, arg1, arg2);
+}
+
+BinOp *ex_sle( Exp *arg1, Exp *arg2 )
+{
+    arg1 = arg1->clone();
+    arg2 = arg2->clone();
+    return new BinOp(SLE, arg1, arg2);
 }
 
 Cast *ex_u_cast( Exp *arg, reg_t width )
@@ -1007,27 +1376,52 @@ Cast *_ex_l_cast( Exp *arg, reg_t width )
     return new Cast(arg, width, CAST_LOW);
 }
 
-Cast *ex_i_cast( Exp *arg, reg_t width )
+FCast *ex_is_cast( Exp *arg, reg_t width )
 {
     arg = arg->clone();
-    return new Cast(arg, width, CAST_INTEGER);
+    return new FCast(arg, width, CAST_SFIX, ROUND_NEAREST);
 }
 
-Cast *ex_f_cast( Exp *arg, reg_t width )
+FCast *ex_iu_cast( Exp *arg, reg_t width )
 {
     arg = arg->clone();
-    return new Cast(arg, width, CAST_FLOAT);
+    return new FCast(arg, width, CAST_UFIX, ROUND_NEAREST);
 }
 
-Cast *ex_ri_cast( Exp *arg, reg_t width )
+FCast *ex_fs_cast( Exp *arg, reg_t width )
 {
     arg = arg->clone();
-    return new Cast(arg, width, CAST_RINTEGER);
+    return new FCast(arg, width, CAST_SFLOAT, ROUND_NEAREST);
 }
 
-Cast *ex_rf_cast( Exp *arg, reg_t width )
+FCast *ex_fu_cast( Exp *arg, reg_t width )
 {
     arg = arg->clone();
-    return new Cast(arg, width, CAST_RFLOAT);
+    return new FCast(arg, width, CAST_UFLOAT, ROUND_NEAREST);
 }
 
+Vector *ex_vector2x64(Exp *h, Exp *l) {
+    h = h->clone();
+    l = l->clone();
+    return new Vector(h, l);
+}
+
+Vector *_ex_vector2x64(Exp *h, Exp *l) {
+    return new Vector(h, l);
+}
+
+Ite *_ex_ite( Exp *c, Exp *t, Exp *f) {
+    return new Ite(c, t, f);
+}
+
+Ite *ex_ite( Exp *c, Exp *t, Exp *f) {
+    return _ex_ite(c->clone(), t->clone(), f->clone());
+}
+
+Exp *_ex_get_bit(Exp *e, int which) {
+    return _ex_l_cast(_ex_shr(e, ex_const(REG_32, which)), REG_1);
+}
+
+Exp *ex_get_bit(Exp *e, int which) {
+    return _ex_get_bit(ecl(e), which);
+}

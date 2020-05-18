@@ -183,9 +183,11 @@ rule token = parse
   | ">="         { GE } 
   | ">$"         { SGT } 
   | ">=$"        { SGE } 
+  | "@"          { CONCAT }
   | '!'          { NOT }
   | "="          { ASSIGN }
   | ':'          { COLON } 
+  | '?'          { QUESTION }
   | ';'          { SEMI }
   | '('          { LPAREN }
   | ')'          { RPAREN }

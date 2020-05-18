@@ -49,7 +49,7 @@ sig
 
     method eval_expr : Vine.exp -> int64
 
-    method eval_expr_from_ce : (string * int64) list -> Vine.exp -> int64
+    method eval_expr_from_ce : Query_engine.sat_assign -> Vine.exp -> int64
 
     method concolic_eval_1  : D.t -> int
     method concolic_eval_8  : D.t -> int
@@ -68,12 +68,22 @@ sig
     method simplify_with_callback :
       (Vine.exp -> Vine.typ -> Vine.exp option) -> D.t -> Vine.typ -> D.t
 
+    method tempify_exp : Vine.exp -> Vine.typ -> Vine.exp
+
+    method tempify1  : D.t -> D.t
+    method tempify8  : D.t -> D.t
+    method tempify16 : D.t -> D.t
+    method tempify32 : D.t -> D.t
+    method tempify64 : D.t -> D.t
+
+    method tempify_with_callback :
+      (Vine.exp -> Vine.typ -> Vine.exp option) -> D.t -> Vine.typ -> D.t
+
     method make_ite : D.t -> Vine.typ -> D.t -> D.t -> D.t
 
-    method if_expr_temp_unit : Vine.var -> (Vine.exp option -> unit) -> unit
+    method make_table_lookup : (D.t list) -> Vine.exp -> int -> Vine.typ -> D.t
 
-    method walk_temps : (Vine.var -> Vine.exp -> (Vine.var * Vine.exp)) ->
-      Vine.exp -> (Vine.var list * (Vine.var * Vine.exp) list)
+    method if_expr_temp_unit : Vine.var -> (Vine.exp option -> unit) -> unit
 
     method collect_for_solving : (Vine.var * Vine.exp) list ->
       Vine.exp list -> Vine.exp ->
@@ -81,8 +91,7 @@ sig
 	 Vine.exp * Vine.var list)
 
     method one_cond_for_solving : Vine.exp -> unit Vine.VarHash.t ->
-      Vine.var list * (Vine.var * Vine.exp) list * Vine.exp *
-        Vine.var list
+      Query_engine.qe_decl list * Vine.exp * Vine.var list
 
     method measure_size : (int * int)
   end

@@ -8,16 +8,41 @@ open Exec_exceptions;;
 open Exec_options;;
 
 type decision_tree_node = {
+  (* Only the root has parent = None *)
   mutable parent : dt_node_ref option;
+
   (* None: unexplored; Some None: unsat; Some Some n: sat *)
   mutable f_child : dt_node_ref option option;
   mutable t_child : dt_node_ref option option;
+
+  (* Initially false. If true, the full subtree rooted at this node
+     has been completely explored, and so shouldn't be revisited. *)
   mutable all_seen : bool;
+
+  (* In the presence of multi-way choices like pointer concretization,
+     we need a partial subtree of multiple nodes to represent a
+     3-or-more-way decision. This leads to an abstraction of a multi-way
+     tree built on top of the underlying binary tree. The binary tree
+     nodes that represent the roots of the multi-way partial subtrees
+     have query_children = Some n, while all the other binary tree nodes
+     have query_children = None. The value of n in Some n is the number
+     of multi-way tree children that have been explored. *)
   mutable query_children : int option;
+
+  (* Initially false. Set to true at the point a node is counted as
+     one of the query_children (see above) of a multi-way choice. *)
   mutable query_counted : bool;
+
   mutable heur_min : int;
   mutable heur_max : int;
-  mutable ident : int }
+
+  (* Numeric identifier of a decision tree node. We use these instead
+     of pointers as "dt_node_ref"s so that the tree can use a more
+     compact representation. It serves as a sequential index into either
+     an in-memory array of string representations or an on-disk file. *)
+  mutable ident : int;
+
+  mutable eip_loc : int64 }
 and
   dt_node_ref = int
 
@@ -49,23 +74,24 @@ let dt_node_to_string n =
   let flags_int = (if n.all_seen then 1 else 0) +
     (if n.query_counted then 2 else 0)
   in
-  let s = Printf.sprintf "%08x%c%08x%08x%08x%08x%04x"
+  let s = Printf.sprintf "%08x%c%08x%08x%08x%08x%04x%016Lx"
     (parent_int land mask_32bits_int) (Char.chr (0x40 + flags_int))
     (f_child_int land mask_32bits_int) (t_child_int land mask_32bits_int)
     (n.heur_min land mask_32bits_int) (n.heur_max land mask_32bits_int)
-    (query_children_int land 0xffff) in
-    assert(String.length s = 45);
+    (query_children_int land 0xffff) n.eip_loc in
+    assert(String.length s = 61);
     s
 
 let string_to_dt_node ident_arg s =
-  assert(String.length s = 45);
+  assert(String.length s = 61);
   let parent_str = String.sub s 0 8 and
       flags_char = s.[8] and
       f_child_str = String.sub s 9 8 and
       t_child_str = String.sub s 17 8 and
       heur_min_str = String.sub s 25 8 and
       heur_max_str = String.sub s 33 8 and
-      query_children_str = String.sub s 41 4
+      query_children_str = String.sub s 41 4 and
+      eip_loc_str = String.sub s 45 16
   in
   let int_of_hex_string s = int_of_string ("0x" ^ s) in
   let parent_int = int_of_hex_string parent_str and
@@ -74,7 +100,8 @@ let string_to_dt_node ident_arg s =
       t_child_int = int_of_hex_string t_child_str and
       heur_min_int = int_of_hex_string heur_min_str and
       heur_max_int = int_of_hex_string heur_max_str and
-      query_children_int = int_of_hex_string query_children_str
+      query_children_int = int_of_hex_string query_children_str and
+      eip_loc_i64 = Int64.of_string ("0x" ^ eip_loc_str)
   in
   let parent_o = match parent_int with
     | 0 -> None
@@ -104,7 +131,7 @@ let string_to_dt_node ident_arg s =
      query_children = query_children_o; query_counted = query_counted_bool;
      heur_min = maybe_negative_one heur_min_int;
      heur_max = maybe_negative_one heur_max_int;
-     all_seen = all_seen_bool; ident = ident_arg}
+     all_seen = all_seen_bool; ident = ident_arg; eip_loc = eip_loc_i64}
 
 let next_dt_ident = ref 0
 
@@ -125,13 +152,13 @@ let nodes_fd () =
 
 let ident_to_node i =
   if !opt_decision_tree_use_file then
-    ((let off = Unix.lseek (nodes_fd ()) (46 * (i-1)) Unix.SEEK_SET in
-	assert(off = 46 * (i-1)));
-     let buf = String.create 46 in
-     let len = Unix.read (nodes_fd ()) buf 0 46 in
-       assert(len = 46);
+    ((let off = Unix.lseek (nodes_fd ()) (54 * (i-1)) Unix.SEEK_SET in
+	assert(off = 54 * (i-1)));
+     let buf = String.create 54 in
+     let len = Unix.read (nodes_fd ()) buf 0 54 in
+       assert(len = 54);
        assert(String.sub buf 45 1 = "\n");
-       string_to_dt_node i (String.sub buf 0 45))
+       string_to_dt_node i (String.sub buf 0 53))
   else
     let i3 = i land 1023 and
 	i2 = (i asr 10) land 1023 and
@@ -184,6 +211,7 @@ let print_node chan n =
       Printf.fprintf chan "(%d %d) " n.heur_min n.heur_max
     else
       Printf.fprintf chan "(X) ";
+    Printf.fprintf chan "at 0x%08Lx " n.eip_loc;
     Printf.fprintf chan "%s\n"
       (match n.query_children with
 	 | None -> "[]"
@@ -196,10 +224,10 @@ let update_dt_node n =
      print_node stdout n);
   if !opt_decision_tree_use_file then
     let i = n.ident in 
-      (let off = Unix.lseek (nodes_fd ()) (30 * (i-1)) Unix.SEEK_SET in
-	 assert(off = 30 * (i-1)));
-      let len = Unix.write (nodes_fd ()) (dt_node_to_string n ^ "\n") 0 30 in
-	assert(len = 30);
+      (let off = Unix.lseek (nodes_fd ()) (54 * (i-1)) Unix.SEEK_SET in
+	 assert(off = 54 * (i-1)));
+      let len = Unix.write (nodes_fd ()) (dt_node_to_string n ^ "\n") 0 54 in
+	assert(len = 54);
   else
     let i3 = n.ident land 1023 and
 	i2 = (n.ident asr 10) land 1023 and
@@ -242,7 +270,7 @@ let new_dt_node the_parent =
        f_child = None; t_child = None;
        query_children = None; query_counted = false;
        heur_min = 0x3fffffff; heur_max = -1;
-       all_seen = false; ident = i}
+       all_seen = false; ident = i; eip_loc = 0L}
     in
       update_dt_node node;
       node
@@ -270,6 +298,10 @@ let put_t_child n k =
        | Some (Some k') -> Some (Some (ref_dt_node k')));
   update_dt_node n
 
+let put_eip_loc n loc =
+  n.eip_loc <- loc;
+  update_dt_node n
+
 (* This hash algorithm is FNV-1a,
    c.f. http://www.isthe.com/chongo/tech/comp/fnv/index.html *)
 let hash_round h x =
@@ -280,8 +312,21 @@ class binary_decision_tree = object(self)
   inherit Decision_tree.decision_tree
 
   val root_ident = (new_dt_node None).ident
-  val mutable cur = new_dt_node None (* garbage *)
+
+  (* "cur" is the core changing state that points to the decision tree
+     node corresponding to the current point on some execution path. On a
+     typical path, it will start by traversing a path through the
+     existing tree down from the root, and then it points to the newly
+     created nodes on the new segment of a path. To satisfy OCaml's type
+     system and intialization rules, we have to first initialize this
+     field referring to a dummy node that will never be used. *)
+  val mutable cur = new_dt_node None (* this initial value is garbage *)
+
+  (* "cur_query" is similar to "cur", but it corresponds to the
+     multi-choice structure of the tree, so it trails "cur" and skips
+     over nodes with query_children = None. *)
   val mutable cur_query = new_dt_node None (* garbage *)
+
   val mutable depth = 0
   val mutable path_hash = Int64.to_int32 0x811c9dc5L
   val mutable iteration_count = 0
@@ -384,6 +429,11 @@ class binary_decision_tree = object(self)
 
   method get_depth = depth
 
+  method private forget_unsat b =
+    if !opt_trace_decision_tree then
+      Printf.printf "DT: Forgetting unsat of %B child to %d\n" b cur.ident;
+    (if b then put_t_child else put_f_child) cur None
+
   method add_kid b =
     if !opt_trace_decision_tree then
       Printf.printf "DT: Adding %B child to %d\n" b cur.ident;
@@ -401,8 +451,18 @@ class binary_decision_tree = object(self)
       | (true,  _, Some None) ->
 	  failwith "Tried to extend an unsat branch"
 
+  (* Calls to start_new_query(_binary)? and count_query should
+     alternate along each execution path, delimiting the one or more
+     binary choices that are treated as part of one multi-way choice. *)
   method start_new_query =
+    (* A failure of the following assertion generally means that you
+       did start_new_query, then created some new decision tree nodes,
+       then called start_new_query again. You need to call count_query
+       after the first decisions, and before calling start_new_query
+       again. *)
     assert(cur.query_children <> None);
+    if !opt_trace_decision_tree then
+      Printf.printf "DT: New query, updating cur_query to cur %d\n" cur.ident;
     cur_query <- cur
 
   method start_new_query_binary =
@@ -458,9 +518,9 @@ class binary_decision_tree = object(self)
     self#add_kid b;
     path_hash <- hash_round path_hash (if b then 49 else 48);
     (let h = Int32.to_int path_hash in
-      (if !opt_trace_randomness then
-	 Printf.printf "Setting random state to %08x\n" h;
-       randomness <- Random.State.make [|!opt_random_seed; h|]));
+       (if !opt_trace_randomness then
+	  Printf.printf "Setting random state to %08x\n" h;
+	randomness <- Random.State.make [|!opt_random_seed; h|]));
     (match (b, get_f_child cur, get_t_child cur) with
        | (false, Some(Some kid), _) -> cur <- kid
        | (true,  _, Some(Some kid)) -> cur <- kid
@@ -488,6 +548,12 @@ class binary_decision_tree = object(self)
 	Printf.printf "Flipping a floating coin to get %f\n" f;
       f
 
+  method random_byte =
+    let b = Random.State.int randomness 256 in
+      if !opt_trace_randomness then
+	Printf.printf "Rolling a 256-sided die to get %d\n" b;
+      b
+
   method record_unsat b =
     match (b, get_f_child cur, get_t_child cur) with
       | (false, None, _) ->
@@ -501,7 +567,8 @@ class binary_decision_tree = object(self)
 	  failwith "Trying to make sat branch unsat in record_unsat"
 
   method try_extend (trans_func : bool -> V.exp)
-    try_func (non_try_func : bool -> unit) (random_bit_gen : unit -> bool) =
+    try_func (non_try_func : bool -> unit) (random_bit_gen : unit -> bool)
+    both_fail_func eip_loc =
     let known b = 
       non_try_func b;
       self#extend b;
@@ -540,9 +607,23 @@ class binary_decision_tree = object(self)
 	     (self#extend (not b);
 	      ((not b), c'))
 	   else
-	     failwith "Both branches unsat in try_extend")
+	     let b' = both_fail_func b in
+	       self#forget_unsat b';
+	       self#extend b';
+	       (b', trans_func b'))
     in
       assert(not cur.all_seen);
+      if cur.eip_loc <> 0L && cur.eip_loc <> eip_loc then
+	(* For a discussion of why we have this check, and how to interpret
+	   the .%04Lx values, see the comment before SPFM.eip_ident *)
+	Printf.printf
+	  ("Decision tree inconsistency: node " ^^
+	     "%d was 0x%08Lx.%04Lx and then %08Lx.%04Lx\n")
+	  cur.ident
+	  (Int64.shift_right cur.eip_loc 16) (Int64.logand cur.eip_loc 0xffffL)
+	  (Int64.shift_right eip_loc 16) (Int64.logand eip_loc 0xffffL);
+      assert(cur.eip_loc = 0L || cur.eip_loc = eip_loc);
+      put_eip_loc cur eip_loc;
       let limited = match cur_query.query_children with 
 	| Some k when k >= !opt_query_branch_limit -> true
 	| _ -> false
@@ -619,7 +700,12 @@ class binary_decision_tree = object(self)
       (* check the invariant that a node can only be marked all_seen
 	 if all of its children are. *)
       (match get_f_child n with
-	 | Some(Some kid) -> assert(kid.all_seen);
+	 | Some(Some kid) ->
+	     if not kid.all_seen then
+	       (Printf.printf "all_seen invariant failure: parent %d is all seen, but not true child %d%!\n"
+		  n.ident kid.ident;
+		self#print_tree stdout;
+		assert(kid.all_seen));
 	 | _ -> ());
       (match get_t_child n with
 	 | Some(Some kid) ->
@@ -737,15 +823,15 @@ class binary_decision_tree = object(self)
 	      t_max = kid_t.heur_max in
 	    if !opt_trace_guidance then
 	      Printf.printf
-		"Heuristic choice between F[%d, %d] and T[%d, %d]\n"
-		f_min f_max t_min t_max;
+		"Heuristic choice between F[%d, %d] and T[%d, %d] (cur %d)\n"
+		f_min f_max t_min t_max cur_heur;
 	    if f_min > f_max || t_min > t_max then
 	      (* Only one side explored, no basis to choose *)
 	      None
-	    else if !opt_target_guidance = 2.0 then
-	      if cur_heur <= 1 then
-		(* Don't apply guidance before we have any estimate
-		   of the value of this path *)
+	    else if !opt_target_guidance >= 2.0 then
+	      if !opt_target_guidance = 2.0 && cur_heur <= 1 then
+		(* At 2.0, don't apply guidance before we have any
+		   estimate of the value of this path *)
 		None
 	      (* Only prefer branches that lead to the best state(s)
 		 we've ever seen *)

@@ -6,7 +6,8 @@ AC_INIT(Vine/FuzzBALL, 20130511, bitblaze-users@googlegroups.com)
 AC_CONFIG_SRCDIR([libasmir/src/vex/vexir.cpp])
 AC_CONFIG_HEADER([libasmir/config.h])
 
-AM_INIT_AUTOMAKE
+# "foreign" means, for our purposes, "don't complain about missing NEWS, etc."
+AM_INIT_AUTOMAKE([-Wall subdir-objects foreign])
 
 m4_include([./m4/ac_ocaml.m4])
 
@@ -14,6 +15,13 @@ m4_include([./m4/ac_ocaml.m4])
 AC_PROG_CXX
 AC_PROG_CC
 AC_PROG_MAKE_SET
+# If automake defines a special version of AR, request it. The main reason
+# for this is to silence a warning with newer automake versions and -Wall,
+# so we can leave -Wall turned on for other future warnings. The purpose
+# of the underlying feature is to improve portability to systems whose
+# "ar" is not Unix-like. It's not needed now, but might be useful if
+# we ever port Windows, say.
+m4_ifdef([AM_PROG_AR], [AM_PROG_AR])
 AC_PROG_RANLIB
 AC_PROG_OCAML
 AC_PROG_OCAMLFIND
@@ -71,6 +79,11 @@ if test -e "${VEX_DIR}/priv/main/vex_svnversion.h"; then
     VEX_VERSION=`tr -d \" <"${VEX_DIR}/priv/main/vex_svnversion.h"`
 fi
 
+if test -e "${VEX_DIR}/../.git" -a -e "${VEX_DIR}/../Makefile.vex.am"; then
+    VEX_VERSION=$(expr 3400 + $(cd ${VEX_DIR}/..; git rev-list --first-parent HEAD --count -- VEX) - $(cd ${VEX_DIR}/..; git rev-list --first-parent HEAD --author 'umn\.edu' --count -- VEX) )
+    echo Determined VEX version as ${VEX_VERSION} from git
+fi
+
 if test "${VEX_VERSION}" = ""; then
     echo "Could not determine VEX version (override with --with-vex-revision=<num>)"
     exit -1
@@ -120,6 +133,19 @@ else
 	LDFLAGS="-L$with_binutils/lib -L$with_binutils/bfd -L$with_binutils/libiberty $LDFLAGS"
 fi
 
+AC_COMPILE_IFELSE([AC_LANG_PROGRAM(
+        [#include <bfd.h>
+#include <dis-asm.h>],
+        [disassembler_ftype d = disassembler(0);])],
+    [AC_DEFINE([HAVE_FUNC_DISASSEMBLER_1], [1],
+               [Define to 1 if your libopcodes disassembler() takes one argument.])])
+
+AC_COMPILE_IFELSE([AC_LANG_PROGRAM(
+        [#include <bfd.h>
+#include <dis-asm.h>],
+        [disassembler_ftype d = disassembler(0, 0, 0, 0);])],
+    [AC_DEFINE([HAVE_FUNC_DISASSEMBLER_4], [1],
+               [Define to 1 if your libopcodes disassembler() takes four arguments.])])
 
 # Checks for libraries.
 AC_CHECK_LIB([bfd], [bfd_init])

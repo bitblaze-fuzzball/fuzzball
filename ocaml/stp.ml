@@ -119,6 +119,29 @@ object (self)
     ignore(exp_accept (self :> vine_visitor) e);
     puts ";\n"
 
+  method assert_array_contents ((vn, vs, vt) as v) el =
+    let len = List.length el in
+    let len64 = Int64.of_int len in
+    let idx_ty = index_type vt in
+    let v_s = var2s v in
+    let idx = ref 0 in
+      (match vt with
+         | Array(_, size) when size = len64
+             -> () (* as expected *)
+         | _ -> failwith "Unexpected variable type in assert_array_contents");
+      List.iter
+        (fun e ->
+	   let idx_e = Constant(Int(idx_ty, (Int64.of_int !idx))) in
+	     puts "ASSERT(";
+	     puts v_s;
+	     puts "[";
+	     ignore(exp_accept (self :> vine_visitor) idx_e);
+	     puts "] = ";
+	     ignore(exp_accept (self :> vine_visitor) e);
+	     puts ");\n";
+	     incr idx
+	) el
+
   method declare_freevars e =
     let () = puts "% free variables: \n" in
     let fvs = get_req_ctx e in 
@@ -443,20 +466,20 @@ object (self)
       | BinOp(BITOR,
 	      BinOp(BITAND, Cast(CAST_SIGNED, ty1, cond1), x),
 	      BinOp(BITAND, UnOp(NOT, Cast(CAST_SIGNED, ty2, cond2)), y))
-      | BinOp(BITOR,
-	      BinOp(BITAND, x, Cast(CAST_SIGNED, ty1, cond1)),
-	      BinOp(BITAND, UnOp(NOT, Cast(CAST_SIGNED, ty2, cond2)), y))
-      | BinOp(BITOR,
-	      BinOp(BITAND, Cast(CAST_SIGNED, ty1, cond1), x),
-	      BinOp(BITAND, y, UnOp(NOT, Cast(CAST_SIGNED, ty2, cond2))))
-      | BinOp(BITOR,
-	      BinOp(BITAND, x, Cast(CAST_SIGNED, ty1, cond1)),
-	      BinOp(BITAND, y, UnOp(NOT, Cast(CAST_SIGNED, ty2, cond2))))
 	  when ty1 = ty2 && cond1 = cond2 &&
 	    (Vine_typecheck.infer_type_fast cond1) = REG_1
 	    ->
 	  (puts "IF ";
 	   ignore(exp_accept (self :> vine_visitor) cond1);
+	   puts " THEN ";
+	   ignore(exp_accept (self :> vine_visitor) x);
+	   puts " ELSE ";
+	   ignore(exp_accept (self :> vine_visitor) y);
+	   puts " ENDIF";
+	   SkipChildren);
+      | Ite(cond, x, y) ->
+	  (puts "IF ";
+	   ignore(exp_accept (self :> vine_visitor) cond);
 	   puts " THEN ";
 	   ignore(exp_accept (self :> vine_visitor) x);
 	   puts " ELSE ";
@@ -500,6 +523,7 @@ object (self)
 	    | (SLT, _)         -> ("BVSLT(", ", ", ")", false)
 	    | (SLE, REG_1)     -> ("(", " OR (NOT ", "))", false)
 	    | (SLE, _)         -> ("BVSLE(", ", ", ")", false)
+	    | (CONCAT, _)      -> ("(", " @ ", ")", true)
 	    | (LSHIFT, _)
 	    | (ARSHIFT, _)
 	    | (RSHIFT, _) ->
@@ -589,6 +613,10 @@ object (self)
 	  unknown_counter <- unknown_counter + 1;
 	  DoChildren
       | Name _ -> raise (Invalid_argument "Names should be here") 
+      | FUnOp(_, _, _)
+      | FBinOp(_, _, _, _)
+      | FCast(_, _, _, _)
+	-> raise (Invalid_argument "STP does not support floating point")
 
 (*
       | Name of string

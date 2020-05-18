@@ -11,6 +11,16 @@ type gamma = ctx option
 (** [tint t] true iff [t] is an integer type *)
 val tint : Vine.typ -> bool
 
+(** [tfloat t] is true iff [t] is a type that can holding a
+    floating-point value *)
+val tfloat : Vine.typ -> bool
+
+(** [tfcast_int] is true if [t] is type that can be the integer in a
+    case between an integer and a floating point value (either
+    direction). It's sort of a coincidence that these are currently the
+    same types as tfloat above. *)
+val tfcast_int : Vine.typ -> bool
+
 (** [tcompat t1 t2] true if t1 compatible with t2, e.g., only differ
   on attributes. *)
 val tcompat : Vine.typ -> Vine.typ -> bool

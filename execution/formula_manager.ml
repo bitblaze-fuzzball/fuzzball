@@ -4,12 +4,17 @@
 *)
 
 module V = Vine
+module QE = Query_engine
 
 open Exec_domain
 open Exec_exceptions
 open Exec_options
 open Frag_simplify
 open Frag_marshal
+
+let reg_addr () = match !opt_arch with
+  | (X86|ARM) -> V.REG_32
+  | X64 -> V.REG_64
 
 module VarWeak = Weak.Make(VarByInt)
 
@@ -29,6 +34,15 @@ let list_unique l =
   in
     (loop l)
 
+let list_where elt l =
+  let rec loop pos l =
+    match l with
+      | (a :: r) when a = elt -> pos
+      | (a :: r) -> loop (pos + 1) r
+      | [] -> failwith "Not present in list_where"
+  in
+    loop 0 l
+
 let cf_eval e =
   match Vine_opt.constant_fold (fun _ -> None) e with
     | V.Constant(V.Int(_, _)) as c -> c
@@ -45,6 +59,17 @@ let disjoin l =
   match l with
     | [] -> V.exp_false
     | e :: el -> List.fold_left (fun a b -> V.BinOp(V.BITOR, a, b)) e el
+
+let xorjoin l =
+  match l with
+    | [] -> V.exp_false
+    | e :: el -> List.fold_left (fun a b -> V.BinOp(V.XOR, a, b)) e el
+
+let qe_decl_var =
+  function
+    | QE.InputVar(v) -> v
+    | QE.TempVar(v, e) -> v
+    | QE.TempArray(v, el) -> v
 
 module FormulaManagerFunctor =
   functor (D : Exec_domain.DOMAIN) ->
@@ -102,7 +127,16 @@ struct
 	  | V.Lval(V.Temp((_, _, V.REG_64) as var)) -> maybe_recurse e var 64
 	  | _ -> f recurse e
     in
-      f recurse e
+      recurse e
+
+  let to_symbolic v ty =
+    match ty with
+      | V.REG_1  -> D.to_symbolic_1  v
+      | V.REG_8  -> D.to_symbolic_8  v
+      | V.REG_16 -> D.to_symbolic_16 v
+      | V.REG_32 -> D.to_symbolic_32 v
+      | V.REG_64 -> D.to_symbolic_64 v
+      | _ -> failwith "Unexpected type in FM.to_symbolic"
 
   class formula_manager = object(self)
     val input_vars = Hashtbl.create 30
@@ -134,7 +168,7 @@ struct
 
     method fresh_region_base s =
       assert(not (Hashtbl.mem region_base_vars s));
-      let var = self#fresh_symbolic_var s V.REG_32 in
+      let var = self#fresh_symbolic_var s (reg_addr ()) in
 	Hashtbl.replace region_base_vars s var;
 	D.from_symbolic (V.Lval(V.Temp(var)))
 
@@ -195,7 +229,7 @@ struct
 
     method fresh_region_base_concolic s v =
       assert(not (Hashtbl.mem region_base_vars s));
-      let var = self#fresh_symbolic_var s V.REG_32 in
+      let var = self#fresh_symbolic_var s (reg_addr ()) in
 	Hashtbl.replace region_base_vars s var;
 	ignore(self#make_concolic_32 s v);
 	D.from_symbolic (V.Lval(V.Temp(var)))
@@ -267,7 +301,7 @@ struct
       let wvar0 = self#mem_var region_str V.REG_32 addr and
 	  wvar1 = self#mem_var region_str V.REG_32 (Int64.add addr 4L) in
 	[lvar, D.to_symbolic_64
-	   (D.assemble32 (D.from_symbolic (V.Lval(V.Temp(wvar0))))
+	   (D.assemble64 (D.from_symbolic (V.Lval(V.Temp(wvar0))))
 	      (D.from_symbolic (V.Lval(V.Temp(wvar1)))))]
 	@ (self#mem_axioms_word region_str addr wvar0)
 	@ (self#mem_axioms_word region_str (Int64.add addr 4L) wvar1)
@@ -290,29 +324,83 @@ struct
 	      al;
 	    assert(V.VarHash.mem mem_axioms var);
 
-    method private rewrite_mem_expr e =
+    (* State about "tables" of values, as used for loads from memory
+       when -table-limit has a positive value. A table is a list of
+       symbolic expressions that occurred sequentially in memory; its
+       length is always a power of two. (A common case is for all the
+       values to be concrete, like a character translation table.) The
+       way tables are translated for the SMT solver depends on the
+       -tables-as-arrays option. If it's off, each access to a table is
+       expanded into a tree of if-then-else choices on the bits of the
+       index. If -tables-as-arrays is set, a table is translated into an
+       SMT variable with an array type, and any access can be translated
+       symbolically. In this latter case, the table is represented by a
+       Vine variable with Array type. We keep track of all the unique
+       tables we've seen, and number them sequentially starting from 0.
+       We also use lists to keep track of information about tables, which
+       is reasonable because we generally don't create very many.
+    *)
+
+    (* The i-th entry in this list is the Vine variable that
+       represents the i-th table. It has a name like "table5", and its
+       type tells you the length of the table (currently always a power
+       of two) and the element type (REG_8/16/32/64). *)
+    val mutable table_vars = []
+    (* The i-th entry in this list gives the contents of the i-th table
+       as a list of Vine expressions. *)
+    val mutable tables_by_idx : V.exp list list = []
+    (* This hash table maps from the contents of a table to its number;
+       it's how we avoid creating the same table more than once. It's
+       roughly the inverse mapping to tables_by_idx, though the contents
+       are stored as domain elements because that is more convenient for
+       the fragment machine code that creates them. *)
+    val tables : (D.t list, int) Hashtbl.t = Hashtbl.create 101
+    val tables_cache_limit = 1000000L
+
+    (* The Vine expression memory-access syntax is used for two
+       slightly different purposes is FuzzBALL symbolic expressions:
+       representing indexing into tables, and representing accesses to
+       variable-granularity memory. You can tell you are in the former
+       case if the memory variable is in table_vars. Variable-granularity
+       memory is translated by the formula manager into scalar variables
+       of various granularities which are related to each other by
+       constraints called "mem_axioms" here. Table indexing is kept
+       distinct until the solver interface when it is translated into an
+       SMTLIB "select" array operator or the equivalent for other
+       solvers. This method only performs the latter rewriting. 
+       The former rewriting should be handled by callers of this method. *)
+    method private rewrite_mem_to_scalar e =
       match e with
 	| V.Lval(V.Mem((_,region_str,ty1),
-		       V.Constant(V.Int(V.REG_32, addr)), ty2))
+		       V.Constant(V.Int((V.REG_32|V.REG_64), addr)), ty2))
 	  -> (self#add_mem_axioms region_str ty2 addr;
 	      V.Lval(V.Temp(self#mem_var region_str ty2 addr)))
-	| _ -> failwith "Bad expression in rewrite_mem_expr"
+	| _ -> failwith ("Bad expression " ^ (V.exp_to_string e) ^
+			   " in rewrite_mem_to_scalar")
 
     method rewrite_for_solver e =
       let rec loop e =
 	match e with
 	  | V.BinOp(op, e1, e2) -> V.BinOp(op, (loop e1), (loop e2))
+	  | V.FBinOp(op, rm, e1, e2) -> V.FBinOp(op, rm, (loop e1), (loop e2))
 	  | V.UnOp(op, e1) -> V.UnOp(op, (loop e1))
+	  | V.FUnOp(op, rm, e1) -> V.FUnOp(op, rm, (loop e1))
 	  | V.Constant(_) -> e
 	  | V.Lval(V.Temp(_)) -> e
-	  | V.Lval(V.Mem(_, _, _)) -> self#rewrite_mem_expr e
+	  | V.Lval(V.Mem(table_var, idx_e, elt_ty))
+	      when List.mem table_var table_vars ->
+	    V.Lval(V.Mem(table_var, (loop idx_e), elt_ty))
+	  | V.Lval(V.Mem(_, _, _)) -> self#rewrite_mem_to_scalar e
 	  | V.Name(_) -> e
 	  | V.Cast(kind, ty, e1) -> V.Cast(kind, ty, (loop e1))
+	  | V.FCast(kind, rm, ty, e1) -> V.FCast(kind, rm, ty, (loop e1))
 	  | V.Unknown(_) -> e
 	  | V.Let(V.Temp(v), e1, e2) ->
 	      V.Let(V.Temp(v), (loop e1), (loop e2))
 	  | V.Let(V.Mem(_,_,_), _, _) ->	      
 	      failwith "Unexpected memory let in rewrite_for_solver"
+	  | V.Ite(ce, te, fe) ->
+	      V.Ite((loop ce), (loop te), (loop fe))
       in
 	loop e
 
@@ -414,8 +502,12 @@ struct
       let rec loop e =
 	match e with
 	  | V.BinOp(op, e1, e2) -> cf_eval (V.BinOp(op, loop e1, loop e2))
+	  | V.FBinOp(op, rm, e1, e2)
+	    -> cf_eval (V.FBinOp(op, rm, loop e1, loop e2))
 	  | V.UnOp(op, e1) -> cf_eval (V.UnOp(op, loop e1))
+	  | V.FUnOp(op, rm, e1) -> cf_eval (V.FUnOp(op, rm, loop e1))
 	  | V.Cast(op, ty, e1) -> cf_eval (V.Cast(op, ty, loop e1))
+	  | V.FCast(op, rm, ty, e1) -> cf_eval (V.FCast(op, rm, ty, loop e1))
 	  | V.Lval(V.Mem(_, _, ty) as lv) ->
 	      let d = self#eval_var lv in
 	      let v = match ty with
@@ -435,6 +527,9 @@ struct
 		     let (e_enc, _) = Hashtbl.find temp_var_num_to_subexpr n in
 		     let e' = loop (decode_exp e_enc)
 		     in
+		       if !opt_trace_temps then
+			 Printf.printf "%s evaluates to %s\n"
+			   s (V.exp_to_string e');
 		       Hashtbl.replace temp_var_num_evaled n e';
 		       e')
 	  | V.Lval(V.Temp(n,s,ty) as lv) ->
@@ -446,8 +541,13 @@ struct
 		| V.REG_64 -> D.to_concrete_64 d
 		| _ -> failwith "Unexpected type in eval_expr"
 	      in
-		V.Constant(V.Int(ty, v))	      
-	  | _ ->
+		V.Constant(V.Int(ty, v))
+	  | V.Ite(ce, te, fe) -> cf_eval (V.Ite(loop ce, loop te, loop fe))
+	  | V.Let(_, _, _)
+	  | V.Unknown(_)
+	  | V.Name(_)
+	  | V.Constant(V.Str(_))
+	    ->
 	      Printf.printf "Can't evaluate %s\n" (V.exp_to_string e);
 	      failwith "Unexpected expr in eval_expr"
       in
@@ -475,7 +575,7 @@ struct
     method private eval_var_from_ce ce lv =
       match lv with
 	| V.Temp(_, s, ty) ->
-	    let v = try List.assoc s ce 
+	    let v = try Query_engine.ce_lookup_nf ce s
 	    with Not_found ->
 	      0L 
 	      (* Printf.printf "Missing var %s in counterexample\n" s;
@@ -492,8 +592,12 @@ struct
       let rec loop e =
 	match e with
 	  | V.BinOp(op, e1, e2) -> cf_eval (V.BinOp(op, loop e1, loop e2))
+	  | V.FBinOp(op, rm, e1, e2)
+	    -> cf_eval (V.FBinOp(op, rm, loop e1, loop e2))
 	  | V.UnOp(op, e1) -> cf_eval (V.UnOp(op, loop e1))
+	  | V.FUnOp(op, rm, e1) -> cf_eval (V.FUnOp(op, rm, loop e1))
 	  | V.Cast(op, ty, e1) -> cf_eval (V.Cast(op, ty, loop e1))
+	  | V.FCast(op, rm, ty, e1) -> cf_eval (V.FCast(op, rm, ty, loop e1))
 	  | V.Constant(V.Int(_, _)) -> e
 	  | V.Lval(V.Temp(n,s,t))
 	      when Hashtbl.mem temp_var_num_to_subexpr n ->
@@ -505,22 +609,42 @@ struct
 		     in
 		       Hashtbl.replace memo n e';
 		       e')
-	  | V.Lval(V.Mem(_, _, _)) -> loop (self#rewrite_mem_expr e)
+	  | V.Lval(V.Mem(table_var, idx_e, elt_ty))
+	      when List.mem table_var table_vars ->
+	      let idx = Int64.to_int (loop_to_i64 idx_e) and
+		  table_num = list_where table_var table_vars in
+	      let table = List.nth tables_by_idx table_num in
+		if idx >= List.length table then
+		  (* Undefined, treat as 0 *)
+		  (* Printf.printf "Out of range index %d in table %d\n"
+		     idx table_num; *)
+		  V.Constant(V.Int(elt_ty, 0L))
+		else
+		  let elt_e = List.nth table idx in
+		    loop elt_e
+	  | V.Lval(V.Mem(_, _, _)) -> loop (self#rewrite_mem_to_scalar e)
 	  | V.Lval(V.Temp(memvar))
 	      when V.VarHash.mem mem_axioms memvar
 		->
 	      loop (V.VarHash.find mem_axioms memvar)
 	  | V.Lval(lv) -> self#eval_var_from_ce ce lv
-	  | _ ->
+	  | V.Ite(ce, te, fe) -> cf_eval (V.Ite(loop ce, loop te, loop fe))
+	  | V.Let(_, _, _)
+	  | V.Unknown(_)
+	  | V.Name(_)
+	  | V.Constant(V.Str(_))
+	    ->
 	      Printf.printf "Can't evaluate %s\n" (V.exp_to_string e);
 	      failwith "Unexpected expr in eval_expr_from_ce"
-      in
+
+      and loop_to_i64 e =
 	match loop e with
 	  | V.Constant(V.Int(_, i64)) -> i64
 	  | e ->
 	      Printf.printf "Left with %s\n" (V.exp_to_string e);
 	      failwith "Constant invariant failed in eval_expr"
-      
+      in
+	loop_to_i64 e
 
     val temp_var_num_has_loop_var = Hashtbl.create 1001
 
@@ -528,8 +652,11 @@ struct
       let rec loop e =
 	match e with
 	  | V.BinOp(op, e1, e2) -> (loop e1) || (loop e2)
+	  | V.FBinOp(op, _, e1, e2) -> (loop e1) || (loop e2)
 	  | V.UnOp(op, e1) -> loop e1
+	  | V.FUnOp(op, _, e1) -> loop e1
 	  | V.Cast(op, ty, e1) -> loop e1
+	  | V.FCast(op, _, ty, e1) -> loop e1
 	  | V.Lval(V.Mem(_, _, _)) -> false
 	  | V.Constant(V.Int(_, _)) -> false
 	  | V.Lval(V.Temp(n,s,t))
@@ -544,7 +671,12 @@ struct
 		       b)
 	  | V.Lval(V.Temp(_,s,_)) ->
 	      String.length s >= 3 && String.sub s 0 3 = "LTC"
-	  | _ ->
+	  | V.Ite(ce, te, fe) -> (loop ce) || (loop te) || (loop fe)
+	  | V.Let(_, _, _)
+	  | V.Unknown(_)
+	  | V.Name(_)
+	  | V.Constant(V.Str(_))
+	    ->
 	      failwith "Unexpected expr in has_loop_var"
       in
 	loop (D.to_symbolic_32 d)
@@ -593,25 +725,125 @@ struct
 		Printf.printf "%s = %s\n" s (V.exp_to_string e);
 	      var
 
+    (* Expand the definitions of all the temporaries that occur directly
+       in an expression, including occurrences of those temporaries inside
+       the definitions of other expanded temporaries. For instance if
+       t3 is defined in terms of t1 and t2, and "e" contains t3 and t2,
+       both the direct occurrence of t2 in e and the occurrence inside
+       t3 will be expanded, but t1 will not be expanded. The motivation
+       for this is to expand just enough to let simplification rules
+       consistently apply. *)
+    method private expand_temps_1level e =
+      let to_expand = V.VarHash.create 21 in
+      let rec collect e = match e with
+	| V.BinOp(_, e1, e2) -> collect e1; collect e2
+	| V.FBinOp(_, rm, e1, e2) -> collect e1; collect e2
+	| V.UnOp(_, e1) -> collect e1
+	| V.FUnOp(_, _, e1) -> collect e1
+	| V.Constant(_) -> ()
+	| V.Lval(V.Temp(var)) ->
+	    if_expr_temp self var
+	      (fun e' -> V.VarHash.replace to_expand var e')
+	      ()
+	      (fun _ -> ())
+	| V.Lval(V.Mem(_, e1, _)) -> collect e1
+	| V.Name(_) -> ()
+	| V.Cast(_, _, e1) -> collect e1
+	| V.FCast(_, _, _, e1) -> collect e1
+	| V.Unknown(_) -> ()
+	| V.Let(_, e1, e2) -> collect e1; collect e2
+	| V.Ite(ce, te, fe) -> collect ce; collect te; collect fe
+      in
+      let rec replace e = match e with
+	| V.BinOp(op, e1, e2) -> V.BinOp(op, (replace e1), (replace e2))
+	| V.FBinOp(op, rm, e1, e2) ->
+	    V.FBinOp(op, rm, (replace e1), (replace e2))
+	| V.UnOp(op, e1) -> V.UnOp(op, (replace e1))
+	| V.FUnOp(op, rm, e1) -> V.FUnOp(op, rm, (replace e1))
+	| V.Constant(_) -> e
+	| V.Lval(V.Temp(var)) ->
+	    (try
+	       let (e':Vine.exp) = V.VarHash.find to_expand var in
+		 replace e'
+	     with Not_found -> e)
+	| V.Lval(V.Mem(v, e1, ty)) -> V.Lval(V.Mem(v, (replace e1), ty))
+	| V.Name(_) -> e
+	| V.Cast(kind, ty, e1) -> V.Cast(kind, ty, (replace e1))
+	| V.FCast(kind, rm, ty, e1) -> V.FCast(kind, rm, ty, (replace e1))
+	| V.Unknown(_) -> e
+	| V.Let(V.Temp(v), e1, e2) ->
+	    V.Let(V.Temp(v), (replace e1), (replace e2))
+	| V.Let(V.Mem(v, e1, ty), e2, e3) ->
+	    V.Let(V.Mem(v, (replace e1), ty), (replace e2), (replace e3))
+	| V.Ite(ce, te, fe) ->
+	    V.Ite((replace ce), (replace te), (replace fe))
+      in
+	collect e;
+	replace e
+
+    method private collapse_temps e =
+      let rec loop e =
+	let e' = match e with
+	  | V.BinOp(op, e1, e2) -> V.BinOp(op, (loop e1), (loop e2))
+	  | V.FBinOp(op, rm, e1, e2) -> V.FBinOp(op, rm, (loop e1), (loop e2))
+	  | V.UnOp(op, e1) -> V.UnOp(op, (loop e1))
+	  | V.FUnOp(op, rm, e1) -> V.FUnOp(op, rm, (loop e1))
+	  | V.Constant(_) -> e
+	  | V.Lval(V.Temp(_)) -> e
+	  | V.Lval(V.Mem(v, e1, ty)) -> V.Lval(V.Mem(v, (loop e1), ty))
+	  | V.Name(_) -> e
+	  | V.Cast(kind, ty, e1) -> V.Cast(kind, ty, (loop e1))
+	  | V.FCast(kind, rm, ty, e1) -> V.FCast(kind, rm, ty, (loop e1))
+	  | V.Unknown(_) -> e
+	  | V.Let(V.Temp(v), e1, e2) ->
+	      V.Let(V.Temp(v), (loop e1), (loop e2))
+	  | V.Let(V.Mem(v, e1, ty), e2, e3) ->
+	      V.Let(V.Mem(v, (loop e1), ty), (loop e2), (loop e3))
+	  | V.Ite(ce, te, fe) ->
+	      V.Ite((loop ce), (loop te), (loop fe))
+	in
+	let (e_enc, _) = encode_exp e' in
+	  try
+	    let v = self#lookup_temp_var
+	      (Hashtbl.find subexpr_to_temp_var_info e_enc)
+	    in
+	      V.Lval(V.Temp(v))
+	  with Not_found -> e'
+      in
+	loop e
+
+    method private simplify_exp e =
+      let e2 = self#expand_temps_1level e in
+      let e3 = Frag_simplify.simplify_fp e2 in
+      let e4 = self#collapse_temps e3 in
+	if !opt_sanity_checks && !opt_concolic_prob <> None then
+	  (let pre_val = self#eval_expr e and
+	       post_val = self#eval_expr e4
+	   in
+	     if pre_val <> post_val then
+	       let pre_str = V.exp_to_string e and
+		   post_str = V.exp_to_string e4
+	       in
+		 Printf.printf "Uh oh, %s (%Ld) 'simplified' to %s (%Ld)\n"
+		   pre_str pre_val post_str post_val;
+		 failwith "Incorrect simplification occurred");
+	e4
+
     method private simplify (v:D.t) ty =
       D.inside_symbolic
 	(fun e ->
-	   let e' = simplify_fp e in
+	   let e' = self#simplify_exp e in
+	     (* if e <> e' then
+		Printf.printf "Simplifying %s -> %s\n"
+		(V.exp_to_string e) (V.exp_to_string e'); *)
 	     (* We're supposed to simplify expressions as we build
 		them, so something is going wrong if they get way to big
 		at once: *)
 	     (* assert(expr_size e' < 1000); *)
-	     if expr_size e' < 10 then
+	     if expr_size e' < !opt_t_expr_size then
 	       e'
 	     else
 	       V.Lval(V.Temp(self#make_temp_var e' ty))
-	) v
-
-    method private tempify (v:D.t) ty =
-      D.inside_symbolic
-	(fun e ->
-	   let e' = simplify_fp e in
-	     V.Lval(V.Temp(self#make_temp_var e' ty))
 	) v
 
     method simplify1  e = self#simplify e V.REG_1
@@ -623,17 +855,50 @@ struct
     method simplify_with_callback f (v:D.t) ty =
       D.inside_symbolic
 	(fun e ->
-	   let e2 = simplify_fp e in
+	   let e2 = self#simplify_exp e in
 	     match e2 with
 	       | V.Constant(_) -> e2
 	       | _ -> 
 		   (match (f e2 ty) with
 		      | Some e3 -> e3
 		      | None ->
-			  (if expr_size e2 < 10 then
+			  (if expr_size e2 < !opt_t_expr_size then
 			     e2
 			   else
 			     V.Lval(V.Temp(self#make_temp_var e2 ty))))
+	) v
+
+    method tempify_exp e ty =
+      let e2 = self#simplify_exp e in
+	match e2 with
+	  | V.Constant(_) -> e2
+	  | V.Lval(V.Temp(n,s,t))
+	      when Hashtbl.mem temp_var_num_to_subexpr n ->
+	      e2
+	  | _ ->
+	      V.Lval(V.Temp(self#make_temp_var e2 ty))
+    
+
+    method private tempify (v:D.t) ty =
+      D.inside_symbolic (fun e -> self#tempify_exp e ty) v
+
+    method tempify1  e = self#tempify e V.REG_1
+    method tempify8  e = self#tempify e V.REG_8
+    method tempify16 e = self#tempify e V.REG_16
+    method tempify32 e = self#tempify e V.REG_32
+    method tempify64 e = self#tempify e V.REG_64
+
+    method tempify_with_callback f (v:D.t) ty =
+      D.inside_symbolic
+	(fun e ->
+	   let e2 = self#simplify_exp e in
+	     match e2 with
+	       | V.Constant(_) -> e2
+	       | _ ->
+		   (match (f e2 ty) with
+		      | Some e3 -> e3
+		      | None ->
+			  V.Lval(V.Temp(self#make_temp_var e2 ty)))
 	) v
 
     method make_ite cond_v ty v_true v_false =
@@ -644,24 +909,250 @@ struct
 	if v_true' = v_false' then
 	  v_true'
 	else
-	  let mask = match ty with
-	    | V.REG_1  ->            cond_v'
-	    | V.REG_8  -> D.cast1s8  cond_v'
-	    | V.REG_16 -> D.cast1s16 cond_v'
-	    | V.REG_32 -> D.cast1s32 cond_v'
-	    | V.REG_64 -> D.cast1s64 cond_v'
-	    | _ -> failwith "Unexpected type in mask_ite"
-	  in
-	  let (andop, orop, notop) =
+	  let func =
 	    match ty with
-	      | V.REG_1  -> (D.bitand1,  D.bitor1,  D.not1)
-	      | V.REG_8  -> (D.bitand8,  D.bitor8,  D.not8)
-	      | V.REG_16 -> (D.bitand16, D.bitor16, D.not16)
-	      | V.REG_32 -> (D.bitand32, D.bitor32, D.not32)
-	      | V.REG_64 -> (D.bitand64, D.bitor64, D.not64)
-	      | _ -> failwith "Unexpected type (2) in mask_ite"
+	      | V.REG_1  -> D.ite1
+	      | V.REG_8  -> D.ite8
+	      | V.REG_16 -> D.ite16
+	      | V.REG_32 -> D.ite32
+	      | V.REG_64 -> D.ite64
+	      | _ -> failwith "Unexpected type in make_ite"
 	  in
-	    orop (andop mask v_true') (andop (notop mask) v_false')
+	    func cond_v' v_true' v_false'
+
+    method private lookup_tree e bits ty expr_list =
+      let rec nth_tail n l = match (n, l) with
+	| (0, l) -> l
+	| (_, []) -> failwith "List too short in nth_tail"
+	| (n, l) -> nth_tail (n-1) (List.tl l)
+      in
+	assert((List.length expr_list) >= (1 lsl bits));
+	if bits = 0 then
+	  List.hd expr_list
+	else
+	  let shift_amt = Int64.of_int (bits - 1) in
+	  let cond_e = V.Cast(V.CAST_LOW, V.REG_1,
+			      V.BinOp(V.RSHIFT, e,
+				      V.Constant(V.Int(V.REG_8, shift_amt))))
+	  in
+	  let half_two = nth_tail (1 lsl (bits - 1)) expr_list in
+	    self#make_ite (D.from_symbolic cond_e) ty
+	      (self#lookup_tree e (bits - 1) ty half_two)
+	      (self#lookup_tree e (bits - 1) ty expr_list)
+
+
+    val table_trees_cache = Hashtbl.create 101
+
+    method private table_lookup_cached table table_num idx_exp0 idx_wd ty =
+      let idx_ty = Vine_typecheck.infer_type_fast idx_exp0 in
+      let idx_v = self#tempify (D.from_symbolic idx_exp0) idx_ty in
+      let idx_exp = to_symbolic idx_v idx_ty in
+      let remake =
+	let v = self#lookup_tree idx_exp idx_wd ty table in
+	let v' = self#tempify v ty
+	in
+	  if table_num <> -1 then
+	    Hashtbl.replace table_trees_cache (table_num, idx_exp) v';
+	  v'
+      in
+	try
+	  let v =
+	    if table_num = -1 then
+	      remake
+	    else
+	      (let v = Hashtbl.find table_trees_cache (table_num, idx_exp) in
+		 if !opt_trace_tables then
+		   Printf.printf "Hit table cache\n";
+		 v)
+	  in
+	    if !opt_trace_tables then
+	      (Printf.printf "Select from table %d at %s elt size %d is %s\n"
+		 table_num (V.exp_to_string idx_exp)
+		 (V.bits_of_width ty) (D.to_string_64 v);
+	       flush stdout);
+	    v
+	with
+	  | Not_found ->
+	      remake
+
+    method private save_table table elt_ty =
+      let size = Int64.of_int (List.length table) and
+	  num_cached = Hashtbl.length tables in
+      let use_cache table =
+	try
+	  (Hashtbl.find tables table, false)
+	with
+	  | Not_found ->
+	      let i = Hashtbl.length tables in
+		Hashtbl.replace tables table i;
+		if !opt_tables_as_arrays then
+		  (let table_e =
+		     List.map (fun v -> to_symbolic v elt_ty) table in
+		   let array_ty = V.Array(elt_ty, size) in
+		   let name = "table" ^ (string_of_int i) in
+		   let table_var = V.newvar name array_ty in
+		     tables_by_idx <- tables_by_idx @ [table_e];
+		     table_vars <- table_vars @ [table_var];
+		     assert(List.length tables_by_idx =
+			 List.length table_vars));
+		(i, true)
+      in
+	if !opt_tables_as_arrays then
+	  use_cache table
+	else
+	  let prod = Int64.mul (Int64.of_int num_cached) size
+	  in
+	    if prod > tables_cache_limit then
+	      (-1, true)
+	    else
+	      use_cache table
+
+    method private print_table table ty i =
+      Printf.printf "Table %d is: " i;
+      let cnt = ref 0 in
+	List.iter
+	  (fun v ->
+	     incr cnt;
+	     if !cnt < 2048 (* 100 *) then
+	       Printf.printf "%s "
+		 (match ty with
+		    | V.REG_1  -> D.to_string_1  v
+		    | V.REG_8  -> D.to_string_8  v
+		    | V.REG_16 -> D.to_string_16 v
+		    | V.REG_32 -> D.to_string_32 v
+		    | V.REG_64 -> D.to_string_64 v
+		    | _ -> failwith "Can't happen"))
+	  table;
+	if !cnt > 2048 then
+	  Printf.printf "...";
+	Printf.printf "\n"
+
+    (* Bitvectors can be seen as vectors or polynomials over the field
+       GF(2), which consists of 0 and 1 with XOR as addition and AND as
+       multiplication. In this setting, a function is linear if f(a XOR
+       b) = f(a) XOR f(b). Functions that are linear in this sense are
+       used in a number of places in error-correcting codes and
+       symmetric-key cryptography. Some bitvector SMT solvers can reason
+       effectively over the properties of such functions because their
+       SAT solvers can do bit-level gaussian elimination. However these
+       operations are often implemented in software using lookup tables,
+       which can keep the solvers from recognizing the linear
+       structure. So here we do the conversion for them, converting
+       lookup tables that happen to implement a linear function into a
+       more directly linear expression. Table lookup is equivalent to
+       taking the XOR for one value for each 1 bit in the index. *)
+    method private table_check_gf2 table idx_wd ty =
+      let build_from_spine spine n =
+	let rec loop x l n =
+	  match l with
+	    | [] -> x
+	    | m :: rest ->
+		let next =
+		  if (n land 1) = 1 then
+		    (Int64.logxor x m)
+		  else
+		    x
+		in
+		  loop next rest (n lsr 1)
+	in
+	  loop 0L spine n
+      in
+      let rec check_loop spine table =
+	let rec loop l i =
+	  match l with
+	    | [] -> true
+	    | x :: rest ->
+		let x' = build_from_spine spine i in
+		  if x <> x' then
+		    false
+		  else
+		    loop rest (i + 1)
+	in
+	  loop table 0
+      in
+      let conc v =
+	match ty with
+	  | V.REG_1  -> Int64.of_int (D.to_concrete_1  v)
+	  | V.REG_8  -> Int64.of_int (D.to_concrete_8  v)
+	  | V.REG_16 -> Int64.of_int (D.to_concrete_16 v)
+	  | V.REG_32 -> D.to_concrete_32 v
+	  | V.REG_64 -> D.to_concrete_64 v
+	  | _ -> failwith "Unexpected type in table_check_gf2"
+      in
+	try
+	  assert(List.length table = (1 lsl idx_wd));
+	  let table_conc = List.map conc table in
+	  let spine = Vine_util.mapn
+	    (fun i -> List.nth table_conc (1 lsl i)) (idx_wd - 1)
+	  in
+	    assert(List.length spine = idx_wd);
+	    if check_loop spine table_conc then
+	      (if !opt_trace_tables then
+		 (Printf.printf "Detected GF(2) linear operator with spine:\n";
+		  List.iter (fun n -> Printf.printf " 0x%Lx" n) spine;
+		  Printf.printf "\n");
+	       Some spine)
+	    else
+	      None
+	with
+	  | NotConcrete(_) -> None
+
+    method private make_gf2_operator spine ty idx_exp0 =
+      let rec term_loop l e n =
+	match l with
+	  | [] -> []
+	  | m :: rest ->
+	      let shift_amt = Int64.of_int n in
+	      let bit_e = V.Cast(V.CAST_LOW, V.REG_1,
+				 V.BinOp(V.RSHIFT, e,
+					 V.Constant(V.Int(V.REG_8,
+							  shift_amt))))
+	      in
+	      let wide_e = V.Cast(V.CAST_SIGNED, ty, bit_e) in
+	      let term = V.BinOp(V.BITAND, wide_e,
+				 V.Constant(V.Int(ty, m)))
+	      in
+		term :: (term_loop rest e (n+1))
+      in
+      let idx_ty = Vine_typecheck.infer_type_fast idx_exp0 in
+      let idx_v = self#tempify (D.from_symbolic idx_exp0) idx_ty in
+      let idx_exp = to_symbolic idx_v idx_ty in
+      let terms = term_loop spine idx_exp 0 in
+      let e = xorjoin terms in
+      let v = D.from_symbolic e in
+      let v' = self#tempify v ty in
+	if !opt_trace_tables then
+	  (Printf.printf "Select from GF(2) table at %s is %s\n"
+	     (V.exp_to_string idx_exp) (D.to_string_64 v');
+	   flush stdout);
+	v'
+
+    method private table_lookup_array table_num idx_exp idx_wd ty =
+      let table_var = List.nth table_vars table_num in
+      let e = V.Lval(V.Mem(table_var, idx_exp, ty)) in
+      let v = D.from_symbolic e in
+	self#tempify v ty
+
+    method make_table_lookup table idx_exp idx_wd ty =
+      let (table_num, is_new) = self#save_table table ty in
+	if !opt_trace_tables then
+	  (if table_num = -1 then
+	     Printf.printf " is uncached\n"
+	   else
+	     Printf.printf " is table %d\n" table_num);
+	match self#table_check_gf2 table idx_wd ty with
+	  | Some spine ->
+	      self#make_gf2_operator spine ty idx_exp
+	  | None ->
+	      let v =
+		if !opt_tables_as_arrays then
+		  self#table_lookup_array table_num idx_exp idx_wd ty
+		else
+		  self#table_lookup_cached table table_num idx_exp idx_wd ty
+	      in
+		if is_new && !opt_trace_tables then
+		  self#print_table table ty table_num;
+		v
 
     method if_expr_temp_unit (n,_,_) (fn_t: V.exp option  -> unit) =
       (* The slightly weird structure here is because we *don't*
@@ -674,24 +1165,28 @@ struct
       with
 	| Some e_enc -> (fn_t (Some(decode_exp e_enc)))
 	| None -> (fn_t None)
-	
-    (* This was originally designed to be polymorphic in the return
-       type of f, and could be made so again as with if_expr_temp *)
-    method walk_temps (f : (V.var -> V.exp -> (V.var * V.exp))) exp =
+
+    (* walk_temps and collect_for_solving are now mostly simplified
+       special cases of walk_decls and one_cond_for_solving respectively,
+       and used only in the influence code. It would be nice to refactor
+       them away at some point. *)
+    method private walk_temps exp =
       let h = V.VarHash.create 21 in
       let temps = ref [] in
       let nontemps_h = V.VarHash.create 21 in
       let nontemps = ref [] in
       let rec walk = function
 	| V.BinOp(_, e1, e2) -> walk e1; walk e2
+	| V.FBinOp(_, rm, e1, e2) -> walk e1; walk e2
 	| V.UnOp(_, e1) -> walk e1
+	| V.FUnOp(_, _, e1) -> walk e1
 	| V.Constant(_) -> ()
 	| V.Lval(V.Temp(var)) ->
 	    if not (V.VarHash.mem h var) then
 	      (let fn_t = (fun e ->
 			     V.VarHash.replace h var ();
 			     walk e;
-			     temps := (f var e) :: !temps) in
+			     temps := (var, e) :: !temps) in
 	       let else_fn =
 		 (fun v -> (* v is not a temp *)
 		    if not (V.VarHash.mem nontemps_h var) then
@@ -701,8 +1196,10 @@ struct
 	| V.Lval(V.Mem(_, e1, _)) -> walk e1
 	| V.Name(_) -> ()
 	| V.Cast(_, _, e1) -> walk e1
+	| V.FCast(_, _, _, e1) -> walk e1
 	| V.Unknown(_) -> ()
-	| V.Let(_, e1, e2) -> walk e1; walk e2 
+	| V.Let(_, e1, e2) -> walk e1; walk e2
+	| V.Ite(ce, te, fe) -> walk ce; walk te; walk fe
       in
 	walk exp;
 	((List.rev !nontemps), (List.rev !temps))
@@ -711,11 +1208,11 @@ struct
       let val_expr = self#rewrite_for_solver val_e in
       let cond_expr = self#rewrite_for_solver
 	(conjoin (List.rev conds)) in
-      let (nts1, ts1) = self#walk_temps (fun var e -> (var, e)) cond_expr in
-      let (nts2, ts2) = self#walk_temps (fun var e -> (var, e)) val_expr in
+      let (nts1, ts1) = self#walk_temps cond_expr in
+      let (nts2, ts2) = self#walk_temps val_expr in
       let (nts3, ts3) = List.fold_left 
 	(fun (ntl, tl) (lhs, rhs) ->
-	   let (nt, t) = self#walk_temps (fun var e -> (var, e)) rhs in
+	   let (nt, t) = self#walk_temps rhs in
 	     (nt @ ntl, t @ tl))
 	([], []) u_temps in
       let temps = 
@@ -731,30 +1228,94 @@ struct
       in
 	(decls, assigns, cond_expr, val_expr, inputs_in_val_expr)
 
+    (* Recursively traverse all the t variables and tables that are
+       transitively referenced from an expression (typically a branch
+       condition) to build a list of all of the necessary
+       declarations. Order is significant in the list: earlier entries
+       can depend only on later entries, the opposite of the order
+       they'll have for the solver. *)
+    method private walk_decls root_exp =
+      let seen_vars = V.VarHash.create 21 and
+	  decls_l = ref [] in
+      let rec walk = function
+	| V.BinOp(_, e1, e2) -> walk e1; walk e2
+	| V.FBinOp(_, rm, e1, e2) -> walk e1; walk e2
+	| V.UnOp(_, e1) -> walk e1
+	| V.FUnOp(_, _, e1) -> walk e1
+	| V.Constant(_) -> ()
+	| V.Lval(V.Temp(var)) ->
+	    (if V.VarHash.mem seen_vars var then
+	       () (* already processed *)
+	     else
+	       if_expr_temp self var (* then *)
+		 (fun e ->
+		    V.VarHash.replace seen_vars var ();
+		    walk e;
+		    decls_l := QE.TempVar(var, e) :: !decls_l)
+		 () (* else *)
+		 (fun e ->
+		    V.VarHash.replace seen_vars var ();
+		    decls_l := QE.InputVar(var) :: !decls_l))
+	| V.Lval(V.Mem(var, e1, _)) ->
+	    walk e1;
+	    if V.VarHash.mem seen_vars var then
+	      () (* already processed *)
+	    else
+	      if List.mem var table_vars then
+		let table_num = list_where var table_vars in
+		let table = List.nth tables_by_idx table_num in
+		  V.VarHash.replace seen_vars var ();
+		  List.iter walk table;
+		  decls_l := QE.TempArray(var, table) :: !decls_l
+	| V.Name(_) -> ()
+	| V.Cast(_, _, e1) -> walk e1
+	| V.FCast(_, _, _, e1) -> walk e1
+	| V.Unknown(_) -> ()
+	| V.Let(_, e1, e2) -> walk e1; walk e2
+	| V.Ite(ce, te, fe) -> walk ce; walk te; walk fe
+      in
+	walk root_exp;
+	List.rev !decls_l
+
     method one_cond_for_solving cond seen_hash =
-      let (all_decls, all_assigns, cond_expr) =
+      let saw_var v =
+	V.VarHash.replace seen_hash v () in
+      let (walked_qdecls, cond_expr) =
 	self#with_saved_mem_axioms
 	  (fun _ ->
 	     let cond_expr = self#rewrite_for_solver cond in
-	     let (nts, ts) =
-	       self#walk_temps (fun var e -> (var, e)) cond_expr in
-	     let temps =
-	       List.map
-		 (fun (var, e) -> (var, self#rewrite_for_solver e)) ts in
-	     let i_vars = (list_unique (nts @ self#get_mem_bytes)) in
-	     let m_axioms = self#get_mem_axioms in
-	     let m_vars = List.map (fun (v, _) -> v) m_axioms in
-	     let assigns = m_axioms @ temps in
-	     let decls = Vine_util.list_difference i_vars m_vars in
-	       (decls, assigns, cond_expr))
+	     let walked_qdecls = self#walk_decls cond_expr in
+	     let walked_qdecls2 = List.map
+	       (function
+		  | QE.TempVar(v, e) ->
+		      QE.TempVar(v, (self#rewrite_for_solver e))
+		  | QE.TempArray(v, el) ->
+		      QE.TempArray(v, List.map self#rewrite_for_solver el)
+		  | d -> d) walked_qdecls in
+	     let mem_bytes = self#get_mem_bytes and
+		 mem_axioms = self#get_mem_axioms in
+	     let mem_vars = List.map (fun (v, _) -> v) mem_axioms in
+	     let mem_axioms_d =
+	       List.map (fun (v, e) -> QE.TempVar(v, e)) mem_axioms in
+	     let mem_bytes_d = List.map (fun v -> QE.InputVar(v)) mem_bytes in
+	     let mem_vars_as_in =
+	       List.map (fun v -> QE.InputVar(v)) mem_vars
+	     in
+	     let walked_qdecls3 =
+	       list_unique
+		 ( mem_bytes_d 
+		   @ mem_axioms_d
+		   @ (Vine_util.list_difference walked_qdecls2 mem_vars_as_in) )
+	     in
+	       (walked_qdecls3, cond_expr))
       in
-      let new_decls = List.filter
-	(fun v -> not (V.VarHash.mem seen_hash v)) all_decls in
-      let new_assigns = List.filter
-	(fun (v,_) -> not (V.VarHash.mem seen_hash v)) all_assigns in
-      let new_vars = new_decls @ (List.map (fun (v,_) -> v) new_assigns) in
-	List.iter (fun v -> V.VarHash.replace seen_hash v ()) new_vars;
-	(new_decls, new_assigns, cond_expr, new_vars)
+      let new_qdecls = List.filter
+	(fun d -> not (V.VarHash.mem seen_hash (qe_decl_var d)))
+	walked_qdecls
+      in
+      let new_vars = List.map qe_decl_var new_qdecls in
+	List.iter saw_var new_vars;
+	(new_qdecls, cond_expr, new_vars)
 
     method measure_size =
       let (input_ents, input_nodes) =
@@ -781,6 +1342,16 @@ struct
       let te_ents = Hashtbl.length temp_var_num_evaled in
       let tw_ents = VarWeak.count temp_vars_weak in
       let tu_ents = Hashtbl.length temp_vars_unweak in
+      let ttree_ents = Hashtbl.length table_trees_cache in
+      let ttree_nodes = Hashtbl.fold
+	(fun _ v s -> s + D.measure_size v)
+	table_trees_cache 0
+      in
+      let tables_ents = Hashtbl.length tables in
+      let tables_nodes = Hashtbl.fold
+	(fun k _ s ->
+	   s + List.length k) tables 0
+      in
 	Printf.printf "input_vars has %d entries\n" input_ents;
 	Printf.printf "region_base_vars has %d entries\n" rb_ents;
 	Printf.printf "region_vars has %d entries\n" rg_ents;
@@ -794,9 +1365,13 @@ struct
 	  t2se_ents t2se_bytes;
 	Printf.printf "temp_vars_weak has %d entries\n" tw_ents;
 	Printf.printf "temp_vars_unweak has %d entries\n" tu_ents;
+	Printf.printf "table_trees_cache has %d entries and %d nodes\n"
+	  ttree_ents ttree_nodes;
+	Printf.printf "tables has %d entries and %d nodes\n"
+	  tables_ents tables_nodes;
 	(input_ents + rb_ents + rg_ents + sc_ents + bv_ents + se2t_ents +
-	   mbv_ents + ma_ents + t2se_ents + te_ents,
+	   mbv_ents + ma_ents + t2se_ents + te_ents + ttree_ents + tables_ents,
 	 input_nodes + rb_nodes + rg_nodes + bv_nodes + se2t_nodes +
-	   ma_nodes)
+	   ma_nodes + ttree_nodes + tables_nodes)
   end
 end

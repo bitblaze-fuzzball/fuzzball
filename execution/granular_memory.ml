@@ -356,7 +356,7 @@ struct
 	| Some l -> l
 	| None ->
 	    let l = missing 64 addr in
-	      self#store_word addr l;
+	      self#store_long addr l;
 	      l
 
     method private virtual store_common_fast : int64 ->

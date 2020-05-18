@@ -25,7 +25,12 @@ let execution_arch_of_string s =
     | "i386"|"x86" -> X86
     | "x64"|"x86-64"|"x86_64"|"amd64"|"intel64" -> X64
     | "arm" -> ARM
-    | _ -> failwith "Unrecognized architecture"
+    | _ -> failwith ("Unrecognized architecture `" ^ s ^ "'")
+
+let string_of_execution_arch = function
+  | X86 -> "x86"
+  | X64 -> "x64"
+  | ARM -> "arm"
 
 let asmir_arch_of_execution_arch = function
   | X86 -> Asmir.arch_i386
@@ -45,17 +50,23 @@ let next_periodic_influence : int ref = ref (-1)
 let opt_trace_temps = ref false
 let opt_trace_temps_encoded = ref false
 let opt_use_tags = ref false
-let opt_print_callrets = ref false
 let opt_fail_offset_heuristic = ref true
 let opt_trace_solver = ref false
 let opt_measure_influence_syscall_args = ref false
 let opt_solver_timeout = ref None
+let opt_timeout_as_unsat = ref false
+let opt_stop_on_weird_sym_addr = ref false
+let opt_finish_on_weird_sym_addr = ref false
 let opt_solver_slow_time = ref 1.0
 let opt_save_solver_files = ref false
-let opt_stp_path = ref "stp"
-let opt_follow_path  = ref ""
+let opt_solver_path = ref "stp"
+let opt_follow_path = ref ""
 let opt_branch_preference = Hashtbl.create 10
+let opt_branch_preference_unchecked = Hashtbl.create 10
+let opt_always_prefer = ref None
 let opt_iteration_limit = ref 1000000000000L
+let opt_iteration_limit_enforced = ref None
+let opt_insn_limit = ref Int64.minus_one
 let opt_watch_expr_str = ref None
 let opt_watch_expr = ref None
 let opt_path_depth_limit = ref 1000000000000L
@@ -74,6 +85,7 @@ let opt_stop_at_measurement = ref false
 let opt_periodic_influence = ref None
 let opt_influence_bound = ref (-2.0)
 let opt_disqualify_addrs = ref []
+let opt_disqualify_on_message = ref None
 let opt_check_condition_at = ref []
 let opt_trace_assigns = ref false
 let opt_trace_assigns_string = ref false
@@ -85,9 +97,12 @@ let opt_trace_binary_paths_bracketed = ref false
 let opt_trace_insns = ref false
 let opt_trace_loads = ref false
 let opt_trace_stores = ref false
+let opt_trace_callstack = ref false
 let opt_trace_sym_addrs = ref false
 let opt_trace_sym_addr_details = ref false
 let opt_trace_syscalls = ref false
+let opt_turn_opt_off_range = ref []
+let opt_turn_opt_on_range = ref []
 let opt_trace_detailed_ranges = ref []
 let opt_extra_conditions = ref []
 let opt_tracepoints = ref []
@@ -96,6 +111,7 @@ let opt_concrete_path = ref false
 let opt_concrete_path_simulate = ref false
 let opt_concolic_prob = ref None
 let opt_solve_path_conditions = ref false
+let opt_no_sym_regions = ref false
 let opt_trace_regions = ref false
 let opt_check_for_null = ref false
 let opt_offset_strategy = ref UniformStrat
@@ -109,6 +125,7 @@ let opt_skip_call_addr_symbol = ref []
 let opt_skip_func_addr_symbol = ref []
 let opt_skip_call_addr_region = ref []
 let opt_skip_func_addr_region = ref []
+let opt_skip_call_addr_symbol_once = ref []
 let opt_trace_eip = ref false
 let opt_trace_unique_eips = ref false
 let opt_trace_ir = ref false
@@ -121,14 +138,18 @@ let opt_time_stats = ref false
 let opt_nonfatal_solver = ref false
 let opt_num_paths = ref None
 let opt_pid = ref (-1)
+let opt_external_uname = ref false
 let opt_translation_cache_size = ref None
 let opt_prefix_out = ref None
 let opt_omit_pf_af = ref false
 let opt_nop_system_insns = ref false
 let opt_symbolic_syscall_error = ref None
 let opt_stop_on_symbolic_syscall_args = ref false
+let opt_skip_output_concretize = ref false
 let opt_chroot_path = ref None
 let opt_finish_on_nonfalse_cond = ref false
+let opt_finish_immediately = ref false
+let opt_finish_reasons_needed = ref 1
 let opt_total_timeout = ref None
 let opt_x87_emulator = ref None
 let opt_x87_entry_point = ref None
@@ -138,17 +159,28 @@ let opt_target_region_string = ref ""
 let opt_target_region_formula_strings = ref []
 let opt_target_region_formulas = ref []
 let opt_trace_target = ref false
+let opt_target_no_prune = ref false
 let opt_finish_on_target_match = ref false
 let opt_target_guidance = ref 0.0
 let opt_trace_guidance = ref false
 let opt_trace_tables = ref false
 let opt_table_limit = ref 0
+let opt_offset_limit = ref 0
+let opt_trace_offset_limit = ref false
+let opt_no_table_store = ref false
+let opt_tables_as_arrays = ref false
 let opt_implied_value_conc = ref false
 let opt_trace_ivc = ref false
+let opt_ite_ivc = ref false
 let opt_periodic_stats = ref None
 let opt_trace_working_ce_cache = ref false
 let opt_trace_global_ce_cache = ref false
-let opt_global_ce_cache_limit = ref 10000
+let opt_global_ce_cache_limit = ref 100
+let opt_disable_ce_cache = ref false
+let opt_narrow_bitwidth_cutoff = ref None
+let opt_t_expr_size = ref 10
+let opt_sanity_checks = ref false
+let opt_trace_simplify = ref false
 
 let opt_symbolic_memory = ref false
 let opt_zero_memory = ref false
@@ -156,11 +188,13 @@ let opt_random_memory = ref false
 
 let opt_fuzz_start_addr_count = ref 1
 let opt_fuzz_end_addrs = ref []
+let opt_trace_end_jump = ref None
 
 let opt_check_read_operands = ref false
 let opt_check_write_operands = ref false
 let opt_fix_write_operands = ref false
 let opt_trace_registers = ref false
+let opt_trace_register_updates = ref false
 let opt_trace_segments = ref false
 let opt_trace_taint = ref false
 let opt_trace_unexpected = ref false
@@ -168,7 +202,18 @@ let opt_progress_interval = ref None
 let opt_final_pc = ref false
 let opt_solve_final_pc = ref false
 let opt_skip_untainted = ref false
+
+(* We avoid making this an option type becaue there is a lot of code
+   that matches on it, and it should always be set to a paticular
+   architecture from quite early in the run. But the behavior when the
+   -arch option is ommitted is no longer to default to X86: instead we
+   try to detect the architecture from the headers of a supplied ELF
+   executable. *)
 let opt_arch = ref X86
+
+let opt_trace_stmts = ref false
+let opt_trace_eval = ref false
+let opt_trace_client_reqs = ref false
 
 let asmir_arch () =
   asmir_arch_of_execution_arch !opt_arch
@@ -180,43 +225,6 @@ let split_string char s =
   in
     (s1, s2)
 
-let unescape str =
-  let len = String.length str in
-  let s' = String.create len in
-  let rec loop i j =
-    if i >= len then
-      j
-    else
-      match str.[i] with
-	| '\\' when i + 1 < len ->
-	    let char inc c =
-	      s'.[j] <- c;
-	      loop (i + inc + 1) (j + 1)
-	    in
-	      (match str.[i+1] with
-		 | 'n' -> char 1 '\n'
-		 | 'r' -> char 1 '\r'
-		 | 't' -> char 1 '\t'
-		 | 'b' -> char 1 '\b'
-		 | '\\' -> char 1 '\\'
-		 | '\'' -> char 1 '\''
-		 | '"' -> char 1 '"'
-		 | ' ' -> char 1 ' '
-		 | 'x' when i + 3 < len ->
-		     char 3 (Char.chr (int_of_string
-					 ("0x" ^ (String.sub str (i+2) 2))))
-		 | '0' .. '9' when i + 3 < len ->
-		     char 3 (Char.chr (int_of_string
-					 (String.sub str (i+1) 3)))
-		 | _ -> failwith "Unexpected escape in string unescape"
-	      )
-	| _ ->
-	    s'.[j] <- str.[i];
-	    loop (i+1) (j+1)
-  in
-  let len' = loop 0 0 in
-    String.sub s' 0 len'
-
 let add_delimited_pair opt char s =
   let (s1, s2) = split_string char s in
     opt := ((Int64.of_string s1), (Int64.of_string s2)) :: !opt
@@ -227,12 +235,29 @@ let add_delimited_num_str_pair opt char s =
 
 let add_delimited_num_escstr_pair opt char s =
   let (s1, s2) = split_string char s in
-    opt := ((Int64.of_string s1), (unescape s2)) :: !opt
+    opt := ((Int64.of_string s1), (Exec_utils.unescaped s2)) :: !opt
 
 let add_delimited_str_num_pair opt char s =
   let (s1, s2) = split_string char s in
     opt := (s1, (Int64.of_string s2)) :: !opt
 
+let add_delimited_triple opt char s =
+  let rec loop arg_str =
+    try 
+      let (str1, str2) = split_string char arg_str in
+      [str1] @ (loop str2)
+    with Not_found -> [arg_str]
+  in
+  let list_str = loop s in
+  if (List.length list_str) <> 3 then
+    failwith
+      (Printf.sprintf
+	 "add_delimited_triple did not find 3 delimited values in option value: %s" s);
+  opt := (List.nth list_str 0, 
+   (Int64.of_string (List.nth list_str 1)), 
+   (Int64.of_string (List.nth list_str 2))) :: !opt
+
+      
 let opt_program_name = ref None
 let opt_start_addr = ref None
 let opt_argv = ref []

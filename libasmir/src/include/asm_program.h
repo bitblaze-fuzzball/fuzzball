@@ -7,23 +7,31 @@
 
 #ifdef __cplusplus
 #include <vector>
+using std::vector;
 #include <map>
+using std::map;
 #include <string>
+using std::string;
 #include <algorithm>
 #include <utility>
+using std::pair;
 #include <iostream>
+using std::ostream;
+using std::cerr;
+using std::hex;
+using std::endl;
 #include <set>
+using std::set;
 #include <sstream>
+using std::ostringstream;
 
 // from binutils
 #include "config.h"
 #include <bfd.h>
+#include <string.h> // seemingly needed by some versions of dis-asm.h
 #include <dis-asm.h>
 
 #include "common.h"
-
-
-using namespace std;
 
 typedef struct raw_inst Instruction; // this used to be struct i386_instruction
 
@@ -103,6 +111,8 @@ typedef struct asm_program {
 extern bfd *immortal_bfd_for_x86;
 extern bfd *immortal_bfd_for_x64;
 extern bfd *immortal_bfd_for_arm;
+
+disassembler_ftype wrap_get_disassembler(bfd *abfd);
 
 typedef struct raw_inst {
   address_t address; // Instruction address

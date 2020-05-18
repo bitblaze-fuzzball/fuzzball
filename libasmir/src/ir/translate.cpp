@@ -224,7 +224,7 @@ void print_disasm_rawbytes(enum asmir_arch arch,
   if (!prog)
     return;
 
-  disassembler_ftype disas = disassembler(prog->abfd);
+  disassembler_ftype disas = wrap_get_disassembler(prog->abfd);
   disas(addr, &prog->disasm_info);
   free_asm_program(prog);
   fflush(stdout);

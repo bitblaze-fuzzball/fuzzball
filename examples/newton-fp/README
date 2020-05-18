@@ -1,0 +1,12 @@
+This is a small floating-point program that is deliberately designed
+to be independent of any floating point library support. The program
+uses Newton's method to compute the square root of the numbers from 2
+to 10, and prints its output in hexadecimal float format (like
+printf's "%a", but with its own implementation). For instance you can
+compile an SSE version with:
+
+% gcc -O2 -m32 -g -Wall -mfpmath=sse -march=core2 newton.c -o newton-sse
+
+or an x87 version with:
+
+% gcc -O2 -m32 -g -Wall newton.c -o newton-x87

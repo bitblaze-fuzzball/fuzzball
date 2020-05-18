@@ -1,0 +1,307 @@
+Index: Makefile-gcc
+===================================================================
+--- Makefile-gcc	(revision 3260)
++++ Makefile-gcc	(working copy)
+@@ -12,6 +12,7 @@
+ 		pub/libvex_guest_s390x.h		\
+ 		pub/libvex_s390x_common.h		\
+ 		pub/libvex_guest_mips32.h		\
++		pub/libvex_guest_tilegx.h		\
+ 		pub/libvex_guest_offsets.h
+ 
+ PRIV_HEADERS = 	priv/host_x86_defs.h			\
+@@ -20,6 +21,7 @@
+ 		priv/host_ppc_defs.h			\
+ 		priv/host_s390_defs.h			\
+ 		priv/host_mips_defs.h			\
++		priv/host_tilegx_defs.h			\
+ 		priv/host_generic_maddf.h	        \
+ 		priv/host_generic_regs.h	        \
+ 		priv/host_generic_simd64.h	        \
+@@ -34,8 +36,10 @@
+ 		priv/guest_arm_defs.h			\
+ 		priv/guest_ppc_defs.h			\
+ 		priv/guest_mips_defs.h			\
++		priv/guest_tilegx_defs.h		\
+ 		priv/s390_disasm.h		        \
+ 		priv/s390_defs.h		        \
++		priv/tilegx_disasm.h			\
+ 		priv/ir_match.h			        \
+ 		priv/ir_opt.h
+ 
+@@ -43,10 +47,11 @@
+ 		priv/ir_match.o			        \
+ 		priv/ir_opt.o				\
+ 		priv/ir_inject.o			\
+-		priv/main_main.o			\
++		priv/multiarch_main_main.o		\
+ 		priv/main_globals.o			\
+ 		priv/main_util.o			\
+ 		priv/s390_disasm.o			\
++		priv/tilegx_disasm.o			\
+ 		priv/host_x86_defs.o			\
+ 		priv/host_amd64_defs.o			\
+ 		priv/host_arm_defs.o			\
+@@ -54,6 +59,7 @@
+ 		priv/host_ppc_defs.o			\
+ 		priv/host_s390_defs.o			\
+ 		priv/host_mips_defs.o			\
++		priv/host_tilegx_defs.o			\
+ 		priv/host_x86_isel.o			\
+ 		priv/host_amd64_isel.o			\
+ 		priv/host_arm_isel.o			\
+@@ -61,6 +67,7 @@
+ 		priv/host_ppc_isel.o			\
+ 		priv/host_s390_isel.o			\
+ 		priv/host_mips_isel.o			\
++		priv/host_tilegx_isel.o			\
+ 		priv/host_generic_maddf.o	        \
+ 		priv/host_generic_regs.o	        \
+ 		priv/host_generic_simd64.o	        \
+@@ -76,6 +83,7 @@
+ 		priv/guest_ppc_helpers.o		\
+ 		priv/guest_s390_helpers.o		\
+ 		priv/guest_mips_helpers.o		\
++		priv/guest_tilegx_helpers.o		\
+ 		priv/guest_x86_toIR.o			\
+ 		priv/guest_amd64_toIR.o			\
+ 		priv/guest_arm_toIR.o			\
+@@ -82,7 +90,8 @@
+ 		priv/guest_arm64_toIR.o			\
+ 		priv/guest_ppc_toIR.o                   \
+ 		priv/guest_s390_toIR.o			\
+-		priv/guest_mips_toIR.o
++		priv/guest_mips_toIR.o			\
++		priv/guest_tilegx_toIR.o
+ 
+ PUB_INCLUDES = -Ipub
+ 
+@@ -119,10 +128,6 @@
+ # (the above are for icc 8.0 -- 8.0.0.55 I think)
+ # 186: pointless comparison of unsigned integer with zero
+ 
+-# kludge: stops V biarch builds screwing up at -j 2 or above
+-# The Right fix is to autoconf/automake-ise vex.
+-.NOTPARALLEL:
+-
+ all: vex
+ 
+ # Empty, needed for Valgrind
+@@ -254,6 +259,10 @@
+ 	$(CC) $(CCFLAGS) $(ALL_INCLUDES) -o priv/ir_opt.o \
+ 					 -c priv/ir_opt.c
+ 
++priv/multiarch_main_main.o: $(ALL_HEADERS) priv/multiarch_main_main.c
++	$(CC) $(CCFLAGS) $(ALL_INCLUDES) -o priv/multiarch_main_main.o \
++					 -c priv/multiarch_main_main.c
++
+ priv/main_main.o: $(ALL_HEADERS) priv/main_main.c
+ 	$(CC) $(CCFLAGS) $(ALL_INCLUDES) -o priv/main_main.o \
+ 					 -c priv/main_main.c
+@@ -294,6 +303,10 @@
+ 	$(CC) $(CCFLAGS) $(ALL_INCLUDES) -o priv/host_mips_defs.o \
+ 					 -c priv/host_mips_defs.c
+ 
++priv/host_tilegx_defs.o: $(ALL_HEADERS) priv/host_tilegx_defs.c
++	$(CC) $(CCFLAGS) $(ALL_INCLUDES) -o priv/host_tilegx_defs.o \
++					 -c priv/host_tilegx_defs.c
++
+ priv/host_x86_isel.o: $(ALL_HEADERS) priv/host_x86_isel.c
+ 	$(CC) $(CCFLAGS) $(ALL_INCLUDES) -o priv/host_x86_isel.o \
+ 					 -c priv/host_x86_isel.c
+@@ -322,6 +335,10 @@
+ 	$(CC) $(CCFLAGS) $(ALL_INCLUDES) -o priv/host_mips_isel.o \
+ 					 -c priv/host_mips_isel.c
+ 
++priv/host_tilegx_isel.o: $(ALL_HEADERS) priv/host_tilegx_isel.c
++	$(CC) $(CCFLAGS) $(ALL_INCLUDES) -o priv/host_tilegx_isel.o \
++					 -c priv/host_tilegx_isel.c
++
+ priv/host_generic_maddf.o: $(ALL_HEADERS) priv/host_generic_maddf.c
+ 	$(CC) $(CCFLAGS) $(ALL_INCLUDES) -o priv/host_generic_maddf.o \
+ 					 -c priv/host_generic_maddf.c
+@@ -413,3 +430,15 @@
+ priv/guest_mips_toIR.o: $(ALL_HEADERS) priv/guest_mips_toIR.c
+ 	$(CC) $(CCFLAGS) $(ALL_INCLUDES) -o priv/guest_mips_toIR.o \
+ 					 -c priv/guest_mips_toIR.c
++
++priv/tilegx_disasm.o: $(ALL_HEADERS) priv/tilegx_disasm.c
++	$(CC) $(CCFLAGS) $(ALL_INCLUDES) -o priv/tilegx_disasm.o \
++					 -c priv/tilegx_disasm.c
++
++priv/guest_tilegx_helpers.o: $(ALL_HEADERS) priv/guest_tilegx_helpers.c
++	$(CC) $(CCFLAGS) $(ALL_INCLUDES) -o priv/guest_tilegx_helpers.o \
++					 -c priv/guest_tilegx_helpers.c
++
++priv/guest_tilegx_toIR.o: $(ALL_HEADERS) priv/guest_tilegx_toIR.c
++	$(CC) $(CCFLAGS) $(ALL_INCLUDES) -o priv/guest_tilegx_toIR.o \
++					 -c priv/guest_tilegx_toIR.c
+Index: priv/guest_arm_toIR.c
+===================================================================
+--- priv/guest_arm_toIR.c	(revision 3260)
++++ priv/guest_arm_toIR.c	(working copy)
+@@ -18566,7 +18566,7 @@
+       vassert(0 == (pc & 1));
+ 
+       UInt pageoff = pc & 0xFFF;
+-      if (pageoff >= 18) {
++      if (0 && pageoff >= 18) {
+          /* It's safe to poke about in the 9 halfwords preceding this
+             insn.  So, have a look at them. */
+          guaranteedUnconditional = True; /* assume no 'it' insn found,
+Index: priv/guest_x86_toIR.c
+===================================================================
+--- priv/guest_x86_toIR.c	(revision 3260)
++++ priv/guest_x86_toIR.c	(working copy)
+@@ -2822,6 +2822,11 @@
+ 
+    if (epartIsReg(modrm)) {
+       switch (gregOfRM(modrm)) {
++         case 1: /* Undocumented synonym of 1 */
++           /* The Intel docs imply this insn is undefined and binutils
++              agrees.  Unfortunately Core 2 will run it (with who
++              knows what result?)  sandpile.org reckons it's an alias
++              for case 0.  We live dangerously. */
+          case 0: { /* TEST */
+             delta++; d32 = getUDisp(sz, delta); delta += sz;
+             dst1 = newTemp(ty);
+@@ -2833,13 +2838,6 @@
+                                       nameIReg(sz, eregOfRM(modrm)));
+             break;
+          }
+-         case 1: /* UNDEFINED */
+-           /* The Intel docs imply this insn is undefined and binutils
+-              agrees.  Unfortunately Core 2 will run it (with who
+-              knows what result?)  sandpile.org reckons it's an alias
+-              for case 0.  We play safe. */
+-           *decode_OK = False;
+-           break;
+          case 2: /* NOT */
+             delta++;
+             putIReg(sz, eregOfRM(modrm),
+@@ -2893,6 +2891,8 @@
+       delta += len;
+       assign(t1, loadLE(ty,mkexpr(addr)));
+       switch (gregOfRM(modrm)) {
++         case 1: /* Undocumented synonym of 1 */
++           /* See comment above on R case */
+          case 0: { /* TEST */
+             d32 = getUDisp(sz, delta); delta += sz;
+             dst1 = newTemp(ty);
+@@ -2902,10 +2902,6 @@
+             DIP("test%c $0x%x, %s\n", nameISize(sz), d32, dis_buf);
+             break;
+          }
+-         case 1: /* UNDEFINED */
+-           /* See comment above on R case */
+-           *decode_OK = False;
+-           break;
+          case 2: /* NOT */
+             dst1 = newTemp(ty);
+             assign(dst1, unop(mkSizedOp(ty,Iop_Not8), mkexpr(t1)));
+@@ -6245,7 +6241,6 @@
+       mkpair   = Iop_32HLto64;
+       getres   = left_shift ? Iop_64HIto32 : Iop_64to32;
+       shift    = left_shift ? Iop_Shl64 : Iop_Shr64;
+-      mask     = mkU8(31);
+    } else {
+       /* sz == 2 */
+       tmpL     = newTemp(Ity_I32);
+@@ -6254,9 +6249,16 @@
+       mkpair   = Iop_16HLto32;
+       getres   = left_shift ? Iop_32HIto16 : Iop_32to16;
+       shift    = left_shift ? Iop_Shl32 : Iop_Shr32;
+-      mask     = mkU8(15);
+    }
+ 
++   /* Note that we keep 5 bits of the shift amount even for 16-bit
++      operands. The manual says the result is undefined when the
++      shift amount is greater than the operand size, but that means
++      we still need to handle the case of shift_amt = 16 for 16-bit
++      operands. Luckily because we're doing the shift at double width,
++      this is compatible with the primops' restrictions. */
++   mask     = mkU8(31);
++
+    /* Do the shift, calculate the subshift value, and set 
+       the flag thunk. */
+ 
+@@ -7624,7 +7626,8 @@
+ 
+ /* Generate IR to set the guest %EFLAGS from the pushfl-format image
+    in the given 32-bit temporary.  The flags that are set are: O S Z A
+-   C P D ID AC.
++   C P D ID AC, except that ID and AC are not set if this was a 16-bit
++   popw.
+ 
+    In all cases, code to set AC is generated.  However, VEX actually
+    ignores the AC value and so can optionally emit an emulation
+@@ -7638,9 +7641,11 @@
+ static 
+ void set_EFLAGS_from_value ( IRTemp t1, 
+                              Bool   emit_AC_emwarn,
++			     Int    sz,
+                              Addr32 next_insn_EIP )
+ {
+    vassert(typeOfIRTemp(irsb->tyenv,t1) == Ity_I32);
++   vassert(sz == 2 || sz == 4);
+ 
+    /* t1 is the flag word.  Mask out everything except OSZACP and set
+       the flags thunk to X86G_CC_OP_COPY. */
+@@ -7672,6 +7677,7 @@
+                mkU32(1)))
+        );
+ 
++   if (sz > 2) {
+    /* Set the ID flag */
+    stmt( IRStmt_Put( 
+             OFFB_IDFLAG,
+@@ -7710,6 +7716,7 @@
+          )
+       );
+    }
++   }
+ }
+ 
+ 
+@@ -13044,6 +13051,7 @@
+          of iret.  All it really does is: 
+             popl %EIP; popl %CS; popl %EFLAGS.
+          %CS is set but ignored (as it is in (eg) popw %cs)". */
++      if (sz != 4) goto decode_failure; /* iretw is not yet supported */
+       t1 = newTemp(Ity_I32); /* ESP */
+       t2 = newTemp(Ity_I32); /* new EIP */
+       t3 = newTemp(Ity_I32); /* new CS */
+@@ -13057,7 +13065,8 @@
+       /* set %CS (which is ignored anyway) */
+       putSReg( R_CS, unop(Iop_32to16, mkexpr(t3)) );
+       /* set %EFLAGS */
+-      set_EFLAGS_from_value( t4, False/*!emit_AC_emwarn*/, 0/*unused*/ );
++      set_EFLAGS_from_value( t4, False/*!emit_AC_emwarn*/, 4/*sz*/,
++			     0/*unused*/ );
+       /* goto new EIP value */
+       jmp_treg(&dres, Ijk_Ret, t2);
+       vassert(dres.whatNext == Dis_StopHere);
+@@ -13065,11 +13074,13 @@
+       break;
+ 
+    case 0xE8: /* CALL J4 */
++      if (sz != 4) goto decode_failure;
+       d32 = getUDisp32(delta); delta += 4;
+       d32 += (guest_EIP_bbstart+delta); 
+       /* (guest_eip_bbstart+delta) == return-to addr, d32 == call-to addr */
+       if (d32 == guest_EIP_bbstart+delta && getIByte(delta) >= 0x58 
+-                                         && getIByte(delta) <= 0x5F) {
++                                         && getIByte(delta) <= 0x5F
++	  && resteerOkFn( callback_opaque, (Addr64)(Addr32)d32 )) {
+          /* Specially treat the position-independent-code idiom 
+                  call X
+               X: popl %reg
+@@ -13917,7 +13928,7 @@
+ 
+       /* Generate IR to set %EFLAGS{O,S,Z,A,C,P,D,ID,AC} from the
+ 	 value in t1. */
+-      set_EFLAGS_from_value( t1, True/*emit_AC_emwarn*/,
++      set_EFLAGS_from_value( t1, True/*emit_AC_emwarn*/, sz,
+                                  ((Addr32)guest_EIP_bbstart)+delta );
+ 
+       DIP("popf%c\n", nameISize(sz));

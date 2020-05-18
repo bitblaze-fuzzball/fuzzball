@@ -34,8 +34,22 @@
 #define OFFB_CC_DEP2   offsetof(VexGuestX86State,guest_CC_DEP2)
 #define OFFB_CC_NDEP   offsetof(VexGuestX86State,guest_CC_NDEP)
 
-#define OFFB_FPREGS    offsetof(VexGuestX86State,guest_FPREG[0])
-#define OFFB_FPTAGS    offsetof(VexGuestX86State,guest_FPTAG[0])
+#define OFFB_FPREG0    offsetof(VexGuestX86State,guest_FPREG[0])
+#define OFFB_FPREG1    offsetof(VexGuestX86State,guest_FPREG[1])
+#define OFFB_FPREG2    offsetof(VexGuestX86State,guest_FPREG[2])
+#define OFFB_FPREG3    offsetof(VexGuestX86State,guest_FPREG[3])
+#define OFFB_FPREG4    offsetof(VexGuestX86State,guest_FPREG[4])
+#define OFFB_FPREG5    offsetof(VexGuestX86State,guest_FPREG[5])
+#define OFFB_FPREG6    offsetof(VexGuestX86State,guest_FPREG[6])
+#define OFFB_FPREG7    offsetof(VexGuestX86State,guest_FPREG[7])
+#define OFFB_FPTAG0    offsetof(VexGuestX86State,guest_FPTAG[0])
+#define OFFB_FPTAG1    offsetof(VexGuestX86State,guest_FPTAG[1])
+#define OFFB_FPTAG2    offsetof(VexGuestX86State,guest_FPTAG[2])
+#define OFFB_FPTAG3    offsetof(VexGuestX86State,guest_FPTAG[3])
+#define OFFB_FPTAG4    offsetof(VexGuestX86State,guest_FPTAG[4])
+#define OFFB_FPTAG5    offsetof(VexGuestX86State,guest_FPTAG[5])
+#define OFFB_FPTAG6    offsetof(VexGuestX86State,guest_FPTAG[6])
+#define OFFB_FPTAG7    offsetof(VexGuestX86State,guest_FPTAG[7])
 #define OFFB_DFLAG     offsetof(VexGuestX86State,guest_DFLAG)
 #define OFFB_IDFLAG    offsetof(VexGuestX86State,guest_IDFLAG)
 #define OFFB_ACFLAG    offsetof(VexGuestX86State,guest_ACFLAG)
@@ -54,13 +68,21 @@
 
 #define OFFB_SSEROUND  offsetof(VexGuestX86State,guest_SSEROUND)
 #define OFFB_XMM0      offsetof(VexGuestX86State,guest_XMM0)
+#define OFFB_XMM0h     (offsetof(VexGuestX86State,guest_XMM0)+8)
 #define OFFB_XMM1      offsetof(VexGuestX86State,guest_XMM1)
+#define OFFB_XMM1h     (offsetof(VexGuestX86State,guest_XMM1)+8)
 #define OFFB_XMM2      offsetof(VexGuestX86State,guest_XMM2)
+#define OFFB_XMM2h     (offsetof(VexGuestX86State,guest_XMM2)+8)
 #define OFFB_XMM3      offsetof(VexGuestX86State,guest_XMM3)
+#define OFFB_XMM3h     (offsetof(VexGuestX86State,guest_XMM3)+8)
 #define OFFB_XMM4      offsetof(VexGuestX86State,guest_XMM4)
+#define OFFB_XMM4h     (offsetof(VexGuestX86State,guest_XMM4)+8)
 #define OFFB_XMM5      offsetof(VexGuestX86State,guest_XMM5)
+#define OFFB_XMM5h     (offsetof(VexGuestX86State,guest_XMM5)+8)
 #define OFFB_XMM6      offsetof(VexGuestX86State,guest_XMM6)
+#define OFFB_XMM6h     (offsetof(VexGuestX86State,guest_XMM6)+8)
 #define OFFB_XMM7      offsetof(VexGuestX86State,guest_XMM7)
+#define OFFB_XMM7h     (offsetof(VexGuestX86State,guest_XMM7)+8)
 
 #if VEX_VERSION < 2484
 #define OFFB_EMWARN    offsetof(VexGuestX86State,guest_EMWARN)
@@ -68,8 +90,14 @@
 #define OFFB_EMWARN    offsetof(VexGuestX86State,guest_EMNOTE)
 #endif
 
+#if VEX_VERSION < 2852
 #define OFFB_TISTART   offsetof(VexGuestX86State,guest_TISTART)
 #define OFFB_TILEN     offsetof(VexGuestX86State,guest_TILEN)
+#else
+#define OFFB_TISTART   offsetof(VexGuestX86State,guest_CMSTART)
+#define OFFB_TILEN     offsetof(VexGuestX86State,guest_CMLEN)
+#endif
+
 #define OFFB_NRADDR    offsetof(VexGuestX86State,guest_NRADDR)
 #if VEX_VERSION >= 1536
 #define OFFB_SC_CLASS  offsetof(VexGuestX86State,guest_SC_CLASS)
@@ -177,6 +205,7 @@ using namespace std;
 vector<VarDecl *> i386_get_reg_decls()
 {
   vector<VarDecl *> ret;
+  reg_t r64 = REG_64;
   reg_t r32 = REG_32;
   reg_t r16 = REG_16;
   reg_t r8 = REG_8;
@@ -251,6 +280,26 @@ vector<VarDecl *> i386_get_reg_decls()
   ret.push_back(new VarDecl("R_BH", r8));  
   ret.push_back(new VarDecl("R_CH", r8));  
   ret.push_back(new VarDecl("R_DH", r8));  
+
+  // XMM registers, each split into a low (L) and high (H) 64-bit
+  // half.
+  ret.push_back(new VarDecl("R_XMM0L", r64));
+  ret.push_back(new VarDecl("R_XMM0H", r64));
+  ret.push_back(new VarDecl("R_XMM1L", r64));
+  ret.push_back(new VarDecl("R_XMM1H", r64));
+  ret.push_back(new VarDecl("R_XMM2L", r64));
+  ret.push_back(new VarDecl("R_XMM2H", r64));
+  ret.push_back(new VarDecl("R_XMM3L", r64));
+  ret.push_back(new VarDecl("R_XMM3H", r64));
+  ret.push_back(new VarDecl("R_XMM4L", r64));
+  ret.push_back(new VarDecl("R_XMM4H", r64));
+  ret.push_back(new VarDecl("R_XMM5L", r64));
+  ret.push_back(new VarDecl("R_XMM5H", r64));
+  ret.push_back(new VarDecl("R_XMM6L", r64));
+  ret.push_back(new VarDecl("R_XMM6H", r64));
+  ret.push_back(new VarDecl("R_XMM7L", r64));
+  ret.push_back(new VarDecl("R_XMM7H", r64));
+
   return ret;
 }
 
@@ -288,8 +337,6 @@ static string reg_offset_to_name( int offset, bool *is_good )
         case OFFB_CC_DEP2:  name = "CC_DEP2";   good=true; break;
         case OFFB_CC_NDEP:  name = "CC_NDEP";   good=true; break;
 
-        case OFFB_FPREGS:   name = "FPREGS";    good=true; break;
-        case OFFB_FPTAGS:   name = "FPTAGS";    good=true; break;
         case OFFB_DFLAG:    name = "DFLAG";     good=true; break;
         case OFFB_IDFLAG:   name = "IDFLAG";    good=true; break;
         case OFFB_ACFLAG:   name = "ACFLAG";    good=true; break;
@@ -318,7 +365,10 @@ static string reg_offset_to_name( int offset, bool *is_good )
 #endif
 
 	// The real XMM registers are 128-bit, so these cases only 
-	// show up when the code is accessing the low 4 bytes.
+	// show up when the code is accessing 4-byte lanes.
+	// Sometimes VEX's translation accesses parts of a XMM register
+	// at an offset, just like %ah is part of %eax. But that doesn't
+        // fit with this function's remit.
         case OFFB_XMM0:     name = "XMM0";      good=false; break;
         case OFFB_XMM1:     name = "XMM1";      good=false; break;
         case OFFB_XMM2:     name = "XMM2";      good=false; break;
@@ -328,10 +378,6 @@ static string reg_offset_to_name( int offset, bool *is_good )
         case OFFB_XMM6:     name = "XMM6";      good=false; break;
         case OFFB_XMM7:     name = "XMM7";      good=false; break;
 
-	// Sometimes VEX's translation accesses parts of a XMM register
-	// at an offset, just like %ah is part of %eax. If we want to
-	// properly support SSE instructions, we'll need to apply a similar
-	// strategy as we use say with %ah, but for now we'll just punt.
         case OFFB_XMM0+4:     name = "XMM0";      good=false; break;
         case OFFB_XMM1+4:     name = "XMM1";      good=false; break;
         case OFFB_XMM2+4:     name = "XMM2";      good=false; break;
@@ -372,6 +418,36 @@ static inline Temp *mk_reg( string name, reg_t width )
     return new Temp(width, "R_" + name);
 }
 
+static string xmm_regname(unsigned int offset) {
+    switch (offset) {
+    case OFFB_XMM0: return "XMM0L";
+    case OFFB_XMM1: return "XMM1L";
+    case OFFB_XMM2: return "XMM2L";
+    case OFFB_XMM3: return "XMM3L";
+    case OFFB_XMM4: return "XMM4L";
+    case OFFB_XMM5: return "XMM5L";
+    case OFFB_XMM6: return "XMM6L";
+    case OFFB_XMM7: return "XMM7L";
+    case OFFB_XMM0h: return "XMM0H";
+    case OFFB_XMM1h: return "XMM1H";
+    case OFFB_XMM2h: return "XMM2H";
+    case OFFB_XMM3h: return "XMM3H";
+    case OFFB_XMM4h: return "XMM4H";
+    case OFFB_XMM5h: return "XMM5H";
+    case OFFB_XMM6h: return "XMM6H";
+    case OFFB_XMM7h: return "XMM7H";
+    }
+    assert(0);
+}
+
+#define lo8(x) _ex_l_cast(x, REG_8)
+#define hi8(x) _ex_h_cast(x, REG_8)
+
+#define lo16(x) _ex_l_cast(x, REG_16)
+#define hi16(x) _ex_h_cast(x, REG_16)
+
+#define lo32(x) _ex_l_cast(x, REG_32)
+#define hi32(x) _ex_h_cast(x, REG_32)
 
 
 //======================================================================
@@ -387,8 +463,39 @@ static Exp *translate_get_reg_8( unsigned int offset )
     string name;
 
     if (offset >= OFFB_XMM0 && offset < OFFB_XMM7+16) {
-	// SSE sub-register: not supported.
-	return new Unknown("Unhandled 8-bit XMM lane");
+	int which_lane = offset & 7;
+	int reg_offset = offset & ~7;
+	assert((OFFB_XMM0 & 7) == 0);
+	Temp *reg = mk_reg(xmm_regname(reg_offset), REG_64);
+	Exp *e;
+	switch (which_lane) {
+	case 0: e = lo8(reg); break;
+	case 1: e = hi8(lo16(reg)); break;
+	case 2: e = lo8(hi16(lo32(reg))); break;
+	case 3: e = hi8(lo32(reg)); break;
+	case 4: e = lo8(hi32(reg)); break;
+	case 5: e = hi8(lo16(hi32(reg))); break;
+	case 6: e = lo8(hi16(reg)); break;
+	case 7: e = hi8(reg); break;
+	default: assert(0);
+	}
+	return e;
+    }
+
+    if (offset >= OFFB_FPTAG0 && offset <= OFFB_FPTAG7) {
+	switch (offset) {
+	case OFFB_FPTAG0: name = "FPTAG0"; break;
+	case OFFB_FPTAG1: name = "FPTAG1"; break;
+	case OFFB_FPTAG2: name = "FPTAG2"; break;
+	case OFFB_FPTAG3: name = "FPTAG3"; break;
+	case OFFB_FPTAG4: name = "FPTAG4"; break;
+	case OFFB_FPTAG5: name = "FPTAG5"; break;
+	case OFFB_FPTAG6: name = "FPTAG6"; break;
+	case OFFB_FPTAG7: name = "FPTAG7"; break;
+	default:
+	    assert(0);
+	}
+	return mk_reg(name, REG_8);
     }
 
     // Determine which 32 bit register this 8 bit sub
@@ -428,9 +535,21 @@ static Exp *translate_get_reg_16( unsigned int offset )
     bool sub;
 
     if (offset >= OFFB_XMM0 && offset < OFFB_XMM7+16) {
-	// SSE sub-register: not supported.
-	assert(((offset - OFFB_XMM0) & 1) == 0);
-	return new Unknown("Unhandled 16-bit XMM lane");
+	int byte_off = offset & 7;
+	int reg_offset = offset & ~7;
+	assert((OFFB_XMM0 & 7) == 0);
+	assert((byte_off & 1) == 0);
+	int which_lane = byte_off >> 1;
+	Temp *reg = mk_reg(xmm_regname(reg_offset), REG_64);
+	Exp *e;
+	switch (which_lane) {
+	case 0: e = lo16(reg); break;
+	case 1: e = hi16(lo32(reg)); break;
+	case 2: e = lo16(hi32(reg)); break;
+	case 3: e = hi16(reg); break;
+	default: assert(0); /* Can't happen */
+	}
+	return e;
     }
 
     switch ( offset )
@@ -483,9 +602,63 @@ static Exp *translate_get_reg_32( int offset )
 {
     assert(offset >= 0);
 
-    bool is_good;
-    string name = reg_offset_to_name(offset, &is_good);
+    bool is_good = false;
+    string name;
+    int lane = -1;
     Exp *result;
+
+    // First, check if it's a subregister of a SIMD register
+    switch (offset) {
+    case OFFB_XMM0: name = "XMM0L"; lane = 0; is_good = true; break;
+    case OFFB_XMM1: name = "XMM1L"; lane = 0; is_good = true; break;
+    case OFFB_XMM2: name = "XMM2L"; lane = 0; is_good = true; break;
+    case OFFB_XMM3: name = "XMM3L"; lane = 0; is_good = true; break;
+    case OFFB_XMM4: name = "XMM4L"; lane = 0; is_good = true; break;
+    case OFFB_XMM5: name = "XMM5L"; lane = 0; is_good = true; break;
+    case OFFB_XMM6: name = "XMM6L"; lane = 0; is_good = true; break;
+    case OFFB_XMM7: name = "XMM7L"; lane = 0; is_good = true; break;
+    case OFFB_XMM0+4: name = "XMM0L"; lane = 1; is_good = true; break;
+    case OFFB_XMM1+4: name = "XMM1L"; lane = 1; is_good = true; break;
+    case OFFB_XMM2+4: name = "XMM2L"; lane = 1; is_good = true; break;
+    case OFFB_XMM3+4: name = "XMM3L"; lane = 1; is_good = true; break;
+    case OFFB_XMM4+4: name = "XMM4L"; lane = 1; is_good = true; break;
+    case OFFB_XMM5+4: name = "XMM5L"; lane = 1; is_good = true; break;
+    case OFFB_XMM6+4: name = "XMM6L"; lane = 1; is_good = true; break;
+    case OFFB_XMM7+4: name = "XMM7L"; lane = 1; is_good = true; break;
+    case OFFB_XMM0+8: name = "XMM0H"; lane = 0; is_good = true; break;
+    case OFFB_XMM1+8: name = "XMM1H"; lane = 0; is_good = true; break;
+    case OFFB_XMM2+8: name = "XMM2H"; lane = 0; is_good = true; break;
+    case OFFB_XMM3+8: name = "XMM3H"; lane = 0; is_good = true; break;
+    case OFFB_XMM4+8: name = "XMM4H"; lane = 0; is_good = true; break;
+    case OFFB_XMM5+8: name = "XMM5H"; lane = 0; is_good = true; break;
+    case OFFB_XMM6+8: name = "XMM6H"; lane = 0; is_good = true; break;
+    case OFFB_XMM7+8: name = "XMM7H"; lane = 0; is_good = true; break;
+    case OFFB_XMM0+12: name = "XMM0H"; lane = 1; is_good = true; break;
+    case OFFB_XMM1+12: name = "XMM1H"; lane = 1; is_good = true; break;
+    case OFFB_XMM2+12: name = "XMM2H"; lane = 1; is_good = true; break;
+    case OFFB_XMM3+12: name = "XMM3H"; lane = 1; is_good = true; break;
+    case OFFB_XMM4+12: name = "XMM4H"; lane = 1; is_good = true; break;
+    case OFFB_XMM5+12: name = "XMM5H"; lane = 1; is_good = true; break;
+    case OFFB_XMM6+12: name = "XMM6H"; lane = 1; is_good = true; break;
+    case OFFB_XMM7+12: name = "XMM7H"; lane = 1; is_good = true; break;
+    default:
+	is_good = false;
+	break;
+    }
+
+    if (is_good) {
+	// Matched a SIMD subregister, so extract the bits we want
+	assert(lane >= 0 && lane < 2);
+	Exp *reg = mk_reg(name, REG_64);
+	switch (lane) {
+	case 0: result = _ex_l_cast(reg, REG_32); break;
+	case 1: result = _ex_h_cast(reg, REG_32); break;
+	}
+	return result;
+    }
+
+    // Next, try the list of 32-bit registers
+    name = reg_offset_to_name(offset, &is_good);
 
     if (is_good)
         result = mk_reg(name, REG_32);
@@ -494,6 +667,84 @@ static Exp *translate_get_reg_32( int offset )
 
     return result;
 }
+
+static Exp *translate_get_reg_64( int offset )
+{
+    assert(offset >= 0);
+
+    bool is_good = false;
+    string name;
+    Exp *result;
+
+    // We split XMM registers into 64-bit chunks, so handle them in
+    // the same way as real 64-bit registers.
+    switch (offset) {
+    case OFFB_XMM0: name = "XMM0L"; is_good = true; break;
+    case OFFB_XMM1: name = "XMM1L"; is_good = true; break;
+    case OFFB_XMM2: name = "XMM2L"; is_good = true; break;
+    case OFFB_XMM3: name = "XMM3L"; is_good = true; break;
+    case OFFB_XMM4: name = "XMM4L"; is_good = true; break;
+    case OFFB_XMM5: name = "XMM5L"; is_good = true; break;
+    case OFFB_XMM6: name = "XMM6L"; is_good = true; break;
+    case OFFB_XMM7: name = "XMM7L"; is_good = true; break;
+    case OFFB_XMM0+8: name = "XMM0H"; is_good = true; break;
+    case OFFB_XMM1+8: name = "XMM1H"; is_good = true; break;
+    case OFFB_XMM2+8: name = "XMM2H"; is_good = true; break;
+    case OFFB_XMM3+8: name = "XMM3H"; is_good = true; break;
+    case OFFB_XMM4+8: name = "XMM4H"; is_good = true; break;
+    case OFFB_XMM5+8: name = "XMM5H"; is_good = true; break;
+    case OFFB_XMM6+8: name = "XMM6H"; is_good = true; break;
+    case OFFB_XMM7+8: name = "XMM7H"; is_good = true; break;
+    case OFFB_FPREG0: name = "FPREG0"; is_good = true; break;
+    case OFFB_FPREG1: name = "FPREG1"; is_good = true; break;
+    case OFFB_FPREG2: name = "FPREG2"; is_good = true; break;
+    case OFFB_FPREG3: name = "FPREG3"; is_good = true; break;
+    case OFFB_FPREG4: name = "FPREG4"; is_good = true; break;
+    case OFFB_FPREG5: name = "FPREG5"; is_good = true; break;
+    case OFFB_FPREG6: name = "FPREG6"; is_good = true; break;
+    case OFFB_FPREG7: name = "FPREG7"; is_good = true; break;
+    default:
+        is_good = false;
+        break;
+    }
+
+    if (is_good) {
+        return mk_reg(name, REG_64);
+    }
+
+    result = new Unknown("Unknown 64-bit register");
+
+    return result;
+}
+
+
+static Exp *translate_get_reg_128( unsigned int offset )
+{
+    string name;
+
+    switch ( offset )
+    {
+    case OFFB_XMM0: name = "XMM0"; break;
+    case OFFB_XMM1: name = "XMM1"; break;
+    case OFFB_XMM2: name = "XMM2"; break;
+    case OFFB_XMM3: name = "XMM3"; break;
+    case OFFB_XMM4: name = "XMM4"; break;
+    case OFFB_XMM5: name = "XMM5"; break;
+    case OFFB_XMM6: name = "XMM6"; break;
+    case OFFB_XMM7: name = "XMM7"; break;
+    default:
+	assert(0);
+    }
+
+    string name_l = name + "L";
+    string name_h = name + "H";
+
+    Exp *value = new Vector(mk_reg(name_h, REG_64),
+			    mk_reg(name_l, REG_64));
+
+    return value;
+}
+
 
 Exp *i386_translate_get( IRExpr *expr, IRSB *irbb, vector<Stmt *> *irout )
 {
@@ -519,7 +770,7 @@ Exp *i386_translate_get( IRExpr *expr, IRSB *irbb, vector<Stmt *> *irout )
         result = translate_get_reg_16(offset);
     }
 
-    else if ( type == Ity_I32 )
+    else if ( type == Ity_I32 || type == Ity_F32 )
     {
         result = translate_get_reg_32(offset);
     }
@@ -531,28 +782,14 @@ Exp *i386_translate_get( IRExpr *expr, IRSB *irbb, vector<Stmt *> *irout )
 	result = new Cast(translate_get_reg_32(offset), REG_64, CAST_UNSIGNED);
     }
 
-    else if ( type == Ity_I64 )
+    else if ( type == Ity_I64 || type == Ity_F64 )
     {
-	// We could handle this, but there shouldn't be any 64-bit integer
-	// registers.
-        result = new Unknown("register type (I64)");
-    }
-    else if ( type == Ity_F32 )
-    {
-        result = new Unknown("register type (F32)");
-    }
-    else if ( type == Ity_F64 )
-    {
-        result = new Unknown("register type (F64)");
+        result = translate_get_reg_64(offset);
     }
 
-    else if ( type == Ity_I128 )
+    else if ( type == Ity_I128 || type == Ity_V128 )
     {
-        result = new Unknown("register type (I128)");
-    }
-    else if ( type == Ity_V128 )
-    {
-        result = new Unknown("register type (V128)");
+        result = translate_get_reg_128(offset);
     }
 
     else
@@ -561,6 +798,71 @@ Exp *i386_translate_get( IRExpr *expr, IRSB *irbb, vector<Stmt *> *irout )
     }
 
     return result;
+}
+
+Exp *i386_translate_geti( IRExpr *expr, IRSB *irbb, vector<Stmt *> *irout )
+{
+    assert(expr);
+    assert(irbb);
+    assert(irout);
+
+    IRType type = typeOfIRExpr(irbb->tyenv, expr);
+    IRRegArray* descr = expr->Iex.GetI.descr;
+    IRExpr *ix = expr->Iex.GetI.ix;
+    int bias = expr->Iex.GetI.bias;
+    int elt_size;
+    reg_t elt_t;
+
+    assert(type == descr->elemTy);
+    if (descr->base == OFFB_FPREG0 && descr->elemTy == Ity_F64 &&
+	descr->nElems == 8) {
+	/* x87 FP registers, in VEX's 64-bit simulation */
+	elt_size = 8;
+	elt_t = REG_64;
+    } else if (descr->base == OFFB_FPTAG0 && descr->elemTy == Ity_I8 &&
+	descr->nElems == 8) {
+	/* In-use tags for x87 FP registers */
+	elt_size = 1;
+	elt_t = REG_8;
+    } else {
+	return new Unknown("Unrecognized GetI region");
+    }
+
+    int mask = descr->nElems - 1; /* NB must be a power of two */
+    Exp *ix_e = translate_expr(ix, irbb, irout);
+    Exp *index_e = _ex_and(_ex_add(ix_e, ex_const(bias)), ex_const(mask));
+
+    Exp **gets = (Exp **)malloc(descr->nElems * sizeof(Exp *));
+    for (int i = 0; i < descr->nElems; i++) {
+	if (elt_size == 1) {
+	    gets[i] = translate_get_reg_8(descr->base + i * elt_size);
+	} else if (elt_size == 8) {
+	    gets[i] = translate_get_reg_64(descr->base + i * elt_size);
+	}
+    }
+
+    /* Generate a tree of if-then-else choices */
+    assert(descr->nElems == 8);
+    Temp *cond_temp = mk_temp(REG_32, irout);
+    irout->push_back(new Move(cond_temp, index_e));
+    Exp *sel0_exp = ex_l_cast(cond_temp, REG_1);
+    Temp *sel0_temp = mk_temp(REG_1, irout);
+    irout->push_back(new Move(sel0_temp, sel0_exp));
+    Exp *sel1_exp = ex_get_bit(cond_temp, 1);
+    Temp *sel1_temp = mk_temp(REG_1, irout);
+    irout->push_back(new Move(sel1_temp, sel1_exp));
+    Exp *sel2_exp = ex_get_bit(cond_temp, 2);
+    Exp *choice01 = emit_ite(irout, elt_t, ecl(sel0_temp), gets[1], gets[0]);
+    Exp *choice23 = emit_ite(irout, elt_t, ecl(sel0_temp), gets[3], gets[2]);
+    Exp *choice45 = emit_ite(irout, elt_t, ecl(sel0_temp), gets[5], gets[4]);
+    Exp *choice67 = emit_ite(irout, elt_t, ecl(sel0_temp), gets[7], gets[6]);
+    Exp *choice03 = emit_ite(irout, elt_t, ecl(sel1_temp), choice23, choice01);
+    Exp *choice47 = emit_ite(irout, elt_t, ecl(sel1_temp), choice67, choice45);
+    Exp *choice = emit_ite(irout, elt_t, sel2_exp, choice47, choice03);
+
+    free(gets);
+
+    return choice;
 }
 
 Stmt *i386_translate_dirty( IRStmt *stmt, IRSB *irbb, vector<Stmt *> *irout )
@@ -581,11 +883,20 @@ Stmt *i386_translate_dirty( IRStmt *stmt, IRSB *irbb, vector<Stmt *> *irout )
 	assert(lhs != IRTemp_INVALID);
 	result = mk_assign_tmp(lhs, new Unknown("rdtsc"), irbb, irout);
     }
-    else if ( func == "x86g_dirtyhelper_CPUID_sse2" 
+    else if ( func == "x86g_dirtyhelper_CPUID_sse3"
+	      || func == "x86g_dirtyhelper_CPUID_sse2"
 	      || func == "x86g_dirtyhelper_CPUID_sse1"
 	      || func == "x86g_dirtyhelper_CPUID_sse0") 
     {
 	result = new Special("cpuid");
+    }
+    else if (func == "x86g_dirtyhelper_loadF80le") {
+	IRTemp lhs = dirty->tmp;
+	assert(lhs != IRTemp_INVALID);
+	result = mk_assign_tmp(lhs, new Unknown("loadF80"), irbb, irout);
+    }
+    else if (func == "x86g_dirtyhelper_storeF80le") {
+        result = new ExpStmt(new Unknown("Unknown: storeF80"));
     }
     else
     {
@@ -938,11 +1249,26 @@ Exp *i386_translate_ccall( IRExpr *expr, IRSB *irbb, vector<Stmt *> *irout )
 	result = _ex_or(ex_const(0x1f80),
 			_ex_shl(arg, ex_const(13)));
     }
+    else if ( func == "x86g_create_fpucw" )
+    {
+	Exp *arg = translate_expr(expr->Iex.CCall.args[0], irbb, irout);
+	result = _ex_or(ex_const(0x037f),
+			_ex_shl(arg, ex_const(10)));
+    }
     else if ( func == "x86g_check_ldmxcsr" )
     {
 	Exp *arg = translate_expr(expr->Iex.CCall.args[0], irbb, irout);
 	/* Extract the rounding mode */
 	Exp *rmode = _ex_and(_ex_shr(arg, ex_const(13)),
+			     ex_const(3));
+	/* The high word is for emulation warnings: skip it */
+	result = _ex_u_cast(rmode, REG_64);
+    }
+    else if ( func == "x86g_check_fldcw" )
+    {
+	Exp *arg = translate_expr(expr->Iex.CCall.args[0], irbb, irout);
+	/* Extract the rounding mode */
+	Exp *rmode = _ex_and(_ex_shr(arg, ex_const(10)),
 			     ex_const(3));
 	/* The high word is for emulation warnings: skip it */
 	result = _ex_u_cast(rmode, REG_64);
@@ -973,9 +1299,34 @@ static Stmt *translate_put_reg_8( unsigned int offset, Exp *data, IRSB *irbb )
     Temp *reg;
 
     if (offset >= OFFB_XMM0 && offset < OFFB_XMM7+16) {
-	// SSE sub-register: not supported.
-	Exp::destroy(data);
-	return new Special("Unhandled store to 8-bit XMM lane");
+	int which_lane = offset & 7;
+	int reg_offset = offset & ~7;
+	assert((OFFB_XMM0 & 7) == 0);
+	Temp *reg = mk_reg(xmm_regname(reg_offset), REG_64);
+	int shift_amt = which_lane * 8;
+	unsigned long long change_mask = 0xffULL << shift_amt;
+	unsigned long long keep_mask = ~change_mask;
+	Exp *keep = _ex_and(reg, ex_const64(keep_mask));
+	Exp *data_u = _ex_u_cast(data, REG_64);
+	Exp *change = shift_amt ? _ex_shl(data_u, ex_const(shift_amt)) : data_u;
+	Exp *new_e = _ex_or(keep, change);
+	return new Move(ecl(reg), new_e);
+    }
+
+    if (offset >= OFFB_FPTAG0 && offset <= OFFB_FPTAG7) {
+        switch (offset) {
+        case OFFB_FPTAG0: name = "FPTAG0"; break;
+        case OFFB_FPTAG1: name = "FPTAG1"; break;
+        case OFFB_FPTAG2: name = "FPTAG2"; break;
+        case OFFB_FPTAG3: name = "FPTAG3"; break;
+        case OFFB_FPTAG4: name = "FPTAG4"; break;
+        case OFFB_FPTAG5: name = "FPTAG5"; break;
+        case OFFB_FPTAG6: name = "FPTAG6"; break;
+        case OFFB_FPTAG7: name = "FPTAG7"; break;
+        default:
+            assert(0);
+        }
+        return new Move(mk_reg(name, REG_8), data);
     }
 
     // Determine which 32 bit register this 8 bit sub
@@ -1034,10 +1385,19 @@ static Stmt *translate_put_reg_16( unsigned int offset, Exp *data, IRSB *irbb )
     Temp *reg;
 
     if (offset >= OFFB_XMM0 && offset < OFFB_XMM7+16) {
-	// SSE sub-register: not supported.
-	assert(((offset - OFFB_XMM0) & 1) == 0);
-	Exp::destroy(data);
-	return new Special("Unhandled store to 16-bit XMM lane");
+	int byte_off = offset & 7;
+	int reg_offset = offset & ~7;
+	assert((OFFB_XMM0 & 7) == 0);
+	assert((byte_off & 1) == 0);
+	int shift_amt = byte_off * 8;
+	Temp *reg = mk_reg(xmm_regname(reg_offset), REG_64);
+	unsigned long long change_mask = 0xffffULL << shift_amt;
+	unsigned long long keep_mask = ~change_mask;
+	Exp *keep = _ex_and(reg, ex_const64(keep_mask));
+	Exp *data_u = _ex_u_cast(data, REG_64);
+	Exp *change = shift_amt ? _ex_shl(data_u, ex_const(shift_amt)) : data_u;
+	Exp *new_e = _ex_or(keep, change);
+	return new Move(ecl(reg), new_e);
     }
 
     switch ( offset )
@@ -1095,14 +1455,81 @@ static Stmt *translate_put_reg_16( unsigned int offset, Exp *data, IRSB *irbb )
     return new Move( reg, value );
 }
 
+// Basically the same as translate_32HLto64
+static Exp *assemble64(Exp *arg1, Exp *arg2) {
+    Exp *high = new Cast(arg1, REG_64, CAST_UNSIGNED);
+    Exp *low = new Cast(arg2, REG_64, CAST_UNSIGNED);
+    Exp *high_s = new BinOp(LSHIFT, high, ex_const(32));
+    return new BinOp(BITOR, high_s, low);
+}
+
 static Stmt *translate_put_reg_32( int offset, Exp *data, IRSB *irbb )
 {
     assert(data);
     
     bool is_good;
-    string name = reg_offset_to_name(offset, &is_good);
+    string name;
+    int lane = -1;
 
     Stmt *st;
+
+    // First, check if it's a subregister of a SIMD register
+    switch (offset) {
+    case OFFB_XMM0: name = "XMM0L"; lane = 0; is_good = true; break;
+    case OFFB_XMM1: name = "XMM1L"; lane = 0; is_good = true; break;
+    case OFFB_XMM2: name = "XMM2L"; lane = 0; is_good = true; break;
+    case OFFB_XMM3: name = "XMM3L"; lane = 0; is_good = true; break;
+    case OFFB_XMM4: name = "XMM4L"; lane = 0; is_good = true; break;
+    case OFFB_XMM5: name = "XMM5L"; lane = 0; is_good = true; break;
+    case OFFB_XMM6: name = "XMM6L"; lane = 0; is_good = true; break;
+    case OFFB_XMM7: name = "XMM7L"; lane = 0; is_good = true; break;
+    case OFFB_XMM0+4: name = "XMM0L"; lane = 1; is_good = true; break;
+    case OFFB_XMM1+4: name = "XMM1L"; lane = 1; is_good = true; break;
+    case OFFB_XMM2+4: name = "XMM2L"; lane = 1; is_good = true; break;
+    case OFFB_XMM3+4: name = "XMM3L"; lane = 1; is_good = true; break;
+    case OFFB_XMM4+4: name = "XMM4L"; lane = 1; is_good = true; break;
+    case OFFB_XMM5+4: name = "XMM5L"; lane = 1; is_good = true; break;
+    case OFFB_XMM6+4: name = "XMM6L"; lane = 1; is_good = true; break;
+    case OFFB_XMM7+4: name = "XMM7L"; lane = 1; is_good = true; break;
+    case OFFB_XMM0+8: name = "XMM0H"; lane = 0; is_good = true; break;
+    case OFFB_XMM1+8: name = "XMM1H"; lane = 0; is_good = true; break;
+    case OFFB_XMM2+8: name = "XMM2H"; lane = 0; is_good = true; break;
+    case OFFB_XMM3+8: name = "XMM3H"; lane = 0; is_good = true; break;
+    case OFFB_XMM4+8: name = "XMM4H"; lane = 0; is_good = true; break;
+    case OFFB_XMM5+8: name = "XMM5H"; lane = 0; is_good = true; break;
+    case OFFB_XMM6+8: name = "XMM6H"; lane = 0; is_good = true; break;
+    case OFFB_XMM7+8: name = "XMM7H"; lane = 0; is_good = true; break;
+    case OFFB_XMM0+12: name = "XMM0H"; lane = 1; is_good = true; break;
+    case OFFB_XMM1+12: name = "XMM1H"; lane = 1; is_good = true; break;
+    case OFFB_XMM2+12: name = "XMM2H"; lane = 1; is_good = true; break;
+    case OFFB_XMM3+12: name = "XMM3H"; lane = 1; is_good = true; break;
+    case OFFB_XMM4+12: name = "XMM4H"; lane = 1; is_good = true; break;
+    case OFFB_XMM5+12: name = "XMM5H"; lane = 1; is_good = true; break;
+    case OFFB_XMM6+12: name = "XMM6H"; lane = 1; is_good = true; break;
+    case OFFB_XMM7+12: name = "XMM7H"; lane = 1; is_good = true; break;
+    default:
+	is_good = false;
+	break;
+    }
+
+    if (is_good) {
+	// Matched a SIMD subregister, so divide and reassemble.
+	assert(lane >= 0 && lane < 2);
+        Exp *old_val = mk_reg(name, REG_64);
+	Exp *high, *low;
+	if (lane == 0) {
+	    high = _ex_h_cast(old_val, REG_32);
+	    low = data;
+	} else {
+	    high = data;
+	    low = _ex_l_cast(old_val, REG_32);
+	}
+	Exp *new_val = assemble64(high, low);
+	return new Move(mk_reg(name, REG_64), new_val);
+    }
+
+    // Next, try the regular 32-bit registers
+    name = reg_offset_to_name(offset, &is_good);
 
     if (is_good)
     {
@@ -1116,6 +1543,88 @@ static Stmt *translate_put_reg_32( int offset, Exp *data, IRSB *irbb )
     }
     
     return st;
+}
+
+static Stmt *translate_put_reg_64(unsigned int offset, Exp *data, IRSB *irbb)
+{
+    assert(offset >= 0);
+
+    bool is_good = false;
+    string name;
+
+    // We split XMM registers into 64-bit chunks, so handle them in
+    // the same way as real 64-bit registers
+    switch (offset) {
+    case OFFB_XMM0: name = "XMM0L"; is_good = true; break;
+    case OFFB_XMM1: name = "XMM1L"; is_good = true; break;
+    case OFFB_XMM2: name = "XMM2L"; is_good = true; break;
+    case OFFB_XMM3: name = "XMM3L"; is_good = true; break;
+    case OFFB_XMM4: name = "XMM4L"; is_good = true; break;
+    case OFFB_XMM5: name = "XMM5L"; is_good = true; break;
+    case OFFB_XMM6: name = "XMM6L"; is_good = true; break;
+    case OFFB_XMM7: name = "XMM7L"; is_good = true; break;
+    case OFFB_XMM0+8: name = "XMM0H"; is_good = true; break;
+    case OFFB_XMM1+8: name = "XMM1H"; is_good = true; break;
+    case OFFB_XMM2+8: name = "XMM2H"; is_good = true; break;
+    case OFFB_XMM3+8: name = "XMM3H"; is_good = true; break;
+    case OFFB_XMM4+8: name = "XMM4H"; is_good = true; break;
+    case OFFB_XMM5+8: name = "XMM5H"; is_good = true; break;
+    case OFFB_XMM6+8: name = "XMM6H"; is_good = true; break;
+    case OFFB_XMM7+8: name = "XMM7H"; is_good = true; break;
+    case OFFB_FPREG0: name = "FPREG0"; is_good = true; break;
+    case OFFB_FPREG1: name = "FPREG1"; is_good = true; break;
+    case OFFB_FPREG2: name = "FPREG2"; is_good = true; break;
+    case OFFB_FPREG3: name = "FPREG3"; is_good = true; break;
+    case OFFB_FPREG4: name = "FPREG4"; is_good = true; break;
+    case OFFB_FPREG5: name = "FPREG5"; is_good = true; break;
+    case OFFB_FPREG6: name = "FPREG6"; is_good = true; break;
+    case OFFB_FPREG7: name = "FPREG7"; is_good = true; break;
+    default:
+        is_good = false;
+        break;
+    }
+
+    if (is_good) {
+        return new Move(mk_reg(name, REG_64), data);
+    }
+
+    Exp::destroy(data);
+    return new Special("Unknown 64-bit register");
+}
+
+static Stmt *translate_put_reg_128(unsigned int offset, Exp *data, IRSB *irbb,
+				   vector<Stmt *> *irout)
+{
+    assert(data);
+
+    string name;
+
+    switch ( offset )
+    {
+    case OFFB_XMM0: name = "XMM0"; break;
+    case OFFB_XMM1: name = "XMM1"; break;
+    case OFFB_XMM2: name = "XMM2"; break;
+    case OFFB_XMM3: name = "XMM3"; break;
+    case OFFB_XMM4: name = "XMM4"; break;
+    case OFFB_XMM5: name = "XMM5"; break;
+    case OFFB_XMM6: name = "XMM6"; break;
+    case OFFB_XMM7: name = "XMM7"; break;
+        default:
+	    assert(0);
+    }
+
+    // The value should be a Vector; deconstruct it
+    assert(data->exp_type == VECTOR);
+    Vector *v = (Vector *)data;
+    Exp *high = v->lanes[1];
+    Exp *low = v->lanes[0];
+    delete v; // Shallow delete, since we reuse high and low
+
+    string name_l = name + "L";
+    string name_h = name + "H";
+
+    irout->push_back(new Move(mk_reg(name_h, REG_64), high));
+    return new Move(mk_reg(name_l, REG_64), low);
 }
 
 Stmt *i386_translate_put( IRStmt *stmt, IRSB *irbb, vector<Stmt *> *irout )
@@ -1151,11 +1660,16 @@ Stmt *i386_translate_put( IRStmt *stmt, IRSB *irbb, vector<Stmt *> *irout )
     }
 
     //
-    // Regular 32 bit registers
+    // 32 bit registers
     //
-    else if ( type == Ity_I32 )
+    else if ( type == Ity_I32 || type == Ity_F32 )
     {
         result = translate_put_reg_32(offset, data, irbb);
+    }
+
+    else if ( type == Ity_I64 || type == Ity_F64 )
+    {
+        result = translate_put_reg_64(offset, data, irbb);
     }
 
     else if ( offset == OFFB_LDT || offset == OFFB_GDT )
@@ -1166,6 +1680,12 @@ Stmt *i386_translate_put( IRStmt *stmt, IRSB *irbb, vector<Stmt *> *irout )
 	result = translate_put_reg_32(offset, ndata, irbb);
     }
 
+    else if ( type == Ity_I128 || type == Ity_V128 )
+    {
+	result = translate_put_reg_128(offset, data, irbb, irout);
+    }
+
+
     else
     {
 	Exp::destroy(data);
@@ -1175,7 +1695,76 @@ Stmt *i386_translate_put( IRStmt *stmt, IRSB *irbb, vector<Stmt *> *irout )
     return result;
 }
 
+#if VEX_VERSION >= 2361
+#define PutI_details(x) PutI.details->x
+#else
+#define PutI_details(x) PutI.x
+#endif
 
+Stmt *i386_translate_puti( IRStmt *stmt, IRSB *irbb, vector<Stmt *> *irout )
+{
+    assert(stmt);
+    assert(irbb);
+    assert(irout);
+
+    IRRegArray* descr = stmt->Ist.PutI_details(descr);
+    IRExpr *ix = stmt->Ist.PutI_details(ix);
+    int bias = stmt->Ist.PutI_details(bias);
+    int elt_size;
+    reg_t elt_t;
+
+    Exp *data = translate_expr(stmt->Ist.PutI_details(data), irbb, irout);
+
+    if (descr->base == OFFB_FPREG0 && descr->elemTy == Ity_F64 &&
+        descr->nElems == 8) {
+        /* x87 FP registers, in VEX's 64-bit simulation */
+        elt_size = 8;
+        elt_t = REG_64;
+    } else if (descr->base == OFFB_FPTAG0 && descr->elemTy == Ity_I8 &&
+        descr->nElems == 8) {
+        /* In-use tags for x87 FP registers */
+        elt_size = 1;
+        elt_t = REG_8;
+    } else {
+        return new ExpStmt(new Unknown("Unrecognized PutI region"));
+    }
+
+    int mask = descr->nElems - 1;
+    Exp *ix_e = translate_expr(ix, irbb, irout);
+    Exp *index_e = _ex_and(_ex_add(ix_e, ex_const(bias)), ex_const(mask));
+    Temp *index_temp = mk_temp(reg_address_t, irout);
+    irout->push_back(new Move(index_temp, index_e));
+
+    Stmt *last_stmt = 0;
+    for (int i = 0; i < descr->nElems; i++) {
+	if (last_stmt) {
+	    irout->push_back(last_stmt);
+	}
+	Exp *get = 0;
+	int offset = descr->base + i * elt_size;
+        if (elt_size == 1) {
+            get = translate_get_reg_8(offset);
+        } else if (elt_size == 8) {
+            get = translate_get_reg_64(offset);
+        } else {
+	    assert(0);
+	}
+	Exp *sel = _ex_eq(ecl(index_temp), ex_const(i));
+	Exp *data_clone = last_stmt ? ecl(data) : data;
+	Exp *maybe_up = emit_ite(irout, elt_t, sel, data_clone, get);
+	Stmt *put;
+	if (elt_size == 1) {
+	    put = translate_put_reg_8(offset, maybe_up, irbb);
+	} else if (elt_size == 8) {
+	    put = translate_put_reg_64(offset, maybe_up, irbb);
+	} else {
+	    assert(0);
+	}
+	last_stmt = put;
+    }
+    assert(last_stmt);
+    return last_stmt;
+}
 
 
 
@@ -1391,25 +1980,46 @@ void get_thunk_index(vector<Stmt *> *ir,
 #ifdef MUX_AS_CJMP
 	  if (match_ite(ir, i-6, NULL, NULL, NULL, NULL) >= 0)
 	    *mux0x = i-6;
-#else
-	  if (match_ite(ir, i-3, NULL, NULL, NULL, NULL) >= 0) {
-	    if (i >= 3) {
-	      Stmt *prev_stmt = ir->at(i - 1);
-	      if ( prev_stmt->stmt_type == MOVE ) {
-		Move *prev_mv = (Move*)prev_stmt;
-		if ( prev_mv->lhs->exp_type == TEMP ) {
-		  Temp *prev_temp = (Temp *)prev_mv->lhs;
-		  if ( mv->rhs->exp_type == TEMP ) {
-		    Temp *rhs_temp = (Temp *)mv->rhs;
-		    if ( prev_temp->name == rhs_temp->name ) {
-		      *op = i-2;
-		      *mux0x = i-3;
-		    }
+#elif defined(MUX_AS_BITS)
+	  if (i >= 3 && match_ite(ir, i-3, NULL, NULL, NULL, NULL) >= 0) {
+	    Stmt *prev_stmt = ir->at(i - 1);
+	    if ( prev_stmt->stmt_type == MOVE ) {
+	      Move *prev_mv = (Move*)prev_stmt;
+	      if ( prev_mv->lhs->exp_type == TEMP ) {
+		Temp *prev_temp = (Temp *)prev_mv->lhs;
+		if ( mv->rhs->exp_type == TEMP ) {
+		  Temp *rhs_temp = (Temp *)mv->rhs;
+		  if ( prev_temp->name == rhs_temp->name ) {
+		    *op = i-2;
+		    *mux0x = i-3;
 		  }
 		}
 	      }
 	    }
-	  } else if (cc_op_copy && mv->rhs->exp_type == TEMP) {
+	  }
+#else
+	  // i-2: res = (cond ? exp_t : exp_f);
+	  // i-1: t = res;
+	  // i  : R_CC_OP = t;
+	  Exp *cond, *exp_t, *exp_f, *res;
+	  if (i >= 2 && match_ite(ir, i-2, &cond, &exp_t, &exp_f, &res) >= 0) {
+	    Stmt *prev_stmt = ir->at(i - 1);
+	    if ( prev_stmt->stmt_type == MOVE ) {
+	      Move *prev_mv = (Move*)prev_stmt;
+	      if ( prev_mv->lhs->exp_type == TEMP ) {
+		Temp *prev_temp = (Temp *)prev_mv->lhs;
+		if ( mv->rhs->exp_type == TEMP ) {
+		  Temp *rhs_temp = (Temp *)mv->rhs;
+		  if ( prev_temp->name == rhs_temp->name ) {
+		    *op = i-2;
+		    *mux0x = i-2;
+		  }
+		}
+	      }
+	    }
+	  }
+#endif
+	  if (cc_op_copy && mv->rhs->exp_type == TEMP) {
 	    Temp *rhs_temp = (Temp *)mv->rhs;
 	    if (rhs_temp->name == cc_op_copy->name) {
 	      // We saw t = CC_OP; ...; CC_OP = t, so the thunk is actually
@@ -1417,7 +2027,6 @@ void get_thunk_index(vector<Stmt *> *ir,
 	      *nop = i;
 	    }
 	  }
-#endif
 	}
 	else if ( temp->name.find("CC_DEP1") != string::npos )
 	  *dep1 = i;
@@ -1616,6 +2225,21 @@ vector<Stmt *> mod_eflags_add( reg_t type, Exp *arg1, Exp *arg2 )
     return irout;
 }
 
+Exp *_narrow32(Exp *e, reg_t type) {
+    if (type == REG_32)
+        return e;
+    else
+        return _ex_l_cast(e, type);
+}
+
+Exp *narrow32(Exp *e, reg_t type) {
+    if (type == REG_32)
+        return ecl(e);
+    else
+        return ex_l_cast(e, type);
+}
+
+
 vector<Stmt *> mod_eflags_sub( reg_t type, Exp *arg1, Exp *arg2 )
 {
     vector<Stmt *> irout;
@@ -1658,11 +2282,11 @@ vector<Stmt *> mod_eflags_sub( reg_t type, Exp *arg1, Exp *arg2 )
     Exp *condZF = ex_eq( res, &c_0 );
     set_flag(&irout, type, ZF, condZF);
     
-    Exp *condSF = _ex_eq( ecl(&c_1), _ex_and( ecl(&c_1), ex_shr( res, &c_TYPE_SIZE_LESS_1)) );
+    Exp *condSF = _ex_h_cast(narrow32(res, type), REG_1);
     set_flag(&irout, type, SF, condSF);
 
-    Exp *condOF = _ex_eq( ecl(&c_1), _ex_and( ecl(&c_1), 
-                    _ex_shr( _ex_and( ex_xor(arg1, arg2), ex_xor(arg1, res) ), ecl(&c_TYPE_SIZE_LESS_1) )) );
+    Exp *condOF = _ex_xor(ecl(condSF), _ex_slt(narrow32(arg1, type),
+					       narrow32(arg2, type)));
     set_flag(&irout, type, OF, condOF);
 
     return irout;
@@ -2455,6 +3079,11 @@ static void modify_eflags_helper( string op, reg_t type, vector<Stmt *> *ir, int
 	// easier and more reliable to do this here than to figure out
 	// the condition ourselves in the individual flags functions.
 	if (mux0x != -1) {
+	  // Note that there's no check here that we're getting the
+	  // sense of the condition correct: we don't look at exp_t or
+	  // exp_f. For now we just assume that VEX uses the convention
+	  // that true means "update the flags", and no intermediate
+	  // layer negates the condition.
 	  Exp *cond, *exp_t, *exp_f, *res;
 	  match_ite(ir, mux0x, &cond, &exp_t, &exp_f, &res);
 	  Label *mod = mk_label();
@@ -2462,7 +3091,7 @@ static void modify_eflags_helper( string op, reg_t type, vector<Stmt *> *ir, int
 	  mods.insert(mods.begin(), mod);
 	  mods.insert(mods.begin(),
 		      new CJmp(ecl(cond),
-			       new Name(nomod->label), new Name(mod->label)) );
+			       new Name(mod->label), new Name(nomod->label)) );
 	  mods.push_back(nomod);
 	}
 
@@ -2504,17 +3133,28 @@ void i386_modify_flags( asm_program_t *prog, vine_block_t *block )
     Stmt *op_stmt = ir->at(opi);
 
     bool got_op;
+    Exp *op_exp = 0;
     int op = -1;
     if(!(op_stmt->stmt_type == MOVE)) {
       got_op = false;
     } else {
       Move *op_mov = (Move*)op_stmt;
-      if(op_mov->rhs->exp_type == CONSTANT) {
-        Constant *op_const = (Constant*)op_mov->rhs;
+      op_exp = op_mov->rhs;
+    }
+    if (op_exp) {
+      if (op_exp->exp_type == ITE) {
+	// We're assuming here that the CC_OP value we want to look at
+	// is on the true side of the ITE. For now that should be safe
+	// because true means "update the flags" (an assumption we make
+	// elsewhere too).
+	op_exp = ((Ite*)op_exp)->true_e;
+      }
+      if(op_exp->exp_type == CONSTANT) {
+        Constant *op_const = (Constant*)op_exp;
         op = op_const->val;
         got_op = true;
-      } else if (op_mov->rhs->exp_type == BINOP) {
-	BinOp *bin_or = (BinOp*)op_mov->rhs;
+      } else if (op_exp->exp_type == BINOP) {
+	BinOp *bin_or = (BinOp*)op_exp;
 	if (bin_or->binop_type == BITOR
 	    && bin_or->rhs->exp_type == BINOP) {
 	  BinOp *bin_and = (BinOp*)bin_or->rhs;
@@ -2724,8 +3364,8 @@ void i386_modify_flags( asm_program_t *prog, vine_block_t *block )
         return;
       }
       string op = get_op_str(prog, inst);
-      //      cerr << "Warning: non-constant cc_op for " << op 
-      //           << ". falling back on old eflag code." << endl;
+      cerr << "Warning: non-constant cc_op for " << op
+	   << ". falling back on old eflag code." << endl;
 
       // DEBUG
       //ostream_i386_insn(block->inst, cout);

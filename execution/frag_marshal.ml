@@ -12,7 +12,7 @@ struct
   let equal x y =
     x == y ||
       match (x,y) with
-	| ((x,_,_), (y,_,_)) when x == y ->
+	| ((x,_,_), (y,_,_)) when x = y ->
 	    true
 	| _ -> false
   let compare (x,_,_) (y,_,_) = compare x y
@@ -44,7 +44,7 @@ let encode_exp_flags e printable =
 	push_printable_str (Printf.sprintf "(0x%x)" s)
       else
 	let lb = s land 0xff and
-	    hb = s asr 8 in
+	    hb = (s lsr 8) land 0xff in
 	  push (Char.chr hb);
 	  push (Char.chr lb)
     in
@@ -90,33 +90,58 @@ let encode_exp_flags e printable =
   let push_string s =
     assert(String.length s < 250);
     if printable then
-	push_printable_str (Printf.sprintf "(%s)" (String.escaped s))
+	push_printable_str (Printf.sprintf "(%s)" (Exec_utils.escaped s))
     else
       (push (Char.chr (String.length s));
        for i = 0 to (String.length s) - 1 do
 	 push s.[i]
        done)
   in
-  let push_var ((n,s,t) as var) =
+  let push_reg_type ty =
     let c =
-      (match t with
+      (match ty with
 	 | V.REG_1  -> 'b'
 	 | V.REG_8  -> 'c'
 	 | V.REG_16 -> 's'
 	 | V.REG_32 -> 'i'
 	 | V.REG_64 -> 'l'
-	 | V.TMem(V.REG_32, V.Little) -> 'M'
-	 | _ ->
-	     Printf.printf "Bad type: %s\n" (V.type_to_string t);
-	     failwith "Unexpected variable type in encode_exp") in
-      push c;
-      if printable then
-	push_printable_str (Printf.sprintf "(%s)" s)
-      else
-	(push_int64 (Int64.of_int n);
-	 Hashtbl.replace var_num_to_name n s;
-	 ignore(VarWeak.merge canon_vars var);
-	 vars := var :: !vars)
+	 | _ -> failwith "Unexpected reg_type in encode_exp")
+    in
+      push c
+  in
+  let push_type ty =
+    match ty with
+      | (V.REG_1 | V.REG_8 | V.REG_16 | V.REG_32 | V.REG_64) ->
+	  push_reg_type ty
+      | V.TMem(V.REG_32, V.Little) ->
+	  push 'M'
+      | V.Array(elt_ty, size) ->
+	  push 'A';
+	  push_reg_type elt_ty;
+	  push_int64 size
+      | _ ->
+	  Printf.printf "Bad type: %s\n" (V.type_to_string ty);
+	  failwith "Unexpected variable type in encode_exp"
+  in
+  let push_var ((n,s,t) as var) =
+    push_type t;
+    if printable then
+      push_printable_str (Printf.sprintf "(%s)" s)
+    else
+      (push_int64 (Int64.of_int n);
+       Hashtbl.replace var_num_to_name n s;
+       ignore(VarWeak.merge canon_vars var);
+       vars := var :: !vars)
+  in
+  let push_round_mode rm =
+    let c = match rm with
+      | Vine_util.ROUND_NEAREST -> 'e'
+      | Vine_util.ROUND_NEAREST_AWAY_ZERO -> 'a'
+      | Vine_util.ROUND_POSITIVE -> 'P'
+      | Vine_util.ROUND_NEGATIVE -> 'N'
+      | Vine_util.ROUND_ZERO -> 'Z'
+    in
+      push c
   in
   let rec loop e = match e with
     | V.BinOp(V.LT, V.BinOp(V.PLUS, e1, V.Constant(V.Int(V.REG_32, 1L))), e2)
@@ -163,10 +188,11 @@ let encode_exp_flags e printable =
 	     | V.SMOD -> '#'
 	     | V.LSHIFT -> '['
 	     | V.RSHIFT -> ']'
-	     | V.ARSHIFT -> '@'
+	     | V.ARSHIFT -> '}'
 	     | V.BITAND -> '&'
 	     | V.BITOR -> '|'
 	     | V.XOR -> '^'
+	     | V.CONCAT -> '@'
 	     | V.EQ -> '='
 	     | V.NEQ -> '\\'
 	     | V.LT -> '<'
@@ -176,22 +202,48 @@ let encode_exp_flags e printable =
 	  push char;
 	  loop e1;
 	  loop e2
+    | V.FBinOp(op, rm, e1, e2) ->
+	push 'f';
+	let char =
+	  (match op with
+	     | V.FPLUS -> '+'
+	     | V.FMINUS -> '-'
+	     | V.FTIMES -> '*'
+	     | V.FDIVIDE -> '/'
+	     | V.FEQ -> '='
+	     | V.FNEQ -> '\\'
+	     | V.FLT -> '<'
+	     | V.FLE -> ',') in
+	  push char;
+	  push_round_mode rm;
+	  loop e1;
+	  loop e2
     | V.UnOp(op, e1) ->
 	let char = (match op with V.NEG -> '~' | V.NOT -> '!') in
 	  push char;
 	  loop e1
+    | V.FUnOp(op, rm, e1) ->
+	push 'f';
+	let char = (match op with V.FNEG -> '~') in
+	  push char;
+	  push_round_mode rm;
+	  loop e1;
     | V.Constant(V.Int(V.REG_1, 0L)) -> push 'F'
     | V.Constant(V.Int(V.REG_1, 1L)) -> push 'T'
     | V.Constant(V.Int(V.REG_8, c))  -> push '8'; push_int64 c
     | V.Constant(V.Int(V.REG_16, c)) -> push '1'; push_int64 c
     | V.Constant(V.Int(V.REG_32, c)) -> push '3'; push_int64 c
     | V.Constant(V.Int(V.REG_64, c)) -> push '6'; push_int64 c
+    | V.Constant(V.Int(_, _)) ->
+	failwith "Unsupported weird-type integer constant in encode_exp"
     | V.Constant(V.Str(s)) -> push 'S'; push_string s
     | V.Lval(V.Temp(var)) -> push 't'; push_var var
     | V.Lval(V.Mem(mvar, e1, V.REG_8))  -> push 'm'; push_var mvar; loop e1
     | V.Lval(V.Mem(mvar, e1, V.REG_16)) -> push 'n'; push_var mvar; loop e1
     | V.Lval(V.Mem(mvar, e1, V.REG_32)) -> push 'M'; push_var mvar; loop e1
     | V.Lval(V.Mem(mvar, e1, V.REG_64)) -> push 'N'; push_var mvar; loop e1
+    | V.Lval(V.Mem(_, _, _)) ->
+	failwith "Unsupported weird-type memory lval in encode_exp"
     | V.Name(s) -> push 'l'; push_string s
     | V.Cast(ctype, ty, e1) ->
 	let ty_char =
@@ -216,8 +268,27 @@ let encode_exp_flags e printable =
 	  push 'C';
 	  push ty_char;
 	  loop e1
+    | V.FCast(op, rm, ty, e1) ->
+	push 'f';
+	push 'C';
+	push_round_mode rm;
+	push (match op with
+		| V.CAST_SFLOAT  -> 'S'
+		| V.CAST_UFLOAT  -> 'U'
+		| V.CAST_SFIX    -> 's'
+		| V.CAST_UFIX    -> 'u'
+		| V.CAST_FWIDEN  -> 'W'
+		| V.CAST_FNARROW -> 'N');
+	push (match ty with
+		| V.REG_16 -> 's'
+		| V.REG_32 -> 'i'
+		| V.REG_64 -> 'l'
+		| _ -> failwith "Unsupported FP cast dest type in encode_exp");
+	loop e1
+    | V.Ite(ce, te, fe) -> push '?'; loop ce; loop te; loop fe
     | V.Unknown(s) -> push 'U'; push_string s
-    | _ -> 
+    | V.Let(_, _, _)
+      ->
 	Printf.printf "Offending exp: %s\n" (V.exp_to_string e);
 	failwith "Unexpected expr type in encode_exp"
   in
@@ -235,6 +306,14 @@ let encode_exp e = encode_exp_flags e false
 
 let encode_printable_exp e =
   let (s, _) = encode_exp_flags e true in s
+
+let decode_round_mode = function
+  | 'e' -> Vine_util.ROUND_NEAREST
+  | 'a' -> Vine_util.ROUND_NEAREST_AWAY_ZERO
+  | 'P' -> Vine_util.ROUND_POSITIVE
+  | 'N' -> Vine_util.ROUND_NEGATIVE
+  | 'Z' -> Vine_util.ROUND_ZERO
+  | _ -> failwith "Unexpected char in decode_round_mode"
 
 let decode_exp s =
   let parse_short i =
@@ -287,32 +366,50 @@ let decode_exp s =
     let len = Char.code s.[i] in
       (i + len + 1, String.sub s (i + 1) len)
   in
+  let rec parse_type i =
+    match s.[i] with
+      | 'b' -> (i + 1, V.REG_1)
+      | 'c' -> (i + 1, V.REG_8)
+      | 's' -> (i + 1, V.REG_16)
+      | 'i' -> (i + 1, V.REG_32)
+      | 'l' -> (i + 1, V.REG_64)
+      | 'M' -> (i + 1, V.TMem(V.REG_32, V.Little))
+      | 'A' ->
+	  let (i2, elt_ty) = parse_type (i + 1) in
+	  let (i3, size) = parse_int64 i2 in
+	    (i3, V.Array(elt_ty, size))
+      |  _ -> failwith "Bad type in parse_var"
+  in
   let parse_var i =
-    let ty =
-      (match s.[i] with
-	 | 'b' -> V.REG_1
-	 | 'c' -> V.REG_8
-	 | 's' -> V.REG_16
-	 | 'i' -> V.REG_32
-	 | 'l' -> V.REG_64
-	 | 'M' -> V.TMem(V.REG_32, V.Little)
-	 | _ -> failwith "Bad type in parse_var") in
-    let (i2, n64) = parse_int64 (i + 1) in
+    let (i2, ty) = parse_type i in
+    let (i3, n64) = parse_int64 (i2) in
     let n = Int64.to_int n64 in
     let var = (n, (Hashtbl.find var_num_to_name n), ty) in
     let cvar = try
       VarWeak.find canon_vars var
     with Not_found -> var
     in
-      (i2, cvar)
+      (i3, cvar)
+  in
+  let parse_round_mode i =
+    (i + 1, decode_round_mode s.[i])
   in
   let rec parse_binop op i =
     let (i2, e1) = parse i in
     let (i3, e2) = parse i2 in
       (i3, V.BinOp(op, e1, e2))
+  and parse_fbinop op i =
+    let (i2, rm) = parse_round_mode i in
+    let (i3, e1) = parse i2 in
+    let (i4, e2) = parse i3 in
+      (i4, V.FBinOp(op, rm, e1, e2))
   and parse_unop op i =
     let (i2, e1) = parse i in
       (i2, V.UnOp(op, e1))
+  and parse_funop op i =
+    let (i2, rm) = parse_round_mode i in
+    let (i3, e1) = parse i2 in
+      (i3, V.FUnOp(op, rm, e1))
   and parse_mem ty i =
     let (i2, var) = parse_var i in
     let (i3, e1) = parse i2 in
@@ -329,10 +426,11 @@ let decode_exp s =
 	| '#'  -> parse_binop V.SMOD    i'
 	| '['  -> parse_binop V.LSHIFT  i'
 	| ']'  -> parse_binop V.RSHIFT  i'
-	| '@'  -> parse_binop V.ARSHIFT i'
+	| '}'  -> parse_binop V.ARSHIFT i'
 	| '&'  -> parse_binop V.BITAND  i'
 	| '|'  -> parse_binop V.BITOR   i'
 	| '^'  -> parse_binop V.XOR     i'
+	| '@'  -> parse_binop V.CONCAT  i'
 	| '='  -> parse_binop V.EQ      i'
 	| '\\' -> parse_binop V.NEQ     i'
 	| '<'  -> parse_binop V.LT      i'
@@ -382,6 +480,47 @@ let decode_exp s =
 		 | _ -> failwith "Unknown cast type in decode_exp") in
 	    let (i2, e1) = parse (i' + 1) in
 	      (i2, V.Cast(ctype, ty, e1))
+	| 'f' ->
+	    let i'' = i' + 1 in
+	      (match s.[i'] with
+		 | '+'  -> parse_fbinop V.FPLUS i''
+		 | '-'  -> parse_fbinop V.FMINUS i''
+		 | '*'  -> parse_fbinop V.FTIMES i''
+		 | '/'  -> parse_fbinop V.FDIVIDE i''
+		 | '='  -> parse_fbinop V.FEQ i''
+		 | '\\' -> parse_fbinop V.FNEQ i''
+		 | '<'  -> parse_fbinop V.FLT i''
+		 | ','  -> parse_fbinop V.FLE i''
+		 | '~'  -> parse_funop V.FNEG i''
+		 | 'C' ->
+		     (let (i2, rm) = parse_round_mode i'' in
+		      let op = match s.[i2] with
+			| 'S' -> V.CAST_SFLOAT
+			| 'U' -> V.CAST_UFLOAT
+			| 's' -> V.CAST_SFIX
+			| 'u' -> V.CAST_UFIX
+			| 'W' -> V.CAST_FWIDEN
+			| 'N' -> V.CAST_FNARROW
+			| _ -> failwith "Unexpected FP cast type in decode_exp"
+		      in
+		      let i3 = i2 + 1 in
+		      let ty = match s.[i3] with
+			| 's' -> V.REG_16
+			| 'i' -> V.REG_32
+			| 'l' -> V.REG_64
+			| _ -> failwith
+			    "Unexpected FP cast dest. type in decode_exp"
+		      in
+		      let i4 = i3 + 1 in
+		      let (i5, e) = parse i4 in
+			(i5, V.FCast(op, rm, ty, e))
+		     )
+		 | _ -> failwith "Unknown FP op type in decode_exp")
+	| '?' ->
+	    let (i2, e1) = parse (i + 1) in
+	    let (i3, e2) = parse i2 in
+	    let (i4, e3) = parse i3 in
+	      (i4, V.Ite(e1, e2, e3))
 	| 'U' ->
 	    let (i2, s) = parse_string i' in
 	      (i2, V.Unknown(s))

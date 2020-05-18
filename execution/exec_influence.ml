@@ -17,15 +17,19 @@ open Sym_path_frag_machine
 let collect_let_vars e =
   let rec loop e = match e with
     | V.BinOp(_, e1, e2) -> (loop e1) @ (loop e2)
+    | V.FBinOp(_, _, e1, e2) -> (loop e1) @ (loop e2)
     | V.UnOp(_, e1) -> loop e1
+    | V.FUnOp(_, _, e1) -> loop e1
     | V.Constant(_) -> []
     | V.Lval(_) -> []
     | V.Name(_) -> []
     | V.Cast(_, _, e1) -> loop e1
+    | V.FCast(_, _, _, e1) -> loop e1
     | V.Unknown(_) -> []
     | V.Let(V.Mem(_, _, _), _, _)
 	-> failwith "Let-mem unsupported in collect_let_vars"
     | V.Let(V.Temp(var), e1, e2) -> var :: (loop e1) @ (loop e2)
+    | V.Ite(ce, te, fe) -> (loop ce) @ (loop te) @ (loop fe)
   in
     loop e
 
@@ -51,7 +55,7 @@ let diff_to_range_i diff =
     log2_of_uint64 (Int64.succ diff)
 
 let random_xor_constraint ty target_e num_terms =
-  (* (out & (1 << k)) != 0, k random in [0, bits(out)-1] *)
+  (* (out & (1 << k)) <> 0, k random in [0, bits(out)-1] *)
   let random_term () = 
     let k = Random.int (V.bits_of_width ty) in
     let mask = V.Constant(V.Int(ty, (Int64.shift_left 1L k))) in
@@ -123,10 +127,9 @@ struct
 	      qe#after_query !opt_influence_details;
 	      qe#pop;
 	      let v = ref 0L in
-		List.iter
-		  (fun (s, i64) -> if s = "influence_target" then
-		     v := i64)
-		  ce;
+		ce_iter ce
+		  (fun s i64 -> if s = "influence_target" then
+		     v := i64);
 		(* It's intentional here that v will be set to zero if
 		   the variable doesn't appear in the counterexample, since
 		   some of the solvers do that. *)
@@ -412,19 +415,17 @@ struct
 	List.iter (fun v -> Printf.printf " %s" (V.var_to_string v))
 	  free_decls;
 	Printf.printf "\n";
-	List.iter qe#add_free_var free_decls;
+	List.iter (fun v -> qe#add_decl (InputVar(v))) free_decls;
 	Printf.printf "Temp assignments are:\n";
 	List.iter (fun (v, exp) ->
 		     Printf.printf " %s = %s\n"
 		       (V.var_to_string v) (V.exp_to_string exp))
 	  assigns;
-	List.iter (fun (v, exp) ->
-		     qe#add_temp_var v;
-		     qe#assert_eq v exp)
-	  assigns;
+	List.iter (fun (v, exp) -> qe#add_decl (TempVar(v, exp))) assigns;
 	Printf.printf "Conditional expr is %s\n" (V.exp_to_string cond_e);
 	qe#add_condition cond_e;
 	Printf.printf "Target expr is %s\n" (V.exp_to_string target_e);
+	flush stdout;
 	assert(self#check_sat target_eq V.exp_true <> None);
 	let i = self#influence_strategies target_eq target_e' ty in
 	  qe#reset;
@@ -599,6 +600,7 @@ struct
     method eip_hook eip =
       if List.mem eip !opt_disqualify_addrs then
 	(self#disqualify_path;
+	 fm#unfinish_fuzz "Disqualified path";
 	 raise DisqualifiedPath);
       (if !opt_measure_influence_reploops then
 	 let prefix = fm#load_byte_conc eip in

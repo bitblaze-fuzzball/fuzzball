@@ -4,10 +4,7 @@
     Basically, constant_fold will only perform constant folding, whereas
     simplify() will also perform alpha substitution.
     
-    Let me know if you use this, because I might be changing the
-    interface slightly.
-
-    @author Ivan Jager
+    Original author: Ivan Jager
  *)
 
 open ExtList
@@ -25,6 +22,18 @@ type alias = MayAlias | DoesAlias | PartialAlias | NoAlias
 
 (* some helper functions *)
 
+(* These fix* functions are duplicated from
+   Execution.exec_utils. That's not ideal, but I'm not sure of a better
+   place. *)
+let fix_u1  x = Int64.logand x 0x1L
+let fix_u8  x = Int64.logand x 0xffL
+let fix_u16 x = Int64.logand x 0xffffL
+let fix_u32 x = Int64.logand x 0xffffffffL
+
+let fix_s1  x = Int64.shift_right (Int64.shift_left x 63) 63
+let fix_s8  x = Int64.shift_right (Int64.shift_left x 56) 56
+let fix_s16 x = Int64.shift_right (Int64.shift_left x 48) 48
+let fix_s32 x = Int64.shift_right (Int64.shift_left x 32) 32
 
 (* drop high bits *)
 let to64 v =
@@ -56,6 +65,9 @@ let to_val t v =
   let mask = Int64.shift_right_logical (-1L) (64-bits_of_width t) in
     Constant(Int(t,Int64.logand mask v))
 
+(* Combine two bitvectors into a longer one. *)
+let bv_concat t v1 v2 =
+  Int64.logor v2 (Int64.shift_left v1 (bits_of_width t))
 
 (* flatten an expression to make it easier to rearange binops
  * Note: Should only be used with associative binops. *)
@@ -122,10 +134,6 @@ let rec constant_fold ctx e =
 		exp_bool((to64 v1) = (to64 v2))
 	    | NEQ ->
 		exp_bool((to64 v1) <> (to64 v2))
-
-(* FIXME: Enabling these seems to break stuff.
-   Do they still? Someone uncommented them.
- *)
 	    | LSHIFT ->
 		to_val t (Int64.shift_left
 			    (to64 v1) 
@@ -138,21 +146,144 @@ let rec constant_fold ctx e =
 		to_val t (Int64.shift_right
 			    (tos64  v1)
 			    (toshift (bits_of_width t) t2 v2) )
-
-
-
    (* Int64.div rounds towards zero. What do we want? *)
 	    | DIVIDE -> to_val t (int64_udiv (tos64  v1) (tos64 v2))
 	    | SDIVIDE -> to_val t (Int64.div (tos64 v1) (tos64  v2))
 	    | MOD -> to_val t (int64_urem (tos64 v1) (tos64 v2))
 	    | SMOD -> to_val t (Int64.rem (tos64 v1) (tos64 v2))
+	    | CONCAT -> to_val (double_width t)
+		(bv_concat t (to64 v1) (to64 v2))
 	    | SLT -> exp_bool(tos64  v1 < tos64 v2)
 	    | SLE -> exp_bool(tos64  v1 <= tos64  v2)
 	    | LT -> exp_bool(int64_ucompare (to64 v1) (to64 v2) < 0)
 	    | LE -> exp_bool(int64_ucompare (to64 v1) (to64 v2) <= 0)
-
-	    (* NB: Vine_ceval assumes this covers all operators. *)
 	 )
+    (* Lots of things (Vine_ceval, FuzzBALL, etc.) assume that constant
+       folding can simplify (evaluate) any expression using constants. So
+       fail if we run into a missing case. *)
+    | BinOp(_, Constant(_), Constant(_)) ->
+	failwith "Constant folding failed for BinOp"
+    | UnOp(op, Constant(Int(t,_) as v)) ->
+	(match op with
+	    NEG -> to_val t (Int64.neg (to64  v))
+	  | NOT -> to_val t (Int64.lognot (to64  v))
+	)
+    | UnOp(_, Constant(_)) ->
+	failwith "Constant folding failed for UnOp"
+    | FBinOp((FPLUS|FMINUS|FTIMES|FDIVIDE) as bop, rm,
+	     Constant(Int(REG_32,v1)), Constant(Int(REG_32,v2))) ->
+	let f32_op =
+	  match bop with
+	    | FPLUS   -> f32_add
+	    | FMINUS  -> f32_sub
+	    | FTIMES  -> f32_mul
+	    | FDIVIDE -> f32_div
+	    | (FEQ|FNEQ|FLT|FLE) -> failwith "Can't happen"
+	in
+	let vr = Int64.of_int32 (f32_op rm (Int64.to_int32 v1)
+				   (Int64.to_int32 v2))
+	in
+	  Constant(Int(REG_32, vr))
+    | FBinOp((FEQ|FNEQ|FLT|FLE) as bop, rm,
+	     Constant(Int(REG_32,v1)), Constant(Int(REG_32,v2))) ->
+	let f32_op =
+	  match bop with
+	    | FEQ  -> f32_eq
+	    | FNEQ -> f32_ne
+	    | FLT  -> f32_lt
+	    | FLE  -> f32_le
+	    | (FPLUS|FMINUS|FTIMES|FDIVIDE) -> failwith "Can't happen"
+	in
+	  exp_bool (f32_op rm (Int64.to_int32 v1) (Int64.to_int32 v2))
+
+    | FBinOp((FPLUS|FMINUS|FTIMES|FDIVIDE) as bop, rm,
+	     Constant(Int(REG_64,v1)), Constant(Int(REG_64,v2))) ->
+	let f64_op =
+	  match bop with
+	    | FPLUS   -> f64_add
+	    | FMINUS  -> f64_sub
+	    | FTIMES  -> f64_mul
+	    | FDIVIDE -> f64_div
+	    | (FEQ|FNEQ|FLT|FLE) -> failwith "Can't happen"
+	in
+	  Constant(Int(REG_64, (f64_op rm v1 v2)))
+    | FBinOp((FEQ|FNEQ|FLT|FLE) as bop, rm,
+	     Constant(Int(REG_64,v1)), Constant(Int(REG_64,v2))) ->
+	let f64_op =
+	  match bop with
+	    | FEQ  -> f64_eq
+	    | FNEQ -> f64_ne
+	    | FLT  -> f64_lt
+	    | FLE  -> f64_le
+	    | (FPLUS|FMINUS|FTIMES|FDIVIDE) -> failwith "Can't happen"
+	in
+	  exp_bool (f64_op rm v1 v2)
+    | FBinOp(_, _, Constant(_), Constant(_)) ->
+	failwith "Constant folding failed for FBinOp"
+    | FUnOp(uop, rm, Constant(Int((REG_32|REG_64) as ty, v))) ->
+	(match (uop, ty) with
+	   | (FNEG, REG_64) -> Constant(Int(REG_64, (f64_neg rm v)))
+	   | (FNEG, REG_32) ->
+	       let vr = Int64.of_int32 (f32_neg rm (Int64.to_int32 v)) in
+		 Constant(Int(ty, vr))
+	   | (FNEG, _) -> failwith "Can't happen")
+    | FUnOp(_, _, Constant(_)) ->
+	failwith "Constant folding failed for FUnOp"
+    | Cast(ct, t2, Constant(Int(t,_) as v)) ->
+	let bits1 = bits_of_width t in
+	let bits = bits_of_width t2 in
+	(match ct with
+	    CAST_UNSIGNED ->
+	      to_val t2 (to64  v)
+	  | CAST_SIGNED ->
+	      to_val t2 (tos64  v)
+	  | CAST_HIGH ->
+     	      to_val t2
+		(Int64.shift_right 
+		    (Int64.logand (to64  v)
+			(Int64.shift_left (-1L) (bits1-bits)) )
+		    (bits1-bits) )
+	  | CAST_LOW ->
+	      to_val t2
+		(Int64.logand (to64  v)
+		    ((Int64.lognot(Int64.shift_left (-1L) bits))) )
+	)
+    | Cast(_, _, Constant(_)) ->
+	failwith "Constant folding failed for Cast"
+    | FCast((CAST_SFLOAT|CAST_UFLOAT) as ct,
+	    rm, ((REG_32|REG_64) as ty2), Constant(Int(ty1, i) as v)) ->
+	let signed = (ct = CAST_SFLOAT) in
+	let i64 = (if signed then tos64 else to64) v in
+	let f = (if signed then Int64.to_float else int64_u_to_float) i64 in
+	let i2 =
+	  match ty2 with
+	    | REG_32 -> Int64.of_int32 (Int32.bits_of_float f)
+	    | REG_64 -> Int64.bits_of_float f
+	    | _ -> failwith "Can't happen"
+	in
+	  Constant(Int(ty2, i2))
+    | FCast((CAST_SFIX|CAST_UFIX) as ct, rm, ty2,
+	    Constant(Int((REG_32|REG_64) as ty1, i))) ->
+	let signed = (ct = CAST_SFIX) in
+	let f = match ty1 with
+	  | REG_32 -> Int32.float_of_bits (Int64.to_int32 i)
+	  | REG_64 -> Int64.float_of_bits i
+	  | _ -> failwith "Can't happen"
+	in
+	let i64 = (if signed then Int64.of_float else int64_u_of_float) f in
+	  to_val ty2 i64
+    | FCast(CAST_FWIDEN, rm, REG_64, Constant(Int(REG_32, i))) ->
+	ignore(rm);
+	let f = Int32.float_of_bits (Int64.to_int32 i) in
+	let i2 = Int64.bits_of_float f in
+	  Constant(Int(REG_64, i2))
+    | FCast(CAST_FNARROW, rm, REG_32, Constant(Int(REG_64, i))) ->
+	ignore(rm);
+	let f = Int64.float_of_bits i in
+	let i2 = Int64.of_int32 (Int32.bits_of_float f) in
+	  Constant(Int(REG_32, i2))
+    | FCast(_, _, _, Constant(_)) ->
+	failwith "Constant folding failed for FCast"
     (*  some identities *)
     | BinOp(BITAND, _, (Constant(Int(_, 0L)) as c)) ->
 	c
@@ -178,11 +309,6 @@ let rec constant_fold ctx e =
 	x
     | BinOp((MOD|SMOD), x, (Constant(Int(ty, 1L)))) ->
 	Constant(Int(ty, 0L))
-    | UnOp(op, Constant(Int(t,_) as v)) ->
-	(match op with
-	    NEG -> to_val t (Int64.neg (to64  v))
-	  | NOT -> to_val t (Int64.lognot (to64  v))
-	)
     | UnOp(NOT, BinOp(PLUS, e1, Constant(Int(_, -1L)))) ->
 	UnOp(NEG, e1)
     | UnOp(NEG, UnOp(NEG, x)) ->
@@ -190,38 +316,19 @@ let rec constant_fold ctx e =
     | UnOp(NOT, UnOp(NOT, x)) ->
 	x
 
-    | Cast(ct, t2, Constant(Int(t,_) as v)) ->
-	let bits1 = bits_of_width t in
-	let bits = bits_of_width t2 in
-	(match ct with
-	    CAST_UNSIGNED ->
-	      to_val t2 (to64  v)
-	  | CAST_SIGNED ->
-	      to_val t2 (tos64  v)
-	  | CAST_HIGH ->
-     	      to_val t2
-		(Int64.shift_right 
-		    (Int64.logand (to64  v)
-			(Int64.shift_left (-1L) (bits1-bits)) )
-		    (bits1-bits) )
-	  | CAST_LOW ->
-	      to_val t2
-		(Int64.logand (to64  v)
-		    ((Int64.lognot(Int64.shift_left (-1L) bits))) )
-	)
     | Cast(ct2, w2, Cast(ct1, w1, e1)) when ct1 = ct2 ->
 	Cast(ct1, w2, e1) (* no redundant double casts *)
-    (* Redundant widening inside narrowing *)
-    | Cast(CAST_LOW, t2, Cast((CAST_SIGNED|CAST_UNSIGNED), t1, e))
-	when (let w_e = bits_of_width (Vine_typecheck.infer_type None e) and
-		  w_2 = bits_of_width t2 in
-		w_2 <= w_e) ->
-	Cast(CAST_LOW, t2, e)
     (* Widening cast followed by narrowing cast with same type *)
     | Cast(CAST_LOW,t2,Cast(CAST_UNSIGNED,_,e)) 
 	when ((Vine_typecheck.infer_type None e) = t2) -> e
     | Cast(CAST_LOW,t2,Cast(CAST_SIGNED,_,e)) 
 	when ((Vine_typecheck.infer_type None e) = t2) -> e
+    (* Redundant widening inside narrowing *)
+    | Cast(CAST_LOW, t2, Cast((CAST_SIGNED|CAST_UNSIGNED), t1, e))
+	when (let w_e = bits_of_width (Vine_typecheck.infer_type None e) and
+		  w_2 = bits_of_width t2 in
+		w_2 < w_e) ->
+	Cast(CAST_LOW, t2, e)
     (* Widening followed by narrowing equivalent to narrower widening *)
     | Cast(CAST_LOW, t1, Cast((CAST_SIGNED|CAST_UNSIGNED) as cast_ty, t2, e))
 	when (let w1 = bits_of_width t1 and
@@ -235,6 +342,12 @@ let rec constant_fold ctx e =
 		  w3 = bits_of_width (Vine_typecheck.infer_type None e3) in
 		w1 <= (w2 - w3))
 	  -> Constant(Int(t1, 0L))
+    (* U widen then S widen same as single U widen *)
+    | Cast(CAST_SIGNED, t1, Cast(CAST_UNSIGNED, t2, e3))
+	when (let w2 = bits_of_width t2 and
+		  w3 = bits_of_width (Vine_typecheck.infer_type None e3) in
+		w3 < w2)
+	-> Cast(CAST_UNSIGNED, t1, e3)
     (* Boolean -> integer -> boolean conversion with == 0 *)
     | BinOp(EQ, Cast((CAST_SIGNED|CAST_UNSIGNED), _, e),
 	    Constant(Int(_, 0L)))
@@ -276,6 +389,29 @@ let rec constant_fold ctx e =
 	Cast(CAST_LOW, REG_16, e)
     | Cast(CAST_LOW, REG_32, BinOp(BITAND, e, Constant(Int(_,0xffffffffL)))) ->
 	Cast(CAST_LOW, REG_32, e)
+    (* Low cast gets only 0 due to left shift *)
+    | Cast(CAST_LOW, cty, BinOp(LSHIFT, e, Constant(Int(_, amt))))
+	when amt >= Int64.of_int (bits_of_width cty) ->
+	Constant(Int(cty, 0L))
+    (* A different way a mask can be redundant with a cast *)
+    | BinOp(BITAND,
+	    (Cast(CAST_UNSIGNED, (REG_16|REG_32|REG_64), e) as thecast),
+            Constant(Int(_, mask)))
+	when ((Vine_typecheck.infer_type None e) = REG_8) &&
+          (Int64.logand mask 0xffL) = 0xffL ->
+	thecast
+    | BinOp(BITAND,
+	    (Cast(CAST_UNSIGNED, (REG_32|REG_64), e) as thecast),
+            Constant(Int(_, mask)))
+	when ((Vine_typecheck.infer_type None e) = REG_16) &&
+          (Int64.logand mask 0xffffL) = 0xffffL ->
+	thecast
+    | BinOp(BITAND,
+	    (Cast(CAST_UNSIGNED, REG_64, e) as thecast),
+            Constant(Int(_, mask)))
+	when ((Vine_typecheck.infer_type None e) = REG_32) &&
+          (Int64.logand mask 0xffffffffL) = 0xffffffffL ->
+	thecast
     (* A more complex way of writing sign extension *)
     | BinOp(BITOR, Cast(CAST_UNSIGNED, REG_64, e1),
 	    BinOp(LSHIFT,
@@ -298,6 +434,52 @@ let rec constant_fold ctx e =
 		  Constant(Int(_, 8L))))
 	when e1 = e2 && ((Vine_typecheck.infer_type None e1) = REG_8)
 	  -> Cast(CAST_SIGNED, REG_16, e1)
+    (* Impossible equalities with extension casts *)
+    | BinOp(EQ, Cast(CAST_UNSIGNED, (REG_16|REG_32|REG_64), e1),
+	    Constant(Int(_, c)))
+	when (Vine_typecheck.infer_type None e1) = REG_8
+	  && c <> fix_u8 c
+	  -> exp_false
+    | BinOp(EQ, Cast(CAST_SIGNED, REG_16, e1),
+	    Constant(Int(_, c)))
+	when (Vine_typecheck.infer_type None e1) = REG_8
+	  && c <> fix_u16 (fix_s8 c)
+	  -> exp_false
+    | BinOp(EQ, Cast(CAST_SIGNED, REG_32, e1),
+	    Constant(Int(_, c)))
+	when (Vine_typecheck.infer_type None e1) = REG_8
+	  && c <> fix_u32 (fix_s8 c)
+	  -> exp_false
+    | BinOp(EQ, Cast(CAST_SIGNED, REG_64, e1),
+	    Constant(Int(_, c)))
+	when (Vine_typecheck.infer_type None e1) = REG_8
+	  && c <> fix_s8 c
+	  -> exp_false
+    | BinOp(EQ, Cast(CAST_UNSIGNED, (REG_32|REG_64), e1),
+	    Constant(Int(_, c)))
+	when (Vine_typecheck.infer_type None e1) = REG_16
+	  && c <> fix_u16 c
+	  -> exp_false
+    | BinOp(EQ, Cast(CAST_SIGNED, REG_32, e1),
+	    Constant(Int(_, c)))
+	when (Vine_typecheck.infer_type None e1) = REG_16
+	  && c <> fix_u32 (fix_s16 c)
+	  -> exp_false
+    | BinOp(EQ, Cast(CAST_SIGNED, REG_64, e1),
+	    Constant(Int(_, c)))
+	when (Vine_typecheck.infer_type None e1) = REG_16
+	  && c <> fix_s16 c
+	  -> exp_false
+    | BinOp(EQ, Cast(CAST_UNSIGNED, REG_64, e1),
+	    Constant(Int(_, c)))
+	when (Vine_typecheck.infer_type None e1) = REG_32
+	  && c <> fix_u32 c
+	  -> exp_false
+    | BinOp(EQ, Cast(CAST_SIGNED, REG_64, e1),
+	    Constant(Int(_, c)))
+	when (Vine_typecheck.infer_type None e1) = REG_32
+	  && c <> fix_s32 c
+	  -> exp_false
     | Cast(ct, ty, e) when (Vine_typecheck.infer_type None e) = ty ->
 	e
     | Lval l ->
@@ -305,6 +487,48 @@ let rec constant_fold ctx e =
 	    Some c -> c
 	   | None -> e
 	)
+    | Ite(((Constant(Int(_,_))) as cond), e1, e2) ->
+	if (bool_of_const cond) then e1 else e2
+    | Ite(cond, e1, e1') when e1 = e1' -> e1
+    | Ite(UnOp(NOT, c), x, y) -> Ite(c, y, x)
+    | Ite(cond, Constant(Int(REG_1, 1L)), Constant(Int(REG_1, 0L))) -> cond
+    | Ite(cond, Constant(Int(REG_1, 0L)), Constant(Int(REG_1, 1L))) ->
+        UnOp(NOT, cond)
+    | Ite(cond, Constant(Int(REG_1, 1L)), cond2) ->
+        BinOp(BITOR, cond, cond2)
+    | Ite(cond, cond2, Constant(Int(REG_1, 0L))) ->
+        BinOp(BITAND, cond, cond2)
+    (* These next two rules seem questionable. We've seen cases where
+       they help, but it's risky that they make the tree bigger. The
+       binop one with + also can interfere with symbolic address
+       parsing. *)
+    | Cast(ct, ty, Ite(cond, e1, e2)) ->
+        Ite(cond, Cast(ct, ty, e1), Cast(ct, ty, e2))
+    | BinOp(op, Ite(cond, e1, e2), (Constant(_) as k)) when op <> PLUS ->
+        Ite(cond, BinOp(op, e1, k), BinOp(op, e2, k))
+    (* Rules involving CONCAT: *)
+    | Cast(CAST_LOW, REG_8, BinOp(CONCAT, e_h, e_l))
+	when (Vine_typecheck.infer_type None e_l) = REG_8 -> e_l
+    | Cast(CAST_LOW, REG_16, BinOp(CONCAT, e_h, e_l))
+	when (Vine_typecheck.infer_type None e_l) = REG_16 -> e_l
+    | Cast(CAST_LOW, REG_32, BinOp(CONCAT, e_h, e_l))
+	when (Vine_typecheck.infer_type None e_l) = REG_32 -> e_l
+    | Cast(CAST_HIGH, REG_8, BinOp(CONCAT, e_h, e_l))
+	when (Vine_typecheck.infer_type None e_h) = REG_8 -> e_h
+    | Cast(CAST_HIGH, REG_16, BinOp(CONCAT, e_h, e_l))
+	when (Vine_typecheck.infer_type None e_h) = REG_16 -> e_h
+    | Cast(CAST_HIGH, REG_32, BinOp(CONCAT, e_h, e_l))
+	when (Vine_typecheck.infer_type None e_h) = REG_32 -> e_h
+    | Cast(CAST_LOW, REG_1, BinOp(CONCAT, e_h, e_l)) ->
+	Cast(CAST_LOW, REG_1, e_l)
+    | Cast(CAST_HIGH, REG_1, BinOp(CONCAT, e_h, e_l)) ->
+	Cast(CAST_HIGH, REG_1, e_h)
+    | BinOp(CONCAT, Constant(Int(REG_8, 0L)), x) ->
+       Cast(CAST_UNSIGNED, REG_16, x)
+    | BinOp(CONCAT, Constant(Int(REG_16, 0L)), x) ->
+       Cast(CAST_UNSIGNED, REG_32, x)
+    | BinOp(CONCAT, Constant(Int(REG_32, 0L)), x) ->
+       Cast(CAST_UNSIGNED, REG_64, x)
     (* AND / OR with itself *)
     | BinOp(BITOR, x, y)
     | BinOp(BITAND, x, y)
@@ -329,12 +553,66 @@ let rec constant_fold ctx e =
 	    Constant(Int(ty2, s2)))
 	when ty1 = ty2 && s1 >= 0L && s2 >= 0L ->
 	BinOp(ARSHIFT, x, (Constant(Int(ty1, (Int64.add s1 s2)))))
+    (* Common compiler optimization of x /u 10 *)
+    | BinOp(RSHIFT,
+	    Cast(CAST_HIGH, REG_32,
+		 BinOp(TIMES, Cast(CAST_UNSIGNED, REG_64, x),
+		       Constant(Int(_, 0xcccccccdL)))),
+	    Constant(Int(_, 3L)))
+	when (Vine_typecheck.infer_type None x) = REG_32 ->
+	BinOp(DIVIDE, x, Constant(Int(REG_32, 10L)))
+
+    (* Left shift combined with multiplication *)
+    | BinOp(LSHIFT,
+	    BinOp(TIMES, x, Constant(Int(ty, factor))),
+	    Constant(Int(_, shift)))
+	when let factor2 = Int64.shift_left factor (Int64.to_int shift) in
+	  Constant(Int(ty, factor2)) = to_val ty factor2
+      ->
+	let factor2 = Int64.shift_left factor (Int64.to_int shift) in
+	  BinOp(TIMES, x, Constant(Int(ty, factor2)))
+
+    (* Modulo as the remainder after integer division *)
+    | BinOp(PLUS, x1, UnOp(NEG, BinOp(TIMES, BinOp(DIVIDE, x2, k1), k2)))
+	when x1 = x2 && k1 = k2 ->
+	BinOp(MOD, x1, k1)
+    | BinOp(PLUS, UnOp(NEG, BinOp(TIMES, BinOp(DIVIDE, x2, k1), k2)), x1)
+	when x1 = x2 && k1 = k2 ->
+	BinOp(MOD, x1, k1)
+    | BinOp(PLUS, UnOp(NEG, BinOp(TIMES, BinOp(DIVIDE, x2, k1), k2)),
+	    BinOp(PLUS, x1, y))
+	when x1 = x2 && k1 = k2 ->
+	BinOp(PLUS, BinOp(MOD, x1, k1), y)
     (* byte & 0xffffff00 = 0 *)
     | BinOp(BITAND,
 	    Cast(CAST_UNSIGNED, REG_32, e),
 	    Constant(Int(REG_32, 0xffffff00L)))
 	when (Vine_typecheck.infer_type None e) = REG_8 ->
 	Constant(Int(REG_32, 0L))
+    (* zero-extend shift by at least reg size gives zero *)
+    | BinOp((LSHIFT|RSHIFT), e, Constant(Int(_, amt)))
+	when (Vine_typecheck.infer_type None e) = REG_8 && amt >= 8L ->
+	Constant(Int(REG_8, 0L))
+    | BinOp((LSHIFT|RSHIFT), e, Constant(Int(_, amt)))
+	when (Vine_typecheck.infer_type None e) = REG_16 && amt >= 16L ->
+	Constant(Int(REG_16, 0L))
+    | BinOp((LSHIFT|RSHIFT), e, Constant(Int(_, amt)))
+	when (Vine_typecheck.infer_type None e) = REG_32 && amt >= 32L ->
+	Constant(Int(REG_32, 0L))
+    | BinOp((LSHIFT|RSHIFT), e, Constant(Int(_, amt)))
+	when (Vine_typecheck.infer_type None e) = REG_64 && amt >= 64L ->
+	Constant(Int(REG_64, 0L))
+    (* byte >> amt = 0  when amt >= 8: special case of above within larger word *)
+    | BinOp(RSHIFT,
+	    Cast(CAST_UNSIGNED, REG_32, e),
+	    Constant(Int(_, amt)))
+	when (Vine_typecheck.infer_type None e) = REG_8 && amt >= 8L ->
+	Constant(Int(REG_32, 0L))
+    | BinOp(RSHIFT,
+	    Cast(CAST_UNSIGNED, REG_64, e),
+	    Constant(Int(_, amt)))
+	when (Vine_typecheck.infer_type None e) = REG_8 && amt >= 8L ->
+	Constant(Int(REG_64, 0L))
     (* (c ? k : k + 1) = (k + (int)c) *)
     | BinOp(BITOR,
 	    BinOp(BITAND, Cast(CAST_SIGNED, REG_32, c1),
@@ -346,6 +624,9 @@ let rec constant_fold ctx e =
 	      Cast(CAST_UNSIGNED, REG_32, c1))
     (* x + -x = 0 *)
     | BinOp(PLUS, x, UnOp(NEG, y)) when x = y ->
+	Constant(Int((Vine_typecheck.infer_type None x), 0L))
+    (* -x + x = 0 *)
+    | BinOp(PLUS, UnOp(NEG, x), y) when x = y ->
 	Constant(Int((Vine_typecheck.infer_type None x), 0L))
     (* x + x = x << 1 *)
     | BinOp(PLUS, x, y) when x = y ->
@@ -386,6 +667,37 @@ let rec constant_fold ctx e =
     | BinOp(EQ, BinOp(PLUS, x, (Constant(_) as c)),
 	    Constant(Int(ty, 0L))) ->
 	BinOp(EQ, x, (constant_fold ctx (UnOp(NEG, c))))
+    (* a + -b = 0 ==> a == b *)
+    | BinOp(EQ, BinOp(PLUS, a, UnOp(NEG, b)),
+	    Constant(Int(ty, 0L))) ->
+	BinOp(EQ, a, b)
+    (* a ^ b = 0 ==> a == b *)
+    | BinOp(EQ, BinOp(XOR, a, b), Constant(Int(ty, 0L))) ->
+	BinOp(EQ, a, b)
+    (* a < b | a == b ==> a <= b*)
+    | BinOp(BITOR, BinOp(LT, a1, b1), BinOp(EQ, a2, b2))
+	 when a1 = a2 && b1 = b2 ->
+	BinOp(LE, a1, b1)
+    (* a <$ b | a == b ==> a <=$ b*)
+    | BinOp(BITOR, BinOp(SLT, a1, b1), BinOp(EQ, a2, b2))
+	 when a1 = a2 && b1 = b2 ->
+	BinOp(SLE, a1, b1)
+    (* (a | c) == 0 ==> false, if c is a non-zero constant *)
+    | BinOp(EQ, BinOp(BITOR, a, Constant(Int(_, c))), Constant(Int(_, 0L)))
+	when c <> 0L ->
+	exp_false
+    (* ((a | c) << 32) == 0 ==> false, if c is a non-low32-zero constant *)
+    | BinOp(EQ, BinOp(LSHIFT, BinOp(BITOR, a, Constant(Int(_, c))),
+		      Constant(Int(_, 32L))),
+	    Constant(Int(_, 0L)))
+	when (Int64.logand 0xffffffffL c) <> 0L ->
+	exp_false
+    (* ((a | c) << 32) <> 0 ==> true, if c is a non-low32-zero constant *)
+    | BinOp(NEQ, BinOp(LSHIFT, BinOp(BITOR, a, Constant(Int(_, c))),
+		       Constant(Int(_, 32L))),
+	    Constant(Int(_, 0L)))
+	when (Int64.logand 0xffffffffL c) <> 0L ->
+	exp_true
     | _ -> e (* leave other expressions as they are *)
 
 

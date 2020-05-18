@@ -20,11 +20,12 @@ class binary_decision_tree : object
   method set_iter_seed : int -> unit
   method random_bit : bool
   method random_float : float
+  method random_byte : int
   method record_unsat : bool -> unit
 
   method try_extend : (bool -> Vine.exp) ->
-    (bool -> Vine.exp -> bool) -> (bool -> unit) -> (unit -> bool) 
-    -> (bool * Vine.exp)
+    (bool -> Vine.exp -> bool) -> (bool -> unit) -> (unit -> bool) ->
+    (bool -> bool) -> int64 -> (bool * Vine.exp)
 
   method try_extend_memoryless : (bool -> Vine.exp) ->
     (bool -> Vine.exp -> bool) -> (bool -> unit) -> (unit -> bool) 

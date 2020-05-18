@@ -36,6 +36,12 @@ Exp *translate_expr( IRExpr *expr, IRSB *irbb, vector<Stmt *> *irout );
 
 string get_op_str(asm_program_t *prog, Instruction *inst );
 
+void split_vector(Exp *exp_v, Exp **high, Exp **low);
+Exp *translate_MullU64(Exp *arg1, Exp *arg2, vector<Stmt *> *irout);
+Exp *translate_MullS64(Exp *arg1, Exp *arg2, vector<Stmt *> *irout);
+
+Exp *translate_GetMSBs8x8(Exp *x);
+
 Exp *emit_ite(vector<Stmt *> *irout, reg_t type,
 	      Exp *cond, Exp *exp_t, Exp *exp_f);
 int match_ite(vector<Stmt*> *ir, unsigned int i,
@@ -53,7 +59,9 @@ extern Exp * count_opnd;
 vector<VarDecl *> i386_get_reg_decls();
 IRStmt *i386_make_pc_put_stmt(Addr64 addr);
 Exp  *i386_translate_get( IRExpr *expr, IRSB *irbb, vector<Stmt *> *irout );
+Exp  *i386_translate_geti( IRExpr *expr, IRSB *irbb, vector<Stmt *> *irout );
 Stmt *i386_translate_put( IRStmt *stmt, IRSB *irbb, vector<Stmt *> *irout );
+Stmt *i386_translate_puti( IRStmt *stmt, IRSB *irbb, vector<Stmt *> *irout );
 Exp  *i386_translate_ccall( IRExpr *expr, IRSB *irbb, vector<Stmt *> *irout );
 Stmt *i386_translate_dirty( IRStmt *stmt, IRSB *irbb, vector<Stmt *> *irout );
 void  i386_modify_flags( asm_program_t *prog, vine_block_t *block );
@@ -62,7 +70,9 @@ void  i386_modify_flags( asm_program_t *prog, vine_block_t *block );
 vector<VarDecl *> x64_get_reg_decls();
 IRStmt *x64_make_pc_put_stmt(Addr64 addr);
 Exp  *x64_translate_get( IRExpr *expr, IRSB *irbb, vector<Stmt *> *irout );
+Exp  *x64_translate_geti( IRExpr *expr, IRSB *irbb, vector<Stmt *> *irout );
 Stmt *x64_translate_put( IRStmt *stmt, IRSB *irbb, vector<Stmt *> *irout );
+Stmt *x64_translate_puti( IRStmt *stmt, IRSB *irbb, vector<Stmt *> *irout );
 Exp  *x64_translate_ccall( IRExpr *expr, IRSB *irbb, vector<Stmt *> *irout );
 Stmt *x64_translate_dirty( IRStmt *stmt, IRSB *irbb, vector<Stmt *> *irout );
 void  x64_modify_flags( asm_program_t *prog, vine_block_t *block );

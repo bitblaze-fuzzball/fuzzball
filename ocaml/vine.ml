@@ -93,6 +93,14 @@ type cast_type = CAST_UNSIGNED (** 0-padding widening cast. *)
 		 | CAST_HIGH (** Narrowning cast. Keeps the high bits. *)
 		 | CAST_LOW (** Narrowing cast. Keeps the low bits. *)
 
+(** Casts to and from floating-point values *)
+type fcast_type = | CAST_SFLOAT (** Signed integer to float *)
+		  | CAST_UFLOAT (** Unsigned integer to float *)
+		  | CAST_SFIX (** Float to signed integer *)
+		  | CAST_UFIX (** Float to unsigned integer *)
+		  | CAST_FWIDEN (** Increase FP precision *)
+		  | CAST_FNARROW (** Decrease FP precision *)
+
 (** Binary operations implemented in the IR *)
 type binop_type = PLUS (** Integer addition. (commutative, associative) *)
 		  | MINUS (** Subtract second integer from first. *)
@@ -113,12 +121,26 @@ type binop_type = PLUS (** Integer addition. (commutative, associative) *)
 		  | LE (** Unsigned less than or equal to *)
 		  | SLT (** Signed less than *)
 		  | SLE (** Signed less than or equal to *)
-                  
+                  | CONCAT (** Bitwise concatenation *)
+
+
+(** Floating point binary operations *)
+type fbinop_type = | FPLUS (** Adddition *)
+		   | FMINUS (** Subtraction *)
+		   | FTIMES (** Multiplication *)
+		   | FDIVIDE (** Division, always signed *)
+		       (* For now: no FMOD/FREM *)
+		   | FEQ (** Equality. Differs from EQ because of NaN *)
+		   | FNEQ (** Not equal-to *)
+		   | FLT (** Less-than, always signed *)
+		   | FLE (** Less-than or equal-to, always signed *)
 
 (** Unary operations implemented in the IR *)
 type unop_type = NEG (** Negate (2's complement) *)
 		 | NOT (** Bitwise not *)
 
+(** Floating point unary operations *)
+type funop_type = FNEG (** Negate *)
 
 (** A value that can be used as a constant *)
 type value =  Int of typ * int64
@@ -146,18 +168,22 @@ type lvalue =
     | Mem of var * exp * typ (** A memory reference *)
 
 (** An expression in the IR *)
-and exp = BinOp of binop_type * exp * exp
+and exp =  | BinOp of binop_type * exp * exp
+	   | FBinOp of fbinop_type * round_mode * exp * exp
 	   | UnOp of unop_type * exp
+	   | FUnOp of funop_type * round_mode * exp
 	   | Constant of  value
 	   | Lval of lvalue
 	   | Name of label (** The address of a label *)
 	   | Cast of cast_type * typ * exp (** Cast to a new type. *)
+	   | FCast of fcast_type * round_mode * typ * exp
 	   | Unknown of string (* FIXME: * register_type *)
 	   | Let of lvalue * exp * exp (** Let(lv,e1,e2) binds lv to e1 in
 					   the scope of e2 *)
 	       (* Note: We allow binding memory in an expression, so we don't
 		  need to replace all memory references in the subexpression with
 		  ITEs, when calculating the WP. *)
+	   | Ite of exp * exp * exp (** Functional if-then-else *)
 
 (** The IR statement type. *)
 type stmt = Jmp of exp (** Jump to a label/address *)
@@ -234,11 +260,8 @@ let exp_not e = UnOp(NOT, e)
 let exp_implies e1 e2 = exp_or (exp_not e1) e2
 let exp_plus e1 e2 = BinOp(PLUS, e1, e2)
 let exp_ite cond typ e1 e2 =
-  let cond_mask_temp = Temp(newvar "cond_mask" typ) in
-  let cond_mask = Lval cond_mask_temp in
-    Let(cond_mask_temp,
-	Cast(CAST_SIGNED, typ, cond),
-	exp_or (exp_and cond_mask e1) (exp_and (exp_not cond_mask) e2))
+  ignore(typ);
+  Ite(cond, e1, e2)
 
 let const_of_int64 t i = Constant(Int(t, i))
 let const_of_int t i = Constant(Int(t, Int64.of_int i))
@@ -263,6 +286,16 @@ let rec bits_of_width t =
 (*    | Array(at, vt) -> bits_of_width vt (* FIXME *)
     | TString -> failwith "bits_of_width of string undefined" *)
 
+let rec double_width ty =
+  match ty with
+    | REG_1 -> failwith "Can't double_width REG_1"
+    | REG_8 -> REG_16
+    | REG_16 -> REG_32
+    | REG_32 -> REG_64
+    | REG_64 -> failwith "Can't double_width REG_64"
+    | TAttr(t', _) -> double_width t'
+    | _ -> raise (Invalid_argument "unknown width in double_width")
+
 (** Parse a binop from a string *)
 let binop_of_string s =
   (match s with
@@ -284,6 +317,7 @@ let binop_of_string s =
     | "LE" ->       LE
     | "SLT" ->      SLT
     | "SLE" ->      SLE
+    | "CONCAT" ->   CONCAT
     | s -> raise(ParseError("\""^s^"\" is  not a known binop"))
   )
 
@@ -356,11 +390,35 @@ let binop_to_string = function
   | LE -> "<="
   | SLT -> "<$"
   | SLE -> "<=$"
+  | CONCAT -> "@"
+
+(** @return the string representation of a rounding mode *)
+let round_mode_to_string = function
+  | ROUND_NEAREST           -> "e"
+  | ROUND_NEAREST_AWAY_ZERO -> "a"
+  | ROUND_POSITIVE          -> "P"
+  | ROUND_NEGATIVE          -> "N"
+  | ROUND_ZERO              -> "Z"
+
+(** @return the string representation of an FP binop *)
+let fbinop_to_string = function
+  | FPLUS -> "+."
+  | FMINUS -> "-."
+  | FTIMES -> "*."
+  | FDIVIDE -> "/."
+  | FEQ -> "==."
+  | FNEQ -> "<>."
+  | FLT -> "<."
+  | FLE -> "<=."
 
 (** @return the string representation of a unop *)
 let unop_to_string = function
     NEG -> "-"
   | NOT -> "!"
+
+(** @return the string representation of an FP unop *)
+let funop_to_string = function
+  | FNEG -> "-."
 
 (** @return the string representation of a cast_type *)
 let casttype_to_string = function
@@ -368,6 +426,14 @@ let casttype_to_string = function
   | CAST_SIGNED ->    "S"
   | CAST_HIGH ->      "H"
   | CAST_LOW ->       "L"
+
+let fcasttype_to_string = function
+  | CAST_SFLOAT -> "SFloat"
+  | CAST_UFLOAT -> "UFloat"
+  | CAST_SFIX -> "SFix"
+  | CAST_UFIX -> "UFix"
+  | CAST_FWIDEN -> "FWiden"
+  | CAST_FNARROW -> "FNarrow"
 
 let rec tattr_to_string at = 
   match at with
@@ -381,8 +447,8 @@ let rec tattr_to_string at =
 let rec format_name ft (vid,name,typ) =
   let pp = Format.pp_print_string ft in
     pp name;
-    pp "_";
-    pp (string_of_int vid)
+    () (* pp "_";
+    pp (string_of_int vid) *)
 
 and format_var ?(print_type=true) ft ((vid,name,typ) as var) =
   let pp = Format.pp_print_string ft in
@@ -484,13 +550,14 @@ let rec format_exp ft e =
        to be parenthesized. Larger numbers means it has higher precedence.
        Maximum prec before paretheses are added are as follows:
        100 LET
+       150 ? :
        200 OR XOR AND
-       300 EQUAL NEQ
-       400 LT SLT SLE LE
+       300 EQ FEQ NEQ FNEQ
+       400 LT SLT FLT SLE LE FLE
        500 LSHIFT RSHIFT ARSHIFT
-       600 PLUS MINUS
-       700 TIMES DIVIDE SDIVIDE MOD
-       800 UMINUS NOT
+       600 PLUS FPLUS MINUS FMINUS
+       700 TIMES FTIMES DIVIDE SDIVIDE FDIVIDE MOD
+       800 NEG FNEG NOT
 
        (* We intentiorally print parentheses around things with precedence
        200 because those should have different precedences to match what
@@ -513,13 +580,27 @@ let rec format_exp ft e =
 	   space();
 	   fe 0 e2;
 	   rparen 100;
+       | Ite(cond_e, true_e, false_e) ->
+	   lparen 150;
+	   open_box 1;
+	   fe 151 cond_e;
+	   space ();
+	   pp "?";
+	   space ();
+	   fe 151 true_e;
+	   space ();
+	   pp ":";
+	   space ();
+	   fe 151 false_e;
+	   close_box ();
+	   rparen 150;
        | BinOp(b,e1,e2) ->
 	   let op_prec = match b with
                BITOR | XOR | BITAND	 -> 200
 	     | EQ | NEQ			 -> 300
 	     | LT | SLT | SLE | LE	 -> 400
 	     | LSHIFT | RSHIFT | ARSHIFT -> 500
-	     | PLUS | MINUS		 -> 600
+	     | PLUS | MINUS | CONCAT     -> 600
 	     | TIMES|DIVIDE|SDIVIDE|MOD|SMOD  -> 700
 	   in
 	   Format.pp_print_cut ft ();
@@ -536,9 +617,35 @@ let rec format_exp ft e =
 	   close_box();
 	   rparen op_prec;
 	   Format.pp_print_cut ft ()
+       | FBinOp(fb,rm,e1,e2) ->
+	   let op_prec = match fb with
+	     | FEQ | FNEQ	 -> 300
+	     | FLT | FLE	 -> 400
+	     | FPLUS | FMINUS	 -> 600
+	     | FTIMES | FDIVIDE  -> 700
+	   in
+	   Format.pp_print_cut ft ();
+	   lparen op_prec;
+	   open_box 2;
+	   (* FP ops are in general not associative *)
+	   fe (op_prec+1) e1;
+	   space();
+	   pp(fbinop_to_string fb);
+	   pp(round_mode_to_string rm);
+	   pp " ";
+	   fe (op_prec+1) e2;
+	   close_box();
+	   rparen op_prec;
+	   Format.pp_print_cut ft ()
        | UnOp(u,e) ->
 	   lparen 800;
 	   pp(unop_to_string u);
+	   fe 800 e;
+	   rparen 800
+       | FUnOp(u,rm,e) ->
+	   lparen 800;
+	   pp(funop_to_string u);
+	   pp(round_mode_to_string rm);
 	   fe 800 e;
 	   rparen 800
        | Constant(v) ->
@@ -551,6 +658,13 @@ let rec format_exp ft e =
 	   pp "cast(";
 	   fe 0 e;
 	   pp (")"^casttype_to_string ct^":");
+	   format_typ ft t
+       | FCast(ct,rm,t,e) ->
+	   pp "cast.";
+	   pp(round_mode_to_string rm);
+	   pp "(";
+	   fe 0 e;
+	   pp (")"^fcasttype_to_string ct^":");
 	   format_typ ft t
        | Unknown u ->
 	   pp "unknown \""; pp u; pp "\""
@@ -891,19 +1005,38 @@ let rec exp_accept visitor expression =
 	  let e2' = vis e2 in
 	    if vis_avoid_alloc && e1' == e1 && e2' == e2  then exp
 	    else BinOp(bot, e1', e2')
+      | FBinOp(bot, rm, e1, e2) ->
+	  let e1' = vis e1 in
+	  let e2' = vis e2 in
+	    if vis_avoid_alloc && e1' == e1 && e2' == e2  then exp
+	    else FBinOp(bot, rm, e1', e2')
       | UnOp(op, e) ->
 	  let e' = vis e in
 	    if vis_avoid_alloc && e' == e then exp
 	    else UnOp(op, e')
+      | FUnOp(op, rm, e) ->
+	  let e' = vis e in
+	    if vis_avoid_alloc && e' == e then exp
+	    else FUnOp(op, rm, e')
       | Cast(c,w, e) ->
 	  let e' = vis e in
 	    if vis_avoid_alloc && e' == e then exp
 	    else Cast(c, w, e')
+      | FCast(c,rm,w, e) ->
+	  let e' = vis e in
+	    if vis_avoid_alloc && e' == e then exp
+	    else FCast(c, rm, w, e')
       | Let(v, e1, e2) ->
 	  let (v', e1') = binding_accept visitor (v,e1) in
 	  let e2' = vis e2 in
 	    if vis_avoid_alloc && v' == v && e1' == e1 && e2' == e2 then exp
 	    else Let(v', e1', e2')
+      | Ite(ce, te, fe) ->
+	  let ce' = vis ce in
+	  let te' = vis te in
+	  let fe' = vis fe in
+	    if vis_avoid_alloc && ce' == ce && te' == te && fe' == fe then exp
+	    else Ite(ce', te', fe')
       | Lval l ->
 	  let l' = rlvalue_accept visitor l in
 	    if vis_avoid_alloc && l' == l then exp
@@ -1249,6 +1382,10 @@ let is_integer_type = function
     REG_1 | REG_8 | REG_16 | REG_32 | REG_64 -> true
   | _ -> false
 	
+
+let is_float_type = function
+  | REG_32 | REG_64 -> true
+  | _ -> false
 
 let rec unwind_type t = 
   match t with

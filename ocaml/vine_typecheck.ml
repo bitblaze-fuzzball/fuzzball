@@ -40,11 +40,30 @@ type ctx = Vine.typ VM.t
 type gamma = ctx option
 
 
-let rec tint t = 
+let tint t =
   match (unwind_type t) with
       REG_1 | REG_8 | REG_16 | REG_32 | REG_64 -> true
     | _ -> false
 
+(* REG_1 isn't here because there isn't a REG_2. REG_64 isn't because
+   there is no REG_128. *)
+let tint_concatable t =
+  match (unwind_type t) with
+      REG_8 | REG_16 | REG_32 -> true
+    | _ -> false
+
+let tfloat t =
+  match (unwind_type t) with
+    | REG_32 | REG_64 -> true
+    | _ -> false
+
+(* Originally this was only REG_32 and REG_64, but x86 has an
+   instruction that converts an int to a 16-bit value, so we might as
+   well too. I'm still hoping that REG_8 and REG_1 will never come up. *)
+let tfcast_int t =
+  match (unwind_type t) with
+    | REG_16 | REG_32 | REG_64 -> true
+    | _ -> false
 
 let rec tcompat (t1:typ) (t2:typ) : bool = 
   let t1' = unwind_type t1 in 
@@ -162,6 +181,10 @@ and typecheck_exp names gamma (e:exp)  =
 	let (n,t) = typecheck_exp names gamma e'  in 
 	  if (tint t) then (n,t) else
 	    raise (TypeError("unop requires integer type"))
+    | FUnOp(uop, _, e') ->
+	let (n,t) = typecheck_exp names gamma e'  in
+	  if (tfloat t) then (n,t) else
+	    raise (TypeError("FP unop requires FP type"))
     | BinOp(bop, e1, e2) -> (
 	let (names,t1) = typecheck_exp names gamma e1 in 
 	let (names,t2) = typecheck_exp names gamma e2 in 
@@ -183,13 +206,52 @@ and typecheck_exp names gamma (e:exp)  =
 		 when tint t1 && tcompat t1 t2
 		  ->
 	      (names,REG_1)
+	  | CONCAT
+	      when tint_concatable t1 && tcompat t1 t2
+		->
+	      (names,double_width t1)
 	  | _ ->
 	      let msg = (binop_to_string bop)^" incompatible with operands ("
 		^type_to_string t1^" and "^type_to_string t2^")"
 	      in
 		raise (TypeError(msg))
       )
-    | Unknown _ -> raise (TypeError("Cannot typecheck unknown's"))
+    | FBinOp(bop, _, e1, e2) -> (
+	let (names,t1) = typecheck_exp names gamma e1 in
+	let (names,t2) = typecheck_exp names gamma e2 in
+	match bop with
+	  | FPLUS | FMINUS | FTIMES | FDIVIDE
+		when tcompat t1 t2 && tfloat t1
+		  ->
+	      (names,t1)
+	  | FEQ | FNEQ | FLT | FLE
+		 when tfloat t1 && tcompat t1 t2
+		  ->
+	      (names,REG_1)
+	  | _ ->
+	      let msg = (fbinop_to_string bop)^" incompatible with operands ("
+		^type_to_string t1^" and "^type_to_string t2^")"
+	      in
+		raise (TypeError(msg))
+      )
+    | Ite(cond_e, true_e, false_e) ->
+	let (names, cond_t) = typecheck_exp names gamma cond_e in
+	  (if cond_t <> REG_1 then
+	     let msg = "Condition in ? : should be of type REG_1, not "
+	       ^ (type_to_string cond_t)
+	     in
+	       raise (TypeError(msg)));
+	  let (names, true_t) = typecheck_exp names gamma true_e in
+	  let (names, false_t) = typecheck_exp names gamma false_e in
+	    if not (tcompat true_t false_t) then
+	      let msg = "Second and third args to ? : must have " ^
+		"compatible type, not " ^ (type_to_string true_t) ^ " and " ^
+		(type_to_string false_t)
+	      in
+	       raise (TypeError(msg))
+	    else
+	      (names, true_t)
+    | Unknown s -> raise (TypeError("Cannot typecheck unknown: " ^ s))
     | Cast(ct, t, e') -> ( 
 	let (names,t1) = typecheck_exp names gamma e' in
 	let castbits = Vine.bits_of_width t in
@@ -212,6 +274,26 @@ and typecheck_exp names gamma (e:exp)  =
 	    | CAST_LOW when castbits <= ebits -> (names,t) (* valid when
 						      narrowing *)
 	    | _ -> raise (TypeError("nonsensical cast"))
+      )
+    | FCast(ct, _, t2, e') -> (
+	let (names,t1) = typecheck_exp names gamma e' in
+	let to_bits = Vine.bits_of_width t2 in
+	let from_bits = (
+	  match t1 with
+	    | REG_32 -> 32
+	    | REG_64 -> 64
+	    | _ -> raise (TypeError("unsupported destination type in FP cast"))
+	) in
+	  match ct with
+	    | (CAST_SFIX|CAST_UFIX) when tfloat t1 && tfcast_int t2
+		-> (names, t2) (* valid float to int cast *)
+	    | (CAST_SFLOAT|CAST_UFLOAT) when tfcast_int t1 && tfloat t2
+		-> (names, t2) (* valid int to float cast *)
+	    | CAST_FWIDEN when tfloat t1 && tfloat t2 && to_bits > from_bits
+		-> (names, t2) (* valid increase precision *)
+	    | CAST_FNARROW when tfloat t1 && tfloat t2 && to_bits < from_bits
+		-> (names, t2) (* valid decrease precision *)
+	    | _ -> raise (TypeError("unsupported FP cast"))
       )
     | Name(l) -> 
 	if !typecheck_jmp_targets then (
@@ -248,7 +330,7 @@ and typecheck_exp names gamma (e:exp)  =
 
 let rec typecheck_stmt scope omega names labels sigma gamma s  = 
   let err m = 
-    raise (TypeError("Type error: "^m^"\n at"^(stmt_to_string s)))
+    raise (TypeError("Type error: "^m^" at "^(stmt_to_string s)))
   in
   let retcheck t omega = 
     match omega with
@@ -434,15 +516,24 @@ let infer_type_fast e =
       | Lval(Temp((_,_,t))) -> t
       | Lval(Mem(_,_,t)) -> t
       | UnOp(_, e1) -> loop e1
+      | FUnOp(_, _, e1) -> loop e1
       | BinOp((EQ|NEQ|LT|LE|SLT|SLE), _, _) -> REG_1
+      | FBinOp((FEQ|FNEQ|FLT|FLE), _, _, _) -> REG_1
       | BinOp((LSHIFT|RSHIFT|ARSHIFT), e1, _) -> loop e1
       | BinOp((PLUS|MINUS|TIMES|DIVIDE|SDIVIDE|MOD|SMOD|BITAND|BITOR|XOR),
 	      e1, e2) ->
 	  loop (if Random.bool () then e1 else e2)
+      | BinOp(CONCAT, e1, e2) ->
+	  double_width (loop (if Random.bool () then e1 else e2))
+      | FBinOp((FPLUS|FMINUS|FTIMES|FDIVIDE), _, e1, e2) ->
+	  loop (if Random.bool () then e1 else e2)
       | Unknown(_) -> raise (TypeError("Cannot typecheck unknowns"))
       | Cast(_, t, _) -> t
+      | FCast(_, _, t, _) -> t
       | Name(_) -> Vine.addr_t
       | Let(_, _, e2) -> loop e2
+      | Ite(_, e1, e2) ->
+	  loop (if Random.bool () then e1 else e2)
   in
     loop e
 ;;
