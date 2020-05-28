@@ -1849,6 +1849,15 @@ Exp *translate_simple_unop( IRExpr *expr, IRSB *irbb, vector<Stmt *> *irout )
         case Iop_ReinterpF64asI64:
 	    return arg; // We don't make any distinction here
 
+	/* Because we treat FP values as just their bits, we can
+	   implement absolute value just by masking off the sign
+	   bit. */
+        case Iop_AbsF32:
+	    return new BinOp(BITAND, arg, ex_const(0x7fffffff));
+        case Iop_AbsF64:
+	    return new BinOp(BITAND, arg, ex_const64(0x7fffffffffffffff));
+
+
 #if VEX_VERSION >= 2559
         case Iop_GetMSBs8x8:
 	    return translate_GetMSBs8x8(arg);
@@ -1887,9 +1896,6 @@ Exp *translate_unop( IRExpr *expr, IRSB *irbb, vector<Stmt *> *irout )
         case Iop_Ctz32:     return translate_Ctz32( expr, irbb, irout );
         case Iop_Clz64:     return translate_Clz64( expr, irbb, irout );
         case Iop_Ctz64:     return translate_Ctz64( expr, irbb, irout );
-
-        case Iop_AbsF64:
-            return new Unknown("Floating point op");
 
         default:    
 	    return new Unknown("Unrecognized unary op");
