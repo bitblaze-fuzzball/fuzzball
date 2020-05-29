@@ -21,6 +21,14 @@ export OCAMLDEP = ocamldep -I $(VINE_OCAMLDIR) -I $(VINE_TRACEDIR) \
 
 OCAMLFLAGS = -warn-error Aelz  #-w A
 
+# Ensure that make knows to relink the executables if only libasmir
+# has changed. It's not otherwise smart enough to do this perhaps
+# because the default assumption is that a C library is a prerequisite
+# that rarely changes. But for us it's a somewhat common situation to
+# want to recompile FuzzBALL after fixing libasmir's instruction
+# support.
+export RESULTDEPS = ../libasmir/src/libasmir.a
+
 # default subprojects to build
 ifndef SUBPROJS
 	export SUBPROJS = fuzzball test_insn vinegrind
