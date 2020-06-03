@@ -2294,6 +2294,15 @@ Exp *translate_binop( IRExpr *expr, IRSB *irbb, vector<Stmt *> *irout )
 	    unk = "Floating point binop 2xm1F64";
 	    break;
 
+        case Iop_SinF64:
+	    // return ex_const64(0);
+	    unk = "Floating point binop SinF64";
+	    break;
+        case Iop_CosF64:
+	    // return ex_const64(0);
+	    unk = "Floating point binop CosF64";
+	    break;
+
         default:
 	    unk = "Unrecognized binary op";
             break;
