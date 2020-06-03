@@ -174,7 +174,7 @@ let print_insns start_eip (_, sl) insn_num endl =
     List.iter
       (function
 	 | V.Comment(s) ->
-	     if FM.comment_is_insn s then
+	     if Frag_simplify.comment_is_insn s then
 	       (print_eip();
 		Printf.printf "%s%c" s endl)
 	 | V.Label(lab) ->

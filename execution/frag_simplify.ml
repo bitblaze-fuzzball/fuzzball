@@ -7,6 +7,22 @@ module V = Vine;;
 open Exec_exceptions;;
 open Exec_options;;
 
+let skip_strings =
+  (let h = Hashtbl.create 2 in
+     Hashtbl.replace h "NoOp" ();
+     Hashtbl.replace h "x86g_use_seg_selector" ();
+     Hashtbl.replace h "Skipped: AbiHint" ();
+     h)
+
+(* The interface for Vine to give us the disassembly of an instruction
+   is to put it in a comment, but it uses comments for other things as
+   well. So this code tries to filter out all the things that are not
+   instruction disassemblies. It would be cleaner to have a special
+   syntax. *)
+let comment_is_insn s =
+  (not (Hashtbl.mem skip_strings s))
+  && ((String.length s < 13) || (String.sub s 0 13) <> "eflags thunk:")
+
 let rec constant_fold_rec e =
   match e with
     | V.BinOp(op, e1, e2) ->
@@ -338,6 +354,57 @@ let cfold_exprs_w_type (dl, sl) =
     sl
   in
     (dl, sl')
+
+let die_on_unknowns_exp e ctx_str_fn =
+  let rec loop e =
+    match e with
+    | V.Unknown("rdtsc") -> ()
+    | V.Unknown("Unknown: Dirty") ->
+	raise IllegalInstruction
+    | V.Unknown(s) ->
+	raise (Simplify_failure
+		 ("unhandled unknown " ^ s ^ " " ^ (ctx_str_fn ())))
+    | V.BinOp(op, e1, e2) -> loop e1; loop e2
+    | V.FBinOp(op, _, e1, e2) -> loop e1; loop e2
+    | V.UnOp(op, e1) -> loop e1
+    | V.FUnOp(op, _, e1) -> loop e1
+    | V.Cast(op, ty, e1) -> loop e1
+    | V.FCast(op, _, ty, e1) -> loop e1
+    | V.Lval(V.Mem(_, addr, _)) -> loop addr
+    | V.Constant(_) -> ()
+    | V.Lval(V.Temp(_)) -> ()
+    | V.Ite(ce, te, fe) -> loop ce; loop te; loop fe
+    | V.Name(_) -> ()
+    | V.Let(V.Temp(_), e1, e2) -> loop e1; loop e2
+    | V.Let(V.Mem(_, addr, _), e1, e2) -> loop addr; loop e1; loop e2
+  in
+  loop e
+
+let die_on_unknowns sl =
+  let eip_ref = ref 0L in
+  let insn_ref = ref "???" in
+  let ctx_str_fn () =
+    if !eip_ref = 0L && !insn_ref = "???" then
+      "(not in an instruction?)"
+    else
+      Printf.sprintf "in or near 0x%Lx %s" !eip_ref !insn_ref
+  in
+  List.iter
+    (fun st -> match st with
+       | V.CJmp(e, _, _) -> die_on_unknowns_exp e ctx_str_fn
+       | V.Move(V.Temp(_), e) -> die_on_unknowns_exp e ctx_str_fn
+       | V.Move(V.Mem(_, e1, _), e2) ->
+	   die_on_unknowns_exp e1 ctx_str_fn;
+	   die_on_unknowns_exp e2 ctx_str_fn
+       | V.ExpStmt(e) -> die_on_unknowns_exp e ctx_str_fn
+       | V.Label(l) when (String.length l > 5) &&
+           (String.sub l 0 5) = "pc_0x" ->
+	     eip_ref := V.label_to_addr l
+       | V.Comment(s) when comment_is_insn s ->
+	   insn_ref := s
+       | _ -> ()
+    ) sl;
+  sl
 
 let rm_unused_stmts sl =
   List.filter
@@ -879,7 +946,8 @@ let simplify_frag (orig_dl, orig_sl) =
   let (dl, sl) = copy_const_prop (dl, sl) in
   let (dl, sl) = rm_unused_vars (dl, sl) in
   let (dl, sl) = copy_const_prop (dl, sl) in
-  let (dl, sl) = cfold_exprs (dl, sl) in 
+  let (dl, sl) = cfold_exprs (dl, sl) in
+  let sl = die_on_unknowns sl in
   let (dl, sl) = cfold_exprs_w_type (dl, sl) in
   let (dl, sl) = rm_unused_vars (dl, sl) in
   let (dl, sl) = peephole_patterns (dl, sl) in

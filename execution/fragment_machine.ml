@@ -45,22 +45,6 @@ let move_hash src dest =
   V.VarHash.clear dest;
   V.VarHash.iter (fun a b -> V.VarHash.add dest a b) src
 
-let skip_strings =
-  (let h = Hashtbl.create 2 in
-     Hashtbl.replace h "NoOp" ();
-     Hashtbl.replace h "x86g_use_seg_selector" ();
-     Hashtbl.replace h "Skipped: AbiHint" ();
-     h)
-
-(* The interface for Vine to give us the disassembly of an instruction
-   is to put it in a comment, but it uses comments for other things as
-   well. So this code tries to filter out all the things that are not
-   instruction disassemblies. It would be cleaner to have a special
-   syntax. *)
-let comment_is_insn s =
-  (not (Hashtbl.mem skip_strings s))
-  && ((String.length s < 13) || (String.sub s 0 13) <> "eflags thunk:")
-
 class virtual special_handler = object(self)
   method virtual handle_special : string -> V.stmt list option
   method virtual make_snap : unit
@@ -2427,7 +2411,7 @@ struct
 		       ignore(v);
 		       loop rest
 		 | V.Comment(s) ->
-		     if comment_is_insn s then
+		     if Frag_simplify.comment_is_insn s then
 		       last_insn <- s;
 		     loop rest
 		 | V.Block(_,_) -> failwith "Block unsupported"
