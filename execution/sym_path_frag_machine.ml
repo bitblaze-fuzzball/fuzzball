@@ -681,8 +681,10 @@ struct
       let eip = self#get_eip in
 	try let pref = Hashtbl.find opt_branch_preference eip in
 	  match pref with
-	    | 0L -> Some false
-	    | 1L -> Some true
+	    | 0.0 -> Some false
+	    | 1.0 -> Some true
+	    | f when f > 0.0 && f < 1.0 ->
+		Some (f > dt#random_float)
 	    | _ -> failwith "Unsupported branch preference"
 	with
 	  | Not_found ->
