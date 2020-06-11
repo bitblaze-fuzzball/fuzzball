@@ -2013,6 +2013,7 @@ Exp *translate_binop( IRExpr *expr, IRSB *irbb, vector<Stmt *> *irout )
         case Iop_CmpLT32U: return new BinOp(LT, arg1, arg2);
         case Iop_CmpLE32U: return new BinOp(LE, arg1, arg2);
 
+        case Iop_8HLto16:           return assemble2x8(arg1, arg2);
         case Iop_16HLto32:          return translate_16HLto32(arg1, arg2);
         case Iop_32HLto64:          return translate_32HLto64(arg1, arg2);
         case Iop_64HLto128:         return translate_64HLto128(arg1, arg2);
