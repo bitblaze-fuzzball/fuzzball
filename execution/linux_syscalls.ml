@@ -21,7 +21,7 @@ open Fragment_machine
    Generally speaking, the implementation of a system call named "foo"
    is in a method named "sys_foo". After some utility functions and
    data structures, roughly the first half of the file is
-   implementations of sys_* methods, toughly in alphabetical order but
+   implementations of sys_* methods, roughly in alphabetical order but
    with some closely-related methods grouped. Then the second half of
    the file is the dispatch routine.
 *)
@@ -4174,12 +4174,13 @@ object(self)
 	     uh "Unhandled Linux system call prctl (172)"
 	 | (X64, 157) -> (* prctl *)
 	     uh "Unhandled Linux/x64 system call prctl (157)"
+	 | (X86, 384)    (* arch_prctl *)
 	 | (X64, 158) -> (* arch_prctl *)
 	     let (arg1, arg2) = read_2_regs () in
 	     let code = Int64.to_int arg1 and
 		 addr = arg2 in
 	       if !opt_trace_syscalls then
-		 Printf.printf "arch_prctl(%d, 0x%08Lx)" code addr;
+		 Printf.printf "arch_prctl(0x%x, 0x%08Lx)" code addr;
 	       self#sys_arch_prctl code addr
 	 | ((X86|ARM), 173) -> (* rt_sigreturn *)
 	     uh "Unhandled Linux system call rt_sigreturn (173)"
