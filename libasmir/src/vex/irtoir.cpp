@@ -1164,6 +1164,36 @@ Exp *translate_par32fp_128_binop(fbinop_type_t op, Exp *left, Exp *right) {
     return assemble4x32(result1, result2, result3, result4);
 }
 
+// SIMD FP comparison on 4 single-precision values at once producing 0
+// or -1 bitmasks, as in the x86 cmpps.
+Exp *translate_par32fp_128_compare(fbinop_type_t op, Exp *left, Exp *right) {
+    Exp *left_high, *left_low;
+    split_vector(left, &left_high, &left_low);
+    Exp *left1 = _ex_h_cast(left_high, REG_32);
+    Exp *left2 = ex_l_cast(left_high, REG_32);
+    Exp *left3 = _ex_h_cast(left_low, REG_32);
+    Exp *left4 = ex_l_cast(left_low, REG_32);
+
+    Exp *right_high, *right_low;
+    split_vector(right, &right_high, &right_low);
+    Exp *right1 = _ex_h_cast(right_high, REG_32);
+    Exp *right2 = ex_l_cast(right_high, REG_32);
+    Exp *right3 = _ex_h_cast(right_low, REG_32);
+    Exp *right4 = ex_l_cast(right_low, REG_32);
+
+    Exp *bool1 = new FBinOp(op, ROUND_NEAREST, left1, right1);
+    Exp *bool2 = new FBinOp(op, ROUND_NEAREST, left2, right2);
+    Exp *bool3 = new FBinOp(op, ROUND_NEAREST, left3, right3);
+    Exp *bool4 = new FBinOp(op, ROUND_NEAREST, left4, right4);
+
+    Exp *mask1 = _ex_s_cast(bool1, REG_32);
+    Exp *mask2 = _ex_s_cast(bool2, REG_32);
+    Exp *mask3 = _ex_s_cast(bool3, REG_32);
+    Exp *mask4 = _ex_s_cast(bool4, REG_32);
+
+    return assemble4x32(mask1, mask2, mask3, mask4);
+}
+
 // SIMD FP on 2 double-precision values at once, as in the x86 addpd.
 Exp *translate_par64fp_128_binop(fbinop_type_t op, Exp *left, Exp *right) {
     Exp *left_h, *left_l;
@@ -2074,6 +2104,25 @@ Exp *translate_binop( IRExpr *expr, IRSB *irbb, vector<Stmt *> *irout )
 	    return translate_par64fp_128_binop(FTIMES, arg1, arg2);
         case Iop_Div64Fx2:
 	    return translate_par64fp_128_binop(FDIVIDE, arg1, arg2);
+
+        case Iop_CmpEQ32Fx4:
+	    return translate_par32fp_128_compare(FEQ, arg1, arg2);
+        case Iop_CmpLT32Fx4:
+	    return translate_par32fp_128_compare(FLT, arg1, arg2);
+        case Iop_CmpLE32Fx4:
+	    return translate_par32fp_128_compare(FLE, arg1, arg2);
+        case Iop_CmpGT32Fx4:
+	    return translate_par32fp_128_compare(FLT, arg2, arg1);
+        case Iop_CmpGE32Fx4:
+	    return translate_par32fp_128_compare(FLE, arg2, arg1);
+        case Iop_CmpUN32Fx4:
+	    {
+		Exp *arg1_nan =
+		    translate_par32fp_128_compare(FNEQ, arg1, ecl(arg1));
+		Exp *arg2_nan =
+		    translate_par32fp_128_compare(FNEQ, arg2, ecl(arg2));
+		return distribute_binop128(BITOR, arg1_nan, arg2_nan);
+	    }
 
 #if VEX_VERSION >= 2105
         case Iop_CmpF32:
