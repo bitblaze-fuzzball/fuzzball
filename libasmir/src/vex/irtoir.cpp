@@ -1097,6 +1097,44 @@ Exp *translate_CmpF(Exp *arg1, Exp *arg2, reg_t sz) {
 			   _ex_ite(cmp_gt, ex_const(0), ex_const(0x45))));
 }
 
+/* This is an "asymmetric" max function which favors the second
+   argument for the corner cases of +0 vs. -0 or either of the
+   arguments being NaN. */
+Exp *build_float_max(Exp *a, Exp *b) {
+    /* (a <= b || a != a || b != b) ? b : a */
+    Exp *cmp_le = new FBinOp(FLE, ROUND_NEAREST, a, b);
+    Exp *a_isnan = new FBinOp(FNEQ, ROUND_NEAREST, ecl(a), ecl(a));
+    Exp *b_isnan = new FBinOp(FNEQ, ROUND_NEAREST, ecl(b), ecl(b));
+    Exp *cond = _ex_or(cmp_le, a_isnan, b_isnan);
+    return _ex_ite(cond, ecl(b), ecl(a));
+}
+
+/* This min is asymmetric in the same way the above max is. */
+Exp *build_float_min(Exp *a, Exp *b) {
+    /* (b <= a || a != a || b != b) ? b : a */
+    Exp *cmp_le = new FBinOp(FLE, ROUND_NEAREST, b, a);
+    Exp *a_isnan = new FBinOp(FNEQ, ROUND_NEAREST, ecl(a), ecl(a));
+    Exp *b_isnan = new FBinOp(FNEQ, ROUND_NEAREST, ecl(b), ecl(b));
+    Exp *cond = _ex_or(cmp_le, a_isnan, b_isnan);
+    return _ex_ite(cond, ecl(b), ecl(a));
+}
+
+Exp *translate_low32fp_128_op(Exp *a, Exp *b, Exp *(*op)(Exp *, Exp *)) {
+    Exp *a_high, *a_low;
+    split_vector(a, &a_high, &a_low);
+    Exp *a32 = _ex_l_cast(a_low, REG_32);
+
+    Exp *b_high, *b_low;
+    split_vector(b, &b_high, &b_low);
+    Exp *b32 = _ex_l_cast(b_low, REG_32);
+    Exp::destroy(b_high); // unusued
+
+    Exp *result32 = (*op)(a32, b32);
+    Exp *lane3 = ex_h_cast(a_low, REG_32);
+    Exp *result64 = translate_32HLto64(lane3, result32);
+    return translate_64HLto128(a_high, result64);
+}
+
 // Low-lane single-precision FP, as in the x86 SSE addss, for instance.
 // The low 32-bits are operated on, and the high 96 bits are passed through
 // from the left operand.
@@ -2123,6 +2161,11 @@ Exp *translate_binop( IRExpr *expr, IRSB *irbb, vector<Stmt *> *irout )
 		    translate_par32fp_128_compare(FNEQ, arg2, ecl(arg2));
 		return distribute_binop128(BITOR, arg1_nan, arg2_nan);
 	    }
+
+        case Iop_Max32F0x4:
+	    return translate_low32fp_128_op(arg1, arg2, &build_float_max);
+        case Iop_Min32F0x4:
+	    return translate_low32fp_128_op(arg1, arg2, &build_float_min);
 
 #if VEX_VERSION >= 2105
         case Iop_CmpF32:
