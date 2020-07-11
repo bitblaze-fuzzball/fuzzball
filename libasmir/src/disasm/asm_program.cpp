@@ -294,7 +294,7 @@ get_stripped_binary_functions(bfd *abfd)
 {
   // For a stripped binary, we  treat an executable section as a
   // function. 
-  unsigned int opb = bfd_octets_per_byte(abfd);
+  unsigned int opb = 1; /* bfd_octets_per_byte(abfd); */
   print_debug("warning", "no symbol table. disassembling each section");
   map<address_t, asm_function_t *> ret;
   for(asection *section = abfd->sections; section != (asection *) NULL; 
@@ -449,7 +449,7 @@ void init_disasm_info(bfd *abfd, struct disassemble_info *disasm_info)
   disasm_info->arch = bfd_get_arch (abfd);
   disasm_info->mach = bfd_get_mach (abfd);
   disasm_info->disassembler_options = (char *)disassembler_options;
-  disasm_info->octets_per_byte = bfd_octets_per_byte (abfd);
+  disasm_info->octets_per_byte = 1; /* bfd_octets_per_byte (abfd); */
   //disasm_info->skip_zeroes = DEFAULT_SKIP_ZEROES;
   //disasm_info->skip_zeroes_at_end = DEFAULT_SKIP_ZEROES_AT_END;
   disasm_info->disassembler_needs_relocs = FALSE;
@@ -476,7 +476,7 @@ void
 initialize_sections(bfd *abfd, asm_program_t *prog)
 {
   struct disassemble_info *disasm_info = &prog->disasm_info;
-  unsigned int opb = bfd_octets_per_byte(abfd);
+  unsigned int opb = 1; /* bfd_octets_per_byte(abfd); */
   disasm_info->octets_per_byte = opb;
   init_disasm_info(prog);
   Segment *segs = NULL;
@@ -797,7 +797,7 @@ get_bssdata(asm_program_t *prog) {
 
     bfd *abfd = prog->abfd;
 
-    unsigned int opb = bfd_octets_per_byte(abfd);
+    unsigned int opb = 1; /* bfd_octets_per_byte(abfd); */
     assert(opb == 1);
 
     for(asection *section = abfd->sections;
@@ -833,7 +833,7 @@ get_rodata(asm_program_t *prog) {
 
     bfd *abfd = prog->abfd;
 
-    unsigned int opb = bfd_octets_per_byte(abfd);
+    unsigned int opb = 1; /* bfd_octets_per_byte(abfd); */
     assert(opb == 1);
 
     for(asection *section = abfd->sections;
