@@ -7,8 +7,7 @@
 open Vine
 
 module D = Debug.Make(struct let name="temu_state" and default=`NoDebug end)
-module String = ExtString.String
-module List = ExtList.List
+module List = ExtList.List (* List.iteri is in the standard List from 4.00 *)
 
 exception Unknown_state_version
 exception Incomplete_value
@@ -19,6 +18,17 @@ let int64_of_uint32 x =
   Int64.logand
     (Int64.of_int32 x)
     0x00000000ffffffffL
+
+(* Similar to ExtString.String.fold_left *)
+let string_fold_left fn base s =
+  let len = String.length s in
+  let rec loop i accum =
+    if i = len then
+      accum
+    else
+      loop (i + 1) (fn accum s.[i])
+    in
+  loop 0 base
 
 (* Magic number for state files *)
 let sMAGIC_NUMBER = 0xFFFEFFFEl
@@ -201,7 +211,7 @@ object(self)
           let addr = Int64.add first_addr idx in
           (addr,c) :: acc2, Int64.succ idx
         in
-        fst (String.fold_left process_char (acc,0L) blk_str)
+        fst (string_fold_left process_char (acc,0L) blk_str)
       )
       else acc
     in
@@ -498,7 +508,7 @@ object(self)
           Hashtbl.replace tbl addr byteval;
           Int64.succ idx
         in
-        ignore (String.fold_left process_char 0L blk_str)
+        ignore (string_fold_left process_char 0L blk_str)
       )
     in
     BlockMap.iter process_block _block_map;
@@ -543,7 +553,7 @@ object(self)
           f addr c;
           Int64.succ idx
         in
-        ignore(String.fold_left process_char 0L blk_str)
+        ignore(string_fold_left process_char 0L blk_str)
       )
     in
     BlockMap.iter process_block _block_map
