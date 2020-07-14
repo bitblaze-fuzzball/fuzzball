@@ -225,10 +225,16 @@ char* string_of_insn(asm_program_t *prog, Instruction *inst);
 
 // pulled from disasm.h
 #ifndef bfd_get_section_size_before_reloc
-#if HAVE_DECL_BFD_SECTION_SIZE
-#define bfd_get_section_size_before_reloc(x) bfd_section_size(x)
-#elif HAVE_DECL_BFD_GET_SECTION_SIZE
+// Older BFD versions had bfd_section_size that took two arguments
+// and bfd_get_section_size that took one. Later versions removed
+// bfd_get_section_size and made bfd_section_size take one argument
+// covering the old bfd_get_section_size. Writing the check in this
+// order instead of the opposite avoids configure having to check
+// how many arguments bfd_section_size takes.
+#if HAVE_DECL_BFD_GET_SECTION_SIZE
 #define bfd_get_section_size_before_reloc(x) bfd_get_section_size(x)
+#elif HAVE_DECL_BFD_SECTION_SIZE
+#define bfd_get_section_size_before_reloc(x) bfd_section_size(x)
 #else
 #error Missing a BFD function to read section size
 #endif

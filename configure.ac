@@ -144,6 +144,8 @@ else
 	fi
 	echo "Using $with_binutils for BFD"
 	CFLAGS="-I$with_binutils/include -I$with_binutils/bfd $CFLAGS"
+	# Setting CPPFLAGS is needed for AC_CHECK_HEADER
+	CPPFLAGS="-I$with_binutils/include -I$with_binutils/bfd $CPPFLAGS"
 	CXXFLAGS="-I$with_binutils/include -I$with_binutils/bfd $CXXFLAGS"
 	LDFLAGS="-L$with_binutils/lib -L$with_binutils/bfd -L$with_binutils/libiberty $LDFLAGS"
 fi
@@ -168,8 +170,16 @@ AC_COMPILE_IFELSE([AC_LANG_PROGRAM(
 
 AC_CHECK_HEADER([bfd.h])
 
-# This function (and other similar ones) were renamed around
-# Buntils 2.34.
+# This function (and other similar ones) were renamed before
+# Binutils 2.34. Note that confusingly, older Binutils versions had
+# a bfd_section_size macro that incompatibly took two arguments, but
+# that isn't what we want. We want the one-argument version, which
+# was bfd_get_section_size when it existed, and is bfd_section_size
+# after bfd_get_section_size doesn't exist. Right now just detecting
+# the presence of these two symbols is enough information because the
+# two changes happened at once. If needed in the future we could check
+# the number of arguments to bfd_section_size as we do for
+# disassembler above.
 AC_CHECK_DECLS([bfd_get_section_size, bfd_section_size], [], [],
 	       [#include <bfd.h>])
 
