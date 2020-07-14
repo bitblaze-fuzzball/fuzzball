@@ -89,6 +89,13 @@ if test "${VEX_VERSION}" = ""; then
     exit -1
 fi
 
+AC_CHECK_LIB([vex], [LibVEX_Version])
+
+AC_SUBST(VEX_DIR)
+AC_SUBST(VEX_VERSION)
+
+AC_DEFINE_UNQUOTED([VEX_VERSION], [${VEX_VERSION}], [The VEX SVN Version])
+
 # Pick an appropriate set of STP binaries. This is currently disabled,
 # since distributing the binaries bloats the distribution, and
 # architecture picking via "uname -m" doesn't work reliably enough.
@@ -133,6 +140,10 @@ else
 	LDFLAGS="-L$with_binutils/lib -L$with_binutils/bfd -L$with_binutils/libiberty $LDFLAGS"
 fi
 
+# Checks for libraries: Binutils:
+AC_CHECK_LIB([bfd], [bfd_init])
+AC_CHECK_LIB([iberty], [xmalloc])
+
 AC_COMPILE_IFELSE([AC_LANG_PROGRAM(
         [#include <bfd.h>
 #include <dis-asm.h>],
@@ -147,15 +158,20 @@ AC_COMPILE_IFELSE([AC_LANG_PROGRAM(
     [AC_DEFINE([HAVE_FUNC_DISASSEMBLER_4], [1],
                [Define to 1 if your libopcodes disassembler() takes four arguments.])])
 
-# Checks for libraries.
-AC_CHECK_LIB([bfd], [bfd_init])
-AC_CHECK_LIB([iberty], [xmalloc])
-AC_CHECK_LIB([vex], [LibVEX_Version])
+AC_CHECK_HEADER([bfd.h])
 
-AC_SUBST(VEX_DIR)
-AC_SUBST(VEX_VERSION)
+# This function (and other similar ones) were renamed around
+# Buntils 2.34.
+AC_CHECK_DECLS([bfd_get_section_size, bfd_section_size], [], [],
+	       [#include <bfd.h>])
 
-AC_CHECK_DECLS([bfd_arch_spu, bfd_arch_l1om, bfd_arch_k1om, bfd_arch_plugin, bfd_arch_m9s12x, bfd_arch_m9s12xg],[],[],[[#include <bfd.h>]])
+# We don't support any of these architectures. But because of the numbering
+# of bfd_arch changes between Binutils versions, you need to include
+# intermediate values if you want to replicate a definition of the enum.
+# Eventually we just gave up and removed bfd_architecture from our
+# interface, instead defining a smaller enum with only our supported
+# architectures.
+dnl AC_CHECK_DECLS([bfd_arch_spu, bfd_arch_l1om, bfd_arch_k1om, bfd_arch_plugin, bfd_arch_m9s12x, bfd_arch_m9s12xg],[],[],[[#include <bfd.h>]])
 
 cp /dev/null libasmir/makefile.inc
 echo "VEX_DIR=${VEX_DIR}" >> libasmir/makefile.inc
@@ -171,11 +187,10 @@ AC_CHECK_HEADERS([fcntl.h stdint.h stdlib.h string.h unistd.h])
 # Checks for typedefs, structures, and compiler characteristics.
 AC_C_CONST
 AC_TYPE_SIZE_T
-AC_DEFINE_UNQUOTED([VEX_VERSION], [${VEX_VERSION}], [The VEX SVN Version])
 
 AC_CHECK_SIZEOF(bfd_vma, [], [#include <bfd.h>])
 
-# Checks for library functions.
+# Checks for standard library functions.
 AC_FUNC_MALLOC
 AC_FUNC_MEMCMP
 AC_CHECK_FUNCS([bzero memset strstr strtoul])

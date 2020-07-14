@@ -225,7 +225,13 @@ char* string_of_insn(asm_program_t *prog, Instruction *inst);
 
 // pulled from disasm.h
 #ifndef bfd_get_section_size_before_reloc
+#if HAVE_DECL_BFD_SECTION_SIZE
+#define bfd_get_section_size_before_reloc(x) bfd_section_size(x)
+#elif HAVE_DECL_BFD_GET_SECTION_SIZE
 #define bfd_get_section_size_before_reloc(x) bfd_get_section_size(x)
+#else
+#error Missing a BFD function to read section size
+#endif
 #endif
 
 
