@@ -10,6 +10,7 @@ AC_CONFIG_HEADER([libasmir/config.h])
 AM_INIT_AUTOMAKE([-Wall subdir-objects foreign])
 
 m4_include([./m4/ac_ocaml.m4])
+m4_include([./m4/ax_compare_version.m4])
 
 # Checks for programs.
 AC_PROG_CXX
@@ -26,6 +27,13 @@ AC_PROG_RANLIB
 AC_PROG_OCAML
 AC_PROG_OCAMLFIND
 AC_PROG_CAMLIDL
+
+AX_COMPARE_VERSION([$OCAMLVERSION], [ge], [4.06.0], [
+                     ocaml_unsafe_string="-unsafe-string"
+                     AC_SUBST(ocaml_unsafe_string)
+                     AC_MSG_NOTICE([Enabling -unsafe-string based on OCaml version])
+                   ], [
+                     ocaml_unsafe_string=""])
 
 # Checks for ocaml libraries
 ocamlfind query extlib
@@ -178,7 +186,7 @@ echo "VEX_DIR=${VEX_DIR}" >> libasmir/makefile.inc
 echo "LIBASMIR_CXXFLAGS=-I${VEX_DIR}/pub -I`pwd`/src/include $CXXFLAGS" >> libasmir/makefile.inc
 echo "LIBASMIR_LDFLAGS=-L${VEX_DIR} -L`pwd`/src $LDFLAGS" >> libasmir/makefile.inc
 echo "LIBASMIR_LIBS=-lasmir -lvex -lbfd -liberty" >> libasmir/makefile.inc
-
+echo "OCAML_UNSAFE_STRING=${ocaml_unsafe_string}" >> libasmir/makefile.inc
 
 # Checks for header files.
 AC_HEADER_STDC
