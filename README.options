@@ -49,6 +49,18 @@ not for program counter but for path condition. "short", "word", and
   FuzzBALL defaulted to "x86" but this should now be supplied
   explicitly if it can't be auto-detected.
 
+-auto-late-restart
+
+  Automatically set the point at which symbolic execution restarts
+  on iterations after the first to right before the first symbolic
+  branch, which is the latest place it can be. This has a similar
+  benefit to manually setting the -fuzz-start-addr to be after any
+  non-symbolic startup actions the program takes, but unlike changing
+  -fuzz-start-addr, it does not affect when symbolic state is
+  introduced. Though this should be a generally-applicable optimization,
+  it is currently not the default because it has not been extensively
+  tested for correct operation with other features.
+
 -branch-preference <eip>:<0 or 1>
 
   For a branch that occurs at the given instruction, prefer paths

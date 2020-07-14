@@ -991,6 +991,7 @@ struct
 	    if !opt_trace_sym_addrs then
 	      Printf.eprintf "Symbolic address %s @ (0x%Lx)\n"
 		(V.exp_to_string e) eip;
+            self#note_first_branch;
 	    List.iter
 	      (fun target ->
 		 match

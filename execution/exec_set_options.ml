@@ -284,6 +284,8 @@ let explore_cmdline_opts =
      "addr Code address to start fuzzing");
     ("-fuzz-start-addr-count", Arg.Set_int(opt_fuzz_start_addr_count),
      "count Start at nth occurrence (vs. 1st)");
+    ("-auto-late-restart", Arg.Set(opt_auto_late_restart),
+     "Set restart point to right before first symbolic branch");
     ("-fuzz-end-addr", Arg.String
        (fun s -> opt_fuzz_end_addrs :=
 	  (Int64.of_string s) :: !opt_fuzz_end_addrs),
