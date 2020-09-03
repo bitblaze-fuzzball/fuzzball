@@ -517,7 +517,7 @@ struct
 		     Some b)
 		  else
 		    (if !opt_trace_guidance then
-		       Printf.printf "On %f, falling to cjmp_heuristic\n"
+		       Printf.printf "On %f, falling to another choice\n"
 			 choice;
 		     None)
 	    | _ -> None
@@ -526,12 +526,23 @@ struct
 	    | (Some b, _) -> b
 	    | (None, Some b) -> b
 	    | (None, None) ->
-		(match !opt_always_prefer with
-		   | Some b -> b
-		   | _ ->
-		       if !opt_trace_guidance then
-			 Printf.printf "No guidance, choosing randomly\n";
-		       dt#random_bit)
+                try let pref = Hashtbl.find opt_branch_preference (self#get_eip) in
+                  match pref with
+                    | f when f >= 0.0 && f <= 1.0 ->
+                      let choice = dt#random_float in      
+                      let b = f > choice in
+                      if !opt_trace_guidance then
+			Printf.printf "On %f > %f, using branch preference choice %b\n" f choice b;
+                      b
+                    | _ -> failwith "Unsupported branch preference"
+                with
+                  | Not_found ->
+                    (match !opt_always_prefer with
+                      | Some b -> b
+                      | _ ->
+		        if !opt_trace_guidance then
+			  Printf.printf "No guidance, choosing randomly\n";
+		        dt#random_bit)
 
     method query_with_pc_choice cond verbose ident choice =
       let trans_func b =
@@ -679,16 +690,15 @@ struct
 
     method private cjmp_choose targ1 targ2 =
       let eip = self#get_eip in
-	try let pref = Hashtbl.find opt_branch_preference eip in
-	  match pref with
-	    | 0.0 -> Some false
-	    | 1.0 -> Some true
-	    | f when f > 0.0 && f < 1.0 ->
-		Some (f > dt#random_float)
+        try let pref = Hashtbl.find opt_branch_preference eip in
+          match pref with
+            | 0.0 -> Some false
+            | 1.0 -> Some true
+            | f when f > 0.0 && f < 1.0 ->
+	        None
 	    | _ -> failwith "Unsupported branch preference"
-	with
-	  | Not_found ->
-	      self#call_cjmp_heuristic eip targ1 targ2 None
+        with
+          | Not_found -> self#call_cjmp_heuristic eip targ1 targ2 None 
 
     method eval_cjmp exp targ1 targ2 =
       let eip = self#get_eip in
