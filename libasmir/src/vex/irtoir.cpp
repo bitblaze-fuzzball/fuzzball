@@ -1371,6 +1371,22 @@ Exp *translate_CmpGT32Sx4(Exp *a, Exp *b) {
     return translate_64HLto128(r_high, r_low);
 }
 
+Exp *avg_8u(Exp *a, Exp *b) {
+    Exp *a_wide = _ex_u_cast(a, REG_16);
+    Exp *b_wide = _ex_u_cast(b, REG_16);
+    Exp *one = ex_const(REG_16, 1);
+    Exp *sum = _ex_add(_ex_add(a_wide, b_wide), one);
+    return _ex_l_cast(_ex_shr(sum, 1), REG_8);
+}
+
+Exp *avg_16u(Exp *a, Exp *b) {
+    Exp *a_wide = _ex_u_cast(a, REG_32);
+    Exp *b_wide = _ex_u_cast(b, REG_32);
+    Exp *one = ex_const(REG_32, 1);
+    Exp *sum = _ex_add(_ex_add(a_wide, b_wide), one);
+    return _ex_l_cast(_ex_shr(sum, 1), REG_16);
+}
+
 Exp *assemble8x1(Exp *b7, Exp *b6, Exp *b5, Exp *b4,
 		 Exp *b3, Exp *b2, Exp *b1, Exp *b0) {
     b7 = _ex_shl(_ex_u_cast(b7, REG_8), 7);
@@ -1654,6 +1670,48 @@ Exp *translate_minmax16x8(binop_type_t op, bool is_max, Exp *a, Exp *b) {
     split_vector(b, &b_high, &b_low);
     Exp *r_h = translate_minmax8x8(op, is_max, a_high, b_high);
     Exp *r_l = translate_minmax8x8(op, is_max, a_low, b_low);
+    return translate_64HLto128(r_h, r_l);
+}
+
+Exp *translate_avgu8x8(Exp *a64, Exp *b64) {
+    Exp *a[8], *b[8];
+    split8x8(a64, &a[7], &a[6], &a[5], &a[4], &a[3], &a[2], &a[1], &a[0]);
+    split8x8(b64, &b[7], &b[6], &b[5], &b[4], &b[3], &b[2], &b[1], &b[0]);
+    Exp *r[8];
+    for (int i = 7; i >= 0; i--) {
+	r[i] = avg_8u(a[i], b[i]);
+    }
+    return assemble8x8(r[7], r[6], r[5], r[4], r[3], r[2], r[1], r[0]);
+}
+
+Exp *translate_avgu16x8(Exp *a, Exp *b) {
+    Exp *a_high, *a_low;
+    split_vector(a, &a_high, &a_low);
+    Exp *b_high, *b_low;
+    split_vector(b, &b_high, &b_low);
+    Exp *r_h = translate_avgu8x8(a_high, b_high);
+    Exp *r_l = translate_avgu8x8(a_low, b_low);
+    return translate_64HLto128(r_h, r_l);
+}
+
+Exp *translate_avgu4x16(Exp *a64, Exp *b64) {
+    Exp *a[4], *b[4];
+    split4x16(a64, &a[3], &a[2], &a[1], &a[0]);
+    split4x16(b64, &b[3], &b[2], &b[1], &b[0]);
+    Exp *r[8];
+    for (int i = 4; i >= 0; i--) {
+	r[i] = avg_16u(a[i], b[i]);
+    }
+    return assemble4x16(r[3], r[2], r[1], r[0]);
+}
+
+Exp *translate_avgu8x16(Exp *a, Exp *b) {
+    Exp *a_high, *a_low;
+    split_vector(a, &a_high, &a_low);
+    Exp *b_high, *b_low;
+    split_vector(b, &b_high, &b_low);
+    Exp *r_h = translate_avgu4x16(a_high, b_high);
+    Exp *r_l = translate_avgu4x16(a_low, b_low);
     return translate_64HLto128(r_h, r_l);
 }
 
@@ -2336,6 +2394,15 @@ Exp *translate_binop( IRExpr *expr, IRSB *irbb, vector<Stmt *> *irout )
 #endif
         case Iop_Max8Sx16:
 	    return translate_minmax16x8(SLT, true, arg1, arg2);
+
+        case Iop_Avg8Ux8:
+	    return translate_avgu8x8(arg1, arg2);
+        case Iop_Avg16Ux4:
+	    return translate_avgu4x16(arg1, arg2);
+        case Iop_Avg8Ux16:
+	    return translate_avgu16x8(arg1, arg2);
+        case Iop_Avg16Ux8:
+	    return translate_avgu8x16(arg1, arg2);
 
         case Iop_Add32x2:
 	    return translate_par2x32_binop(PLUS, arg1, arg2);
