@@ -14,6 +14,9 @@
 /* Sample usage:
    ./sse2-128-op 0x67 0x00020003000400050006000700080009 \
                       0x001000200040008000f000ff8000ffff
+
+   /sse2-128-op 0x71.4 0xa0009000800070006000500040003000 \
+                       0xa0009000800070006000500040003000 4
 */
 
 typedef unsigned char uchar_x16 __attribute__ ((vector_size (16)));
@@ -70,18 +73,45 @@ void print_128(uchar_x16 x) {
 }
 
 int main(int argc, char **argv) {
-    long opcode;
+    long opcode, imm_arg, sub_opcode;
     uchar_x16 arg1, arg2, result;
     unsigned char *cp;
-    int res;
-    if (argc != 4) {
-	fprintf(stderr, "Usage: sse2-128-op <opcode> <arg1hex> <arg2hex>\n");
+    int res, has_imm = 0, has_subop = 0;
+    if (argc != 4 && argc != 5) {
+	fprintf(stderr,
+		"Usage: sse2-128-op <opcode> <arg1hex> <arg2hex> [<imm>]\n");
 	return 1;
     }
 
-    opcode = strtol(argv[1], 0, 0);
+    if (strchr(argv[1], '.')) {
+	char *dot_ptr;
+	opcode = strtol(argv[1], &dot_ptr, 0);
+	if (*dot_ptr != '.') {
+	    fprintf(stderr,
+		    "Opcode+subopcode syntax should be, e.g., 0x71.4\n");
+	    return 1;
+	}
+	sub_opcode = strtol(dot_ptr + 1, 0, 0);
+	if (sub_opcode < 0 || sub_opcode > 7) {
+	    fprintf(stderr, "Sub-opcode %lx should be between 0 and 7\n",
+		    sub_opcode);
+	    return 1;
+	}
+	has_subop = 1;
+    } else {
+	opcode = strtol(argv[1], 0, 0);
+    }
     arg1 = parse_128(argv[2]);
     arg2 = parse_128(argv[3]);
+    if (argc == 5) {
+	imm_arg = strtol(argv[4], 0, 0);
+	if (imm_arg < -128 || imm_arg > 255) {
+	    fprintf(stderr, "One-byte immediate 0x%lx out of range\n",
+		    imm_arg);
+	    return 1;
+	}
+	has_imm = 1;
+    }
 
     if (opcode < 0 || opcode > 0xff) {
 	fprintf(stderr, "Opcode 0x%lx out of range\n", opcode);
@@ -101,7 +131,13 @@ int main(int argc, char **argv) {
     *cp++ = 0x66; /* 0x66 prefix generally means 128-bit SSE2 */
     *cp++ = 0x0f; /* 0x0f is first byte of a two-byte opcode */
     *cp++ = opcode;
-    *cp++ = 0xca; /* mod/rm: dest = %xmm1, src = %xmm2 */
+    if (has_subop) {
+	*cp++ = 0xc0 + (sub_opcode << 3) + 1;
+    } else {
+	*cp++ = 0xca; /* mod/rm: dest = %xmm1, src = %xmm2 */
+    }
+    if (has_imm)
+	*cp++ = imm_arg;
     *cp++ = 0xc3; /* return */
 
     asm ("movdqa %[a1],%%xmm1; movdqa %[a2],%%xmm2; "
