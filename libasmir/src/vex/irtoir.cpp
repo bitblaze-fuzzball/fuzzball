@@ -1545,6 +1545,49 @@ Exp *translate_InterleaveHI8x16(Exp *a, Exp *b) {
     return interleave2_8x8(a_high, b_high);
 }
 
+Exp *translate_Perm8x8(Exp *a64, Exp *ctrl64, vector<Stmt *> *irout) {
+    Exp *a[8], *c[8], *r[8];
+    split8x8(a64,    &a[7], &a[6], &a[5], &a[4], &a[3], &a[2], &a[1], &a[0]);
+    split8x8(ctrl64, &c[7], &c[6], &c[5], &c[4], &c[3], &c[2], &c[1], &c[0]);
+    for (int i = 0; i < 8; i++) {
+	/* The elements of a[] will each be used 8 times, so make
+	   temps for them. Note that after this, there is already one
+	   occurrence of the new a[i] generated here, so all future
+	   uses should be clones. This is actually convenient in
+	   avoiding special cases later. */
+	Temp *temp = mk_temp(REG_8, irout);
+	irout->push_back(new Move(temp, a[i]));
+	a[i] = temp;
+    }
+    for (int i = 0; i < 8; i++) {
+	/* The elements of c[] will each be used 3 times, so make
+	   temps for them. */
+	Temp *temp = mk_temp(REG_8, irout);
+	irout->push_back(new Move(temp, c[i]));
+	c[i] = temp;
+    }
+    for (int i = 0; i < 8; i++) {
+	/* The structure of how we select each lane of the result is a
+	   tree of ITEs similiar to what {i386,x64}_translate_geti
+	   also do. It might be worthwile to refactor them. */
+	Exp *sel0_exp = ex_l_cast(c[i], REG_1);
+	Temp *sel0_temp = mk_temp(REG_1, irout);
+	irout->push_back(new Move(sel0_temp, sel0_exp));
+	Exp *sel1_exp = ex_get_bit(c[i], 1);
+	Temp *sel1_temp = mk_temp(REG_1, irout);
+	irout->push_back(new Move(sel1_temp, sel1_exp));
+	Exp *sel2_exp = ex_get_bit(c[i], 2);
+	Exp *choice01 = ex_ite(sel0_temp, a[1], a[0]);
+	Exp *choice23 = ex_ite(sel0_temp, a[3], a[2]);
+	Exp *choice45 = ex_ite(sel0_temp, a[5], a[4]);
+	Exp *choice67 = ex_ite(sel0_temp, a[7], a[6]);
+	Exp *choice03 = _ex_ite(ecl(sel1_temp), choice23, choice01);
+	Exp *choice47 = _ex_ite(ecl(sel1_temp), choice67, choice45);
+	r[i] = _ex_ite(sel2_exp, choice47, choice03);
+    }
+    return assemble8x8(r[7], r[6], r[5], r[4], r[3], r[2], r[1], r[0]);
+}
+
 Exp *translate_par4x8_binop(binop_type_t op, Exp *a, Exp *b)
 {
     Exp *a3, *a2, *a1, *a0;
@@ -2351,6 +2394,9 @@ Exp *translate_binop( IRExpr *expr, IRSB *irbb, vector<Stmt *> *irout )
 	    return translate_InterleaveHI16x8(arg1, arg2);
 	case Iop_InterleaveHI8x16:
 	    return translate_InterleaveHI8x16(arg1, arg2);
+
+        case Iop_Perm8x8:
+	    return translate_Perm8x8(arg1, arg2, irout);
 
 #if VEX_VERSION >= 636
         case Iop_CmpEQ8x16:
