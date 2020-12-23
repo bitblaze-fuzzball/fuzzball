@@ -1782,6 +1782,20 @@ Exp *translate_vs8x16_shift(binop_type_t op, Exp *a, Exp *b) {
     return translate_64HLto128(r_h, r_l);
 }
 
+Exp *translate_vs8x8_shift(binop_type_t op, Exp *a, Exp *b) {
+    Exp *a7, *a6, *a5, *a4, *a3, *a2, *a1, *a0;
+    split8x8(a, &a7, &a6, &a5, &a4, &a3, &a2, &a1, &a0);
+    Exp *r7 = new BinOp(op, a7, b);
+    Exp *r6 = new BinOp(op, a6, ecl(b));
+    Exp *r5 = new BinOp(op, a5, ecl(b));
+    Exp *r4 = new BinOp(op, a4, ecl(b));
+    Exp *r3 = new BinOp(op, a3, ecl(b));
+    Exp *r2 = new BinOp(op, a2, ecl(b));
+    Exp *r1 = new BinOp(op, a1, ecl(b));
+    Exp *r0 = new BinOp(op, a0, ecl(b));
+    return assemble8x8(r7, r6, r5, r4, r3, r2, r1, r0);
+}
+
 Exp *translate_QNarrow16Sto8U(Exp *a) {
     return _ex_ite(_ex_slt(a, ex_const(REG_16, 0)), ex_const(REG_8, 0),
 		   _ex_ite(_ex_slt(ex_const(REG_16, 255), ecl(a)),
@@ -2465,6 +2479,14 @@ Exp *translate_binop( IRExpr *expr, IRSB *irbb, vector<Stmt *> *irout )
 	    return translate_vs8x16_shift(RSHIFT, arg1, arg2);
         case Iop_SarN16x8:
 	    return translate_vs8x16_shift(ARSHIFT, arg1, arg2);
+
+        case Iop_ShlN8x8:
+	    return translate_vs8x8_shift(LSHIFT, arg1, arg2);
+        case Iop_ShrN8x8:
+	    return translate_vs8x8_shift(RSHIFT, arg1, arg2);
+        case Iop_SarN8x8:
+	    return translate_vs8x8_shift(ARSHIFT, arg1, arg2);
+
 
         case Iop_QNarrowBin16Sto8Ux16:
 	    return translate_QNarrowBin16Sto8Ux16(arg1, arg2);
