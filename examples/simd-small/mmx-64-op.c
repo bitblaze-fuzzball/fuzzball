@@ -7,22 +7,19 @@
 
 /* Sample compilation commands: */
 
-/* gcc-9 -m64 -Wall -g sse2-128-op.c -o sse2-128-op */
+/* gcc-9 -m64 -Wall -g mmx-64-op.c -o mmx-64-op */
 
-/* gcc-9 -I/usr/include/x86_64-linux-gnu -m32 -msse2 -Wall -g sse2-128-op.c -o sse2-128-op-32 */
+/* gcc-9 -I/usr/include/x86_64-linux-gnu -m32 -msse2 -Wall -g mmx-64-op.c -o mmx-64-op-32 */
 
 /* Sample usage:
-   ./sse2-128-op 0x67 0x00020003000400050006000700080009 \
-                      0x001000200040008000f000ff8000ffff
+   ./mmx-64-op 0xef   0x1111222233334444 0x0001000100010001
 
-   ./sse2-128-op 0x71.4 0xa0009000800070006000500040003000 \
-                        0xa0009000800070006000500040003000 4
+   ./mmx-64-op 0x100  0x0e0c0a0806040200 0x0301040105900206
 
-   ./sse2-128-op 0x100 0x30282624222018161412100806040200 \
-                       0x03010401050902060503050809070903
+   ./mmx-64-op 0x71.4 0x9000800070006000 0x9000800070006000 4
 */
 
-typedef unsigned char uchar_x16 __attribute__ ((vector_size (16)));
+typedef unsigned char uchar_x8 __attribute__ ((vector_size (8)));
 
 /* The memory region used for generated code. code_buf points within
    code_area, and is page-aligned. */
@@ -42,13 +39,13 @@ int parse_hex_digit(char c) {
     }
 }
 
-uchar_x16 parse_128(const char *s) {
-    uchar_x16 r;
+uchar_x8 parse_64(const char *s) {
+    uchar_x8 r;
     int pos, i;
     if (s[0] == '0' && s[1] == 'x')
 	s += 2;
     i = 0;
-    for (pos = 15; pos >= 0; pos--) {
+    for (pos = 7; pos >= 0; pos--) {
 	unsigned char byte;
 	if (!s[i]) {
 	    fprintf(stderr, "Too few hex digits\n");
@@ -68,21 +65,21 @@ uchar_x16 parse_128(const char *s) {
     return r;
 }
 
-void print_128(uchar_x16 x) {
+void print_64(uchar_x8 x) {
     int pos;
-    for (pos = 15; pos >= 0; pos--) {
+    for (pos = 7; pos >= 0; pos--) {
 	printf("%02x", x[pos]);
     }
 }
 
 int main(int argc, char **argv) {
     long opcode, imm_arg, sub_opcode;
-    uchar_x16 arg1, arg2, result;
+    uchar_x8 arg1, arg2, result;
     unsigned char *cp;
     int res, has_imm = 0, has_subop = 0;
     if (argc != 4 && argc != 5) {
 	fprintf(stderr,
-		"Usage: sse2-128-op <opcode> <arg1hex> <arg2hex> [<imm>]\n");
+		"Usage: mmx-64-op <opcode> <arg1hex> <arg2hex> [<imm>]\n");
 	return 1;
     }
 
@@ -104,8 +101,8 @@ int main(int argc, char **argv) {
     } else {
 	opcode = strtol(argv[1], 0, 0);
     }
-    arg1 = parse_128(argv[2]);
-    arg2 = parse_128(argv[3]);
+    arg1 = parse_64(argv[2]);
+    arg2 = parse_64(argv[3]);
     if (argc == 5) {
 	imm_arg = strtol(argv[4], 0, 0);
 	if (imm_arg < -128 || imm_arg > 255) {
@@ -131,32 +128,31 @@ int main(int argc, char **argv) {
     }
 
     cp = code_buf;
-    *cp++ = 0x66; /* 0x66 prefix generally means 128-bit SSE2 */
     *cp++ = 0x0f; /* 0x0f is first byte of a two-byte opcode */
     if (opcode < 0x100) {
-        *cp++ = opcode;
+	*cp++ = opcode;
     } else {
-        /* three-byte opcode */
-        *cp++ = 0x38;
-        *cp++ = (opcode - 0x100);
+	/* three-byte opcode */
+	*cp++ = 0x38;
+	*cp++ = (opcode - 0x100);
     }
     if (has_subop) {
 	*cp++ = 0xc0 + (sub_opcode << 3) + 1;
     } else {
-	*cp++ = 0xca; /* mod/rm: dest = %xmm1, src = %xmm2 */
+	*cp++ = 0xca; /* mod/rm: dest = %mm1, src = %mm2 */
     }
     if (has_imm)
 	*cp++ = imm_arg;
     *cp++ = 0xc3; /* return */
 
-    asm ("movdqa %[a1],%%xmm1; movdqa %[a2],%%xmm2; "
-	 "call *%[code]; movdqa %%xmm1, %[res]"
-	 : [res] "=x" (result)
-	 : [a1] "x" (arg1), [a2] "x" (arg2), [code] "r" (code_buf)
-	 : "xmm1", "xmm2");
+    asm ("movq %[a1],%%mm1; movq %[a2],%%mm2; "
+	 "call *%[code]; movq %%mm1, %[res]"
+	 : [res] "=y" (result)
+	 : [a1] "y" (arg1), [a2] "y" (arg2), [code] "r" (code_buf)
+	 : "mm1", "mm2");
 
     printf("0x");
-    print_128(result);
+    print_64(result);
     printf("\n");
     return 0;
 }
