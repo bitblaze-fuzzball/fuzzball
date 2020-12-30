@@ -3284,6 +3284,18 @@ Stmt *translate_jumpkind( IRSB *irbb, vector<Stmt *> *irout )
       result = new Jmp(dest);
       break;
 #endif
+#if VEX_VERSION >= 3165
+    case Ijk_Sys_int145:
+      irout->push_back( new Special("int 0x91") );
+      irout->push_back(mk_label());
+      result = new Jmp(dest);
+      break;
+    case Ijk_Sys_int210:
+      irout->push_back( new Special("int 0xd2") );
+      irout->push_back(mk_label());
+      result = new Jmp(dest);
+      break;
+#endif
     case Ijk_Sys_sysenter:
       irout->push_back( new Special("sysenter") );
       irout->push_back(mk_label());
