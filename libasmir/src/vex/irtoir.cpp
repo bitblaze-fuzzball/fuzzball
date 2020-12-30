@@ -2725,15 +2725,28 @@ Exp *translate_mux0x( IRExpr *expr, IRSB *irbb, vector<Stmt *> *irout )
     Exp *exp_t = translate_expr(expr_t, irbb, irout);
     Exp *exp_f = translate_expr(expr_f, irbb, irout);
 
-    if (cond_type == REG_1) {
-      // Condition is already a boolean: simple.
-      return emit_ite(irout, type, condE, exp_t, exp_f);
+    if (cond_type != REG_1) {
+	// Condition is wider. Add "!= 0" check. We used to add a "== 0"
+	// check and flip the two sides of the branch, but flipping makes
+	// things more confusing later.
+	condE = _ex_neq(condE, ex_const(cond_type, 0));
+    }
+
+    if (exp_f->exp_type == VECTOR) {
+	/* Translate an ITE on 128-bit values into two ITEs on the
+	   64-bit halves, with the same condition. */
+	Exp *cond_tmp = mk_temp_def(REG_1, condE, irout);
+	Exp *exp_t_high, *exp_t_low;
+	split_vector(exp_t, &exp_t_high, &exp_t_low);
+	Exp *exp_f_high, *exp_f_low;
+	split_vector(exp_f, &exp_f_high, &exp_f_low);
+	Exp *ite_high = emit_ite(irout, REG_64, ecl(cond_tmp),
+				 exp_t_high, exp_f_high);
+	Exp *ite_low = emit_ite(irout, REG_64, ecl(cond_tmp),
+				exp_t_low, exp_f_low);
+	return new Vector(ite_high, ite_low);
     } else {
-      // Condition is wider. Add "!= 0" check. We used to add a "== 0"
-      // check and flip the two sides of the branch, but flipping makes
-      // things more confusing later.
-      condE = _ex_neq(condE, ex_const(cond_type, 0));
-      return emit_ite(irout, type, condE, exp_t, exp_f);
+	return emit_ite(irout, type, condE, exp_t, exp_f);
     }
 }
 
