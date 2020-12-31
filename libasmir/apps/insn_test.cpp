@@ -1,3 +1,4 @@
+#include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -16,6 +17,8 @@ void usage(char *prog)
 	    " (default: all)\n");
     fprintf(stderr, "Options for -random:\n");
     fprintf(stderr, "  -random-seed N     What pseudo-random sequence?\n");
+    fprintf(stderr, "Options for file input:\n");
+    fprintf(stderr, "  -one-insn-file F   Test one insn from a binary file\n");
     fprintf(stderr, "General options:\n");
     fprintf(stderr, "  -arm               ARM architecture mode\n");
     fprintf(stderr, "  -thumb             ARM Thumb architecture mode\n");
@@ -257,6 +260,26 @@ unsigned char *parse_hex_words(char *s, int *length) {
     return (unsigned char *)buf;
 }
 
+unsigned char *read_one_insn_file(const char *fname, int *length) {
+    unsigned char input_buf[100];
+    FILE *fh = fopen(fname, "rb");
+    if (!fh) {
+	fprintf(stderr, "Failed to open %s for reading: %s\n", fname,
+		strerror(errno));
+	exit(1);
+    }
+    size_t num_read = fread(input_buf, 1, 100, fh);
+    if (num_read == 0) {
+	fprintf(stderr, "Failed to read any bytes from %s\n", fname);
+	fclose(fh);
+	exit(1);
+    }
+    unsigned char *buf = (unsigned char *)malloc(num_read);
+    memcpy(buf, input_buf, num_read);
+    *length = num_read;
+    return buf;
+}
+
 int main(int argc, char *argv[])
 {
     unsigned long long limit = -1LL;
@@ -287,6 +310,11 @@ int main(int argc, char *argv[])
 	    mode = 'b';
 	    assert(i + 1 < argc);
 	    bytes = parse_hex_words(argv[i + 1], &bytes_len);
+	    i++;
+	} else if (!strcmp(argv[i], "-one-insn-file")) {
+	    mode = 'b';
+	    assert(i + 1 < argc);
+	    bytes = read_one_insn_file(argv[i + 1], &bytes_len);
 	    i++;
 	} else if (!strcmp(argv[i], "-print-ir")) {
 	    flag_print_ir = true;
