@@ -117,7 +117,7 @@ void loop(char mode, unsigned long long limit,
 	} else {
 	    assert(0);
 	}
-	if (count % print_interval == 0) {
+	if (print_interval != 0 && count % print_interval == 0) {
 	    print_insn(bytes, print_len);
 	    print_this_one = true;
 	} else {
@@ -371,7 +371,8 @@ int main(int argc, char *argv[])
 	loop(mode, limit, print_interval);
 	break;
     case 'b':
-	print_insn(bytes, bytes_len);
+	if (print_interval)
+	    print_insn(bytes, bytes_len);
 	one_insn(addr, bytes, bytes_len);
 	free(bytes);
 	break;
