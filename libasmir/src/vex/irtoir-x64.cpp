@@ -2176,6 +2176,12 @@ Exp *x64_translate_ccall( IRExpr *expr, IRSB *irbb, vector<Stmt *> *irout )
 			     ex_const64(3));
 	/* The high word is for emulation warnings: skip it */
 	result = rmode;
+    } else if ( func == "amd64g_calculate_FXAM" ) {
+	Exp *tag = translate_expr(expr->Iex.CCall.args[0], irbb, irout);
+	Exp *f64 = translate_expr(expr->Iex.CCall.args[1], irbb, irout);
+	Exp *res32 = translate_calculate_FXAM(_ex_l_cast(tag, REG_32),
+					      f64, irbb, irout);
+	result = _ex_u_cast(res32, REG_64);
     } else if ( func == "amd64g_calculate_sse_pmovmskb" ) {
 	Exp *arg_hi = translate_expr(expr->Iex.CCall.args[0], irbb, irout);
 	Exp *arg_lo = translate_expr(expr->Iex.CCall.args[1], irbb, irout);

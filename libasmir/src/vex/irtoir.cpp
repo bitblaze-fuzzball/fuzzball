@@ -1079,6 +1079,31 @@ Exp *translate_Ctz64( IRExpr *expr, IRSB *irbb, vector<Stmt *> *irout )
 }
 
 
+Exp *translate_calculate_FXAM(Exp *tag_in, Exp *f64_in,
+			      IRSB *irbb, vector<Stmt *> *irout) {
+    Exp *f64 = mk_temp_def(REG_64, f64_in, irout);
+    Exp *sign_as_c1 = _ex_shl(_ex_l_cast(ex_shr(f64, 63), REG_32), 9);
+    const unsigned int c0 = (1 << 8);
+    const unsigned int c2 = (1 << 10);
+    const unsigned int c3 = (1 << 14);
+    Exp *sig_mask = ex_const64(0x000fffffffffffff);
+    Exp *sig0 = mk_temp_def(REG_1, _ex_eq(_ex_and(ecl(f64), sig_mask),
+					  ex_const64(0)), irout);
+    Exp *exp_e = _ex_l_cast(_ex_and(ex_shr(f64, 52), ex_const64(0x7ff)),
+			    REG_32);
+    Exp *exp = mk_temp_def(REG_32, exp_e, irout);
+    Exp *if_tag_0 = ex_const(c3|0|c0);
+    Exp *if_exp_0 = _ex_ite(ecl(sig0), ex_const(c3|0|0), ex_const(c3|c2|0));
+    Exp *if_exp_max = _ex_ite(ecl(sig0), ex_const(0|c2|c0), ex_const(0|0|c0));
+
+    Exp *c023 =
+	_ex_ite(_ex_eq(tag_in, ex_const(0)), if_tag_0,
+		_ex_ite(_ex_eq(ecl(exp), ex_const(0)), if_exp_0,
+			_ex_ite(_ex_eq(ecl(exp), ex_const(0x7ff)), if_exp_max,
+				ex_const(0|c2|0))));
+    return _ex_or(c023, sign_as_c1);
+}
+
 Exp *translate_CmpF(Exp *arg1, Exp *arg2, reg_t sz) {
     /* arg1 == arg2 ? 0x40 :
          (arg1 < arg2 ? 0x01 :

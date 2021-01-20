@@ -124,7 +124,7 @@ let known_unknowns = (
     Hashtbl.replace h "Floating point triop" ();
     Hashtbl.replace h "floatcast" ();
     Hashtbl.replace h "CCall: x86g_create_fpucw" (); (* s/b handled now *)
-    Hashtbl.replace h "CCall: x86g_calculate_FXAM" ();
+    (* Hashtbl.replace h "CCall: x86g_calculate_FXAM" (); s/b handled now *)
     Hashtbl.replace h "CCall: x86g_check_fldcw" (); (* s/b handled now *)
     Hashtbl.replace h "loadF80" ();
     h)

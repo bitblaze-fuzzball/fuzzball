@@ -1273,6 +1273,12 @@ Exp *i386_translate_ccall( IRExpr *expr, IRSB *irbb, vector<Stmt *> *irout )
 	/* The high word is for emulation warnings: skip it */
 	result = _ex_u_cast(rmode, REG_64);
     }
+    else if ( func == "x86g_calculate_FXAM" )
+    {
+	Exp *tag = translate_expr(expr->Iex.CCall.args[0], irbb, irout);
+	Exp *f64 = translate_expr(expr->Iex.CCall.args[1], irbb, irout);
+	result = translate_calculate_FXAM(tag, f64, irbb, irout);
+    }
     else
     {
         result = new Unknown("CCall: " + func);
