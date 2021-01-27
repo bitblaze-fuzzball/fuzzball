@@ -54,6 +54,8 @@ extern Exp * count_opnd;
 // Translations used for both i386 and x86-64 helpers. They use the
 // 32-bit helper calling conventions, so the x86-64 uses need to narrow
 // arguments and widen the result.
+Exp *translate_loadF80_le(Exp *addr, int addr_wd,
+			  IRSB *irbb, vector<Stmt *> *irout);
 Exp *translate_calculate_FXAM(Exp *tag_in, Exp *f64_in,
 			      IRSB *irbb, vector<Stmt *> *irout);
 

@@ -1252,8 +1252,10 @@ static Stmt *translate_put_reg_128(unsigned int offset, Exp *data, IRSB *irbb,
         result = mk_assign_tmp(lhs, new Unknown("rdtsc"), irbb, irout);
     } else if (func == "amd64g_dirtyhelper_loadF80le") {
 	IRTemp lhs = dirty->tmp;
-        assert(lhs != IRTemp_INVALID);
-        result = mk_assign_tmp(lhs, new Unknown("loadF80"), irbb, irout);
+	assert(lhs != IRTemp_INVALID);
+	Exp *addr = translate_expr(dirty->args[0], irbb, irout);
+	Exp *f64 = translate_loadF80_le(addr, 64, irbb, irout);
+	result = mk_assign_tmp(lhs, f64, irbb, irout);
     } else if (func == "amd64g_dirtyhelper_storeF80le") {
         result = new ExpStmt(new Unknown("Unknown: storeF80"));
     } else if (func == "amd64g_dirtyhelper_XSAVE_COMPONENT_0") {

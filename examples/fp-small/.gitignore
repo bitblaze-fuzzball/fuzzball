@@ -8,3 +8,5 @@ cmpps-test
 max-test
 fxam-test
 fxam-test32
+f80-conv
+f80-conv-32

@@ -1078,7 +1078,57 @@ Exp *translate_Ctz64( IRExpr *expr, IRSB *irbb, vector<Stmt *> *irout )
     return new Temp(*counter);
 }
 
+/* Translation for a VEX dirty helper that loads an 80-bit long double
+   into a 64-bit double precision value. "addr" is an expression for
+   the starting address, which should be a 32 or 64-bit value
+   according to "addr_wd". This implementation is currently somewhat
+   less careful about how it does the conversion compared to the VEX
+   implementation convert_f80le_to_f64le, which is in turn simplified
+   compared to what real hardware does. IMO there's not much value in
+   doing a really good job here if we only do arithmetic on 64-bit
+   values. Specifically we don't do rounding or preserve any different
+   kinds of NaNs. */
+Exp *translate_loadF80_le(Exp *addr, int addr_wd,
+			  IRSB *irbb, vector<Stmt *> *irout) {
+    assert(addr_wd == 32 || addr_wd == 64);
+    Exp *frac = mk_temp_def(REG_64, new Mem(addr, REG_64), irout);
+    Exp *offset8 = (addr_wd == 32) ? ex_const(8) : ex_const64(8);
+    Exp *sexp_addr = _ex_add(ecl(addr), offset8);
+    Exp *sexp = mk_temp_def(REG_32, _ex_u_cast(new Mem(sexp_addr, REG_16),
+					       REG_32), irout);
+    Exp *exp80 = mk_temp_def(REG_32, _ex_and(ecl(sexp), ex_const(0x7fff)),
+			     irout);
+    /* Move the sign bit to its correct F64 position */
+    Exp *sign64 = _ex_shl(_ex_u_cast(_ex_and(ecl(sexp), ex_const(0x8000)),
+				     REG_64), ex_const(48));
+    Exp *zero = ex_const64(0);
+    Exp *infty = ex_const64(0x7ff0000000000000);
+    Exp *inf_or_nan = _ex_ite(_ex_eq(ecl(frac),ex_const64(0x8000000000000000)),
+			      infty, ex_const64(0x7ff8000000000000));
+    Exp *new_exp = mk_temp_def(REG_32, _ex_add(ecl(exp80),
+					       ex_const(0xffffc400)), irout);
+    Exp *denorm = _ex_shr(ecl(frac), _ex_sub(ex_const(12), ecl(new_exp)));
+    /* Put the exponent in its correct F64 position */
+    Exp *exp64 = _ex_shl(_ex_u_cast(ecl(new_exp), REG_64), ex_const(52));
+    /* Remove explicit "1." bit, shift the rest over */
+    Exp *frac64 = _ex_shr(_ex_and(ecl(frac), ex_const64(0x7fffffffffffffff)),
+			  ex_const(11));
+    Exp *ef64_norm = _ex_or(exp64, frac64);
+    Exp *underflow_p = _ex_sle(ecl(new_exp), ex_const(-52));
+    Exp *denorm_p = _ex_sle(ecl(new_exp), ex_const(0));
+    Exp *overflow_p = _ex_sle(ex_const(0x7ff), ecl(new_exp));
+    Exp *ef64_main = _ex_ite(underflow_p, zero,
+			     _ex_ite(denorm_p, denorm,
+				     _ex_ite(overflow_p, ecl(infty),
+					     ef64_norm)));
+    Exp *ef64 = _ex_ite(_ex_eq(ecl(exp80), ex_const(0)), ecl(zero),
+			_ex_ite(_ex_eq(ecl(exp80), ex_const(0x7fff)),
+				inf_or_nan, ef64_main));
+    return _ex_or(sign64, ef64);
+}
 
+/* Classify a floating-point value into four bits in the layout of the
+   x87 status word. */
 Exp *translate_calculate_FXAM(Exp *tag_in, Exp *f64_in,
 			      IRSB *irbb, vector<Stmt *> *irout) {
     Exp *f64 = mk_temp_def(REG_64, f64_in, irout);

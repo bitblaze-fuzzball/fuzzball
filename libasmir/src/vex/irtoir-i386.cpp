@@ -893,7 +893,9 @@ Stmt *i386_translate_dirty( IRStmt *stmt, IRSB *irbb, vector<Stmt *> *irout )
     else if (func == "x86g_dirtyhelper_loadF80le") {
 	IRTemp lhs = dirty->tmp;
 	assert(lhs != IRTemp_INVALID);
-	result = mk_assign_tmp(lhs, new Unknown("loadF80"), irbb, irout);
+	Exp *addr = translate_expr(dirty->args[0], irbb, irout);
+	Exp *f64 = translate_loadF80_le(addr, 32, irbb, irout);
+	result = mk_assign_tmp(lhs, f64, irbb, irout);
     }
     else if (func == "x86g_dirtyhelper_storeF80le") {
         result = new ExpStmt(new Unknown("Unknown: storeF80"));

@@ -126,7 +126,7 @@ let known_unknowns = (
     Hashtbl.replace h "CCall: x86g_create_fpucw" (); (* s/b handled now *)
     (* Hashtbl.replace h "CCall: x86g_calculate_FXAM" (); s/b handled now *)
     Hashtbl.replace h "CCall: x86g_check_fldcw" (); (* s/b handled now *)
-    Hashtbl.replace h "loadF80" ();
+    (* Hashtbl.replace h "loadF80" (); s/b handled now *)
     h)
 
 (* Disable "unknown" statments it seems safe to ignore *)
@@ -139,8 +139,8 @@ let noop_known_unknowns (dl, sl) =
 	    V.Move(lhs, V.Constant(V.Int(ty, 0L)))
 	| V.ExpStmt(V.Unknown("Unknown: PutI")) ->
 	    V.Comment("Unknown: PutI")
-	| V.ExpStmt(V.Unknown("Unknown: loadF80")) ->
-	    V.Comment("Unknown: loadF80")
+(*	| V.ExpStmt(V.Unknown("Unknown: loadF80")) ->
+	    V.Comment("Unknown: loadF80") s/b handled now *)
 	| V.ExpStmt(V.Unknown("Unknown: storeF80")) ->
 	    V.Comment("Unknown: storeF80")
 	| s -> s) sl)
