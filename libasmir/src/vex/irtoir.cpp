@@ -1154,6 +1154,129 @@ Exp *translate_calculate_FXAM(Exp *tag_in, Exp *f64_in,
     return _ex_or(c023, sign_as_c1);
 }
 
+/* Build an implementation of floating-point square root on a
+   single-precision value. The algorithm is a simple
+   integer-arithmetic approximation accurate to within 3.5%, followed
+   by a configurable number of iterations of Newton's method. */
+Exp *make_sqrt_F32(Exp *in, int iters, vector<Stmt *> *irout) {
+    const enum rounding_mode_t rm = ROUND_NEAREST;
+    Exp *x = mk_temp_def(REG_32, in, irout);
+
+    /* The integer approximation below won't work right for
+       denormalized inputs, so we prescale them and make a
+       corresponding adjustment at the end.
+       sqrt(x) = 2**-16 * sqrt(x * 2**32) */
+    Exp *denorm_bound = ex_const(0x00800000);
+    Exp *denorm_cond = mk_temp_def(REG_1, _ex_lt(ecl(x), denorm_bound), irout);
+    Exp *p2_32_f32 = ex_const(0x4f800000);
+    Exp *p2_n16_f32 = ex_const(0x37800000);
+    Exp *one_f32 = ex_const(0x3f800000);
+    Exp *x_normed = new FBinOp(FTIMES, rm, ecl(x), p2_32_f32);
+    Exp *x_norm = _ex_ite(ecl(denorm_cond), x_normed, ecl(x));
+    x_norm = mk_temp_def(REG_32, x_norm, irout);
+    Exp *denorm = _ex_ite(ecl(denorm_cond), p2_n16_f32, one_f32);
+
+    /* The basic idea of the approximation is that sqrt can be
+    approximated by dividing the exponent by two. It turns out that
+    including the mantissa in that division improves the
+    approximation, including the leaking of bits between the exponent
+    and mantissa: you can think of the exponent and mantissa together
+    as approximating the log2 of the value. The difference of powers
+    of two in the floowing constant compensates for the exponent
+    bias. This basic approximation would always have positive error,
+    so the final constant shifts the error to be balanced between
+    above and below (you can choose the constant by binary search
+    minimizing the worst-case error). */
+    Exp *adjust = ex_const((1 << 29) - (1 << 22) - 307410);
+    Exp *approx = _ex_add(_ex_shr(ecl(x_norm), 1), adjust);
+    Exp *r = mk_temp_def(REG_32, approx, irout);
+
+    const unsigned int one_half_f32 = 0x3f000000;
+    for (int i = 0; i < iters; i++) {
+	/* This iteration r' = (r + x/r)/2 is called Heron's method,
+	   and is also an instance of Newton-Raphson root-finding. */
+	Exp *recip = new FBinOp(FDIVIDE, rm, ecl(x_norm), ecl(r));
+	Exp *sum = new FBinOp(FPLUS, rm, ecl(r), recip);
+	Exp *r_prime = new FBinOp(FTIMES, rm, sum, ex_const(one_half_f32));
+	r = mk_temp_def(REG_32, r_prime, irout);
+    }
+
+    Exp *main_result = new FBinOp(FTIMES, rm, denorm, ecl(r));
+    Exp *is_zero = new FBinOp(FEQ, rm, ecl(x), ex_const(0));
+    Exp *inf = ex_const(0x7f800000);
+    Exp *nan = ex_const(0xffc00000);
+    Exp *is_neg = _ex_h_cast(ecl(x), REG_1);
+    Exp *result = _ex_ite(is_zero, ecl(x),
+			  _ex_ite(_ex_eq(ecl(x), inf), ecl(inf),
+				  _ex_ite(is_neg, nan, main_result)));
+    return result;
+}
+
+Exp *translate_low32fp_128_sqrt(Exp *a, vector<Stmt *> *irout) {
+    Exp *a_high, *a_low;
+    split_vector(a, &a_high, &a_low);
+    Exp *a32 = _ex_l_cast(a_low, REG_32);
+
+    Exp *result32 = make_sqrt_F32(a32, 3, irout);
+    Exp *lane3 = ex_h_cast(a_low, REG_32);
+    Exp *result64 = translate_32HLto64(lane3, result32);
+    return translate_64HLto128(a_high, result64);
+}
+
+/* Build an implementation of floating-point square root on a
+   double-precision value. Analogous to make_sqrt_F32 but scaled up;
+   see that implementation for more comments. */
+Exp *make_sqrt_F64(Exp *in, int iters, vector<Stmt *> *irout) {
+    const enum rounding_mode_t rm = ROUND_NEAREST;
+    Exp *x = mk_temp_def(REG_64, in, irout);
+
+    Exp *denorm_bound = ex_const64(0x0010000000000000);
+    Exp *denorm_cond = mk_temp_def(REG_1, _ex_lt(ecl(x), denorm_bound), irout);
+    Exp *p2_64_f64 = ex_const64(0x43f0000000000000);
+    Exp *p2_n32_f64 = ex_const64(0x3df0000000000000);
+    Exp *one_f64 = ex_const64(0x3ff0000000000000);
+    Exp *x_normed = new FBinOp(FTIMES, rm, ecl(x), p2_64_f64);
+    Exp *x_norm = _ex_ite(ecl(denorm_cond), x_normed, ecl(x));
+    x_norm = mk_temp_def(REG_64, x_norm, irout);
+    Exp *denorm = _ex_ite(ecl(denorm_cond), p2_n32_f64, one_f64);
+
+    Exp *adjust = ex_const64((1LL << 61) - (1LL << 51) - (307410LL << 29));
+    Exp *approx = _ex_add(_ex_shr(ecl(x_norm), 1), adjust);
+    Exp *r = mk_temp_def(REG_64, approx, irout);
+
+    const unsigned long long one_half_f64 = 0x3fe0000000000000;
+    for (int i = 0; i < iters; i++) {
+	Exp *recip = new FBinOp(FDIVIDE, rm, ecl(x_norm), ecl(r));
+	Exp *sum = new FBinOp(FPLUS, rm, ecl(r), recip);
+	Exp *r_prime = new FBinOp(FTIMES, rm, sum, ex_const64(one_half_f64));
+	r = mk_temp_def(REG_64, r_prime, irout);
+    }
+
+    Exp *main_result = new FBinOp(FTIMES, rm, denorm, ecl(r));
+    Exp *is_zero = new FBinOp(FEQ, rm, ecl(x), ex_const64(0));
+    Exp *inf = ex_const64(0x7ff0000000000000);
+    Exp *nan = ex_const64(0xfff8000000000000);
+    Exp *is_neg = _ex_h_cast(ecl(x), REG_1);
+    Exp *result = _ex_ite(is_zero, ecl(x),
+			  _ex_ite(_ex_eq(ecl(x), inf), ecl(inf),
+				  _ex_ite(is_neg, nan, main_result)));
+    return result;
+}
+
+Exp *translate_SqrtF64(Exp *rmode, Exp *arg, vector<Stmt *> *irout) {
+    (void)rmode; /* Ignore rounding mode for now */
+    Exp *result64 = make_sqrt_F64(arg, 4, irout);
+    return result64;
+}
+
+Exp *translate_low64fp_128_sqrt(Exp *a, vector<Stmt *> *irout) {
+    Exp *a_high, *a_low;
+    split_vector(a, &a_high, &a_low);
+
+    Exp *result64 = make_sqrt_F64(a_low, 4, irout);
+    return translate_64HLto128(a_high, result64);
+}
+
 Exp *translate_CmpF(Exp *arg1, Exp *arg2, reg_t sz) {
     /* arg1 == arg2 ? 0x40 :
          (arg1 < arg2 ? 0x01 :
@@ -1251,6 +1374,24 @@ Exp *assemble4x32(Exp *e1, Exp *e2, Exp *e3, Exp *e4) {
     Exp *low = translate_32HLto64(e3, e4);
 
     return new Vector(high, low);
+}
+
+Exp *translate_SetV128lo32(Exp *old128, Exp *new32) {
+    Exp *old_high, *old_low;
+    split_vector(old128, &old_high, &old_low);
+
+    Exp *mid_low = _ex_h_cast(old_low, REG_32);
+
+    Exp *new_low = translate_32HLto64(mid_low, new32);
+    return translate_64HLto128(old_high, new_low);
+}
+
+Exp *translate_SetV128lo64(Exp *old128, Exp *new64) {
+    Exp *old_high, *old_low;
+    split_vector(old128, &old_high, &old_low);
+    Exp::destroy(old_low);
+
+    return translate_64HLto128(old_high, new64);
 }
 
 // SIMD FP on 4 single-precision values at once, as in the x86 addps.
@@ -2133,6 +2274,10 @@ Exp *translate_simple_unop( IRExpr *expr, IRSB *irbb, vector<Stmt *> *irout )
         case Iop_AbsF64:
 	    return new BinOp(BITAND, arg, ex_const64(0x7fffffffffffffff));
 
+        case Iop_Sqrt32F0x4:
+	    return translate_low32fp_128_sqrt(arg, irout);
+        case Iop_Sqrt64F0x2:
+	    return translate_low64fp_128_sqrt(arg, irout);
 
 #if VEX_VERSION >= 2559
         case Iop_GetMSBs8x8:
@@ -2294,6 +2439,9 @@ Exp *translate_binop( IRExpr *expr, IRSB *irbb, vector<Stmt *> *irout )
         case Iop_32HLto64:          return translate_32HLto64(arg1, arg2);
         case Iop_64HLto128:         return translate_64HLto128(arg1, arg2);
         case Iop_64HLtoV128:        return translate_64HLto128(arg1, arg2);
+        case Iop_SetV128lo32:       return translate_SetV128lo32(arg1, arg2);
+        case Iop_SetV128lo64:       return translate_SetV128lo64(arg1, arg2);
+
         case Iop_MullU8:            return translate_MullU8(arg1, arg2);
         case Iop_MullS8:            return translate_MullS8(arg1, arg2);
         case Iop_MullU16:           return translate_MullU16(arg1, arg2);
@@ -2615,6 +2763,9 @@ Exp *translate_binop( IRExpr *expr, IRSB *irbb, vector<Stmt *> *irout )
         case Iop_RoundF64toInt:
 	    unk = "Floating point binop RoundF64toInt";
 	    break;
+
+        case Iop_SqrtF64:
+	    return translate_SqrtF64(arg1, arg2, irout);
 
         case Iop_2xm1F64:
 	    unk = "Floating point binop 2xm1F64";
