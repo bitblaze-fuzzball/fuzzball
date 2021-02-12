@@ -141,8 +141,8 @@ let noop_known_unknowns (dl, sl) =
 	    V.Comment("Unknown: PutI")
 (*	| V.ExpStmt(V.Unknown("Unknown: loadF80")) ->
 	    V.Comment("Unknown: loadF80") s/b handled now *)
-	| V.ExpStmt(V.Unknown("Unknown: storeF80")) ->
-	    V.Comment("Unknown: storeF80")
+(*	| V.ExpStmt(V.Unknown("Unknown: storeF80")) ->
+	    V.Comment("Unknown: storeF80") s/b handled now *)
 	| s -> s) sl)
 
 let trans_cache = Hashtbl.create 100001

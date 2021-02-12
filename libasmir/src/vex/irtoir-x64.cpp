@@ -1254,7 +1254,9 @@ static Stmt *translate_put_reg_128(unsigned int offset, Exp *data, IRSB *irbb,
 	Exp *f64 = translate_loadF80_le(addr, 64, irbb, irout);
 	result = mk_assign_tmp(lhs, f64, irbb, irout);
     } else if (func == "amd64g_dirtyhelper_storeF80le") {
-        result = new ExpStmt(new Unknown("Unknown: storeF80"));
+	Exp *addr = translate_expr(dirty->args[0], irbb, irout);
+	Exp *f64 = translate_expr(dirty->args[1], irbb, irout);
+	result = translate_storeF80_le(f64, addr, 64, irbb, irout);
     } else if (func == "amd64g_dirtyhelper_XSAVE_COMPONENT_0") {
 	Exp *addr_exp = translate_expr(dirty->args[SKIP_BBPTR_ARG + 0],
 				       irbb, irout);

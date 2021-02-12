@@ -1127,6 +1127,68 @@ Exp *translate_loadF80_le(Exp *addr, int addr_wd,
     return _ex_or(sign64, ef64);
 }
 
+/* Translation for a VEX dirty helper that stores a 64-bit double
+   precision value into memory in an 80-bit long double format. "addr"
+   is an expression for the starting address, which should be a 32 or
+   64-bit value according to "addr_wd". The conversion is this
+   direction is slightly simpler than the inverse in loadF80, and we
+   deal with the otherwise-tricky denorm case by pre-multiplication. */
+Stmt *translate_storeF80_le(Exp *x, Exp *addr, int addr_wd,
+			    IRSB *irbb, vector<Stmt *> *irout) {
+    const enum rounding_mode_t rm = ROUND_NEAREST;
+    assert(addr_wd == 32 || addr_wd == 64);
+    Exp *ef0_exp = _ex_and(x, ex_const64(0x7fffffffffffffff));
+    Exp *ef0 = mk_temp_def(REG_64, ef0_exp, irout);
+    /* Any denormalized F64 value needs to be a normalized F80. Doing
+       the precise renormalization ourselves would require something
+       like Clz64. So instead we let the FPU do the work with a
+       constant scale factor compensated by a corresponding adjustment
+       to the final exponent. */
+    Exp *denorm0_cond_e = _ex_and(_ex_lt(ex_const64(0), ecl(ef0)),
+				  _ex_lt(ecl(ef0),
+					 ex_const64(0x0010000000000000)));
+    Exp *denorm0_cond = mk_temp_def(REG_1, denorm0_cond_e, irout);
+    Exp *p2_64_f64 = ex_const64(0x43f0000000000000);
+    Exp *x_norm = new FBinOp(FTIMES, rm, ecl(x), p2_64_f64);
+    Exp *x1_exp = _ex_ite(ecl(denorm0_cond), x_norm, ecl(x));
+    Exp *x1 = mk_temp_def(REG_64, x1_exp, irout);
+    Exp *adj_exp = _ex_ite(ecl(denorm0_cond), ex_const(64), ex_const(0));
+    Exp *frac_exp = _ex_and(ecl(x1), ex_const64(0x000fffffffffffff));
+    Exp *frac = mk_temp_def(REG_64, frac_exp, irout);
+    Exp *top12 = _ex_l_cast(ex_shr(x1, 52), REG_32);
+    Exp *exp64 = mk_temp_def(REG_32, _ex_and(top12, ex_const(0x7ff)), irout);
+    Exp *new_sign = _ex_ite(ex_h_cast(x1, REG_1),
+			    ex_const(0x8000), ex_const(0x0000));
+    /* This condition is enough to limit to +/- 0 because denorms were
+       handled by the earlier pre-multiplication */
+    Exp *is_zero = mk_temp_def(REG_1, _ex_eq(ecl(exp64), ex_const(0)), irout);
+    Exp *is_inf_nan = mk_temp_def(REG_1,
+				  _ex_eq(ecl(exp64), ex_const(0x7ff)), irout);
+    Exp *inf_nan_frac = _ex_ite(_ex_eq(ecl(frac), ex_const64(0)),
+				ex_const64(0x8000000000000000), /* +/- inf */
+				ex_const64(0xc000000000000000));
+    /* We convert the exponent by adding the difference in the biases,
+       plus the adjustment for denorm input decided above */
+    Exp *new_exp_norm = _ex_sub(_ex_add(ecl(exp64), ex_const(0x3c00)),
+				adj_exp);
+    /* The 52-bit fraction of the F64 turns into a 63-bit fraction
+       in F80 with an explicit leading 1. */
+    Exp *new_frac_norm = _ex_or(ex_shl(frac, 11),
+				ex_const64(0x8000000000000000));
+    Exp *new_exp = _ex_ite(ecl(is_zero), ex_const(0x0000),
+			   _ex_ite(ecl(is_inf_nan), ex_const(0x7fff),
+				   new_exp_norm));
+    Exp *top16 = _ex_l_cast(_ex_or(new_exp, new_sign), REG_16);
+    Exp *new_frac = _ex_ite(ecl(is_zero), ex_const64(0),
+			    _ex_ite(ecl(is_inf_nan), inf_nan_frac,
+				    new_frac_norm));
+    irout->push_back(new Move(new Mem(addr, REG_64), new_frac));
+    Exp *offset8 = (addr_wd == 32) ? ex_const(8) : ex_const64(8);
+    Exp *sexp_addr = _ex_add(ecl(addr), offset8);
+    Stmt *store16 = new Move(new Mem(sexp_addr, REG_16), top16);
+    return store16;
+}
+
 /* Classify a floating-point value into four bits in the layout of the
    x87 status word. */
 Exp *translate_calculate_FXAM(Exp *tag_in, Exp *f64_in,
