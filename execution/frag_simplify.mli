@@ -2,6 +2,8 @@
   Copyright (C) BitBlaze, 2009-2012. All rights reserved.
 *)
 
+val comment_is_insn : string -> bool
+
 val constant_fold_rec : Vine.exp -> Vine.exp
 
 val simplify_rec : Vine.exp -> Vine.exp

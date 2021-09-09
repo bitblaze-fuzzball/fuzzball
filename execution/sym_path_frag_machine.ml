@@ -382,9 +382,9 @@ struct
 	  in
 	    if is_another then
 	      let v2 = form_man#eval_expr_from_ce ce2 exp in
-		assert(v2 <> v);
 		if !opt_trace_ivc then
 		  Printf.printf "Not unique, another is 0x%Lx\n%!" v2;
+		assert(v2 <> v);
 		None
 	    else
 	      (if !opt_trace_ivc then
@@ -681,8 +681,10 @@ struct
       let eip = self#get_eip in
 	try let pref = Hashtbl.find opt_branch_preference eip in
 	  match pref with
-	    | 0L -> Some false
-	    | 1L -> Some true
+	    | 0.0 -> Some false
+	    | 1.0 -> Some true
+	    | f when f > 0.0 && f < 1.0 ->
+		Some (f > dt#random_float)
 	    | _ -> failwith "Unsupported branch preference"
 	with
 	  | Not_found ->

@@ -324,8 +324,8 @@ let explore_cmdline_opts =
     ("-branch-preference", Arg.String
        (fun s -> let (s1, s2) = split_string ':' s in
 	  Hashtbl.add opt_branch_preference (Int64.of_string s1)
-	    (Int64.of_string s2)),
-     "eip:(0|1) Prefer given direction for a symbolic branch");
+	    (float_of_string s2)),
+     "eip:(0|1|prob) Prefer given direction for a symbolic branch");
     ("-branch-preference-unchecked", Arg.String
        (fun s -> let (s1, s2) = split_string ':' s in
 	  Hashtbl.add opt_branch_preference_unchecked (Int64.of_string s1)

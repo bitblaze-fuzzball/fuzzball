@@ -1078,6 +1078,266 @@ Exp *translate_Ctz64( IRExpr *expr, IRSB *irbb, vector<Stmt *> *irout )
     return new Temp(*counter);
 }
 
+/* Translation for a VEX dirty helper that loads an 80-bit long double
+   into a 64-bit double precision value. "addr" is an expression for
+   the starting address, which should be a 32 or 64-bit value
+   according to "addr_wd". This implementation is currently somewhat
+   less careful about how it does the conversion compared to the VEX
+   implementation convert_f80le_to_f64le, which is in turn simplified
+   compared to what real hardware does. IMO there's not much value in
+   doing a really good job here if we only do arithmetic on 64-bit
+   values. Specifically we don't do rounding or preserve any different
+   kinds of NaNs. */
+Exp *translate_loadF80_le(Exp *addr, int addr_wd,
+			  IRSB *irbb, vector<Stmt *> *irout) {
+    assert(addr_wd == 32 || addr_wd == 64);
+    Exp *frac = mk_temp_def(REG_64, new Mem(addr, REG_64), irout);
+    Exp *offset8 = (addr_wd == 32) ? ex_const(8) : ex_const64(8);
+    Exp *sexp_addr = _ex_add(ecl(addr), offset8);
+    Exp *sexp = mk_temp_def(REG_32, _ex_u_cast(new Mem(sexp_addr, REG_16),
+					       REG_32), irout);
+    Exp *exp80 = mk_temp_def(REG_32, _ex_and(ecl(sexp), ex_const(0x7fff)),
+			     irout);
+    /* Move the sign bit to its correct F64 position */
+    Exp *sign64 = _ex_shl(_ex_u_cast(_ex_and(ecl(sexp), ex_const(0x8000)),
+				     REG_64), ex_const(48));
+    Exp *zero = ex_const64(0);
+    Exp *infty = ex_const64(0x7ff0000000000000);
+    Exp *inf_or_nan = _ex_ite(_ex_eq(ecl(frac),ex_const64(0x8000000000000000)),
+			      infty, ex_const64(0x7ff8000000000000));
+    Exp *new_exp = mk_temp_def(REG_32, _ex_add(ecl(exp80),
+					       ex_const(0xffffc400)), irout);
+    Exp *denorm = _ex_shr(ecl(frac), _ex_sub(ex_const(12), ecl(new_exp)));
+    /* Put the exponent in its correct F64 position */
+    Exp *exp64 = _ex_shl(_ex_u_cast(ecl(new_exp), REG_64), ex_const(52));
+    /* Remove explicit "1." bit, shift the rest over */
+    Exp *frac64 = _ex_shr(_ex_and(ecl(frac), ex_const64(0x7fffffffffffffff)),
+			  ex_const(11));
+    Exp *ef64_norm = _ex_or(exp64, frac64);
+    Exp *underflow_p = _ex_sle(ecl(new_exp), ex_const(-52));
+    Exp *denorm_p = _ex_sle(ecl(new_exp), ex_const(0));
+    Exp *overflow_p = _ex_sle(ex_const(0x7ff), ecl(new_exp));
+    Exp *ef64_main = _ex_ite(underflow_p, zero,
+			     _ex_ite(denorm_p, denorm,
+				     _ex_ite(overflow_p, ecl(infty),
+					     ef64_norm)));
+    Exp *ef64 = _ex_ite(_ex_eq(ecl(exp80), ex_const(0)), ecl(zero),
+			_ex_ite(_ex_eq(ecl(exp80), ex_const(0x7fff)),
+				inf_or_nan, ef64_main));
+    return _ex_or(sign64, ef64);
+}
+
+/* Translation for a VEX dirty helper that stores a 64-bit double
+   precision value into memory in an 80-bit long double format. "addr"
+   is an expression for the starting address, which should be a 32 or
+   64-bit value according to "addr_wd". The conversion is this
+   direction is slightly simpler than the inverse in loadF80, and we
+   deal with the otherwise-tricky denorm case by pre-multiplication. */
+Stmt *translate_storeF80_le(Exp *x, Exp *addr, int addr_wd,
+			    IRSB *irbb, vector<Stmt *> *irout) {
+    const enum rounding_mode_t rm = ROUND_NEAREST;
+    assert(addr_wd == 32 || addr_wd == 64);
+    Exp *ef0_exp = _ex_and(x, ex_const64(0x7fffffffffffffff));
+    Exp *ef0 = mk_temp_def(REG_64, ef0_exp, irout);
+    /* Any denormalized F64 value needs to be a normalized F80. Doing
+       the precise renormalization ourselves would require something
+       like Clz64. So instead we let the FPU do the work with a
+       constant scale factor compensated by a corresponding adjustment
+       to the final exponent. */
+    Exp *denorm0_cond_e = _ex_and(_ex_lt(ex_const64(0), ecl(ef0)),
+				  _ex_lt(ecl(ef0),
+					 ex_const64(0x0010000000000000)));
+    Exp *denorm0_cond = mk_temp_def(REG_1, denorm0_cond_e, irout);
+    Exp *p2_64_f64 = ex_const64(0x43f0000000000000);
+    Exp *x_norm = new FBinOp(FTIMES, rm, ecl(x), p2_64_f64);
+    Exp *x1_exp = _ex_ite(ecl(denorm0_cond), x_norm, ecl(x));
+    Exp *x1 = mk_temp_def(REG_64, x1_exp, irout);
+    Exp *adj_exp = _ex_ite(ecl(denorm0_cond), ex_const(64), ex_const(0));
+    Exp *frac_exp = _ex_and(ecl(x1), ex_const64(0x000fffffffffffff));
+    Exp *frac = mk_temp_def(REG_64, frac_exp, irout);
+    Exp *top12 = _ex_l_cast(ex_shr(x1, 52), REG_32);
+    Exp *exp64 = mk_temp_def(REG_32, _ex_and(top12, ex_const(0x7ff)), irout);
+    Exp *new_sign = _ex_ite(ex_h_cast(x1, REG_1),
+			    ex_const(0x8000), ex_const(0x0000));
+    /* This condition is enough to limit to +/- 0 because denorms were
+       handled by the earlier pre-multiplication */
+    Exp *is_zero = mk_temp_def(REG_1, _ex_eq(ecl(exp64), ex_const(0)), irout);
+    Exp *is_inf_nan = mk_temp_def(REG_1,
+				  _ex_eq(ecl(exp64), ex_const(0x7ff)), irout);
+    Exp *inf_nan_frac = _ex_ite(_ex_eq(ecl(frac), ex_const64(0)),
+				ex_const64(0x8000000000000000), /* +/- inf */
+				ex_const64(0xc000000000000000));
+    /* We convert the exponent by adding the difference in the biases,
+       plus the adjustment for denorm input decided above */
+    Exp *new_exp_norm = _ex_sub(_ex_add(ecl(exp64), ex_const(0x3c00)),
+				adj_exp);
+    /* The 52-bit fraction of the F64 turns into a 63-bit fraction
+       in F80 with an explicit leading 1. */
+    Exp *new_frac_norm = _ex_or(ex_shl(frac, 11),
+				ex_const64(0x8000000000000000));
+    Exp *new_exp = _ex_ite(ecl(is_zero), ex_const(0x0000),
+			   _ex_ite(ecl(is_inf_nan), ex_const(0x7fff),
+				   new_exp_norm));
+    Exp *top16 = _ex_l_cast(_ex_or(new_exp, new_sign), REG_16);
+    Exp *new_frac = _ex_ite(ecl(is_zero), ex_const64(0),
+			    _ex_ite(ecl(is_inf_nan), inf_nan_frac,
+				    new_frac_norm));
+    irout->push_back(new Move(new Mem(addr, REG_64), new_frac));
+    Exp *offset8 = (addr_wd == 32) ? ex_const(8) : ex_const64(8);
+    Exp *sexp_addr = _ex_add(ecl(addr), offset8);
+    Stmt *store16 = new Move(new Mem(sexp_addr, REG_16), top16);
+    return store16;
+}
+
+/* Classify a floating-point value into four bits in the layout of the
+   x87 status word. */
+Exp *translate_calculate_FXAM(Exp *tag_in, Exp *f64_in,
+			      IRSB *irbb, vector<Stmt *> *irout) {
+    Exp *f64 = mk_temp_def(REG_64, f64_in, irout);
+    Exp *sign_as_c1 = _ex_shl(_ex_l_cast(ex_shr(f64, 63), REG_32), 9);
+    const unsigned int c0 = (1 << 8);
+    const unsigned int c2 = (1 << 10);
+    const unsigned int c3 = (1 << 14);
+    Exp *sig_mask = ex_const64(0x000fffffffffffff);
+    Exp *sig0 = mk_temp_def(REG_1, _ex_eq(_ex_and(ecl(f64), sig_mask),
+					  ex_const64(0)), irout);
+    Exp *exp_e = _ex_l_cast(_ex_and(ex_shr(f64, 52), ex_const64(0x7ff)),
+			    REG_32);
+    Exp *exp = mk_temp_def(REG_32, exp_e, irout);
+    Exp *if_tag_0 = ex_const(c3|0|c0);
+    Exp *if_exp_0 = _ex_ite(ecl(sig0), ex_const(c3|0|0), ex_const(c3|c2|0));
+    Exp *if_exp_max = _ex_ite(ecl(sig0), ex_const(0|c2|c0), ex_const(0|0|c0));
+
+    Exp *c023 =
+	_ex_ite(_ex_eq(tag_in, ex_const(0)), if_tag_0,
+		_ex_ite(_ex_eq(ecl(exp), ex_const(0)), if_exp_0,
+			_ex_ite(_ex_eq(ecl(exp), ex_const(0x7ff)), if_exp_max,
+				ex_const(0|c2|0))));
+    return _ex_or(c023, sign_as_c1);
+}
+
+/* Build an implementation of floating-point square root on a
+   single-precision value. The algorithm is a simple
+   integer-arithmetic approximation accurate to within 3.5%, followed
+   by a configurable number of iterations of Newton's method. */
+Exp *make_sqrt_F32(Exp *in, int iters, vector<Stmt *> *irout) {
+    const enum rounding_mode_t rm = ROUND_NEAREST;
+    Exp *x = mk_temp_def(REG_32, in, irout);
+
+    /* The integer approximation below won't work right for
+       denormalized inputs, so we prescale them and make a
+       corresponding adjustment at the end.
+       sqrt(x) = 2**-16 * sqrt(x * 2**32) */
+    Exp *denorm_bound = ex_const(0x00800000);
+    Exp *denorm_cond = mk_temp_def(REG_1, _ex_lt(ecl(x), denorm_bound), irout);
+    Exp *p2_32_f32 = ex_const(0x4f800000);
+    Exp *p2_n16_f32 = ex_const(0x37800000);
+    Exp *one_f32 = ex_const(0x3f800000);
+    Exp *x_normed = new FBinOp(FTIMES, rm, ecl(x), p2_32_f32);
+    Exp *x_norm = _ex_ite(ecl(denorm_cond), x_normed, ecl(x));
+    x_norm = mk_temp_def(REG_32, x_norm, irout);
+    Exp *denorm = _ex_ite(ecl(denorm_cond), p2_n16_f32, one_f32);
+
+    /* The basic idea of the approximation is that sqrt can be
+    approximated by dividing the exponent by two. It turns out that
+    including the mantissa in that division improves the
+    approximation, including the leaking of bits between the exponent
+    and mantissa: you can think of the exponent and mantissa together
+    as approximating the log2 of the value. The difference of powers
+    of two in the floowing constant compensates for the exponent
+    bias. This basic approximation would always have positive error,
+    so the final constant shifts the error to be balanced between
+    above and below (you can choose the constant by binary search
+    minimizing the worst-case error). */
+    Exp *adjust = ex_const((1 << 29) - (1 << 22) - 307410);
+    Exp *approx = _ex_add(_ex_shr(ecl(x_norm), 1), adjust);
+    Exp *r = mk_temp_def(REG_32, approx, irout);
+
+    const unsigned int one_half_f32 = 0x3f000000;
+    for (int i = 0; i < iters; i++) {
+	/* This iteration r' = (r + x/r)/2 is called Heron's method,
+	   and is also an instance of Newton-Raphson root-finding. */
+	Exp *recip = new FBinOp(FDIVIDE, rm, ecl(x_norm), ecl(r));
+	Exp *sum = new FBinOp(FPLUS, rm, ecl(r), recip);
+	Exp *r_prime = new FBinOp(FTIMES, rm, sum, ex_const(one_half_f32));
+	r = mk_temp_def(REG_32, r_prime, irout);
+    }
+
+    Exp *main_result = new FBinOp(FTIMES, rm, denorm, ecl(r));
+    Exp *is_zero = new FBinOp(FEQ, rm, ecl(x), ex_const(0));
+    Exp *inf = ex_const(0x7f800000);
+    Exp *nan = ex_const(0xffc00000);
+    Exp *is_neg = _ex_h_cast(ecl(x), REG_1);
+    Exp *result = _ex_ite(is_zero, ecl(x),
+			  _ex_ite(_ex_eq(ecl(x), inf), ecl(inf),
+				  _ex_ite(is_neg, nan, main_result)));
+    return result;
+}
+
+Exp *translate_low32fp_128_sqrt(Exp *a, vector<Stmt *> *irout) {
+    Exp *a_high, *a_low;
+    split_vector(a, &a_high, &a_low);
+    Exp *a32 = _ex_l_cast(a_low, REG_32);
+
+    Exp *result32 = make_sqrt_F32(a32, 3, irout);
+    Exp *lane3 = ex_h_cast(a_low, REG_32);
+    Exp *result64 = translate_32HLto64(lane3, result32);
+    return translate_64HLto128(a_high, result64);
+}
+
+/* Build an implementation of floating-point square root on a
+   double-precision value. Analogous to make_sqrt_F32 but scaled up;
+   see that implementation for more comments. */
+Exp *make_sqrt_F64(Exp *in, int iters, vector<Stmt *> *irout) {
+    const enum rounding_mode_t rm = ROUND_NEAREST;
+    Exp *x = mk_temp_def(REG_64, in, irout);
+
+    Exp *denorm_bound = ex_const64(0x0010000000000000);
+    Exp *denorm_cond = mk_temp_def(REG_1, _ex_lt(ecl(x), denorm_bound), irout);
+    Exp *p2_64_f64 = ex_const64(0x43f0000000000000);
+    Exp *p2_n32_f64 = ex_const64(0x3df0000000000000);
+    Exp *one_f64 = ex_const64(0x3ff0000000000000);
+    Exp *x_normed = new FBinOp(FTIMES, rm, ecl(x), p2_64_f64);
+    Exp *x_norm = _ex_ite(ecl(denorm_cond), x_normed, ecl(x));
+    x_norm = mk_temp_def(REG_64, x_norm, irout);
+    Exp *denorm = _ex_ite(ecl(denorm_cond), p2_n32_f64, one_f64);
+
+    Exp *adjust = ex_const64((1LL << 61) - (1LL << 51) - (307410LL << 29));
+    Exp *approx = _ex_add(_ex_shr(ecl(x_norm), 1), adjust);
+    Exp *r = mk_temp_def(REG_64, approx, irout);
+
+    const unsigned long long one_half_f64 = 0x3fe0000000000000;
+    for (int i = 0; i < iters; i++) {
+	Exp *recip = new FBinOp(FDIVIDE, rm, ecl(x_norm), ecl(r));
+	Exp *sum = new FBinOp(FPLUS, rm, ecl(r), recip);
+	Exp *r_prime = new FBinOp(FTIMES, rm, sum, ex_const64(one_half_f64));
+	r = mk_temp_def(REG_64, r_prime, irout);
+    }
+
+    Exp *main_result = new FBinOp(FTIMES, rm, denorm, ecl(r));
+    Exp *is_zero = new FBinOp(FEQ, rm, ecl(x), ex_const64(0));
+    Exp *inf = ex_const64(0x7ff0000000000000);
+    Exp *nan = ex_const64(0xfff8000000000000);
+    Exp *is_neg = _ex_h_cast(ecl(x), REG_1);
+    Exp *result = _ex_ite(is_zero, ecl(x),
+			  _ex_ite(_ex_eq(ecl(x), inf), ecl(inf),
+				  _ex_ite(is_neg, nan, main_result)));
+    return result;
+}
+
+Exp *translate_SqrtF64(Exp *rmode, Exp *arg, vector<Stmt *> *irout) {
+    (void)rmode; /* Ignore rounding mode for now */
+    Exp *result64 = make_sqrt_F64(arg, 4, irout);
+    return result64;
+}
+
+Exp *translate_low64fp_128_sqrt(Exp *a, vector<Stmt *> *irout) {
+    Exp *a_high, *a_low;
+    split_vector(a, &a_high, &a_low);
+
+    Exp *result64 = make_sqrt_F64(a_low, 4, irout);
+    return translate_64HLto128(a_high, result64);
+}
 
 Exp *translate_CmpF(Exp *arg1, Exp *arg2, reg_t sz) {
     /* arg1 == arg2 ? 0x40 :
@@ -1095,6 +1355,44 @@ Exp *translate_CmpF(Exp *arg1, Exp *arg2, reg_t sz) {
     return _ex_ite(cmp_eq, ex_const(0x40),
 		   _ex_ite(cmp_lt, ex_const(0x01),
 			   _ex_ite(cmp_gt, ex_const(0), ex_const(0x45))));
+}
+
+/* This is an "asymmetric" max function which favors the second
+   argument for the corner cases of +0 vs. -0 or either of the
+   arguments being NaN. */
+Exp *build_float_max(Exp *a, Exp *b) {
+    /* (a <= b || a != a || b != b) ? b : a */
+    Exp *cmp_le = new FBinOp(FLE, ROUND_NEAREST, a, b);
+    Exp *a_isnan = new FBinOp(FNEQ, ROUND_NEAREST, ecl(a), ecl(a));
+    Exp *b_isnan = new FBinOp(FNEQ, ROUND_NEAREST, ecl(b), ecl(b));
+    Exp *cond = _ex_or(cmp_le, a_isnan, b_isnan);
+    return _ex_ite(cond, ecl(b), ecl(a));
+}
+
+/* This min is asymmetric in the same way the above max is. */
+Exp *build_float_min(Exp *a, Exp *b) {
+    /* (b <= a || a != a || b != b) ? b : a */
+    Exp *cmp_le = new FBinOp(FLE, ROUND_NEAREST, b, a);
+    Exp *a_isnan = new FBinOp(FNEQ, ROUND_NEAREST, ecl(a), ecl(a));
+    Exp *b_isnan = new FBinOp(FNEQ, ROUND_NEAREST, ecl(b), ecl(b));
+    Exp *cond = _ex_or(cmp_le, a_isnan, b_isnan);
+    return _ex_ite(cond, ecl(b), ecl(a));
+}
+
+Exp *translate_low32fp_128_op(Exp *a, Exp *b, Exp *(*op)(Exp *, Exp *)) {
+    Exp *a_high, *a_low;
+    split_vector(a, &a_high, &a_low);
+    Exp *a32 = _ex_l_cast(a_low, REG_32);
+
+    Exp *b_high, *b_low;
+    split_vector(b, &b_high, &b_low);
+    Exp *b32 = _ex_l_cast(b_low, REG_32);
+    Exp::destroy(b_high); // unusued
+
+    Exp *result32 = (*op)(a32, b32);
+    Exp *lane3 = ex_h_cast(a_low, REG_32);
+    Exp *result64 = translate_32HLto64(lane3, result32);
+    return translate_64HLto128(a_high, result64);
 }
 
 // Low-lane single-precision FP, as in the x86 SSE addss, for instance.
@@ -1140,6 +1438,24 @@ Exp *assemble4x32(Exp *e1, Exp *e2, Exp *e3, Exp *e4) {
     return new Vector(high, low);
 }
 
+Exp *translate_SetV128lo32(Exp *old128, Exp *new32) {
+    Exp *old_high, *old_low;
+    split_vector(old128, &old_high, &old_low);
+
+    Exp *mid_low = _ex_h_cast(old_low, REG_32);
+
+    Exp *new_low = translate_32HLto64(mid_low, new32);
+    return translate_64HLto128(old_high, new_low);
+}
+
+Exp *translate_SetV128lo64(Exp *old128, Exp *new64) {
+    Exp *old_high, *old_low;
+    split_vector(old128, &old_high, &old_low);
+    Exp::destroy(old_low);
+
+    return translate_64HLto128(old_high, new64);
+}
+
 // SIMD FP on 4 single-precision values at once, as in the x86 addps.
 Exp *translate_par32fp_128_binop(fbinop_type_t op, Exp *left, Exp *right) {
     Exp *left_high, *left_low;
@@ -1162,6 +1478,36 @@ Exp *translate_par32fp_128_binop(fbinop_type_t op, Exp *left, Exp *right) {
     Exp *result4 = new FBinOp(op, ROUND_NEAREST, left4, right4);
 
     return assemble4x32(result1, result2, result3, result4);
+}
+
+// SIMD FP comparison on 4 single-precision values at once producing 0
+// or -1 bitmasks, as in the x86 cmpps.
+Exp *translate_par32fp_128_compare(fbinop_type_t op, Exp *left, Exp *right) {
+    Exp *left_high, *left_low;
+    split_vector(left, &left_high, &left_low);
+    Exp *left1 = _ex_h_cast(left_high, REG_32);
+    Exp *left2 = ex_l_cast(left_high, REG_32);
+    Exp *left3 = _ex_h_cast(left_low, REG_32);
+    Exp *left4 = ex_l_cast(left_low, REG_32);
+
+    Exp *right_high, *right_low;
+    split_vector(right, &right_high, &right_low);
+    Exp *right1 = _ex_h_cast(right_high, REG_32);
+    Exp *right2 = ex_l_cast(right_high, REG_32);
+    Exp *right3 = _ex_h_cast(right_low, REG_32);
+    Exp *right4 = ex_l_cast(right_low, REG_32);
+
+    Exp *bool1 = new FBinOp(op, ROUND_NEAREST, left1, right1);
+    Exp *bool2 = new FBinOp(op, ROUND_NEAREST, left2, right2);
+    Exp *bool3 = new FBinOp(op, ROUND_NEAREST, left3, right3);
+    Exp *bool4 = new FBinOp(op, ROUND_NEAREST, left4, right4);
+
+    Exp *mask1 = _ex_s_cast(bool1, REG_32);
+    Exp *mask2 = _ex_s_cast(bool2, REG_32);
+    Exp *mask3 = _ex_s_cast(bool3, REG_32);
+    Exp *mask4 = _ex_s_cast(bool4, REG_32);
+
+    return assemble4x32(mask1, mask2, mask3, mask4);
 }
 
 // SIMD FP on 2 double-precision values at once, as in the x86 addpd.
@@ -1301,6 +1647,22 @@ Exp *translate_CmpGT32Sx4(Exp *a, Exp *b) {
     Exp *r_low = translate_CmpGT32Sx2(a_low, b_low);
 
     return translate_64HLto128(r_high, r_low);
+}
+
+Exp *avg_8u(Exp *a, Exp *b) {
+    Exp *a_wide = _ex_u_cast(a, REG_16);
+    Exp *b_wide = _ex_u_cast(b, REG_16);
+    Exp *one = ex_const(REG_16, 1);
+    Exp *sum = _ex_add(_ex_add(a_wide, b_wide), one);
+    return _ex_l_cast(_ex_shr(sum, 1), REG_8);
+}
+
+Exp *avg_16u(Exp *a, Exp *b) {
+    Exp *a_wide = _ex_u_cast(a, REG_32);
+    Exp *b_wide = _ex_u_cast(b, REG_32);
+    Exp *one = ex_const(REG_32, 1);
+    Exp *sum = _ex_add(_ex_add(a_wide, b_wide), one);
+    return _ex_l_cast(_ex_shr(sum, 1), REG_16);
 }
 
 Exp *assemble8x1(Exp *b7, Exp *b6, Exp *b5, Exp *b4,
@@ -1461,6 +1823,49 @@ Exp *translate_InterleaveHI8x16(Exp *a, Exp *b) {
     return interleave2_8x8(a_high, b_high);
 }
 
+Exp *translate_Perm8x8(Exp *a64, Exp *ctrl64, vector<Stmt *> *irout) {
+    Exp *a[8], *c[8], *r[8];
+    split8x8(a64,    &a[7], &a[6], &a[5], &a[4], &a[3], &a[2], &a[1], &a[0]);
+    split8x8(ctrl64, &c[7], &c[6], &c[5], &c[4], &c[3], &c[2], &c[1], &c[0]);
+    for (int i = 0; i < 8; i++) {
+	/* The elements of a[] will each be used 8 times, so make
+	   temps for them. Note that after this, there is already one
+	   occurrence of the new a[i] generated here, so all future
+	   uses should be clones. This is actually convenient in
+	   avoiding special cases later. */
+	Temp *temp = mk_temp(REG_8, irout);
+	irout->push_back(new Move(temp, a[i]));
+	a[i] = temp;
+    }
+    for (int i = 0; i < 8; i++) {
+	/* The elements of c[] will each be used 3 times, so make
+	   temps for them. */
+	Temp *temp = mk_temp(REG_8, irout);
+	irout->push_back(new Move(temp, c[i]));
+	c[i] = temp;
+    }
+    for (int i = 0; i < 8; i++) {
+	/* The structure of how we select each lane of the result is a
+	   tree of ITEs similiar to what {i386,x64}_translate_geti
+	   also do. It might be worthwile to refactor them. */
+	Exp *sel0_exp = ex_l_cast(c[i], REG_1);
+	Temp *sel0_temp = mk_temp(REG_1, irout);
+	irout->push_back(new Move(sel0_temp, sel0_exp));
+	Exp *sel1_exp = ex_get_bit(c[i], 1);
+	Temp *sel1_temp = mk_temp(REG_1, irout);
+	irout->push_back(new Move(sel1_temp, sel1_exp));
+	Exp *sel2_exp = ex_get_bit(c[i], 2);
+	Exp *choice01 = ex_ite(sel0_temp, a[1], a[0]);
+	Exp *choice23 = ex_ite(sel0_temp, a[3], a[2]);
+	Exp *choice45 = ex_ite(sel0_temp, a[5], a[4]);
+	Exp *choice67 = ex_ite(sel0_temp, a[7], a[6]);
+	Exp *choice03 = _ex_ite(ecl(sel1_temp), choice23, choice01);
+	Exp *choice47 = _ex_ite(ecl(sel1_temp), choice67, choice45);
+	r[i] = _ex_ite(sel2_exp, choice47, choice03);
+    }
+    return assemble8x8(r[7], r[6], r[5], r[4], r[3], r[2], r[1], r[0]);
+}
+
 Exp *translate_par4x8_binop(binop_type_t op, Exp *a, Exp *b)
 {
     Exp *a3, *a2, *a1, *a0;
@@ -1589,6 +1994,48 @@ Exp *translate_minmax16x8(binop_type_t op, bool is_max, Exp *a, Exp *b) {
     return translate_64HLto128(r_h, r_l);
 }
 
+Exp *translate_avgu8x8(Exp *a64, Exp *b64) {
+    Exp *a[8], *b[8];
+    split8x8(a64, &a[7], &a[6], &a[5], &a[4], &a[3], &a[2], &a[1], &a[0]);
+    split8x8(b64, &b[7], &b[6], &b[5], &b[4], &b[3], &b[2], &b[1], &b[0]);
+    Exp *r[8];
+    for (int i = 7; i >= 0; i--) {
+	r[i] = avg_8u(a[i], b[i]);
+    }
+    return assemble8x8(r[7], r[6], r[5], r[4], r[3], r[2], r[1], r[0]);
+}
+
+Exp *translate_avgu16x8(Exp *a, Exp *b) {
+    Exp *a_high, *a_low;
+    split_vector(a, &a_high, &a_low);
+    Exp *b_high, *b_low;
+    split_vector(b, &b_high, &b_low);
+    Exp *r_h = translate_avgu8x8(a_high, b_high);
+    Exp *r_l = translate_avgu8x8(a_low, b_low);
+    return translate_64HLto128(r_h, r_l);
+}
+
+Exp *translate_avgu4x16(Exp *a64, Exp *b64) {
+    Exp *a[4], *b[4];
+    split4x16(a64, &a[3], &a[2], &a[1], &a[0]);
+    split4x16(b64, &b[3], &b[2], &b[1], &b[0]);
+    Exp *r[8];
+    for (int i = 4; i >= 0; i--) {
+	r[i] = avg_16u(a[i], b[i]);
+    }
+    return assemble4x16(r[3], r[2], r[1], r[0]);
+}
+
+Exp *translate_avgu8x16(Exp *a, Exp *b) {
+    Exp *a_high, *a_low;
+    split_vector(a, &a_high, &a_low);
+    Exp *b_high, *b_low;
+    split_vector(b, &b_high, &b_low);
+    Exp *r_h = translate_avgu4x16(a_high, b_high);
+    Exp *r_l = translate_avgu4x16(a_low, b_low);
+    return translate_64HLto128(r_h, r_l);
+}
+
 Exp *translate_par2x32_binop(binop_type_t op, Exp *a, Exp *b) {
     Exp *a1, *a0;
     split2x32(a, &a1, &a0);
@@ -1636,6 +2083,38 @@ Exp *translate_vs4x32_shift(binop_type_t op, Exp *a, Exp *b) {
     Exp *r_h = translate_vs2x32_shift(op, a_high, b);
     Exp *r_l = translate_vs2x32_shift(op, a_low, ecl(b));
     return translate_64HLto128(r_h, r_l);
+}
+
+Exp *translate_vs4x16_shift(binop_type_t op, Exp *a, Exp *b) {
+    Exp *a3, *a2, *a1, *a0;
+    split4x16(a, &a3, &a2, &a1, &a0);
+    Exp *r3 = new BinOp(op, a3, b);
+    Exp *r2 = new BinOp(op, a2, ecl(b));
+    Exp *r1 = new BinOp(op, a1, ecl(b));
+    Exp *r0 = new BinOp(op, a0, ecl(b));
+    return assemble4x16(r3, r2, r1, r0);
+}
+
+Exp *translate_vs8x16_shift(binop_type_t op, Exp *a, Exp *b) {
+    Exp *a_high, *a_low;
+    split_vector(a, &a_high, &a_low);
+    Exp *r_h = translate_vs4x16_shift(op, a_high, b);
+    Exp *r_l = translate_vs4x16_shift(op, a_low, ecl(b));
+    return translate_64HLto128(r_h, r_l);
+}
+
+Exp *translate_vs8x8_shift(binop_type_t op, Exp *a, Exp *b) {
+    Exp *a7, *a6, *a5, *a4, *a3, *a2, *a1, *a0;
+    split8x8(a, &a7, &a6, &a5, &a4, &a3, &a2, &a1, &a0);
+    Exp *r7 = new BinOp(op, a7, b);
+    Exp *r6 = new BinOp(op, a6, ecl(b));
+    Exp *r5 = new BinOp(op, a5, ecl(b));
+    Exp *r4 = new BinOp(op, a4, ecl(b));
+    Exp *r3 = new BinOp(op, a3, ecl(b));
+    Exp *r2 = new BinOp(op, a2, ecl(b));
+    Exp *r1 = new BinOp(op, a1, ecl(b));
+    Exp *r0 = new BinOp(op, a0, ecl(b));
+    return assemble8x8(r7, r6, r5, r4, r3, r2, r1, r0);
 }
 
 Exp *translate_QNarrow16Sto8U(Exp *a) {
@@ -1849,6 +2328,19 @@ Exp *translate_simple_unop( IRExpr *expr, IRSB *irbb, vector<Stmt *> *irout )
         case Iop_ReinterpF64asI64:
 	    return arg; // We don't make any distinction here
 
+	/* Because we treat FP values as just their bits, we can
+	   implement absolute value just by masking off the sign
+	   bit. */
+        case Iop_AbsF32:
+	    return new BinOp(BITAND, arg, ex_const(0x7fffffff));
+        case Iop_AbsF64:
+	    return new BinOp(BITAND, arg, ex_const64(0x7fffffffffffffff));
+
+        case Iop_Sqrt32F0x4:
+	    return translate_low32fp_128_sqrt(arg, irout);
+        case Iop_Sqrt64F0x2:
+	    return translate_low64fp_128_sqrt(arg, irout);
+
 #if VEX_VERSION >= 2559
         case Iop_GetMSBs8x8:
 	    return translate_GetMSBs8x8(arg);
@@ -1887,9 +2379,6 @@ Exp *translate_unop( IRExpr *expr, IRSB *irbb, vector<Stmt *> *irout )
         case Iop_Ctz32:     return translate_Ctz32( expr, irbb, irout );
         case Iop_Clz64:     return translate_Clz64( expr, irbb, irout );
         case Iop_Ctz64:     return translate_Ctz64( expr, irbb, irout );
-
-        case Iop_AbsF64:
-            return new Unknown("Floating point op");
 
         default:    
 	    return new Unknown("Unrecognized unary op");
@@ -2007,10 +2496,14 @@ Exp *translate_binop( IRExpr *expr, IRSB *irbb, vector<Stmt *> *irout )
         case Iop_CmpLT32U: return new BinOp(LT, arg1, arg2);
         case Iop_CmpLE32U: return new BinOp(LE, arg1, arg2);
 
+        case Iop_8HLto16:           return assemble2x8(arg1, arg2);
         case Iop_16HLto32:          return translate_16HLto32(arg1, arg2);
         case Iop_32HLto64:          return translate_32HLto64(arg1, arg2);
         case Iop_64HLto128:         return translate_64HLto128(arg1, arg2);
         case Iop_64HLtoV128:        return translate_64HLto128(arg1, arg2);
+        case Iop_SetV128lo32:       return translate_SetV128lo32(arg1, arg2);
+        case Iop_SetV128lo64:       return translate_SetV128lo64(arg1, arg2);
+
         case Iop_MullU8:            return translate_MullU8(arg1, arg2);
         case Iop_MullS8:            return translate_MullS8(arg1, arg2);
         case Iop_MullU16:           return translate_MullU16(arg1, arg2);
@@ -2067,6 +2560,30 @@ Exp *translate_binop( IRExpr *expr, IRSB *irbb, vector<Stmt *> *irout )
 	    return translate_par64fp_128_binop(FTIMES, arg1, arg2);
         case Iop_Div64Fx2:
 	    return translate_par64fp_128_binop(FDIVIDE, arg1, arg2);
+
+        case Iop_CmpEQ32Fx4:
+	    return translate_par32fp_128_compare(FEQ, arg1, arg2);
+        case Iop_CmpLT32Fx4:
+	    return translate_par32fp_128_compare(FLT, arg1, arg2);
+        case Iop_CmpLE32Fx4:
+	    return translate_par32fp_128_compare(FLE, arg1, arg2);
+        case Iop_CmpGT32Fx4:
+	    return translate_par32fp_128_compare(FLT, arg2, arg1);
+        case Iop_CmpGE32Fx4:
+	    return translate_par32fp_128_compare(FLE, arg2, arg1);
+        case Iop_CmpUN32Fx4:
+	    {
+		Exp *arg1_nan =
+		    translate_par32fp_128_compare(FNEQ, arg1, ecl(arg1));
+		Exp *arg2_nan =
+		    translate_par32fp_128_compare(FNEQ, arg2, ecl(arg2));
+		return distribute_binop128(BITOR, arg1_nan, arg2_nan);
+	    }
+
+        case Iop_Max32F0x4:
+	    return translate_low32fp_128_op(arg1, arg2, &build_float_max);
+        case Iop_Min32F0x4:
+	    return translate_low32fp_128_op(arg1, arg2, &build_float_min);
 
 #if VEX_VERSION >= 2105
         case Iop_CmpF32:
@@ -2163,6 +2680,9 @@ Exp *translate_binop( IRExpr *expr, IRSB *irbb, vector<Stmt *> *irout )
 	case Iop_InterleaveHI8x16:
 	    return translate_InterleaveHI8x16(arg1, arg2);
 
+        case Iop_Perm8x8:
+	    return translate_Perm8x8(arg1, arg2, irout);
+
 #if VEX_VERSION >= 636
         case Iop_CmpEQ8x16:
 	    return translate_CmpEQ8x16(arg1, arg2);
@@ -2238,6 +2758,15 @@ Exp *translate_binop( IRExpr *expr, IRSB *irbb, vector<Stmt *> *irout )
         case Iop_Max8Sx16:
 	    return translate_minmax16x8(SLT, true, arg1, arg2);
 
+        case Iop_Avg8Ux8:
+	    return translate_avgu8x8(arg1, arg2);
+        case Iop_Avg16Ux4:
+	    return translate_avgu4x16(arg1, arg2);
+        case Iop_Avg8Ux16:
+	    return translate_avgu16x8(arg1, arg2);
+        case Iop_Avg16Ux8:
+	    return translate_avgu8x16(arg1, arg2);
+
         case Iop_Add32x2:
 	    return translate_par2x32_binop(PLUS, arg1, arg2);
         case Iop_Add32x4:
@@ -2272,10 +2801,23 @@ Exp *translate_binop( IRExpr *expr, IRSB *irbb, vector<Stmt *> *irout )
 	    return translate_vs4x32_shift(LSHIFT, arg1, arg2);
         case Iop_ShrN32x4:
 	    return translate_vs4x32_shift(RSHIFT, arg1, arg2);
-#if VEX_VERSION >= 2016
         case Iop_SarN32x4:
 	    return translate_vs4x32_shift(ARSHIFT, arg1, arg2);
-#endif
+
+        case Iop_ShlN16x8:
+	    return translate_vs8x16_shift(LSHIFT, arg1, arg2);
+        case Iop_ShrN16x8:
+	    return translate_vs8x16_shift(RSHIFT, arg1, arg2);
+        case Iop_SarN16x8:
+	    return translate_vs8x16_shift(ARSHIFT, arg1, arg2);
+
+        case Iop_ShlN8x8:
+	    return translate_vs8x8_shift(LSHIFT, arg1, arg2);
+        case Iop_ShrN8x8:
+	    return translate_vs8x8_shift(RSHIFT, arg1, arg2);
+        case Iop_SarN8x8:
+	    return translate_vs8x8_shift(ARSHIFT, arg1, arg2);
+
 
         case Iop_QNarrowBin16Sto8Ux16:
 	    return translate_QNarrowBin16Sto8Ux16(arg1, arg2);
@@ -2284,8 +2826,20 @@ Exp *translate_binop( IRExpr *expr, IRSB *irbb, vector<Stmt *> *irout )
 	    unk = "Floating point binop RoundF64toInt";
 	    break;
 
+        case Iop_SqrtF64:
+	    return translate_SqrtF64(arg1, arg2, irout);
+
         case Iop_2xm1F64:
 	    unk = "Floating point binop 2xm1F64";
+	    break;
+
+        case Iop_SinF64:
+	    // return ex_const64(0);
+	    unk = "Floating point binop SinF64";
+	    break;
+        case Iop_CosF64:
+	    // return ex_const64(0);
+	    unk = "Floating point binop CosF64";
 	    break;
 
         default:
@@ -2459,15 +3013,28 @@ Exp *translate_mux0x( IRExpr *expr, IRSB *irbb, vector<Stmt *> *irout )
     Exp *exp_t = translate_expr(expr_t, irbb, irout);
     Exp *exp_f = translate_expr(expr_f, irbb, irout);
 
-    if (cond_type == REG_1) {
-      // Condition is already a boolean: simple.
-      return emit_ite(irout, type, condE, exp_t, exp_f);
+    if (cond_type != REG_1) {
+	// Condition is wider. Add "!= 0" check. We used to add a "== 0"
+	// check and flip the two sides of the branch, but flipping makes
+	// things more confusing later.
+	condE = _ex_neq(condE, ex_const(cond_type, 0));
+    }
+
+    if (exp_f->exp_type == VECTOR) {
+	/* Translate an ITE on 128-bit values into two ITEs on the
+	   64-bit halves, with the same condition. */
+	Exp *cond_tmp = mk_temp_def(REG_1, condE, irout);
+	Exp *exp_t_high, *exp_t_low;
+	split_vector(exp_t, &exp_t_high, &exp_t_low);
+	Exp *exp_f_high, *exp_f_low;
+	split_vector(exp_f, &exp_f_high, &exp_f_low);
+	Exp *ite_high = emit_ite(irout, REG_64, ecl(cond_tmp),
+				 exp_t_high, exp_f_high);
+	Exp *ite_low = emit_ite(irout, REG_64, ecl(cond_tmp),
+				exp_t_low, exp_f_low);
+	return new Vector(ite_high, ite_low);
     } else {
-      // Condition is wider. Add "!= 0" check. We used to add a "== 0"
-      // check and flip the two sides of the branch, but flipping makes
-      // things more confusing later.
-      condE = _ex_neq(condE, ex_const(cond_type, 0));
-      return emit_ite(irout, type, condE, exp_t, exp_f);
+	return emit_ite(irout, type, condE, exp_t, exp_f);
     }
 }
 
@@ -3001,6 +3568,18 @@ Stmt *translate_jumpkind( IRSB *irbb, vector<Stmt *> *irout )
       break;
     case Ijk_Sys_int130:
       irout->push_back( new Special("int 0x82") );
+      irout->push_back(mk_label());
+      result = new Jmp(dest);
+      break;
+#endif
+#if VEX_VERSION >= 3165
+    case Ijk_Sys_int145:
+      irout->push_back( new Special("int 0x91") );
+      irout->push_back(mk_label());
+      result = new Jmp(dest);
+      break;
+    case Ijk_Sys_int210:
+      irout->push_back( new Special("int 0xd2") );
       irout->push_back(mk_label());
       result = new Jmp(dest);
       break;

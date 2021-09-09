@@ -69,8 +69,6 @@ type register_name =
 val reg_to_regstr : register_name -> string
 val regstr_to_reg : string -> register_name
 
-val comment_is_insn : string -> bool
-
 (* This virtual class is the outside interface to a fragment machine,
    hiding internal methods. It's also convenient that it hides the domain
    functors. *)

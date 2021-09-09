@@ -169,7 +169,7 @@ address_t get_last_segment_address(const char *filename,
 				   address_t addr)
 {
   bfd *abfd = initialize_bfd(filename);
-  unsigned int opb = bfd_octets_per_byte(abfd);
+  unsigned int opb = 1; /* bfd_octets_per_byte(abfd); */
 
   address_t ret = addr;
   for(asection *section = abfd->sections; 

@@ -2,3 +2,15 @@ fp-assoc
 fp-round
 fp-ten
 fpucw-test
+fabs-test
+fsin-test
+cmpps-test
+max-test
+fxam-test
+fxam-test32
+f80-conv
+f80-conv-32
+sqrt-alg
+sqrt-alg32
+sqrt-test
+sqrt-test32

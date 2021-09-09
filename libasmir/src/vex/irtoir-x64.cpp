@@ -997,19 +997,16 @@ Exp *x64_translate_geti( IRExpr *expr, IRSB *irbb, vector<Stmt *> *irout )
     IRExpr *ix = expr->Iex.GetI.ix;
     int bias = expr->Iex.GetI.bias;
     int elt_size;
-    reg_t elt_t;
 
     assert(type == descr->elemTy);
     if (descr->base == OFFB_FPREGS && descr->elemTy == Ity_F64 &&
         descr->nElems == 8) {
         /* x87 FP registers, in VEX's 64-bit simulation */
         elt_size = 8;
-        elt_t = REG_64;
     } else if (descr->base == OFFB_FPTAGS && descr->elemTy == Ity_I8 &&
         descr->nElems == 8) {
         /* In-use tags for x87 FP registers */
         elt_size = 1;
-        elt_t = REG_8;
     } else {
         return new Unknown("Unrecognized GetI region");
     }
@@ -1038,13 +1035,13 @@ Exp *x64_translate_geti( IRExpr *expr, IRSB *irbb, vector<Stmt *> *irout )
     Temp *sel1_temp = mk_temp(REG_1, irout);
     irout->push_back(new Move(sel1_temp, sel1_exp));
     Exp *sel2_exp = ex_get_bit(cond_temp, 2);
-    Exp *choice01 = emit_ite(irout, elt_t, ecl(sel0_temp), gets[1], gets[0]);
-    Exp *choice23 = emit_ite(irout, elt_t, ecl(sel0_temp), gets[3], gets[2]);
-    Exp *choice45 = emit_ite(irout, elt_t, ecl(sel0_temp), gets[5], gets[4]);
-    Exp *choice67 = emit_ite(irout, elt_t, ecl(sel0_temp), gets[7], gets[6]);
-    Exp *choice03 = emit_ite(irout, elt_t, ecl(sel1_temp), choice23, choice01);
-    Exp *choice47 = emit_ite(irout, elt_t, ecl(sel1_temp), choice67, choice45);
-    Exp *choice = emit_ite(irout, elt_t, sel2_exp, choice47, choice03);
+    Exp *choice01 = _ex_ite(ecl(sel0_temp), gets[1], gets[0]);
+    Exp *choice23 = _ex_ite(ecl(sel0_temp), gets[3], gets[2]);
+    Exp *choice45 = _ex_ite(ecl(sel0_temp), gets[5], gets[4]);
+    Exp *choice67 = _ex_ite(ecl(sel0_temp), gets[7], gets[6]);
+    Exp *choice03 = _ex_ite(ecl(sel1_temp), choice23, choice01);
+    Exp *choice47 = _ex_ite(ecl(sel1_temp), choice67, choice45);
+    Exp *choice = _ex_ite(sel2_exp, choice47, choice03);
 
     free(gets);
 
@@ -1252,10 +1249,14 @@ static Stmt *translate_put_reg_128(unsigned int offset, Exp *data, IRSB *irbb,
         result = mk_assign_tmp(lhs, new Unknown("rdtsc"), irbb, irout);
     } else if (func == "amd64g_dirtyhelper_loadF80le") {
 	IRTemp lhs = dirty->tmp;
-        assert(lhs != IRTemp_INVALID);
-        result = mk_assign_tmp(lhs, new Unknown("loadF80"), irbb, irout);
+	assert(lhs != IRTemp_INVALID);
+	Exp *addr = translate_expr(dirty->args[0], irbb, irout);
+	Exp *f64 = translate_loadF80_le(addr, 64, irbb, irout);
+	result = mk_assign_tmp(lhs, f64, irbb, irout);
     } else if (func == "amd64g_dirtyhelper_storeF80le") {
-        result = new ExpStmt(new Unknown("Unknown: storeF80"));
+	Exp *addr = translate_expr(dirty->args[0], irbb, irout);
+	Exp *f64 = translate_expr(dirty->args[1], irbb, irout);
+	result = translate_storeF80_le(f64, addr, 64, irbb, irout);
     } else if (func == "amd64g_dirtyhelper_XSAVE_COMPONENT_0") {
 	Exp *addr_exp = translate_expr(dirty->args[SKIP_BBPTR_ARG + 0],
 				       irbb, irout);
@@ -1745,7 +1746,6 @@ Stmt *x64_translate_puti( IRStmt *stmt, IRSB *irbb, vector<Stmt *> *irout )
     IRExpr *ix = stmt->Ist.PutI_details(ix);
     int bias = stmt->Ist.PutI_details(bias);
     int elt_size;
-    reg_t elt_t;
 
     Exp *data = translate_expr(stmt->Ist.PutI_details(data), irbb, irout);
 
@@ -1753,12 +1753,10 @@ Stmt *x64_translate_puti( IRStmt *stmt, IRSB *irbb, vector<Stmt *> *irout )
         descr->nElems == 8) {
         /* x87 FP registers, in VEX's 64-bit simulation */
         elt_size = 8;
-        elt_t = REG_64;
     } else if (descr->base == OFFB_FPTAGS && descr->elemTy == Ity_I8 &&
         descr->nElems == 8) {
         /* In-use tags for x87 FP registers */
         elt_size = 1;
-        elt_t = REG_8;
     } else {
         return new ExpStmt(new Unknown("Unrecognized PutI region"));
     }
@@ -1785,7 +1783,7 @@ Stmt *x64_translate_puti( IRStmt *stmt, IRSB *irbb, vector<Stmt *> *irout )
         }
         Exp *sel = _ex_eq(ecl(index_temp), ex_const(i));
         Exp *data_clone = last_stmt ? ecl(data) : data;
-        Exp *maybe_up = emit_ite(irout, elt_t, sel, data_clone, get);
+        Exp *maybe_up = _ex_ite(sel, data_clone, get);
         Stmt *put;
         if (elt_size == 1) {
             put = translate_put_reg_8(offset, maybe_up, irbb);
@@ -2176,6 +2174,12 @@ Exp *x64_translate_ccall( IRExpr *expr, IRSB *irbb, vector<Stmt *> *irout )
 			     ex_const64(3));
 	/* The high word is for emulation warnings: skip it */
 	result = rmode;
+    } else if ( func == "amd64g_calculate_FXAM" ) {
+	Exp *tag = translate_expr(expr->Iex.CCall.args[0], irbb, irout);
+	Exp *f64 = translate_expr(expr->Iex.CCall.args[1], irbb, irout);
+	Exp *res32 = translate_calculate_FXAM(_ex_l_cast(tag, REG_32),
+					      f64, irbb, irout);
+	result = _ex_u_cast(res32, REG_64);
     } else if ( func == "amd64g_calculate_sse_pmovmskb" ) {
 	Exp *arg_hi = translate_expr(expr->Iex.CCall.args[0], irbb, irout);
 	Exp *arg_lo = translate_expr(expr->Iex.CCall.args[1], irbb, irout);

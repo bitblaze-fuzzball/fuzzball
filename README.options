@@ -49,7 +49,7 @@ not for program counter but for path condition. "short", "word", and
   FuzzBALL defaulted to "x86" but this should now be supplied
   explicitly if it can't be auto-detected.
 
--branch-preference <eip>:<0 or 1>
+-branch-preference <eip>:<0 or 1 or probability>
 
   For a branch that occurs at the given instruction, prefer paths
   where the branch condition is false (0) or true (1). This preference
@@ -58,7 +58,10 @@ not for program counter but for path condition. "short", "word", and
   sense of the condition matches other FuzzBALL options like
   -trace-binary-paths, but because of the IR production process it may
   not always correspond to "not taken" and "taken" at the instruction
-  level.
+  level. The preference number can also be a floating point number
+  between 0 and 1, indicating that the branch condition should be true
+  with that probability. FuzzBALL's default strategy corresponds to a
+  probability of 0.5.
 
 -branch-preference-unchecked <eip>:<0 or 1>
   Prefer given direction without solving

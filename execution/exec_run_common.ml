@@ -124,9 +124,9 @@ let known_unknowns = (
     Hashtbl.replace h "Floating point triop" ();
     Hashtbl.replace h "floatcast" ();
     Hashtbl.replace h "CCall: x86g_create_fpucw" (); (* s/b handled now *)
-    Hashtbl.replace h "CCall: x86g_calculate_FXAM" ();
+    (* Hashtbl.replace h "CCall: x86g_calculate_FXAM" (); s/b handled now *)
     Hashtbl.replace h "CCall: x86g_check_fldcw" (); (* s/b handled now *)
-    Hashtbl.replace h "loadF80" ();
+    (* Hashtbl.replace h "loadF80" (); s/b handled now *)
     h)
 
 (* Disable "unknown" statments it seems safe to ignore *)
@@ -139,10 +139,10 @@ let noop_known_unknowns (dl, sl) =
 	    V.Move(lhs, V.Constant(V.Int(ty, 0L)))
 	| V.ExpStmt(V.Unknown("Unknown: PutI")) ->
 	    V.Comment("Unknown: PutI")
-	| V.ExpStmt(V.Unknown("Unknown: loadF80")) ->
-	    V.Comment("Unknown: loadF80")
-	| V.ExpStmt(V.Unknown("Unknown: storeF80")) ->
-	    V.Comment("Unknown: storeF80")
+(*	| V.ExpStmt(V.Unknown("Unknown: loadF80")) ->
+	    V.Comment("Unknown: loadF80") s/b handled now *)
+(*	| V.ExpStmt(V.Unknown("Unknown: storeF80")) ->
+	    V.Comment("Unknown: storeF80") s/b handled now *)
 	| s -> s) sl)
 
 let trans_cache = Hashtbl.create 100001
@@ -174,7 +174,7 @@ let print_insns start_eip (_, sl) insn_num endl =
     List.iter
       (function
 	 | V.Comment(s) ->
-	     if FM.comment_is_insn s then
+	     if Frag_simplify.comment_is_insn s then
 	       (print_eip();
 		Printf.printf "%s%c" s endl)
 	 | V.Label(lab) ->
