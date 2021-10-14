@@ -9,8 +9,7 @@
   @author Ivan Jager
  *)
 
-open Vine_util
-open ExtList
+module VU = Vine_util
 
 module D = Debug.Make(struct let name="Vine" and default=`Debug end)
 open D
@@ -169,14 +168,14 @@ type lvalue =
 
 (** An expression in the IR *)
 and exp =  | BinOp of binop_type * exp * exp
-	   | FBinOp of fbinop_type * round_mode * exp * exp
+	   | FBinOp of fbinop_type * VU.round_mode * exp * exp
 	   | UnOp of unop_type * exp
-	   | FUnOp of funop_type * round_mode * exp
+	   | FUnOp of funop_type * VU.round_mode * exp
 	   | Constant of  value
 	   | Lval of lvalue
 	   | Name of label (** The address of a label *)
 	   | Cast of cast_type * typ * exp (** Cast to a new type. *)
-	   | FCast of fcast_type * round_mode * typ * exp
+	   | FCast of fcast_type * VU.round_mode * typ * exp
 	   | Unknown of string (* FIXME: * register_type *)
 	   | Let of lvalue * exp * exp (** Let(lv,e1,e2) binds lv to e1 in
 					   the scope of e2 *)
@@ -394,11 +393,11 @@ let binop_to_string = function
 
 (** @return the string representation of a rounding mode *)
 let round_mode_to_string = function
-  | ROUND_NEAREST           -> "e"
-  | ROUND_NEAREST_AWAY_ZERO -> "a"
-  | ROUND_POSITIVE          -> "P"
-  | ROUND_NEGATIVE          -> "N"
-  | ROUND_ZERO              -> "Z"
+  | VU.ROUND_NEAREST           -> "e"
+  | VU.ROUND_NEAREST_AWAY_ZERO -> "a"
+  | VU.ROUND_POSITIVE          -> "P"
+  | VU.ROUND_NEGATIVE          -> "N"
+  | VU.ROUND_ZERO              -> "Z"
 
 (** @return the string representation of an FP binop *)
 let fbinop_to_string = function
@@ -510,7 +509,7 @@ and format_typ ft t =
 	| TAttr(t', a) ->
 	    format_typ ft t';
 	    pp "_attr_(";
-	    pp (print_separated_list id ", " a);
+	    pp (VU.print_separated_list VU.id ", " a);
 	    pp ")"
     );
     close_box ()
@@ -1486,7 +1485,7 @@ let exp_size e =
   let vis = object
     inherit nop_vine_visitor
     method visit_exp _ =
-      inc s;
+      incr s;
       DoChildren
   end in
     ignore(exp_accept vis e : exp);

@@ -93,6 +93,7 @@ let chroot s =
 
 type fd_extra_info = {
   mutable unix_fd : Unix.file_descr option;
+  mutable snap_unix_fd : Unix.file_descr option;
   mutable dirp_offset : int;
   mutable readdir_eof: int;
   mutable fname : string;
@@ -204,6 +205,7 @@ object(self)
   val fd_info =
     let a = Array.init 1024
               (fun _ -> { unix_fd = None;
+			  snap_unix_fd = None;
                           dirp_offset = 0;
                           readdir_eof = 0;
                           fname = "";
@@ -219,9 +221,14 @@ object(self)
       a
 
   method private fresh_fd () =
-    let rec loop i = match fd_info.(i).unix_fd with
-      | None -> i
-      | Some _ -> loop (i + 1)
+    let rec loop i =
+      if i >= Array.length fd_info then
+	raise (Unix.Unix_error(Unix.EMFILE, "Out of (virtual) file handles",
+			       ""))
+      else
+	match fd_info.(i).unix_fd with
+	  | None -> i
+	  | Some _ -> loop (i + 1)
     in loop 0
 
   method private get_fd vt_fd =
@@ -238,11 +245,9 @@ object(self)
     fd_info.(vt_fd).dirp_offset <- 0;
     fd_info.(vt_fd).readdir_eof <- 0;
     fd_info.(vt_fd).fname <- "";
-    fd_info.(vt_fd).snap_pos <- None;
     fd_info.(vt_fd).is_symbolic <- false;
     fd_info.(vt_fd).is_concolic <- false;
     fd_info.(vt_fd).num_read_symbolic <- 0;
-    fd_info.(vt_fd).snap_num_read <- 0
 
   method private new_fd vt_fd unix_fd =
     self#clear_fd vt_fd;
@@ -254,11 +259,9 @@ object(self)
     fd_info.(new_vt_fd).dirp_offset <- old.dirp_offset;
     fd_info.(new_vt_fd).readdir_eof <- old.readdir_eof;
     fd_info.(new_vt_fd).fname <- old.fname;
-    fd_info.(new_vt_fd).snap_pos <- old.snap_pos;
     fd_info.(new_vt_fd).is_symbolic <- old.is_symbolic;
     fd_info.(new_vt_fd).is_concolic <- old.is_concolic;
     fd_info.(new_vt_fd).num_read_symbolic <- old.num_read_symbolic;
-    fd_info.(new_vt_fd).snap_num_read <- old.snap_num_read;
 
   val netlink_sim_sockfd = ref 1025
   val netlink_sim_seq = ref 0L
@@ -843,12 +846,30 @@ object(self)
            info.num_read_symbolic <- info.snap_num_read)
       ) fd_info
 
+  method private save_fds =
+    Array.iteri
+      (fun fd info ->
+	 info.snap_unix_fd <- info.unix_fd
+      ) fd_info
+
+  method private reset_fds =
+    Array.iteri
+      (fun fd info ->
+	 (if info.snap_unix_fd <> info.unix_fd then
+	   match info.unix_fd with
+	     | Some oc_fd -> Unix.close oc_fd
+	     | None -> ());
+	 info.unix_fd <- info.snap_unix_fd
+      ) fd_info
+
   method make_snap = 
     self#save_sym_fd_positions;
+    self#save_fds;
     self#save_memory_state
 
   method reset = 
     self#reset_sym_fd_positions;
+    self#reset_fds;
     self#reset_memory_state
 
   method sys_access path mode =
@@ -1762,30 +1783,36 @@ object(self)
       | Unix.Unix_error(err, _, _) -> self#put_errno err
 
   method sys_pipe buf =
-    let (oc_fd1, oc_fd2) = Unix.pipe () in
-    let vt_fd1 = self#fresh_fd () in
-    self#new_fd vt_fd1 oc_fd1;
-    let vt_fd2 = self#fresh_fd () in
-    self#new_fd vt_fd2 oc_fd2;
-    store_word buf 0 (Int64.of_int vt_fd1);
-    store_word buf 4 (Int64.of_int vt_fd2);
-    put_return 0L (* success *)
+    try
+      let (oc_fd1, oc_fd2) = Unix.pipe () in
+      let vt_fd1 = self#fresh_fd () in
+	self#new_fd vt_fd1 oc_fd1;
+	let vt_fd2 = self#fresh_fd () in
+	  self#new_fd vt_fd2 oc_fd2;
+	  store_word buf 0 (Int64.of_int vt_fd1);
+	  store_word buf 4 (Int64.of_int vt_fd2);
+	  put_return 0L (* success *)
+    with
+      | Unix.Unix_error(err, _, _) -> self#put_errno err
 
   method sys_pipe2 buf flags =
-    let (oc_fd1, oc_fd2) = Unix.pipe () in
-    let vt_fd1 = self#fresh_fd () in
-    self#new_fd vt_fd1 oc_fd1;
-    let vt_fd2 = self#fresh_fd () in
-    self#new_fd vt_fd2 oc_fd2;
-    store_word buf 0 (Int64.of_int vt_fd1);
-    store_word buf 4 (Int64.of_int vt_fd2);
-    if (flags land 0o4000 <> 0) then (* O_NONBLOCK *)
-      (Unix.set_nonblock oc_fd1;
-      Unix.set_nonblock oc_fd2);
-    if (flags land 0o2000000 <> 0) then (* O_CLOEXEC *)
-      (Unix.set_close_on_exec oc_fd1;
-      Unix.set_close_on_exec oc_fd2);
-    put_return 0L (* success *)
+    try
+      let (oc_fd1, oc_fd2) = Unix.pipe () in
+      let vt_fd1 = self#fresh_fd () in
+	self#new_fd vt_fd1 oc_fd1;
+	let vt_fd2 = self#fresh_fd () in
+	  self#new_fd vt_fd2 oc_fd2;
+	  store_word buf 0 (Int64.of_int vt_fd1);
+	  store_word buf 4 (Int64.of_int vt_fd2);
+	  if (flags land 0o4000 <> 0) then (* O_NONBLOCK *)
+	    (Unix.set_nonblock oc_fd1;
+	     Unix.set_nonblock oc_fd2);
+	  if (flags land 0o2000000 <> 0) then (* O_CLOEXEC *)
+	    (Unix.set_close_on_exec oc_fd1;
+	     Unix.set_close_on_exec oc_fd2);
+	  put_return 0L (* success *)
+    with
+      | Unix.Unix_error(err, _, _) -> self#put_errno err
 
   method sys_poll fds_buf nfds timeout_ms =
     let get_pollfd buf idx =

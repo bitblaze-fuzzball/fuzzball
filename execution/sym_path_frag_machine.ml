@@ -397,9 +397,9 @@ struct
 	  in
 	    if is_another then
 	      let v2 = form_man#eval_expr_from_ce ce2 exp in
-		assert(v2 <> v);
 		if !opt_trace_ivc then
 		  Printf.printf "Not unique, another is 0x%Lx\n%!" v2;
+		assert(v2 <> v);
 		None
 	    else
 	      (if !opt_trace_ivc then
