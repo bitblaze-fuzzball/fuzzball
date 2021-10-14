@@ -415,6 +415,8 @@ sig
     method eval_label_exp : Vine.exp -> string
     method eval_ite : D.t -> D.t -> D.t -> Vine.typ -> (D.t * Vine.typ)
 
+    method update_preference : unit
+
     method jump : (string -> bool) -> string -> string
 
     method run_sl : (string -> bool) -> Vine.stmt list -> string

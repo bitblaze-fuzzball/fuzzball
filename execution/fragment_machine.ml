@@ -2778,6 +2778,7 @@ struct
     method random_byte = Random.int 256
     method finish_path = false
     method after_exploration = ()
+    method update_preference = ()
     method make_x86_segtables_symbolic = ()
     method store_word_special_region (r:register_name) (i1:int64) (i2:int64)
       : unit =

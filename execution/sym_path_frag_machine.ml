@@ -2,7 +2,6 @@
   Copyright (C) BitBlaze, 2009-2013, and copyright (C) 2010 Ensighta
   Security Inc.  All rights reserved.
 *)
-
 module V = Vine;;
 
 open Exec_utils;;
@@ -107,6 +106,22 @@ struct
     val mutable global_ce_limit = !opt_global_ce_cache_limit
     val mutable working_ce_cache = []
     val mutable new_path = false
+    val mutable visited_branch = Hashtbl.create 10
+    val mutable is_malloc = false
+    val mutable is_free = false
+    val mutable sym_branch_cnt = 0L
+
+    method turn_on_malloc =
+      is_malloc <- true;
+      is_free <- false
+
+    method turn_on_free =
+      is_malloc <- false;
+      is_free <- true
+
+    method turn_off =
+      is_malloc <- false;
+      is_free <- false
 
     method private print_global_cache =
       let print_entry ce_ref count_ref =
@@ -526,13 +541,20 @@ struct
 	    | (Some b, _) -> b
 	    | (None, Some b) -> b
 	    | (None, None) ->
-                try let pref = Hashtbl.find opt_branch_preference (self#get_eip) in
+                let eip = self#get_eip in
+                try let pref = 
+                  if is_malloc then Hashtbl.find opt_branch_preference_malloc eip 
+                  else if is_free then Hashtbl.find opt_branch_preference_free eip
+                  else Hashtbl.find opt_branch_preference eip
+                in
                   match pref with
                     | f when f >= 0.0 && f <= 1.0 ->
                       let choice = dt#random_float in      
                       let b = f > choice in
                       if !opt_trace_guidance then
 			Printf.printf "On %f > %f, using branch preference choice %b\n" f choice b;
+                      if !opt_learn_branch_preference then
+                        self#update_visited_branch eip b;
                       b
                     | _ -> failwith "Unsupported branch preference"
                 with
@@ -542,7 +564,7 @@ struct
                       | _ ->
 		        if !opt_trace_guidance then
 			  Printf.printf "No guidance, choosing randomly\n";
-		        dt#random_bit)
+                        dt#random_bit)
 
     method query_with_pc_choice cond verbose ident choice =
       let trans_func b =
@@ -660,9 +682,10 @@ struct
 	with
 	    NotConcrete _ ->
 	      let e = D.to_symbolic_1 v in
+              let eip = self#get_eip in
 		if !opt_trace_conditions then 
 		  Printf.printf "Symbolic branch condition (0x%08Lx) %s\n"
-		    (self#get_eip) (V.exp_to_string e);
+		    eip (V.exp_to_string e);
 		if !opt_concrete_path then
 		  self#eval_bool_exp_conc_path e ident
 		else 
@@ -679,6 +702,54 @@ struct
       let (b, _) = self#eval_bool_exp_tristate e None 0x4000 in
 	b
 
+    method private eval_path_list path_list =
+      let and_all = List.fold_left ( && ) true path_list in
+      let or_all = List.fold_left ( || ) false path_list in
+      if and_all then
+        Some true
+      else if not or_all then
+        Some false
+      else
+        None
+
+    method private update_visited_branch eip b =
+      if not (Hashtbl.mem visited_branch eip) then
+        Hashtbl.add visited_branch eip b
+      else 
+        Hashtbl.replace visited_branch eip b;
+    
+    method update_preference =
+      let update_prob eip b =
+        let old_pref = 
+          if is_malloc then Hashtbl.find opt_branch_preference_malloc eip 
+          else if is_free then Hashtbl.find opt_branch_preference_free eip
+          else Hashtbl.find opt_branch_preference eip
+        in
+        let new_pref = if b then
+          old_pref *. (1.0 +. !opt_learning_rate)
+        else
+          old_pref *. (1.0 -. !opt_learning_rate)
+        in
+        if is_malloc then 
+          Hashtbl.replace opt_branch_preference_malloc eip (if new_pref > 0.9 then 0.9 else if new_pref < 0.1 then 0.1 else new_pref) 
+        else if is_free then 
+          Hashtbl.replace opt_branch_preference_free eip (if new_pref > 0.9 then 0.9 else if new_pref < 0.1 then 0.1 else new_pref) 
+        else 
+          Hashtbl.replace opt_branch_preference eip old_pref 
+      in
+        if !opt_learn_branch_preference then
+          (Printf.printf "Visited Symbolic Branches:\n";
+          Hashtbl.iter (fun x y -> Printf.printf "0x%08Lx -> %b\n" x y) visited_branch;
+          Hashtbl.iter (fun x y -> update_prob x y) visited_branch;
+          Printf.printf "Branch Preferences:\n";
+          if is_malloc then 
+            Hashtbl.iter (fun x y -> Printf.printf "0x%08Lx -> %f\n" x y) opt_branch_preference_malloc
+          else if is_free then 
+            Hashtbl.iter (fun x y -> Printf.printf "0x%08Lx -> %f\n" x y) opt_branch_preference_free
+          else 
+            Hashtbl.iter (fun x y -> Printf.printf "0x%08Lx -> %f\n" x y) opt_branch_preference;
+          Hashtbl.reset visited_branch;)
+
     val mutable cjmp_heuristic = None
 
     method set_cjmp_heuristic f = cjmp_heuristic <- Some f
@@ -690,13 +761,17 @@ struct
 
     method private cjmp_choose targ1 targ2 =
       let eip = self#get_eip in
-        try let pref = Hashtbl.find opt_branch_preference eip in
+        try let pref = 
+          if is_malloc then Hashtbl.find opt_branch_preference_malloc eip 
+          else if is_free then Hashtbl.find opt_branch_preference_free eip
+          else Hashtbl.find opt_branch_preference eip
+        in
           match pref with
             | 0.0 -> Some false
             | 1.0 -> Some true
             | f when f > 0.0 && f < 1.0 ->
-	        None
-	    | _ -> failwith "Unsupported branch preference"
+                None
+            | _ -> failwith "Unsupported branch preference"
         with
           | Not_found -> self#call_cjmp_heuristic eip targ1 targ2 None 
 
@@ -722,23 +797,36 @@ struct
 	    if !opt_trace_conditions then 
 	      Printf.printf "Symbolic branch condition (0x%08Lx) %s\n"
 		(self#get_eip) (V.exp_to_string e);
+              if !opt_learn_branch_preference then
+                if is_malloc then
+                  if not (Hashtbl.mem opt_branch_preference_malloc eip) then
+                    (Printf.printf "Symbolic branch (0x%08Lx) for malloc added\n" eip;
+                    Hashtbl.add opt_branch_preference_malloc eip (0.5))
+                else if is_free then
+                  if not (Hashtbl.mem opt_branch_preference_free eip) then
+                    (Printf.printf "Symbolic branch (0x%08Lx) for free added\n" eip;
+                    Hashtbl.add opt_branch_preference_free eip (0.5));
 	    if !opt_concrete_path then
 	      let (b, _) = self#eval_bool_exp_conc_path e ident in
 		b
 	    else
 	      (dt#start_new_query_binary;
-	       let choice = if dt#have_choice then
-		 self#cjmp_choose targ1 targ2
-	       else
-		 None
-	       in
-	       let b = match choice with
-		 | None -> self#extend_pc_random e true ident
-		 | Some bit -> self#extend_pc_known e true ident bit
-	       in
-		 dt#count_query;
-		 ignore(self#call_cjmp_heuristic eip targ1 targ2 (Some b));
-		 b)
+              sym_branch_cnt <- Int64.succ (sym_branch_cnt);
+              if !opt_reset_threshold < sym_branch_cnt then
+                (Printf.printf "Branch Preference Reset\n";
+                Hashtbl.reset (if is_malloc then opt_branch_preference_malloc else if is_free then opt_branch_preference_free else opt_branch_preference));
+	      let choice = if dt#have_choice then
+		self#cjmp_choose targ1 targ2
+	      else
+	        None
+	      in
+	      let b = match choice with
+		| None -> self#extend_pc_random e true ident
+		| Some bit -> self#extend_pc_known e true ident bit
+	      in
+		dt#count_query;
+		ignore(self#call_cjmp_heuristic eip targ1 targ2 (Some b));
+		b)
 
     (* This code has bitrotten a bit, as shown by its lack of support
        for 64-bit addresses, since the implementation in
@@ -925,7 +1013,9 @@ struct
       infl_man#reset;
       dt#reset;
       working_ce_cache <- [];
-      new_path <- true
+      Hashtbl.reset visited_branch;
+      new_path <- true;
+      sym_branch_cnt <- 0L
 
     method after_exploration =
       infl_man#after_exploration;
