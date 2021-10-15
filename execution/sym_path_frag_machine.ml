@@ -397,9 +397,9 @@ struct
 	  in
 	    if is_another then
 	      let v2 = form_man#eval_expr_from_ce ce2 exp in
+		assert(v2 <> v);
 		if !opt_trace_ivc then
 		  Printf.printf "Not unique, another is 0x%Lx\n%!" v2;
-		assert(v2 <> v);
 		None
 	    else
 	      (if !opt_trace_ivc then
@@ -798,14 +798,10 @@ struct
 	      Printf.printf "Symbolic branch condition (0x%08Lx) %s\n"
 		(self#get_eip) (V.exp_to_string e);
               if !opt_learn_branch_preference then
-                if is_malloc then
-                  if not (Hashtbl.mem opt_branch_preference_malloc eip) then
-                    (Printf.printf "Symbolic branch (0x%08Lx) for malloc added\n" eip;
-                    Hashtbl.add opt_branch_preference_malloc eip (0.5))
-                else if is_free then
-                  if not (Hashtbl.mem opt_branch_preference_free eip) then
-                    (Printf.printf "Symbolic branch (0x%08Lx) for free added\n" eip;
-                    Hashtbl.add opt_branch_preference_free eip (0.5));
+                if not (Hashtbl.mem opt_branch_preference_malloc eip) then
+                  (Hashtbl.add opt_branch_preference_malloc eip (0.5);
+                  Hashtbl.add opt_branch_preference_free eip (0.5);
+                  Printf.printf "Symbolic branch (0x%08Lx) for malloc/free added\n" eip);
 	    if !opt_concrete_path then
 	      let (b, _) = self#eval_bool_exp_conc_path e ident in
 		b
@@ -813,8 +809,10 @@ struct
 	      (dt#start_new_query_binary;
               sym_branch_cnt <- Int64.succ (sym_branch_cnt);
               if !opt_reset_threshold < sym_branch_cnt then
-                (Printf.printf "Branch Preference Reset\n";
-                Hashtbl.reset (if is_malloc then opt_branch_preference_malloc else if is_free then opt_branch_preference_free else opt_branch_preference));
+                (Hashtbl.reset opt_branch_preference_malloc;
+                Hashtbl.reset opt_branch_preference_free;
+                sym_branch_cnt <- 0L;
+                Printf.printf "Branch preference threshold reached (%Ld)\n" !opt_reset_threshold);
 	      let choice = if dt#have_choice then
 		self#cjmp_choose targ1 targ2
 	      else
