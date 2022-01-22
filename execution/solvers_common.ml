@@ -146,7 +146,8 @@ let parse_btor_ce line =
    parameter "v" is used for that. *)
 let parse_z3_ce_line s v =
   match (s, v) with
-    | ("(model ", None) -> (No_CE_here, None)
+    | (("(model "|"("), None)
+      -> (No_CE_here, None)
     | (")", None) -> (End_of_CE, None)
     | (s, None) when String.length s > 14
 	&& String.sub s 0 14 = "  (define-fun " ->
