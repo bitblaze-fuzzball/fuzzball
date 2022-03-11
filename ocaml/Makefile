@@ -15,7 +15,7 @@ UTIL_SOURCES = \
 	vine_util.mli vine_util.ml
 
 # The definition of the Vine IR
-IR_SOURCES = vine.mli vine.ml
+IR_SOURCES = vine.mli vine.ml vine_compare.mli vine_compare.ml
 
 BASE_SOURCES = $(UTIL_SOURCES) $(IR_SOURCES)
 
