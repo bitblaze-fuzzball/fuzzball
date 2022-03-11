@@ -273,7 +273,7 @@ and scan_str = parse
 			   
 and cpptoken = parse
   | digit+ { if !track_line_numbers then (
-	       fileoffset := (Pervasives.int_of_string (get lexbuf));
+	       fileoffset := (int_of_string (get lexbuf));
 	     );
              cpptoken lexbuf
            }
