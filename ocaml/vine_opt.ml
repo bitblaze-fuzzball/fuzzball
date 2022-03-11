@@ -715,10 +715,10 @@ let constant_fold_more ctx e =
 		->
 		  let sort_fun a b =
 		    match (a,b) with
-			(Constant _, Constant _) -> compare a b
+			(Constant _, Constant _) -> Vine_compare.compare_exp a b
 		      | (Constant _, _) -> -1
 		      | (_, Constant _) -> 1
-		      | _ -> compare a b
+		      | _ -> Vine_compare.compare_exp a b
 		  in
 		  let l = flatten_binop bop e in
 		    (match List.stable_sort sort_fun l with

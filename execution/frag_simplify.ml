@@ -206,7 +206,7 @@ let rec simplify_fp e =
 	Printf.printf "Simplified %s -> %s\n"
 	  (V.exp_to_string e) (V.exp_to_string e');
       assert(n < 100);
-      if e = e' then
+      if (Vine_compare.compare_exp e e') = 0 then
 	e'
       else
 	loop e' (n + 1)
@@ -477,9 +477,10 @@ let rec count_uses_e var e =
     | V.Constant(_)
       -> 0
 and count_uses_lv var lv =
+  let eq_var v1 v2 = (Vine_compare.compare_var v1 v2) = 0 in
   match lv with
-    | V.Temp(v) -> (if v = var then 1 else 0)
-    | V.Mem(v, e, _) -> (if v = var then 1 else 0) + (count_uses_e var e)
+    | V.Temp(v) -> (if eq_var v var then 1 else 0)
+    | V.Mem(v, e, _) -> (if eq_var v var then 1 else 0) + (count_uses_e var e)
 
 let count_temp_uses (dl, sl) =
   let count_uses_sl var =
