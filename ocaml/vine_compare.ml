@@ -5,6 +5,24 @@ module VU = Vine_util
 so you might wish that the OCaml compiler or some other tool could
 write them for you. *)
 
+(* Same as Bool.compare in OCaml 4.08 and higher *)
+let compare_bool b1 b2 =
+  match (b1, b2) with
+    | (false, false) -> 0
+    | (false, true) -> -1
+    | (true, false) -> 1
+    | (true, true) -> 0
+
+(* Same as Int.compare in OCaml 4.08 and higher *)
+let int_compare i1 i2 =
+  if i1 < i2 then
+    -1
+  else if i1 > i2 then
+    1
+  else
+    0
+
+(* Same as List.compare in OCaml 4.12 and higher *)
 let rec compare_list c l1 l2 =
   match (l1, l2) with
   | (a1 :: r1, a2 :: r2) ->
@@ -15,6 +33,7 @@ let rec compare_list c l1 l2 =
   | ([], _) -> -1
   | (_, []) -> 1
 
+(* Same as Option.compare in OCaml 4.08 and higher *)
 let compare_option c o1 o2 =
   match (o1, o2) with
   | (Some x1, Some x2) -> c x1 x2
@@ -59,7 +78,7 @@ let rec compare_typ t1 t2 =
       (match compare_option compare_typ tyo1 tyo2 with
       | 0 ->
 	  (match compare_list compare_typ tyl1 tyl2 with
-	  | 0 -> Bool.compare b1 b2
+	  | 0 -> compare_bool b1 b2
 	  | _ as r -> r)
       | _ as r -> r)
   | (V.TFun(_), _) -> -1
@@ -76,7 +95,7 @@ let rec compare_typ t1 t2 =
       | _ as r -> r)
 
 let compare_var (n1, s1, ty1) (n2, s2, ty2) =
-  match Int.compare n1 n2 with
+  match int_compare n1 n2 with
   | 0 ->
       (match String.compare s1 s2 with
       | 0 -> compare_typ ty1 ty2
@@ -243,7 +262,7 @@ let compare_attribute at1 at2 =
   match (at1, at2) with
   | (V.Pos(s1, i1), V.Pos(s2, i2)) ->
       (match String.compare s1 s2 with
-      | 0 -> Int.compare i1 i2
+      | 0 -> int_compare i1 i2
       | _ as r -> r)
   | (V.Pos(_), _) -> -1
   | (_, V.Pos(_)) -> 1
