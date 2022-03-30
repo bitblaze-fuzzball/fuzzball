@@ -617,6 +617,20 @@ struct
 	       [0L; 1L; 2L; 4L; 8L; 16L; 32L; 64L; -1L; -2L; -4L; -8L]);
 	!bits
 
+    (* If we find ourselves concretizing the same expression more than
+       once along an execution path, reuse the concrete value directly
+       rather than going through the query process again. The queries
+       would end up being determined by the path condition already, so
+       this should lead to the same results just with less
+       processing.
+
+       The caching also avoids creating decision tree nodes, which is
+       a further efficiency benefit. But this means that it is
+       important for decision tree consistency that the cache operate
+       consistently on different execution paths. So this is a place
+       where we depend on the symbolic execution being consistent in
+       when it builds formulas that are syntactically the same.
+    *)
     val mutable concrete_cache = Hashtbl.create 101
 
     method private choose_conc_offset_cached ty e_orig ident =

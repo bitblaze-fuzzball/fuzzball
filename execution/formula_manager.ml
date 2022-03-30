@@ -812,22 +812,45 @@ struct
       in
 	loop e
 
+    (* Take various steps to simplify an expression that might include
+       temporaries. The simplification rules for expressions are
+       elsewhere in frag_simplify and vine_opt. The extra level of
+       complexity we perform here is temporarily expanding one level of t
+       variables to see if that enables any extra simplifications, before
+       recollapsing any temporaries that did not change. The goal of this
+       is to get tbe benefit of the simplification rules in more cases,
+       without the lower levels of simplification machinery needing to
+       know about the t variable mechanism.
+
+       The need for the second simplification after collapsing is
+       subtle; mostly there wouldn't be any simplifications that can
+       apply after re-collapsing that wouldn't have applied before
+       collapsing. But in addition to simplifications that make the
+       formulas strictly simpler, we also canonicalize them including
+       by sorting the arguments to commutative/associative
+       operations. Temporary variables would often sort differently
+       than the expression they represent, so without redoing the
+       simplification we could break the canonicalization and cause
+       other problems.
+    *)
     method private simplify_exp e =
       let e2 = self#expand_temps_1level e in
       let e3 = Frag_simplify.simplify_fp e2 in
       let e4 = self#collapse_temps e3 in
+      let e5 = Frag_simplify.simplify_fp e4 in
+      let e_final = e5 in
 	if !opt_sanity_checks && !opt_concolic_prob <> None then
 	  (let pre_val = self#eval_expr e and
-	       post_val = self#eval_expr e4
+	       post_val = self#eval_expr e_final
 	   in
 	     if pre_val <> post_val then
 	       let pre_str = V.exp_to_string e and
-		   post_str = V.exp_to_string e4
+		   post_str = V.exp_to_string e_final
 	       in
 		 Printf.printf "Uh oh, %s (%Ld) 'simplified' to %s (%Ld)\n"
 		   pre_str pre_val post_str post_val;
 		 failwith "Incorrect simplification occurred");
-	e4
+	e_final
 
     method private simplify (v:D.t) ty =
       D.inside_symbolic
