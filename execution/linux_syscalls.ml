@@ -1926,7 +1926,14 @@ object(self)
 
   method sys_readlink path out_buf buflen =
     try
-      let real = Unix.readlink (chroot path) in
+      let real = match (path, !opt_program_name) with
+	(* Calling readlink on /proc/self/exe is an idiom for getting
+	   the filename of the currently executing binary. Treat this as
+	   a special case to return the subject program's filename rather
+	   than FuzzBALL's. *)
+        | ("/proc/self/exe", Some fname) -> fname
+        | _ -> Unix.readlink (chroot path)
+      in
       let written = min buflen (String.length real) in
 	fm#store_str out_buf 0L (String.sub real 0 written);
 	put_return (Int64.of_int written);
