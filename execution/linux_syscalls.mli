@@ -147,6 +147,7 @@ object
   method sys_sigaltstack : int64 -> int64 -> unit
   method sys_rt_sigprocmask : int -> int64 -> int64 -> int -> unit
   method sys_nanosleep : int64 -> int64 -> unit
+  method sys_clock_nanosleep: int -> int -> int64 -> int64 -> unit
   method sys_socket : int -> int -> int -> unit
   method sys_stat : string -> int64 -> unit
   method sys_lstat : string -> int64 -> unit

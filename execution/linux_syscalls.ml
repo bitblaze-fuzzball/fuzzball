@@ -2681,6 +2681,14 @@ object(self)
       self#write_ftime_as_words 0.0 rem_addr 1e9;
       put_return 0L (* success *)
 
+  method sys_clock_nanosleep clock_id flags req_addr rem_addr =
+    assert(clock_id = 0); (* only CLOCK_REALTIME supported *)
+    assert(flags = 0); (* TIME_ABSTIME not yet supported *)
+    let req_time = self#read_words_as_ftime req_addr 1e9 in
+      ignore(Unix.select [] [] [] req_time);
+      self#write_ftime_as_words 0.0 rem_addr 1e9;
+      put_return 0L (* success *)
+
   method sys_socket dom_i typ_i prot_i =
     try
       let netlink_flag = ref false in
@@ -4769,7 +4777,16 @@ object(self)
 	 | (ARM, 265)    (* clock_nanosleep *)
 	 | (X64, 230)    (* clock_nanosleep *)
 	 | (X86, 267) -> (* clock_nanosleep *)
-	     uh "Unhandled Linux system call clock_nanosleep"
+	     let (arg1, arg2, arg3, arg4) = read_4_regs () in
+	     let clkid = Int64.to_int arg1 and
+		 flags = Int64.to_int arg2 and
+		 req_addr = arg3 and
+		 rem_addr = arg4
+	     in
+	       if !opt_trace_syscalls then
+		 Printf.printf "clock_nanosleep(%d, 0x%x, 0x%08Lx, 0x%08Lx)"
+		   clkid flags req_addr rem_addr;
+	       self#sys_clock_nanosleep clkid flags req_addr rem_addr
 	 | (ARM, 266)
 	 | (X86, 268) -> (* statfs64 *)
 	     let (arg1, arg2, arg3) = read_3_regs () in
