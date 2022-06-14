@@ -1695,7 +1695,13 @@ object(self)
 	   -1) ->
 	    let fresh = self#fresh_addr length in
 	      zero_region fresh (Int64.to_int length);
-	      fresh	    
+	      fresh
+	| (0L, _, 0x0 (* PROT_NONE *),
+	   0x20022 (* MAP_STACK|MAP_PRIVATE|MAP_ANONYMOUS *),
+	   -1) ->
+	    let fresh = self#fresh_addr length in
+	      zero_region fresh (Int64.to_int length);
+	      fresh
 	| (_, _, _,
 	   (0x832|0x32) (* MAP_DENYWRITE|PRIVATE|FIXED|ANONYMOUS *), -1) ->
 	    zero_region addr (Int64.to_int length);
