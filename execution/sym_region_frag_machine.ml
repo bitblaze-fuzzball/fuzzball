@@ -4,6 +4,7 @@
 *)
 
 module V = Vine;;
+module VU = Vine_util;;
 
 open Exec_domain;;
 open Exec_utils;;
@@ -1193,38 +1194,56 @@ struct
 	      let wd = compute_wd off_exp in
 		Hashtbl.replace bitwidth_offset_cache key wd;
 		wd
-		    
+
+    (* Compute the largest value that an expression can take,
+       according to the unsigned ordering of 64-bit values, using a
+       binary-search-style algorithm of validity queries. For generality,
+       this should give the right answer even when the maxval is very
+       large (including looking like negative when signed), thoguh that
+       isn't needed in the current application. In fact, the current
+       usage could be accelerated if a caller could specify only being
+       interested in a maxval with some upper bound. *)
     method private query_maxval e ty =
+      let urshift64 = Int64.shift_right_logical in
       let rec loop min max =
-	assert(min <= max);
+	assert((VU.int64_ucompare min max) <> 1);
 	if min = max then
 	  min
 	else
+	  let midpoint min max =
+	    (* This way of computing a midpoint for an interval is
+	       designed to avoid overflow. "sub" also works to compute
+	       the unsigned difference, and the unsigned difference can't
+	       overflow when min and max are properly ordered. *)
+	    Int64.add min (urshift64 (Int64.sub max min) 1)
+	  in
 	  let mid = 
-	    if min = 0L && max > 0x1000L then
-	      Int64.div max 256L (* reduce size faster to start *)
+	    if min = 0L && (VU.int64_ucompare max 0x1000L) = 1 then
+	      urshift64 max 8 (* reduce size faster to start *)
 	    else
-	      Int64.div (Int64.add min max) 2L
+	      midpoint min max
 	  in
 	  let cond_e = V.BinOp(V.LE, e, V.Constant(V.Int(ty, mid))) in
 	  let in_bounds = self#query_valid cond_e in
 	    if !opt_trace_tables then
-	      Printf.printf "(%s) <= %Ld: %s\n" (V.exp_to_string e) mid
+	      Printf.printf "(%s) <= %Lu: %s\n" (V.exp_to_string e) mid
 		(if in_bounds then "valid" else "invalid");
 	    if in_bounds then
 	      loop min mid
 	    else
 	      loop (Int64.succ mid) max
       in
-      let wd = min 63 (narrow_bitwidth form_man e) in
+      let wd = min 64 (narrow_bitwidth form_man e) in
       let max_limit = Int64.shift_right_logical (-1L) (64-wd)
       in
-      assert(max_limit <> -1L);
       let limit = loop 0L max_limit in
 	if !opt_trace_tables then
-	  Printf.printf "Largest value based on queries is %Ld\n" limit;
+	  Printf.printf "Largest value based on queries is %Lu\n" limit;
 	limit
 
+    (* TODO: support the entire bitwidth without overflow by changing
+       the midpoint and maybe other computations analogously to
+       decide_maxval. *)
     method private query_minval e ty =
       let rec loop min max =
 	assert(min <= max);
@@ -1283,6 +1302,7 @@ struct
 			(V.exp_to_string off_exp) dt#get_hist_str;
                     Hashtbl.replace minval_cache key limit;
 		    limit
+
     method private decide_maxval op_name off_exp cloc =
       let compute_maxval off_exp =
 	if !opt_table_limit = 0 then
