@@ -922,7 +922,7 @@ object(self)
 	cur_break
       else 
 	let size = Int64.sub addr cur_break in
-	  if size < 1073741824L then
+	  if size < 0x20000000L then
 	    (fm#zero_fill cur_break (Int64.to_int size);
 	     addr)
 	  else
@@ -1683,7 +1683,7 @@ object(self)
     let ret =
       match (addr, length, prot, flags, fd) with
 	| (_, length, _, _, _) when
-	    length < 0L || length > 1073741824L ->
+	    length < 0L || length > 0x20000000L ->
 	    raise (Unix.Unix_error(Unix.ENOMEM, "Too large in mmap", ""))
 	| (0L, _, 0x3 (* PROT_READ|PROT_WRITE *),
 	   (0x22|0x20022) (* MAP_PRIVATE|MAP_ANONYMOUS, opt.MAP_STACK *), -1) ->
