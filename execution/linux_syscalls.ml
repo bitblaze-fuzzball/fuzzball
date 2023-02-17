@@ -4301,7 +4301,7 @@ object(self)
 	 | (X64, 92) -> (* chown *)
 	     uh "Unhandled Linux/x64 system call chown (92)"
 	 | (ARM, 183) -> uh "Check whether ARM getcwd syscall matches x86"
-	 | (X64,  79) -> uh "Check whether x64 getcwd syscall matches x86"
+	 | (X64,  79)    (* getcwd *)
 	 | (X86, 183) -> (* getcwd *)
 	     let (ebx, ecx) = read_2_regs () in
 	     let buf = ebx and
