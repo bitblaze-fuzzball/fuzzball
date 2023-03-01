@@ -305,6 +305,8 @@ let rec constant_fold ctx e =
 	x
     | BinOp(TIMES, x, (Constant(Int(_, 1L)))) ->
 	x
+    | BinOp(TIMES, x, (Constant(Int(ty, 0L)))) ->
+	Constant(Int(ty, 0L))
     | BinOp((DIVIDE|SDIVIDE), x, (Constant(Int(_, 1L)))) ->
 	x
     | BinOp((MOD|SMOD), x, (Constant(Int(ty, 1L)))) ->
