@@ -45,8 +45,6 @@ sig
 
     method get_mem_bytes : Vine.var list
       
-    method reset_mem_axioms : unit
-
     method eval_expr : Vine.exp -> int64
 
     method eval_expr_from_ce : Query_engine.sat_assign -> Vine.exp -> int64
@@ -92,6 +90,8 @@ sig
 
     method one_cond_for_solving : Vine.exp -> unit Vine.VarHash.t ->
       Query_engine.qe_decl list * Vine.exp * Vine.var list
+
+    method reset : unit
 
     method measure_size : (int * int)
   end

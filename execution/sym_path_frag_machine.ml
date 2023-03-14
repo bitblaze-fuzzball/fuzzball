@@ -908,7 +908,7 @@ struct
 
     method reset () =
       fm#reset ();
-      form_man#reset_mem_axioms;
+      form_man#reset;
       path_cond <- [];
       V.VarHash.clear var_seen_hash;
       query_engine#reset;

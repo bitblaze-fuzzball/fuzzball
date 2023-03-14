@@ -416,7 +416,7 @@ struct
     method get_mem_bytes =
       V.VarHash.fold (fun v _ l -> v :: l) mem_byte_vars []
 
-    method reset_mem_axioms = 
+    method private reset_mem_axioms =
       V.VarHash.clear mem_byte_vars;
       V.VarHash.clear mem_axioms
 
@@ -495,6 +495,17 @@ struct
     val subexpr_to_temp_var_info = Hashtbl.create 1001
     val temp_var_num_to_subexpr = Hashtbl.create 1001
     val mutable temp_var_num = 0
+
+    (* This table represents a subset of the subexpressions that are
+       available for use on this execution path. We retain the values and
+       numbering if the temporary variables across exexcution paths, but
+       to make formula simplification deterministic across re-execution
+       of path prefixes, we avoid using temporaries until their
+       corresponding sub-expressions are first encountered on the current
+       path. This hashtable is parallel to subexpr_to_temp_var_info but
+       only maps an encoded subexpression to unit if it is availble to
+       use. *)
+    val subexpr_to_temp_var_enabled = Hashtbl.create 1001
 
     val temp_var_num_evaled = Hashtbl.create 1001
 
@@ -578,9 +589,9 @@ struct
 	    let v = try Query_engine.ce_lookup_nf ce s
 	    with Not_found ->
 	      0L 
-	      (* Printf.printf "Missing var %s in counterexample\n" s;
-	      List.iter (fun (s,v) -> Printf.printf "  %s = 0x%Lx\n" s v) ce;
-	      failwith "eval_var_from_ce failed on missing value" *)
+		(* Printf.printf "Missing var %s in counterexample\n" s;
+		   List.iter (fun (s,v) -> Printf.printf "  %s = 0x%Lx\n" s v) ce;
+		   failwith "eval_var_from_ce failed on missing value" *)
 	    in
 	      V.Constant(V.Int(ty, v))
 	| _ ->
@@ -681,6 +692,15 @@ struct
       in
 	loop (D.to_symbolic_32 d)
 
+    (* Depending on the program's behavior, the set of temporary
+       variables representing sub-expressions can grow without bound
+       during program execution, so along with the decision tree it can
+       be a limiting factor for memory usage scalability. We've
+       experimented in the past with using weak references so that
+       ununsed temporaries can be garbage collected, and regenerated if
+       the expressions re-appear. But we didn't reach the point of it
+       working stably, so it's currently disabled. Switch use_weak to
+       true if you want to experiment with it. *)
     val use_weak = false
     val temp_vars_weak = VarWeak.create 1001
     val temp_vars_unweak = Hashtbl.create 1001
@@ -697,10 +717,12 @@ struct
 	let (e_enc, _) = Hashtbl.find temp_var_num_to_subexpr n in
 	  Hashtbl.remove temp_var_num_to_subexpr n;
 	  Hashtbl.remove subexpr_to_temp_var_info e_enc;
+	  Hashtbl.remove subexpr_to_temp_var_enabled e_enc;
 	  Frag_marshal.free_var (n,s,t)
       in
       let (e_enc, used_vars) = encode_exp e in
 	try
+	  Hashtbl.replace subexpr_to_temp_var_enabled e_enc ();
 	  self#lookup_temp_var
 	    (Hashtbl.find subexpr_to_temp_var_info e_enc)
 	with Not_found ->
@@ -711,8 +733,7 @@ struct
 	    let (var_num,_,_) = var in
 	    let var_info = (temp_num, var_num, ty) in
 	      Gc.finalise cleanup_temp_var var;
- 	      Hashtbl.replace subexpr_to_temp_var_info e_enc
-		var_info;
+	      Hashtbl.replace subexpr_to_temp_var_info e_enc var_info;
  	      Hashtbl.replace temp_var_num_to_subexpr var_num
 		(e_enc, used_vars);
 	      if use_weak then
@@ -782,33 +803,42 @@ struct
 	replace e
 
     method private collapse_temps e =
+      let temp_avail_for e =
+	let (e_enc, _) = encode_exp e in
+	  if Hashtbl.mem subexpr_to_temp_var_enabled e_enc then
+	    (let v = self#lookup_temp_var
+	       (Hashtbl.find subexpr_to_temp_var_info e_enc) in
+	       Some (V.Lval(V.Temp(v))))
+	  else
+	    None
+      in
       let rec loop e =
-	let e' = match e with
-	  | V.BinOp(op, e1, e2) -> V.BinOp(op, (loop e1), (loop e2))
-	  | V.FBinOp(op, rm, e1, e2) -> V.FBinOp(op, rm, (loop e1), (loop e2))
-	  | V.UnOp(op, e1) -> V.UnOp(op, (loop e1))
-	  | V.FUnOp(op, rm, e1) -> V.FUnOp(op, rm, (loop e1))
-	  | V.Constant(_) -> e
-	  | V.Lval(V.Temp(_)) -> e
-	  | V.Lval(V.Mem(v, e1, ty)) -> V.Lval(V.Mem(v, (loop e1), ty))
-	  | V.Name(_) -> e
-	  | V.Cast(kind, ty, e1) -> V.Cast(kind, ty, (loop e1))
-	  | V.FCast(kind, rm, ty, e1) -> V.FCast(kind, rm, ty, (loop e1))
-	  | V.Unknown(_) -> e
-	  | V.Let(V.Temp(v), e1, e2) ->
-	      V.Let(V.Temp(v), (loop e1), (loop e2))
-	  | V.Let(V.Mem(v, e1, ty), e2, e3) ->
-	      V.Let(V.Mem(v, (loop e1), ty), (loop e2), (loop e3))
-	  | V.Ite(ce, te, fe) ->
-	      V.Ite((loop ce), (loop te), (loop fe))
-	in
-	let (e_enc, _) = encode_exp e' in
-	  try
-	    let v = self#lookup_temp_var
-	      (Hashtbl.find subexpr_to_temp_var_info e_enc)
-	    in
-	      V.Lval(V.Temp(v))
-	  with Not_found -> e'
+	match temp_avail_for e with
+	  | Some e2 -> e2
+	  | None ->
+	      let e' = match e with
+		| V.BinOp(op, e1, e2) -> V.BinOp(op, (loop e1), (loop e2))
+		| V.FBinOp(op, rm, e1, e2) -> V.FBinOp(op, rm, (loop e1),
+						       (loop e2))
+		| V.UnOp(op, e1) -> V.UnOp(op, (loop e1))
+		| V.FUnOp(op, rm, e1) -> V.FUnOp(op, rm, (loop e1))
+		| V.Constant(_) -> e
+		| V.Lval(V.Temp(_)) -> e
+		| V.Lval(V.Mem(v, e1, ty)) -> V.Lval(V.Mem(v, (loop e1), ty))
+		| V.Name(_) -> e
+		| V.Cast(kind, ty, e1) -> V.Cast(kind, ty, (loop e1))
+		| V.FCast(kind, rm, ty, e1) -> V.FCast(kind, rm, ty, (loop e1))
+		| V.Unknown(_) -> e
+		| V.Let(V.Temp(v), e1, e2) ->
+		    V.Let(V.Temp(v), (loop e1), (loop e2))
+		| V.Let(V.Mem(v, e1, ty), e2, e3) ->
+		    V.Let(V.Mem(v, (loop e1), ty), (loop e2), (loop e3))
+		| V.Ite(ce, te, fe) ->
+		    V.Ite((loop ce), (loop te), (loop fe))
+	      in
+		match temp_avail_for e' with
+		  | Some e3 -> e3
+		  | None -> e'
       in
 	loop e
 
@@ -839,6 +869,9 @@ struct
       let e4 = self#collapse_temps e3 in
       let e5 = Frag_simplify.simplify_fp e4 in
       let e_final = e5 in
+	(* if e <> e_final then
+	  Printf.printf "Simplifying %s -> %s\n"
+	    (V.exp_to_string e) (V.exp_to_string e_final); *)
 	if !opt_sanity_checks && !opt_concolic_prob <> None then
 	  (let pre_val = self#eval_expr e and
 	       post_val = self#eval_expr e_final
@@ -856,9 +889,6 @@ struct
       D.inside_symbolic
 	(fun e ->
 	   let e' = self#simplify_exp e in
-	     (* if e <> e' then
-		Printf.printf "Simplifying %s -> %s\n"
-		(V.exp_to_string e) (V.exp_to_string e'); *)
 	     (* We're supposed to simplify expressions as we build
 		them, so something is going wrong if they get way to big
 		at once: *)
@@ -1339,6 +1369,10 @@ struct
       let new_vars = List.map qe_decl_var new_qdecls in
 	List.iter saw_var new_vars;
 	(new_qdecls, cond_expr, new_vars)
+
+    method reset =
+      self#reset_mem_axioms;
+      Hashtbl.clear subexpr_to_temp_var_enabled
 
     method measure_size =
       let (input_ents, input_nodes) =
