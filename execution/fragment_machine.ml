@@ -2365,6 +2365,11 @@ struct
 		     in
 		       if !opt_trace_eval then
 			 trace_eval ()
+		       else if !opt_trace_flag_register_updates &&
+			 String.length s = 4 &&
+			 String.sub s 0 2 = "R_" &&
+			 String.sub s 3 1 = "F" then
+			   trace_eval ()
 		       else if !opt_trace_register_updates then
 			 if String.sub s 0 1 = "T" then
 			   () (* skip updates to temps *)

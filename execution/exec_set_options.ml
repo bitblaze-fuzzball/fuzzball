@@ -511,6 +511,8 @@ let cmdline_opts =
      " Print register contents");
     ("-trace-register-updates", Arg.Set(opt_trace_register_updates),
      " Print when registers are assigned to");
+    ("-trace-flag-register-updates", Arg.Set(opt_trace_flag_register_updates),
+     " Print when flag registers are assigned to");
     ("-trace-setup", Arg.Set(opt_trace_setup),
      " Print progress of program loading");
     ("-trace-stmts", Arg.Set(opt_trace_stmts),

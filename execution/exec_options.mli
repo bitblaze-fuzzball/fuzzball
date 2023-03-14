@@ -169,6 +169,7 @@ val opt_check_write_operands : bool ref
 val opt_fix_write_operands : bool ref
 val opt_trace_registers : bool ref
 val opt_trace_register_updates : bool ref
+val opt_trace_flag_register_updates : bool ref
 val opt_trace_segments : bool ref
 val opt_trace_taint : bool ref
 val opt_trace_unexpected : bool ref

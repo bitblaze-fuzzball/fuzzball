@@ -195,6 +195,7 @@ let opt_check_write_operands = ref false
 let opt_fix_write_operands = ref false
 let opt_trace_registers = ref false
 let opt_trace_register_updates = ref false
+let opt_trace_flag_register_updates = ref false
 let opt_trace_segments = ref false
 let opt_trace_taint = ref false
 let opt_trace_unexpected = ref false
