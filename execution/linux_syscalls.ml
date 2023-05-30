@@ -1765,7 +1765,8 @@ object(self)
 	(* XXX: canonicalize filename here? *)
 	if Hashtbl.mem symbolic_fnames path then
           (fd_info.(vt_fd).is_symbolic <- true;
-           fd_info.(vt_fd).is_concolic <- (Hashtbl.find symbolic_fnames path));
+           fd_info.(vt_fd).is_concolic <- (Hashtbl.find symbolic_fnames path);
+           self#add_symbolic_fd vt_fd fd_info.(vt_fd).is_concolic);
 	put_return (Int64.of_int vt_fd)
 
   method sys_open path flags mode =
