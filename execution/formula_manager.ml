@@ -177,6 +177,11 @@ struct
 
     val region_vars = Hashtbl.create 30
 
+    method declare_symbolic_region str =
+      if not (Hashtbl.mem region_vars str) then
+        Hashtbl.replace region_vars str
+          (V.newvar str (V.TMem(V.REG_32, V.Little)))
+
     method private fresh_symbolic_mem ty str addr =
       let v = try Hashtbl.find region_vars str with
 	  Not_found ->

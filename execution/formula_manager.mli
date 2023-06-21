@@ -24,6 +24,8 @@ sig
 
     method known_region_base : Vine.var -> bool
 
+    method declare_symbolic_region : string -> unit
+
     method fresh_symbolic_mem_1  : string -> int64 -> D.t
     method fresh_symbolic_mem_8  : string -> int64 -> D.t
     method fresh_symbolic_mem_16 : string -> int64 -> D.t
