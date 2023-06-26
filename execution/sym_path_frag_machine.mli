@@ -199,6 +199,7 @@ sig
     method store_str : int64 -> int64 -> string -> unit
     method make_symbolic_region : int64 -> int -> string -> int -> unit
     method make_fresh_symbolic_region : int64 -> int -> unit
+    method declare_symbolic_region : string -> unit
     method store_symbolic_cstr : int64 -> int -> bool -> bool -> unit
     method store_concolic_cstr : int64 -> string -> bool -> unit
     method store_concolic_name_str :

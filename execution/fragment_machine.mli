@@ -182,6 +182,7 @@ class virtual fragment_machine : object
 
   method virtual make_symbolic_region : int64 -> int -> string -> int -> unit
   method virtual make_fresh_symbolic_region : int64 -> int -> unit
+  method virtual declare_symbolic_region : string -> unit
 
   method virtual store_symbolic_cstr : int64 -> int -> bool -> bool -> unit
   method virtual store_concolic_cstr : int64 -> string -> bool -> unit
@@ -435,6 +436,7 @@ sig
 
     method make_symbolic_region : int64 -> int -> string -> int -> unit
     method make_fresh_symbolic_region : int64 -> int -> unit
+    method declare_symbolic_region : string -> unit
 
     method store_symbolic_cstr : int64 -> int -> bool -> bool -> unit
     method store_concolic_cstr : int64 -> string -> bool -> unit

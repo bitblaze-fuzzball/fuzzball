@@ -136,6 +136,10 @@ let apply_linux_cmdline_opts (fm : Fragment_machine.fragment_machine) =
 	lsh#add_symbolic_fd 0 false;
       if !opt_concolic_stdin then
 	lsh#add_symbolic_fd 0 true;
+      if (!opt_symbolic_files <> []) || (!opt_concolic_files <> []) || !opt_concolic_stdin
+         || !opt_symbolic_stdin_concrete_size then
+        (fm#declare_symbolic_region "file";
+         fm#declare_symbolic_region "stdin");
       Linux_syscalls.linux_set_up_arm_kuser_page fm;
       fm#add_special_handler (lsh :> Fragment_machine.special_handler)
   else if !opt_noop_syscalls then
