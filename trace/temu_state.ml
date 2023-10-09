@@ -20,13 +20,14 @@ let int64_of_uint32 x =
     0x00000000ffffffffL
 
 (* Similar to ExtString.String.fold_left *)
+(* instead of processing 'string', process 'bytes' *)
 let string_fold_left fn base s =
-  let len = String.length s in
+  let len = Bytes.length s in
   let rec loop i accum =
     if i = len then
       accum
     else
-      loop (i + 1) (fn accum s.[i])
+      loop (i + 1) (fn accum (Bytes.get s i))
     in
   loop 0 base
 
@@ -314,9 +315,9 @@ object(self)
     in
     let num_read = List.length pair_l in
     if (num_read = size) then (
-      let str = String.create num_read in
-      List.iteri (fun idx (_,c) -> str.[idx] <- c) pair_l;
-      str
+      let str = Bytes.create num_read in
+      List.iteri (fun idx (_,c) -> (Bytes.set str idx c)) pair_l;
+      (Bytes.to_string str)
     )
     else raise Incomplete_value
 
@@ -351,12 +352,12 @@ object(self)
         (* Find null character *)
         let found_null,str = 
           try (
-            let idx = String.index blk_str (Char.chr 0) in
-            true, String.sub blk_str 0 idx
+            let idx = Bytes.index blk_str (Char.chr 0) in
+            true, Bytes.sub blk_str 0 idx
           )
           with Not_found -> false,blk_str
         in
-        Buffer.add_string buf str;
+        Buffer.add_string buf (Bytes.to_string str);
         if found_null 
           then failwith "Done"
           else true
@@ -404,29 +405,29 @@ object(self)
           match num_null_found with
             (* NOTE: These corners cases for when the null terminator may be 
                 cut by a page end have not been tested *)
-            | 2 when ((size > 0) && (blk_str.[0] = null_char)) -> true,0,""
-            | 1 when ((size > 1) && (blk_str.[0] = null_char) && 
-                      (blk_str.[1] = null_char)) -> true,0,""
+            | 2 when ((size > 0) && (Bytes.get blk_str 0 = null_char)) -> true,0,""
+            | 1 when ((size > 1) && (Bytes.get blk_str 0 = null_char) && 
+                      (Bytes.get blk_str 1 = null_char)) -> true,0,""
             | _ -> (
                 try (
                   let idx = 
                     Str.search_forward (Str.regexp_string null_delimiter) 
-                      blk_str 0 
+                      (Bytes.to_string blk_str) 0 
                   in
-                  true, 0, String.sub blk_str 0 (idx+1)
+                  true, 0, String.sub (Bytes.to_string blk_str) 0 (idx+1)
                 )
                 with Not_found -> (
                   let count = 
-                    if (blk_str.[size - 1] = null_char)
+                    if (Bytes.get blk_str (size - 1) = null_char)
                       then 1
                       else 0
                   in
                   let count = 
-                    if (count > 0) && (blk_str.[size - 2] = null_char)
+                    if (count > 0) && (Bytes.get blk_str (size - 2) = null_char)
                       then 2
                       else count
                   in
-                  false, count, blk_str
+                  false, count, (Bytes.to_string blk_str)
                 )
               )
         in
@@ -630,7 +631,7 @@ object(self)
         (* Read data as string *)
         let blk_str = IO.nread _iochannel size in
         (* Output string *)
-        output_string oc blk_str;
+        output_string oc (Bytes.to_string blk_str);
         (cnt + front_gap_size + size), last_addr
       )
       else cnt,last_addr_in_range
@@ -775,7 +776,7 @@ object (self)
     assert (blocksize = data_size);
     IO.write_real_i32 ioc (Int64.to_int32 _first);
     IO.write_real_i32 ioc (Int64.to_int32 _last);
-    IO.nwrite ioc data;
+    IO.nwrite ioc (Bytes.of_string data);
     (* TODO: serialize taint *)
 end
 
@@ -830,7 +831,7 @@ object (self)
     assert (blocksize = data_size);
     IO.write_real_i32 ioc (Int64.to_int32 _first);
     IO.write_real_i32 ioc (Int64.to_int32 _last);
-    IO.nwrite ioc data;
+    IO.nwrite ioc (Bytes.of_string data);
     (* TODO: serialize taint *)
 
 end
@@ -875,7 +876,7 @@ object (self)
     assert (blocksize = data_size);
     IO.write_real_i32 io (Int64.to_int32 _first);
     IO.write_real_i32 io (Int64.to_int32 _last);
-    IO.nwrite io data
+    IO.nwrite io (Bytes.of_string data)
 
 end
 
@@ -917,7 +918,7 @@ object (self)
     assert (blocksize = data_size);
     IO.write_real_i32 io (Int64.to_int32 _first);
     IO.write_real_i32 io (Int64.to_int32 _last);
-    IO.nwrite io data
+    IO.nwrite io (Bytes.of_string data)
 
 end
 

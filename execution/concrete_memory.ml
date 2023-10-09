@@ -118,17 +118,18 @@ class concrete_string_memory = object(self)
     let page_str = match mem.(page) with
       | Some page_str -> page_str
       | None ->
-	  let new_page = String.make 4096 '\x00' in
+	  let new_page = Bytes.make 4096 '\x00' in
 	    mem.(page) <- Some new_page;
 	    new_page
     in
-      page_str.[idx] <- Char.chr b
+      Bytes.set page_str idx (Char.chr b)
+      (*page_str.[idx] <- Char.chr b*)
 
   method store_page addr newstr =
     assert(Int64.logand addr 0xfffL = 0L);
     assert(String.length newstr = 4096);
     let page = Int64.to_int (Int64.shift_right addr 12) in
-      mem.(page) <- Some newstr
+      mem.(page) <- Some (Bytes.of_string newstr)
 
   method load_byte addr =
     let page = Int64.to_int (Int64.shift_right addr 12) and
@@ -137,11 +138,11 @@ class concrete_string_memory = object(self)
     let page_str = match mem.(page) with
       | Some page_str -> page_str
       | None ->
-	  let new_page = String.make 4096 '\x00' in
+	  let new_page = Bytes.make 4096 '\x00' in
 	    mem.(page) <- Some new_page;
 	    new_page
     in
-      Char.code page_str.[idx]
+      Char.code (Bytes.get page_str idx)
 
   method maybe_load_byte addr = Some (self#load_byte addr)
 
@@ -277,7 +278,7 @@ class parallel_check_memory
     Printf.printf "-------- reset --------\n"
 end
 
-let all_present = String.make 512 '\xff'
+let all_present = Bytes.make 512 '\xff'
 
 class string_maybe_memory = object(self)
   inherit concrete_memory
@@ -306,8 +307,8 @@ class string_maybe_memory = object(self)
       match (mem.(page), bitmaps.(page)) with
 	| (Some page_str, Some bitmap) -> (page_str, bitmap, idx)
 	| (None, None) ->
-	    let new_page = String.make 4096 '\x00' and
-		new_bitmap = String.make 512 '\x00' in
+	    let new_page = Bytes.make 4096 '\x00' and
+		new_bitmap = Bytes.make 512 '\x00' in
 	      mem.(page) <- Some new_page;
 	      bitmaps.(page) <- Some new_bitmap;
 	      (new_page, new_bitmap, idx)
@@ -315,16 +316,18 @@ class string_maybe_memory = object(self)
 
   method store_byte addr b =
     let (page_str, bitmap, idx) = self#get_pages addr in
-      page_str.[idx] <- Char.chr b;
+      Bytes.set page_str idx (Char.chr b);
+      (*page_str.[idx] <- Char.chr b;*)
       let bit = 1 lsl (idx land 7) and
 	  bidx = idx lsr 3 in
-	bitmap.[bidx] <- (Char.chr ((Char.code bitmap.[bidx]) lor bit))
+        Bytes.set bitmap bidx (Char.chr ((Char.code (Bytes.get bitmap bidx)) lor bit))
+	(*bitmap.[bidx] <- (Char.chr ((Char.code bitmap.[bidx]) lor bit))*)
 	
   method store_page addr newstr =
     assert(Int64.logand addr 0xfffL = 0L);
     assert(String.length newstr = 4096);
     let page = Int64.to_int (Int64.shift_right addr 12) in
-      mem.(page) <- Some newstr;
+      mem.(page) <- Some (Bytes.of_string newstr);
       bitmaps.(page) <- Some all_present
 
   method maybe_load_byte addr =
@@ -333,14 +336,14 @@ class string_maybe_memory = object(self)
       | Some(page_str, bitmap, idx) ->
 	  let bit = 1 lsl (idx land 7) and
 	      bidx = idx lsr 3 in
-	    if (Char.code bitmap.[bidx]) land bit = 0 then
+	    if (Char.code (Bytes.get bitmap bidx)) land bit = 0 then
 	      None
 	    else
-	      Some (Char.code page_str.[idx])
+	      Some (Char.code (Bytes.get page_str idx))
 
   method load_byte addr =
     let (page_str, _, idx) = self#get_pages addr in
-      Char.code page_str.[idx]
+      Char.code (Bytes.get page_str idx)
 
   method clear () =
     Array.fill mem 0 0x100001 None;

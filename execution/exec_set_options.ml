@@ -231,10 +231,10 @@ let symbolic_state_cmdline_opts =
 let slurp_file fname =
   let ic = open_in fname in
   let len = in_channel_length ic in
-  let str = String.create len in
+  let str = Bytes.create len in
     really_input ic str 0 len;
     close_in ic;
-    str
+    (Bytes.to_string str)
 
 let concolic_state_cmdline_opts =
   [
@@ -511,8 +511,6 @@ let cmdline_opts =
      " Print register contents");
     ("-trace-register-updates", Arg.Set(opt_trace_register_updates),
      " Print when registers are assigned to");
-    ("-trace-flag-register-updates", Arg.Set(opt_trace_flag_register_updates),
-     " Print when flag registers are assigned to");
     ("-trace-setup", Arg.Set(opt_trace_setup),
      " Print progress of program loading");
     ("-trace-stmts", Arg.Set(opt_trace_stmts),
