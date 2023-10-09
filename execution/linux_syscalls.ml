@@ -188,9 +188,11 @@ class linux_special_handler (fm : fragment_machine) =
       assert(!i = limit)
   in
   let string_of_char_array ca =
-    let s = String.create (Array.length ca) in
+	(* possibly change the variable name 's'? *)
+    let s = Bytes.create (Array.length ca) in
       for i = 0 to (Array.length ca) - 1 do
-	s.[i] <- ca.(i)
+        Bytes.set s i ca.(i)
+	(*s.[i] <- ca.(i)*)
       done;
       s
   in
@@ -365,7 +367,7 @@ object(self)
     the_break := saved_the_break
 
   method string_create len =
-    try String.create len
+    try Bytes.to_string (Bytes.create len)
     with Invalid_argument(_ (* "String.create" *) )
 	-> raise (Unix.Unix_error(Unix.EFAULT, "String.create", ""))
 
@@ -404,8 +406,8 @@ object(self)
 		  | _ -> raise (Unix.Unix_error(Unix.EINTR, "", "")));
        (match !opt_disqualify_on_message with
 	  | Some msg ->
-	      if strstr str msg then
-		(if not (strstr str "\n") then print_char '\n';
+	      if strstr (Bytes.to_string str) msg then
+		(if not (strstr (Bytes.to_string str) "\n") then print_char '\n';
 		 raise DisqualifiedPath)
 	  | _ -> ())
      with
@@ -417,7 +419,7 @@ object(self)
       if (left <= 0) then 0 else
 	let chunk = if (left < 4096) then left else 4096 in
 	let str = self#string_create chunk in
-	let num_read = Unix.read fd str 0 chunk in
+	let num_read = Unix.read fd (Bytes.of_string str) 0 chunk in
 	  if num_read = 4096 && (Int64.logand a 0xfffL) = 0L then
 	    fm#store_page_conc a str
 	  else
@@ -1884,7 +1886,7 @@ object(self)
   method private read_throw fd buf count =
     let str = self#string_create count in
     let oc_fd = self#get_fd fd in
-    let num_read = Unix.read oc_fd str 0 count in
+    let num_read = Unix.read oc_fd (Bytes.of_string str) 0 count in
     self#fill_read_buf fd buf num_read str;
     put_return (Int64.of_int num_read)
 
@@ -1899,7 +1901,7 @@ object(self)
       let num_bytes = self#iovec_size iov cnt in
       let str = self#string_create num_bytes in
       let oc_fd = self#get_fd fd in
-      let num_read = Unix.read oc_fd str 0 num_bytes in
+      let num_read = Unix.read oc_fd (Bytes.of_string str) 0 num_bytes in
 	assert(not (fd_info.(fd).is_symbolic)); (* unimplemented *)
 	self#scatter_iovec iov cnt str;
 	put_return (Int64.of_int num_read)
@@ -1953,7 +1955,7 @@ object(self)
 		  (if (flags land 2) <> 0 then [Unix.MSG_PEEK] else [])
       in
       let num_read =
-	Unix.recv (self#get_fd sockfd) str 0 len flags
+	Unix.recv (self#get_fd sockfd) (Bytes.of_string str) 0 len flags
       in
         self#fill_read_buf sockfd buf num_read str;
 	put_return (Int64.of_int num_read) (* success *)
@@ -1968,14 +1970,14 @@ object(self)
       in
       let (num_read, sockaddr) =
         if addrbuf <> 0L then
-	  Unix.recvfrom (self#get_fd sockfd) str 0 len flags
+	  Unix.recvfrom (self#get_fd sockfd) (Bytes.of_string str) 0 len flags
         else
           (* The OCaml recvfrom doesn't deal correctly with not
              getting a source address: when the kernel doesn't write
              address information, it doesn't know what type of address
              to allocate. We can fall back on plain "recv" for this
              case if we know the caller doesn't care. *)
-          (Unix.recv (self#get_fd sockfd) str 0 len flags,
+          (Unix.recv (self#get_fd sockfd) (Bytes.of_string str) 0 len flags,
            Unix.ADDR_UNIX("unused"))
       in
         self#fill_read_buf sockfd buf num_read str;
@@ -2054,9 +2056,9 @@ object(self)
         in
         let (num_read, sockaddr) =
         if addrbuf <> 0L then
-	  Unix.recvfrom (self#get_fd sockfd) str 0 len flags
+	  Unix.recvfrom (self#get_fd sockfd) (Bytes.of_string str) 0 len flags
         else
-          (Unix.recv (self#get_fd sockfd) str 0 len flags,
+          (Unix.recv (self#get_fd sockfd) (Bytes.of_string str) 0 len flags,
            Unix.ADDR_UNIX("unused"))
         in
 	assert(not (fd_info.(sockfd).is_symbolic)); (* unimplemented *)
@@ -2080,9 +2082,9 @@ object(self)
       in
       let (num_read, sockaddr) =
         if addrbuf <> 0L then
-	  Unix.recvfrom (self#get_fd sockfd) str 0 len flags
+	  Unix.recvfrom (self#get_fd sockfd) (Bytes.of_string str) 0 len flags
         else
-          (Unix.recv (self#get_fd sockfd) str 0 len flags,
+          (Unix.recv (self#get_fd sockfd) (Bytes.of_string str) 0 len flags,
            Unix.ADDR_UNIX("unused"))
       in
 	assert(not (fd_info.(sockfd).is_symbolic)); (* unimplemented *)
@@ -2100,6 +2102,13 @@ object(self)
       put_return 0L (* success *)
     with
       | Unix.Unix_error(err, _, _) -> self#put_errno err
+
+  method sys_rseq rseq rseq_len flags sign =
+    ignore(rseq);
+    ignore(rseq_len);
+    assert(flags = 0);
+    ignore(sign);
+    put_return 0L (* success *)
 
   method sys_sched_getparam pid buf =
     ignore(pid); (* Pretend all processes are SCHED_OTHER *)
@@ -2239,12 +2248,12 @@ object(self)
     and addrbuf = load_word (lea msg 0 0 0) in
     let num_sent = 
       if addrbuf = 0L then
-        Unix.send (self#get_fd sockfd) str 0 (String.length str) flags
+        Unix.send (self#get_fd sockfd) str 0 (String.length (Bytes.to_string str)) flags
       else
         let sockaddr = self#read_sockaddr addrbuf
           (Int64.to_int (load_word (lea msg 0 0 4)))
         in
-        Unix.sendto (self#get_fd sockfd) str 0 (String.length str)
+        Unix.sendto (self#get_fd sockfd) str 0 (String.length (Bytes.to_string str))
           flags sockaddr
     in
     num_sent ;
@@ -2801,6 +2810,24 @@ object(self)
 	 else
 	   Unix.stat "/etc/group") (* pretend stdout is always redirected *) in
 	self#write_oc_statbuf_as_stat64 buf_addr oc_buf;
+	put_return 0L (* success *)
+    with
+      | Unix.Unix_error(err, _, _) -> self#put_errno err
+
+  method sys_newfstatat fd path_buf buf_addr flags = 
+    try
+      let oc_buf = 
+	(if flags land 0x1000 <> 0 then
+	   Unix.fstat (self#get_fd fd)
+ 	 else
+	   if flags land 0x100 <> 0 then
+	     Unix.lstat (chroot path_buf) 
+	   else 
+	     Unix.stat (chroot path_buf)) in
+	(match !opt_arch with
+	   | X86 -> self#write_oc_statbuf_as_stat buf_addr oc_buf
+	   | X64 -> self#write_oc_statbuf_as_x64_stat buf_addr oc_buf
+	   | ARM -> failwith "Unimplemented: ARM 32-bit fstat");
 	put_return 0L (* success *)
     with
       | Unix.Unix_error(err, _, _) -> self#put_errno err
@@ -5153,7 +5180,18 @@ object(self)
 	 | (X86, 300) -> (* fstatat64 *)
 	     uh "Unhandled Linux system call fstatat64"
 	 | (X64, 262) -> (* newfstatat *)
-	     uh "Unhandled Linux/x64 system call newfstatat (262)"
+	     (* uh "Unhandled Linux/x64 system call newfstatat (262)" *)
+	     let (arg1, arg2, arg3, arg4) = read_4_regs() in
+	     let fd = Int64.to_int arg1 and
+		 path_buf = arg2 and
+		 struct_buf = arg3 and
+		 flags = Int64.to_int arg4 in
+             let path = fm#read_cstr path_buf in
+	       if !opt_trace_syscalls then
+	         Printf.printf "newfstatat (%d, \"%s\", 0x%08Lx, %d)"
+			        fd path struct_buf flags;
+	       self#sys_newfstatat fd path struct_buf flags
+	     
 	 | (ARM, 328)    (* unlinkat *)
 	 | (X64, 263)    (* unlinkat *)
 	 | (X86, 301) -> (* unlinkat *)
@@ -5428,7 +5466,18 @@ object(self)
 	 | (X86, 376)    (* mlock2 *)
 	 | (X64, 325) -> (* mlock2 *)
 	     uh "Unhandled Linux system call mlock2"
-
+	 
+	 | (X64, 334) -> (* rseq *)
+	     let (arg1, arg2, arg3, arg4) = read_4_regs () in
+	     let rseq = arg1 and
+		 rseq_len = Int64.to_int arg2 and
+		 flags = Int64.to_int arg3 and
+		 sign = arg4 in
+	       if !opt_trace_syscalls then
+		 Printf.printf "rseq(0x%08Lx, %d, %d, 0x%08Lx)" 
+		 		rseq rseq_len flags sign;
+	       self#sys_rseq rseq rseq_len flags sign
+	
 	 | (ARM, 0xf0001) -> (* breakpoint *)
 	     uh "Unhandled Linux/ARM pseudo-syscall breakpoint (0xf0001)"
 	 | (ARM, 0xf0002) -> (* cacheflush *)

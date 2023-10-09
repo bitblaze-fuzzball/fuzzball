@@ -122,6 +122,7 @@ object
   method sys_recvfrom : int -> int64 -> int -> int -> int64 -> int64 -> unit
   method sys_shutdown: int -> int -> unit
   method sys_rename : string -> string -> unit
+  method sys_rseq : int64 -> int -> int -> int64 -> unit
   method sys_sched_getparam : int -> int64 -> unit
   method sys_sched_get_priority_max : int -> unit
   method sys_sched_get_priority_min : int -> unit
@@ -155,6 +156,7 @@ object
   method sys_stat64 : string -> int64 -> unit
   method sys_lstat64 : string -> int64 -> unit
   method sys_fstat64 : int -> int64 -> unit
+  method sys_newfstatat : int -> string -> int64 -> int -> unit
   method sys_statfs : string -> int64 -> unit
   method sys_fstatfs : int -> int64 -> unit
   method sys_statfs64 : string -> int -> int64 -> unit
