@@ -87,6 +87,10 @@ sig
     method eval_cjmp : Vine.exp -> int64 -> int64 -> bool
     method eval_bool_exp : Vine.exp -> bool
     method eval_ite : D.t -> D.t -> D.t -> Vine.typ -> (D.t * Vine.typ)
+    method update_preference : unit
+    method turn_on_malloc : unit
+    method turn_on_free : unit
+    method turn_off : unit
     method on_missing_random : unit
     method on_missing_zero : unit
     method add_extra_eip_hook :

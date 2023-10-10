@@ -331,6 +331,13 @@ let explore_cmdline_opts =
 	  Hashtbl.add opt_branch_preference_unchecked (Int64.of_string s1)
 	    (Int64.of_string s2)),
      "eip:(0|1) Prefer given direction without solving");
+    ("-learn-branch-preference", Arg.Set(opt_learn_branch_preference),
+     "bool Prefer learned branch direction for all symbolic branches");
+    ("-learning-rate", Arg.Set_float(opt_learning_rate),
+     " Set a learning rate for -learn-branch-preference option");
+    ("-reset-threshold", Arg.String
+       (fun s -> opt_reset_threshold := Int64.of_string s),
+     " Set a threshold (number of visited symbolic branches) for resetting all branch preferences");
     ("-always-prefer", Arg.Bool
        (fun b -> opt_always_prefer := Some b),
      "bool Prefer given branch direction instead of random");
