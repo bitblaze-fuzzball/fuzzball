@@ -2,9 +2,9 @@
 # Process this file with autoconf to produce a configure script.
 
 AC_PREREQ(2.59)
-AC_INIT(Vine/FuzzBALL, 20130511, bitblaze-users@googlegroups.com)
+AC_INIT([Vine/FuzzBALL], [20130511], [bitblaze-users@googlegroups.com])
 AC_CONFIG_SRCDIR([libasmir/src/vex/vexir.cpp])
-AC_CONFIG_HEADER([libasmir/config.h])
+AC_CONFIG_HEADERS([libasmir/config.h])
 
 # "foreign" means, for our purposes, "don't complain about missing NEWS, etc."
 AM_INIT_AUTOMAKE([-Wall subdir-objects foreign])
@@ -199,7 +199,9 @@ echo "LIBASMIR_LIBS=-lasmir -lvex -lbfd -liberty" >> libasmir/makefile.inc
 echo "OCAML_UNSAFE_STRING=${ocaml_unsafe_string}" >> libasmir/makefile.inc
 
 # Checks for header files.
-AC_HEADER_STDC
+# AC_HEADER_STDC is obsolete in modern autoconf, but we probably never
+# needed it because we have never supported pre-ANSI C.
+# AC_HEADER_STDC
 AC_CHECK_HEADERS([fcntl.h stdint.h stdlib.h string.h unistd.h])
 
 # Checks for typedefs, structures, and compiler characteristics.

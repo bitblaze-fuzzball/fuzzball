@@ -33,7 +33,7 @@ AC_DEFUN([AC_PROG_OCAML], [
     # allow the user to disable the use of optimized versions
     AC_ARG_ENABLE(
         [opt],
-        AC_HELP_STRING(
+        AS_HELP_STRING(
             [--enable-opt],
             [use optimized versions of ocaml tools (default)]
         ),
