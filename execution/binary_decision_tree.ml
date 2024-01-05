@@ -56,7 +56,7 @@ let mask_32bits_int =
   else
     Int64.to_int 0xffffffffL
 
-let dt_node_to_string n =
+let dt_node_to_string n : string =
   let parent_int = match n.parent with
     | None -> 0
     | Some pr -> pr in
@@ -83,25 +83,25 @@ let dt_node_to_string n =
     s
 
 let string_to_dt_node ident_arg s =
-  assert(String.length s = 61);
-  let parent_str = String.sub s 0 8 and
-      flags_char = s.[8] and
-      f_child_str = String.sub s 9 8 and
-      t_child_str = String.sub s 17 8 and
-      heur_min_str = String.sub s 25 8 and
-      heur_max_str = String.sub s 33 8 and
-      query_children_str = String.sub s 41 4 and
-      eip_loc_str = String.sub s 45 16
+  assert(Bytes.length s = 61);
+  let parent_str = Bytes.sub s 0 8 and
+      flags_char = Bytes.get s 8 and
+      f_child_str = Bytes.sub s 9 8 and
+      t_child_str = Bytes.sub s 17 8 and
+      heur_min_str = Bytes.sub s 25 8 and
+      heur_max_str = Bytes.sub s 33 8 and
+      query_children_str = Bytes.sub s 41 4 and
+      eip_loc_str = Bytes.sub s 45 16
   in
   let int_of_hex_string s = int_of_string ("0x" ^ s) in
-  let parent_int = int_of_hex_string parent_str and
+  let parent_int = int_of_hex_string (Bytes.to_string parent_str) and
       flags_int = (Char.code flags_char) - 0x40 and
-      f_child_int = int_of_hex_string f_child_str and
-      t_child_int = int_of_hex_string t_child_str and
-      heur_min_int = int_of_hex_string heur_min_str and
-      heur_max_int = int_of_hex_string heur_max_str and
-      query_children_int = int_of_hex_string query_children_str and
-      eip_loc_i64 = Int64.of_string ("0x" ^ eip_loc_str)
+      f_child_int = int_of_hex_string (Bytes.to_string f_child_str) and
+      t_child_int = int_of_hex_string (Bytes.to_string t_child_str) and
+      heur_min_int = int_of_hex_string (Bytes.to_string heur_min_str) and
+      heur_max_int = int_of_hex_string (Bytes.to_string heur_max_str) and
+      query_children_int = int_of_hex_string (Bytes.to_string query_children_str) and
+      eip_loc_i64 = Int64.of_string ("0x" ^ (Bytes.to_string eip_loc_str))
   in
   let parent_o = match parent_int with
     | 0 -> None
@@ -154,11 +154,11 @@ let ident_to_node i =
   if !opt_decision_tree_use_file then
     ((let off = Unix.lseek (nodes_fd ()) (54 * (i-1)) Unix.SEEK_SET in
 	assert(off = 54 * (i-1)));
-     let buf = String.create 54 in
+     let buf = Bytes.create 54 in
      let len = Unix.read (nodes_fd ()) buf 0 54 in
        assert(len = 54);
-       assert(String.sub buf 45 1 = "\n");
-       string_to_dt_node i (String.sub buf 0 53))
+       assert(Bytes.sub buf 45 1 = (Bytes.of_string "\n"));
+       string_to_dt_node i (Bytes.sub buf 0 53))
   else
     let i3 = i land 1023 and
 	i2 = (i asr 10) land 1023 and
@@ -226,7 +226,7 @@ let update_dt_node n =
     let i = n.ident in 
       (let off = Unix.lseek (nodes_fd ()) (54 * (i-1)) Unix.SEEK_SET in
 	 assert(off = 54 * (i-1)));
-      let len = Unix.write (nodes_fd ()) (dt_node_to_string n ^ "\n") 0 54 in
+      let len = Unix.write (nodes_fd ()) (Bytes.of_string (dt_node_to_string n ^ "\n")) 0 54 in
 	assert(len = 54);
   else
     let i3 = n.ident land 1023 and
@@ -237,7 +237,7 @@ let update_dt_node n =
 	| Some t2 ->
 	    (match t2.(i2) with
 	       | Some t3 ->
-		   t3.(i3) <- dt_node_to_string n
+		   t3.(i3) <- Bytes.of_string (dt_node_to_string n)
 	      | _ -> failwith "Node sub-table missing (t2)")
 	| None -> failwith "Node sub-table missing (t1)"
 	  
@@ -259,7 +259,7 @@ let new_dt_node the_parent =
 	 | Some t -> t
 	 | None ->
 	     let t = Array.init 1024 (fun _ -> "") in
-	       t2.(i2) <- Some t; t
+	       t2.(i2) <- Some (Array.map Bytes.of_string t); (Array.map Bytes.of_string t)
        in
 	 ignore(i3);
 	 ignore(t3));

@@ -58,7 +58,7 @@ let read_ui32 i =
 let read_elf_header ic =
   let i = IO.input_channel ic in
   let ident = IO.really_nread i 16 in
-    match ident with
+    match (Bytes.to_string ident) with
       | ("\x7fELF\001\001\001\000\000\000\000\000\000\000\000\000"|
 	 "\x7fELF\001\001\001\003\000\000\000\000\000\000\000\000") ->
 	  (* 32-bit *)
@@ -184,13 +184,13 @@ let load_segment fm ic phr virt_off is_main_prog =
       let page = IO.really_nread i 4096 and
 	  va = (Int64.add vbase
 		  (Int64.mul (Int64.of_int page_num) 4096L)) in
-	store_page fm va page
+	store_page fm va (Bytes.to_string page)
     done;
     (if partial <> 0L then
        let page = IO.really_nread i (Int64.to_int partial) and
 	   va = (Int64.add vbase
 		   (Int64.sub phr.filesz partial)) in
-	 store_page fm va page);
+	 store_page fm va (Bytes.to_string page));
     if phr.memsz > phr.filesz && type_str = "data" then
       (* E.g., a BSS region. Zero fill to avoid uninit-value errors. *)
       (if !opt_trace_setup then
@@ -240,7 +240,7 @@ let load_partial_segment fm ic phr vbase size =
     assert((Int64.add file_base size) <= phr.filesz);
     seek_in ic (Int64.to_int (Int64.add phr.offset file_base));
     let data = IO.really_nread i (Int64.to_int size) in
-      store_page fm vbase data;
+      store_page fm vbase (Bytes.to_string data);
       fm#watchpoint
 
 let load_ldso fm dso vaddr =
@@ -487,7 +487,7 @@ let load_dynamic_program (fm : fragment_machine) fname load_base
 	 else if phr.ph_type = 3L then (* PT_INTERP *)
 	   (seek_in ic (Int64.to_int phr.offset);
 	    let interp = IO.really_nread i ((Int64.to_int phr.filesz) - 1) in
-	      entry_point := load_ldso fm interp ldso_base;
+	      entry_point := load_ldso fm (Bytes.to_string interp) ldso_base;
 	      load_segment fm ic phr extra_vaddr true)
 	 else if phr.memsz <> 0L then
 	   load_segment fm ic phr extra_vaddr true;
@@ -532,7 +532,7 @@ let read_core_note fm ic =
   let descsz = IO.read_i32 i in
   let ntype = read_ui32 i in
   let namez = IO.really_nread i ((namesz + 3) land (lnot 3)) in
-  let name = String.sub namez 0 (namesz - 1) in
+  let name = String.sub (Bytes.to_string namez) 0 (namesz - 1) in
   let endpos = pos_in ic + ((descsz + 3) land (lnot 3)) in
   let type_str = match ntype with
     |  1L -> "NT_PRSTATUS"

@@ -82,8 +82,9 @@ struct
 	     match self#match_input_var var_s with
 	       | Some n -> 
 		   assert(n < !max_input_string_length);
-		   str.[n] <-
-		     char_of_int_unbounded (Int64.to_int value)
+                   Bytes.set (Bytes.of_string str) n (char_of_int_unbounded (Int64.to_int value))
+		   (*str.[n] <-
+		     char_of_int_unbounded (Int64.to_int value)*)
 	       | None -> ());
 	let str' = ref str in
 	  (try 
@@ -908,6 +909,7 @@ struct
 
     method reset () =
       fm#reset ();
+      (* form_man#reset_mem_axioms; *)
       form_man#reset;
       path_cond <- [];
       V.VarHash.clear var_seen_hash;

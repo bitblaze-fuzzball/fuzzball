@@ -24,7 +24,7 @@ let load_mem_state (fm : Fragment_machine.fragment_machine) fname =
 	 assert(Int64.sub blk#last blk#first = 0xfffL);
 	 LargeFile.seek_in ic blk#file_pos;
 	 let page = IO.really_nread i 4096 in
-	   fm#store_page_conc blk#first page)
+	   fm#store_page_conc blk#first (Bytes.to_string page))
       si#blocks;
     fm#load_x86_user_regs si#regs;
     let eip = Int64.of_int32 si#regs.Temu_state.eip in
