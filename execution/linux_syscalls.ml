@@ -5322,21 +5322,23 @@ object(self)
 	 | (X64, 298)    (* perf_event_open *)
 	 | (X86, 336) -> (* perf_event_open *)
 	     uh "Unhandled Linux system call perf_event_open"
-	 | (ARM, 365) ->
-	     uh "No 365 syscall in Linux/ARM (E)ABI"
 	 | (ARM, 366) -> (* accept4 *)
 	     uh "Unhandled Linux/ARM system call accept4"
 	 | (X64, 288) -> (* accept4 *)
 	     uh "Unhandled Linux/x64 system call accept4 (288)"
+	 | (ARM, 365)    (* recvmmsg *)
 	 | (X64, 299)    (* recvmmsg *)
 	 | (X86, 337) -> (* recvmmsg *)
 	     uh "Unhandled Linux system call recvmmsg"
+	 | (ARM, 367)    (* fanotify_init *)
 	 | (X64, 300)    (* fanotify_init *)
 	 | (X86, 338) -> (* fanotify_init *)
 	     uh "Unhandled Linux system call fanotify_init"
+	 | (ARM, 368)    (* fanotify_mark *)
 	 | (X64, 301)    (* fanotify_mark *)
 	 | (X86, 339) -> (* fanotify_mark *)
 	     uh "Unhandled Linux system call fanotify_mark"
+	 | (ARM, 369)    (* prlimit64 *)
 	 | (X64, 302)    (* prlimit64 *)
 	 | (X86, 340) -> (* prlimit64 *)
              let (arg1, arg2, arg3, arg4) = read_4_regs () in
@@ -5349,18 +5351,23 @@ object(self)
                Printf.printf "prlimit64(%d, %d, 0x%08Lx, 0x%08Lx)"
                  pid rsrc new_limit_buf old_limit_buf;
              self#sys_prlimit64 pid rsrc new_limit_buf old_limit_buf
+	 | (ARM, 370)    (* name_to_handle_at *)
 	 | (X64, 303)    (* name_to_handle_at *)
 	 | (X86, 341) -> (* name_to_handle_at *)
 	     uh "Unhandled Linux system call name_to_handle_at"
+	 | (ARM, 371)    (* open_by_handle_at *)
 	 | (X64, 304)    (* open_by_handle_at *)
 	 | (X86, 342) -> (* open_by_handle_at *)
 	     uh "Unhandled Linux system call open_by_handle_at"
+	 | (ARM, 372)    (* clock_adjtime *)
 	 | (X64, 305)    (* clock_adjtime *)
 	 | (X86, 343) -> (* clock_adjtime *)
 	     uh "Unhandled Linux system call clock_adjtime"
+	 | (ARM, 373)    (* syncfs *)
 	 | (X64, 306)    (* syncfs *)
 	 | (X86, 344) -> (* syncfs *)
 	     uh "Unhandled Linux system call syncfs"
+	 | (ARM, 374) -> uh "Check whether ARM sendmmsg syscall matches x86"
 	 | (X64, 307) -> uh "Check whether x64 sendmmsg syscall matches x86"
 	 | (X86, 345) -> (* sendmmsg *)
              let (ebx, ecx, edx, esi) = read_4_regs () in
@@ -5373,33 +5380,43 @@ object(self)
 		 Printf.printf "sendmmsg(%d, 0x%08Lx, %d, %d)"
 		   sockfd msg vlen flags;
                self#sys_sendmmsg sockfd msg vlen flags
+	 | (ARM, 375)    (* setns *)
 	 | (X86, 346)    (* setns *)
 	 | (X64, 308) -> (* setns *)
 	     uh "Unhandled Linux system call setns"
+	 | (ARM, 376)    (* process_vm_readv *)
 	 | (X86, 347)    (* process_vm_readv *)
 	 | (X64, 310) -> (* process_vm_readv *)
 	     uh "Unhandled Linux system call process_vm_readv"
+	 | (ARM, 377)    (* process_vm_writev *)
 	 | (X86, 348)    (* process_vm_writev *)
 	 | (X64, 311) -> (* process_vm_writev *)
 	     uh "Unhandled Linux system call process_vm_writev"
+	 | (ARM, 378)    (* kcmp *)
 	 | (X86, 349)    (* kcmp *)
 	 | (X64, 312) -> (* kcmp *)
 	     uh "Unhandled Linux system call kcmp"
+	 | (ARM, 379)    (* finit_module *)
 	 | (X86, 350)    (* finit_module *)
 	 | (X64, 313) -> (* finit_module *)
 	     uh "Unhandled Linux system call finit_module"
+	 | (ARM, 380)    (* sched_setattr *)
 	 | (X86, 351)    (* sched_setattr *)
 	 | (X64, 314) -> (* sched_setattr *)
 	     uh "Unhandled Linux system call sched_setattr"
+	 | (ARM, 381)    (* sched_getattr *)
 	 | (X86, 352)    (* sched_getattr *)
 	 | (X64, 315) -> (* sched_getattr *)
 	     uh "Unhandled Linux system call sched_getattr"
+	 | (ARM, 382)    (* renameat2 *)
 	 | (X86, 353)    (* renameat2 *)
 	 | (X64, 316) -> (* renameat2 *)
 	     uh "Unhandled Linux system call renameat2"
+	 | (ARM, 383)    (* seccomp *)
 	 | (X86, 354)    (* seccomp *)
 	 | (X64, 317) -> (* seccomp *)
 	     uh "Unhandled Linux system call seccomp"
+	 | (ARM, 384)    (* getrandom *)
 	 | (X86, 355)    (* getrandom *)
 	 | (X64, 318) -> (* getrandom *)
              let (arg1, arg2, arg3) = read_3_regs () in
@@ -5409,182 +5426,154 @@ object(self)
 	       if !opt_trace_syscalls then
 		 Printf.printf "getrandom(0x%08Lx, %d, %d)" buf buflen flags;
 	       self#sys_getrandom buf buflen flags
+	 | (ARM, 385)    (* memfd_create *)
 	 | (X86, 356)    (* memfd_create *)
 	 | (X64, 319) -> (* memfd_create *)
 	     uh "Unhandled Linux system call memfd_create"
 	 | (X64, 320) -> (* kexec_file_load *)
 	     uh "Unhandled Linux system call kexec_file_load"
+	 | (ARM, 386)    (* bpf *)
 	 | (X86, 357)    (* bpf *)
 	 | (X64, 321) -> (* bpf *)
 	     uh "Unhandled Linux system call bpf"
+	 | (ARM, 387)    (* execveat *)
 	 | (X86, 358)    (* execveat *)
 	 | (X64, 322) -> (* execveat *)
 	     uh "Unhandled Linux system call execveat"
+	 | (ARM, 388)    (* userfaultfd *)
 	 | (X86, 374)    (* userfaultfd *)
 	 | (X64, 323) -> (* userfaultfd *)
 	     uh "Unhandled Linux system call userfaultfd"
+	 | (ARM, 389)    (* membarrier *)
 	 | (X86, 375)    (* membarrier *)
 	 | (X64, 324) -> (* membarrier *)
 	     uh "Unhandled Linux system call membarrier"
+	 | (ARM, 390)    (* mlock2 *)
 	 | (X86, 376)    (* mlock2 *)
 	 | (X64, 325) -> (* mlock2 *)
 	     uh "Unhandled Linux system call mlock2"
+	 | (ARM, 391)    (* copy_file_range *)
 	 | (X64, 326)    (* copy_file_range *)
 	 | (X86, 377) -> (* copy_file_range *)
 	     uh "Unhandled Linux system call copy_file_range"
+	 | (ARM, 392)    (* preadv2 *)
 	 | (X64, 327)    (* preadv2 *)
 	 | (X86, 378) -> (* preadv2 *)
 	     uh "Unhandled Linux system call preadv2"
+	 | (ARM, 393)    (* pwritev2 *)
 	 | (X64, 328)    (* pwritev2 *)
 	 | (X86, 379) -> (* pwritev2 *)
 	     uh "Unhandled Linux system call pwritev2"
+	 | (ARM, 394)    (* pkey_mprotect *)
 	 | (X64, 329)    (* pkey_mprotect *)
 	 | (X86, 380) -> (* pkey_mprotect *)
 	     uh "Unhandled Linux system call pkey_mprotect"
+	 | (ARM, 395)    (* pkey_alloc *)
 	 | (X64, 330)    (* pkey_alloc *)
 	 | (X86, 381) -> (* pkey_alloc *)
 	     uh "Unhandled Linux system call pkey_alloc"
+	 | (ARM, 396)    (* pkey_free *)
 	 | (X64, 331)    (* pkey_free *)
 	 | (X86, 382) -> (* pkey_free *)
 	     uh "Unhandled Linux system call pkey_free"
+	 | (ARM, 397)    (* statx *)
 	 | (X64, 332)    (* statx *)
 	 | (X86, 383) -> (* statx *)
 	     uh "Unhandled Linux system call statx"
+	 | (ARM, 399)    (* io_pgetevents *)
 	 | (X64, 333)    (* io_pgetevents *)
 	 | (X86, 385) -> (* io_pgetevents *)
 	     uh "Unhandled Linux system call io_pgetevents"
+	 | (ARM, 398)    (* rseq *)
 	 | (X64, 334)    (* rseq *)
 	 | (X86, 386) -> (* rseq *)
 	     uh "Unhandled Linux system call rseq"
-	 | (X64, 424)    (* pidfd_send_signal *)
-	 | (X86, 424) -> (* pidfd_send_signal *)
+	 | ((ARM|X64|X86), 424) -> (* pidfd_send_signal *)
 	     uh "Unhandled Linux system call pidfd_send_signal"
-	 | (X64, 425)    (* io_uring_setup *)
-	 | (X86, 425) -> (* io_uring_setup *)
+	 | ((ARM|X64|X86), 425) -> (* io_uring_setup *)
 	     uh "Unhandled Linux system call io_uring_setup"
-	 | (X64, 426)    (* io_uring_enter *)
-	 | (X86, 426) -> (* io_uring_enter *)
+	 | ((ARM|X64|X86), 426) -> (* io_uring_enter *)
 	     uh "Unhandled Linux system call io_uring_enter"
-	 | (X64, 427)    (* io_uring_register *)
-	 | (X86, 427) -> (* io_uring_register *)
+	 | ((ARM|X64|X86), 427) -> (* io_uring_register *)
 	     uh "Unhandled Linux system call io_uring_register"
-	 | (X64, 428)    (* open_tree *)
-	 | (X86, 428) -> (* open_tree *)
+	 | ((ARM|X64|X86), 428) -> (* open_tree *)
 	     uh "Unhandled Linux system call open_tree"
-	 | (X64, 429)    (* move_mount *)
-	 | (X86, 429) -> (* move_mount *)
+	 | ((ARM|X64|X86), 429) -> (* move_mount *)
 	     uh "Unhandled Linux system call move_mount"
-	 | (X64, 430)    (* fsopen *)
-	 | (X86, 430) -> (* fsopen *)
+	 | ((ARM|X64|X86), 430) -> (* fsopen *)
 	     uh "Unhandled Linux system call fsopen"
-	 | (X64, 431)    (* fsconfig *)
-	 | (X86, 431) -> (* fsconfig *)
+	 | ((ARM|X64|X86), 431) -> (* fsconfig *)
 	     uh "Unhandled Linux system call fsconfig"
-	 | (X64, 432)    (* fsmount *)
-	 | (X86, 432) -> (* fsmount *)
+	 | ((ARM|X64|X86), 432) -> (* fsmount *)
 	     uh "Unhandled Linux system call fsmount"
-	 | (X64, 433)    (* fspick *)
-	 | (X86, 433) -> (* fspick *)
+	 | ((ARM|X64|X86), 433) -> (* fspick *)
 	     uh "Unhandled Linux system call fspick"
-	 | (X64, 434)    (* pidfd_open *)
-	 | (X86, 434) -> (* pidfd_open *)
+	 | ((ARM|X64|X86), 434) -> (* pidfd_open *)
 	     uh "Unhandled Linux system call pidfd_open"
-	 | (X64, 435)    (* clone3 *)
-	 | (X86, 435) -> (* clone3 *)
+	 | ((ARM|X64|X86), 435) -> (* clone3 *)
 	     uh "Unhandled Linux system call clone3"
-	 | (X64, 436)    (* close_range *)
-	 | (X86, 436) -> (* close_range *)
+	 | ((ARM|X64|X86), 436) -> (* close_range *)
 	     uh "Unhandled Linux system call close_range"
-	 | (X64, 437)    (* openat2 *)
-	 | (X86, 437) -> (* openat2 *)
+	 | ((ARM|X64|X86), 437) -> (* openat2 *)
 	     uh "Unhandled Linux system call openat2"
-	 | (X64, 438)    (* pidfd_getfd *)
-	 | (X86, 438) -> (* pidfd_getfd *)
+	 | ((ARM|X64|X86), 438) -> (* pidfd_getfd *)
 	     uh "Unhandled Linux system call pidfd_getfd"
-	 | (X64, 439)    (* faccessat2 *)
-	 | (X86, 439) -> (* faccessat2 *)
+	 | ((ARM|X64|X86), 439) -> (* faccessat2 *)
 	     uh "Unhandled Linux system call faccessat2"
-	 | (X64, 440)    (* process_madvise *)
-	 | (X86, 440) -> (* process_madvise *)
+	 | ((ARM|X64|X86), 440) -> (* process_madvise *)
 	     uh "Unhandled Linux system call process_madvise"
-	 | (X64, 441)    (* epoll_pwait2 *)
-	 | (X86, 441) -> (* epoll_pwait2 *)
+	 | ((ARM|X64|X86), 441) -> (* epoll_pwait2 *)
 	     uh "Unhandled Linux system call epoll_pwait2"
-	 | (X64, 442)    (* mount_setattr *)
-	 | (X86, 442) -> (* mount_setattr *)
+	 | ((ARM|X64|X86), 442) -> (* mount_setattr *)
 	     uh "Unhandled Linux system call mount_setattr"
-	 | (X64, 443)    (* quotactl_fd *)
-	 | (X86, 443) -> (* quotactl_fd *)
+	 | ((ARM|X64|X86), 443) -> (* quotactl_fd *)
 	     uh "Unhandled Linux system call quotactl_fd"
-	 | (X64, 444)    (* landlock_create_ruleset *)
-	 | (X86, 444) -> (* landlock_create_ruleset *)
+	 | ((ARM|X64|X86), 444) -> (* landlock_create_ruleset *)
 	     uh "Unhandled Linux system call landlock_create_ruleset"
-	 | (X64, 445)    (* landlock_add_rule *)
-	 | (X86, 445) -> (* landlock_add_rule *)
+	 | ((ARM|X64|X86), 445) -> (* landlock_add_rule *)
 	     uh "Unhandled Linux system call landlock_add_rule"
-	 | (X64, 446)    (* landlock_restrict_self *)
-	 | (X86, 446) -> (* landlock_restrict_self *)
+	 | ((ARM|X64|X86), 446) -> (* landlock_restrict_self *)
 	     uh "Unhandled Linux system call landlock_restrict_self"
-	 | (X64, 447)    (* memfd_secret *)
-	 | (X86, 447) -> (* memfd_secret *)
-	     uh "Unhandled Linux system call memfd_secret"
-	 | (X64, 448)    (* process_mrelease *)
-	 | (X86, 448) -> (* process_mrelease *)
+	 | ((ARM|X64|X86), 448) -> (* process_mrelease *)
 	     uh "Unhandled Linux system call process_mrelease"
-	 | (X64, 449)    (* futex_waitv *)
-	 | (X86, 449) -> (* futex_waitv *)
+	 | ((ARM|X64|X86), 449) -> (* futex_waitv *)
 	     uh "Unhandled Linux system call futex_waitv"
-	 | (X64, 450)    (* set_mempolicy_home_node *)
-	 | (X86, 450) -> (* set_mempolicy_home_node *)
+	 | ((ARM|X64|X86), 450) -> (* set_mempolicy_home_node *)
 	     uh "Unhandled Linux system call set_mempolicy_home_node"
-	 | (X64, 451)    (* cachestat *)
-	 | (X86, 451) -> (* cachestat *)
+	 | ((ARM|X64|X86), 451) -> (* cachestat *)
 	     uh "Unhandled Linux system call cachestat"
-	 | (X64, 452)    (* fchmodat2 *)
-	 | (X86, 452) -> (* fchmodat2 *)
+	 | ((ARM|X64|X86), 452) -> (* fchmodat2 *)
 	     uh "Unhandled Linux system call fchmodat2"
-	 | (X64, 453)    (* map_shadow_stack *)
-	 | (X86, 453) -> (* map_shadow_stack *)
+	 | ((ARM|X64|X86), 453) -> (* map_shadow_stack *)
 	     uh "Unhandled Linux system call map_shadow_stack"
-	 | (X64, 454)    (* futex_wake *)
-	 | (X86, 454) -> (* futex_wake *)
+	 | ((ARM|X64|X86), 454) -> (* futex_wake *)
 	     uh "Unhandled Linux system call futex_wake"
-	 | (X64, 455)    (* futex_wait *)
-	 | (X86, 455) -> (* futex_wait *)
+	 | ((ARM|X64|X86), 455) -> (* futex_wait *)
 	     uh "Unhandled Linux system call futex_wait"
-	 | (X64, 456)    (* futex_requeue *)
-	 | (X86, 456) -> (* futex_requeue *)
+	 | ((ARM|X64|X86), 456) -> (* futex_requeue *)
 	     uh "Unhandled Linux system call futex_requeue"
-	 | (X64, 457)    (* statmount *)
-	 | (X86, 457) -> (* statmount *)
+	 | ((ARM|X64|X86), 457) -> (* statmount *)
 	     uh "Unhandled Linux system call statmount"
-	 | (X64, 458)    (* listmount *)
-	 | (X86, 458) -> (* listmount *)
+	 | ((ARM|X64|X86), 458) -> (* listmount *)
 	     uh "Unhandled Linux system call listmount"
-	 | (X64, 459)    (* lsm_get_self_attr *)
-	 | (X86, 459) -> (* lsm_get_self_attr *)
+	 | ((ARM|X64|X86), 459) -> (* lsm_get_self_attr *)
 	     uh "Unhandled Linux system call lsm_get_self_attr"
-	 | (X64, 460)    (* lsm_set_self_attr *)
-	 | (X86, 460) -> (* lsm_set_self_attr *)
+	 | ((ARM|X64|X86), 460) -> (* lsm_set_self_attr *)
 	     uh "Unhandled Linux system call lsm_set_self_attr"
-	 | (X64, 461)    (* lsm_list_modules *)
-	 | (X86, 461) -> (* lsm_list_modules *)
+	 | ((ARM|X64|X86), 461) -> (* lsm_list_modules *)
 	     uh "Unhandled Linux system call lsm_list_modules"
-	 | (X64, 462)    (* mseal *)
-	 | (X86, 462) -> (* mseal *)
+	 | ((ARM|X64|X86), 462) -> (* mseal *)
 	     uh "Unhandled Linux system call mseal"
-	 | (X64, 463)    (* setxattrat *)
-	 | (X86, 463) -> (* setxattrat *)
+	 | ((ARM|X64|X86), 463) -> (* setxattrat *)
 	     uh "Unhandled Linux system call setxattrat"
-	 | (X64, 464)    (* getxattrat *)
-	 | (X86, 464) -> (* getxattrat *)
+	 | ((ARM|X64|X86), 464) -> (* getxattrat *)
 	     uh "Unhandled Linux system call getxattrat"
-	 | (X64, 465)    (* listxattrat *)
-	 | (X86, 465) -> (* listxattrat *)
+	 | ((ARM|X64|X86), 465) -> (* listxattrat *)
 	     uh "Unhandled Linux system call listxattrat"
-	 | (X64, 466)    (* removexattrat *)
-	 | (X86, 466) -> (* removexattrat *)
+	 | ((ARM|X64|X86), 466) -> (* removexattrat *)
 	     uh "Unhandled Linux system call removexattrat"
+	 (* Our list of system call numbers is current roughly through
+	    Linux 6.14. *)
 
 	 | (ARM, 0xf0001) -> (* breakpoint *)
 	     uh "Unhandled Linux/ARM pseudo-syscall breakpoint (0xf0001)"
