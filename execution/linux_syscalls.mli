@@ -155,6 +155,8 @@ object
   method sys_stat64 : string -> int64 -> unit
   method sys_lstat64 : string -> int64 -> unit
   method sys_fstat64 : int -> int64 -> unit
+  method sys_fstatat : int -> string -> int64 -> int -> unit
+  method sys_statx : int -> string -> int -> int -> int64 -> unit
   method sys_statfs : string -> int64 -> unit
   method sys_fstatfs : int -> int64 -> unit
   method sys_statfs64 : string -> int -> int64 -> unit

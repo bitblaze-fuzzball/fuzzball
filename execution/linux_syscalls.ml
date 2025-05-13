@@ -109,6 +109,9 @@ type fd_extra_info = {
 let assemble64 high low =
   Int64.logor (Int64.logand 0xffffffffL low) (Int64.shift_left high 32)
 
+let time_nsecs ftime =
+  Int64.of_float (1e9 *. (mod_float ftime 1.0))
+
 class linux_special_handler (fm : fragment_machine) =
   let put_reg = fm#set_word_var in
   let put_return =
@@ -457,7 +460,8 @@ object(self)
 			     addr_ml addr_l))
 	    in
 	      Unix.ADDR_INET(addr, port)
-	| _ -> failwith "Unexpected sockaddr family"
+	| _ -> failwith ("Unexpected sockaddr family " ^
+			   (string_of_int family))
 
   method write_sockaddr sockaddr_oc addr addrlen_ptr =
     let dotted_addr_to_dat str =
@@ -511,6 +515,17 @@ object(self)
       (if (flags land 0o200) <> 0   then [Unix.O_EXCL]     else []) @
       (if (flags land 0o10000) <> 0 then [Unix.O_SYNC]     else [])
 
+  (* Allocation strategies can vary by filesystem, and we have no way
+     of knowing about holes. st_blcoks is always measured in 512 byte
+     blocks, but the allocation granularity is often larger. Here we
+     round the number of blocks up to a multiple of 4, corresponding to 2
+     KiB blocks. *)
+  method private size_to_blocks size =
+    let sz_float = float_of_int size in
+    let min_blocks_64 = Int64.of_float (ceil (sz_float /. 512.0)) in
+    let pad = Int64.logand (Int64.neg min_blocks_64) 3L in
+      Int64.add min_blocks_64 pad
+
   method private write_oc_statbuf_as_stat addr oc_buf =
     let dev = Int64.of_int oc_buf.Unix.st_dev and
 	ino = Int64.of_int oc_buf.Unix.st_ino and
@@ -524,8 +539,11 @@ object(self)
 	atime = Int64.of_float oc_buf.Unix.st_atime and
 	mtime = Int64.of_float oc_buf.Unix.st_mtime and
 	ctime = Int64.of_float oc_buf.Unix.st_ctime and
+	atime_nsecs = time_nsecs oc_buf.Unix.st_atime and
+	mtime_nsecs = time_nsecs oc_buf.Unix.st_mtime and
+	ctime_nsecs = time_nsecs oc_buf.Unix.st_ctime and
 	blksize = 4096L and
-	blocks = Int64.of_int (oc_buf.Unix.st_size/4096)
+	blocks = self#size_to_blocks oc_buf.Unix.st_size
     in
       store_word  addr  0 dev;
       store_word  addr  4 ino;     (* 32-bit inode *)
@@ -538,11 +556,11 @@ object(self)
       store_word  addr 24 blksize;
       store_word  addr 28 blocks;
       store_word  addr 32 atime;
-      store_word  addr 36 0L;      (* atime nanosecs *)
+      store_word  addr 36 atime_nsecs;
       store_word  addr 40 mtime;
-      store_word  addr 44 0L;      (* mtime naonsecs *)
+      store_word  addr 44 mtime_nsecs;
       store_word  addr 48 ctime;
-      store_word  addr 52 0L;      (* ctime nanosecs *)
+      store_word  addr 52 ctime_nsecs;
 
   method private write_oc_statbuf_as_x86_stat64 addr oc_buf =
     let dev = Int64.of_int oc_buf.Unix.st_dev and
@@ -557,8 +575,11 @@ object(self)
 	atime = Int64.of_float oc_buf.Unix.st_atime and
 	mtime = Int64.of_float oc_buf.Unix.st_mtime and
 	ctime = Int64.of_float oc_buf.Unix.st_ctime and
+	atime_nsecs = time_nsecs oc_buf.Unix.st_atime and
+	mtime_nsecs = time_nsecs oc_buf.Unix.st_mtime and
+	ctime_nsecs = time_nsecs oc_buf.Unix.st_ctime and
 	blksize = 4096L and
-	blocks = Int64.of_int (oc_buf.Unix.st_size/4096)
+	blocks = self#size_to_blocks oc_buf.Unix.st_size
     in
       store_word addr 0 dev;
       store_word addr 4 0L;       (* high bits of dev *)
@@ -575,11 +596,11 @@ object(self)
       store_word addr 56 blocks;
       store_word addr 60 0L;      (* high bits of blocks *)
       store_word addr 64 atime;
-      store_word addr 68 0L;      (* atime nanosecs *)
+      store_word addr 68 atime_nsecs;
       store_word addr 72 mtime;
-      store_word addr 76 0L;      (* mtime nanosecs *)
+      store_word addr 76 mtime_nsecs;
       store_word addr 80 ctime;
-      store_word addr 84 0L;      (* ctime nanosecs *)
+      store_word addr 84 ctime_nsecs;
       store_word addr 88 ino;     (* low bits of 64-bit inode *)
       store_word addr 92 0L;      (* high bits of 64-bit inode *)
 
@@ -596,8 +617,11 @@ object(self)
 	atime = Int64.of_float oc_buf.Unix.st_atime and
 	mtime = Int64.of_float oc_buf.Unix.st_mtime and
 	ctime = Int64.of_float oc_buf.Unix.st_ctime and
+	atime_nsecs = time_nsecs oc_buf.Unix.st_atime and
+	mtime_nsecs = time_nsecs oc_buf.Unix.st_mtime and
+	ctime_nsecs = time_nsecs oc_buf.Unix.st_ctime and
 	blksize = 4096L and
-	blocks = Int64.of_int (oc_buf.Unix.st_size/4096)
+	blocks = self#size_to_blocks oc_buf.Unix.st_size
     in
       store_long addr   0 dev;
       store_long addr   8 ino;
@@ -611,11 +635,11 @@ object(self)
       store_long addr  56 blksize;
       store_long addr  64 blocks;
       store_long addr  72 atime;
-      store_long addr  80 0L; (* atime nanosecs *)
+      store_long addr  80 atime_nsecs;
       store_long addr  88 mtime;
-      store_long addr  96 0L; (* mtime nanosecs *)
+      store_long addr  96 mtime_nsecs;
       store_long addr 104 ctime;
-      store_long addr 112 0L; (* ctime nanosecs *)
+      store_long addr 112 ctime_nsecs;
       (* 24 bytes reserved *)
 
   (* Slightly different layout than the x86 version, because the
@@ -633,8 +657,11 @@ object(self)
 	atime = Int64.of_float oc_buf.Unix.st_atime and
 	mtime = Int64.of_float oc_buf.Unix.st_mtime and
 	ctime = Int64.of_float oc_buf.Unix.st_ctime and
+	atime_nsecs = time_nsecs oc_buf.Unix.st_atime and
+	mtime_nsecs = time_nsecs oc_buf.Unix.st_mtime and
+	ctime_nsecs = time_nsecs oc_buf.Unix.st_ctime and
 	blksize = 4096L and
-	blocks = Int64.of_int (oc_buf.Unix.st_size/4096)
+	blocks = self#size_to_blocks oc_buf.Unix.st_size
     in
       store_word addr 0 dev;
       store_word addr 4 0L;       (* high bits of dev *)
@@ -653,18 +680,18 @@ object(self)
       store_word addr 64 blocks;
       store_word addr 68 0L;      (* high bits of blocks *)
       store_word addr 72 atime;
-      store_word addr 76 0L;      (* atime nanosecs *)
+      store_word addr 76 atime_nsecs;
       store_word addr 80 mtime;
-      store_word addr 84 0L;      (* mtime naonsecs *)
+      store_word addr 84 mtime_nsecs;
       store_word addr 88 ctime;
-      store_word addr 92 0L;      (* ctime nanosecs *)
+      store_word addr 92 ctime_nsecs;
       store_word addr 96 ino;     (* low bits of 64-bit inode *)
       store_word addr 100 0L;      (* high bits of 64-bit inode *)
 
   method private write_oc_statbuf_as_stat64 addr oc_buf =
     match !opt_arch with
       | X86 -> self#write_oc_statbuf_as_x86_stat64 addr oc_buf
-      | X64 -> failwith "64-bit syscalls not supported"
+      | X64 -> failwith "64-bit stat64 not supported"
       | ARM -> self#write_oc_statbuf_as_arm_stat64 addr oc_buf
 
   method private write_fake_statfs_buf addr =
@@ -1775,17 +1802,27 @@ object(self)
     with
       | Unix.Unix_error(err, _, _) -> self#put_errno err
 
+  (* This method encapsulates the beahvior that makes a *at(2) system
+     call different from its pre-"at" predecessor, creating a path to
+     reference a file relative to a directory specified via a file
+     descriptor. Because we do this by going back to a string we stored
+     at the time the directory FD was opened, it defets the purpose of
+     the *at(2) system calls in the first place, but this is the best
+     simulation we can do given that OCaml's Unix module doesn't provide
+     any *at(2) variants.  *)
+  method private dirfd_path dirfd path =
+    let dirpath = (if dirfd <> -100 then
+                     fd_info.(dirfd).fname
+                   else "") in
+    let dirpathlen = String.length dirpath in
+      if dirpathlen > 0 && dirpath.[dirpathlen - 1]  <> '/' then
+	dirpath ^ "/" ^ path
+      else
+	dirpath ^ path
+
   method sys_openat dirfd path flags mode =
     try
-      let dirpath = (if dirfd <> -100 then 
-                       ref fd_info.(dirfd).fname 
-                     else ref "" ) in
-      let dirpathlen = (String.length !dirpath) in
-      if dirpathlen > 0 then
-        if !dirpath.[dirpathlen - 1]  <> '/' then
-          dirpath := !dirpath ^ "/"; 
-      let fullpath = !dirpath ^ path in
-      self#open_throw fullpath flags mode;
+      self#open_throw (self#dirfd_path dirfd path) flags mode;
     with
       | Unix.Unix_error(err, _, _) -> self#put_errno err
 
@@ -2219,14 +2256,19 @@ object(self)
       else (
         let str = string_of_char_array (read_buf buf len) and
             flags = (if (flags land 1) <> 0 then [Unix.MSG_OOB] else []) @
-                    (if (flags land 4) <> 0 then [Unix.MSG_DONTROUTE] else []) @
-                    (if (flags land 2) <> 0 then [Unix.MSG_PEEK] else []) and
-            sockaddr = self#read_sockaddr addrbuf addrlen
-        in
-        let num_sent =
-          Unix.sendto (self#get_fd sockfd) str 0 len flags sockaddr
-        in
-        put_return (Int64.of_int num_sent) (* success *))
+          (if (flags land 4) <> 0 then [Unix.MSG_DONTROUTE] else []) @
+          (if (flags land 2) <> 0 then [Unix.MSG_PEEK] else []) in
+	  if addrbuf = 0L then
+            let num_sent =
+              Unix.send (self#get_fd sockfd) str 0 len flags
+            in
+              put_return (Int64.of_int num_sent) (* success *)
+	  else
+	    let sockaddr = self#read_sockaddr addrbuf addrlen in
+            let num_sent =
+              Unix.sendto (self#get_fd sockfd) str 0 len flags sockaddr
+            in
+              put_return (Int64.of_int num_sent) (* success *))
     with
       | Unix.Unix_error(err, _, _) -> self#put_errno err
 
@@ -2806,6 +2848,138 @@ object(self)
     with
       | Unix.Unix_error(err, _, _) -> self#put_errno err
 	  
+  (* The newer routines fstatat and statx unify stat, fstat, and lstat
+     with the *at() interface style. *)
+  method private stat_dirfd_common fd path flags =
+    if flags land 0x1000 (* AT_EMPTY_PATH *) <> 0 then
+      Unix.fstat (self#get_fd fd)
+    else
+      if flags land 0x100 (* AT_SYMLINK_NOFOLLOW *) <> 0 then
+	Unix.lstat (chroot (self#dirfd_path fd path))
+      else
+	Unix.stat (chroot (self#dirfd_path fd path))
+
+  (* This is variously called sys_fstatst64 or sys_newfstatat inside the
+     kernel, but I believe there is only one fstatat-family syscall on any
+     of the architectures we support. *)
+  method sys_fstatat fd path buf_addr flags =
+    try
+      let oc_buf = self#stat_dirfd_common fd path flags in
+	(match !opt_arch with
+	   | X86 -> self#write_oc_statbuf_as_x86_stat64 buf_addr oc_buf
+	   | X64 -> self#write_oc_statbuf_as_x64_stat   buf_addr oc_buf
+	   | ARM -> self#write_oc_statbuf_as_arm_stat64 buf_addr oc_buf);
+	put_return 0L (* success *)
+    with
+      | Unix.Unix_error(err, _, _) -> self#put_errno err
+
+  method sys_statx dirfd path flags mask statxbuf =
+    let mSTATX_TYPE   = 0x00000001 and (* Want/got stx_mode & S_IFMT *)
+	mSTATX_MODE   = 0x00000002 and (* Want/got stx_mode & ~S_IFMT *)
+	mSTATX_NLINK  = 0x00000004 and (* Want/got stx_nlink *)
+	mSTATX_UID    = 0x00000008 and (* Want/got stx_uid *)
+	mSTATX_GID    = 0x00000010 and (* Want/got stx_gid *)
+	mSTATX_ATIME  = 0x00000020 and (* Want/got stx_atime *)
+	mSTATX_MTIME  = 0x00000040 and (* Want/got stx_mtime *)
+	mSTATX_CTIME  = 0x00000080 and (* Want/got stx_ctime *)
+	mSTATX_INO    = 0x00000100 and (* Want/got stx_ino *)
+	mSTATX_SIZE   = 0x00000200 and (* Want/got stx_size *)
+	mSTATX_BLOCKS = 0x00000400  (* Want/got stx_blocks *)
+	(* mSTATX_BTIME  = 0x00000800 unsupported (* Want/got stx_btime *) *)
+    in
+    let extract_major dev64 =
+      Int64.logor
+	(Int64.shift_right (Int64.logand dev64 0xffff00L) 8)
+	(Int64.shift_right (Int64.logand dev64 0xfffff00000000000L) 32)
+    in
+    let extract_minor dev64 =
+      Int64.logor
+	(Int64.logand dev64 0xffL)
+	(Int64.shift_right (Int64.logand dev64 0xffffff00000L) 23)
+    in
+    let time_nsecs ftime =
+      Int64.of_float (1e9 *. (mod_float ftime 1.0))
+    in
+      try
+      let oc_buf = self#stat_dirfd_common dirfd path flags in
+      let dev = Int64.of_int oc_buf.Unix.st_dev and
+	  ino = Int64.of_int oc_buf.Unix.st_ino and
+	  mode = (oc_buf.Unix.st_perm lor
+		    (self#oc_kind_to_mode oc_buf.Unix.st_kind)) and
+	  nlink = Int64.of_int oc_buf.Unix.st_nlink and
+	  uid = Int64.of_int oc_buf.Unix.st_uid and
+	  gid = Int64.of_int oc_buf.Unix.st_gid and
+	  rdev = Int64.of_int oc_buf.Unix.st_rdev and
+	  size = Int64.of_int oc_buf.Unix.st_size and
+	  atime_secs = Int64.of_float oc_buf.Unix.st_atime and
+	  mtime_secs = Int64.of_float oc_buf.Unix.st_mtime and
+	  ctime_secs = Int64.of_float oc_buf.Unix.st_ctime and
+	  atime_nsecs = time_nsecs oc_buf.Unix.st_atime and
+	  mtime_nsecs = time_nsecs oc_buf.Unix.st_mtime and
+	  ctime_nsecs = time_nsecs oc_buf.Unix.st_ctime and
+	  blksize = 4096L and
+	  blocks = self#size_to_blocks oc_buf.Unix.st_size
+      in
+      let written_mask = 0
+	lor
+	  (if (mask land (mSTATX_TYPE lor mSTATX_MODE)) <> 0 then
+	     (store_short statxbuf 0x1c mode; (mSTATX_TYPE lor mSTATX_MODE))
+	   else 0)
+	lor
+	  (if (mask land mSTATX_NLINK) <> 0 then
+	     (store_word statxbuf 0x10 nlink; mSTATX_NLINK)
+	   else 0)
+	lor
+	  (if (mask land mSTATX_UID) <> 0 then
+	     (store_word statxbuf 0x14 uid; mSTATX_UID)
+	   else 0)
+	lor
+	  (if (mask land mSTATX_GID) <> 0 then
+	     (store_word statxbuf 0x18 gid; mSTATX_GID)
+	   else 0)
+	lor
+	  (if (mask land mSTATX_ATIME) <> 0 then
+	     (store_long statxbuf 0x40 atime_secs;
+	      store_word statxbuf 0x48 atime_nsecs;
+	      mSTATX_ATIME)
+	   else 0)
+	lor
+	  (if (mask land mSTATX_MTIME) <> 0 then
+	     (store_long statxbuf 0x70 mtime_secs;
+	      store_word statxbuf 0x78 mtime_nsecs;
+	      mSTATX_MTIME)
+	   else 0)
+	lor
+	  (if (mask land mSTATX_CTIME) <> 0 then
+	     (store_long statxbuf 0x60 ctime_secs;
+	      store_word statxbuf 0x68 ctime_nsecs;
+	      mSTATX_CTIME)
+	   else 0)
+	lor
+	  (if (mask land mSTATX_INO) <> 0 then
+	     (store_long statxbuf 0x20 ino; mSTATX_INO)
+	   else 0)
+	lor
+	  (if (mask land mSTATX_SIZE) <> 0 then
+	     (store_long statxbuf 0x28 size; mSTATX_SIZE)
+	   else 0)
+	lor
+	  (if (mask land mSTATX_BLOCKS) <> 0 then
+	     (store_long statxbuf 0x30 blocks; mSTATX_BLOCKS)
+	   else 0)
+	   in
+	    store_word statxbuf 0x00 (Int64.of_int written_mask);
+	    store_word statxbuf 0x04 blksize;
+	    store_long statxbuf 0x08 0L; (* attributes *)
+	    store_long statxbuf 0x38 0L; (* attributes_mask *)
+	    store_word statxbuf 0x80 (extract_major rdev);
+	    store_word statxbuf 0x84 (extract_minor rdev);
+	    store_word statxbuf 0x88 (extract_major dev);
+	    store_word statxbuf 0x8c (extract_minor dev);
+	    put_return 0L (* success *)
+    with
+      | Unix.Unix_error(err, _, _) -> self#put_errno err
+
   method sys_statfs path buf =
     ignore(path);
     try
@@ -3674,7 +3848,7 @@ object(self)
 			  typ_i = Int64.to_int arg2 and
 			  prot_i = Int64.to_int (get_arg3 ()) in
 			if !opt_trace_syscalls then
-			  Printf.printf "socket(%d, %d, %d)"
+			  Printf.printf "socket(%d, 0x%x, %d)"
 			    dom_i typ_i prot_i;
 			self#sys_socket dom_i typ_i prot_i
 		  | 2 ->
@@ -4576,8 +4750,8 @@ object(self)
 	     uh "Unhandled Linux system call fsetxattr (228)"
 	 | (X64, 190) -> (* fsetxattr *)
 	     uh "Unhandled Linux/x64 system call fsetxattr (190)"
-	 | (ARM, 229) -> uh "Check whether ARM getxattr syscall matches x86"
-	 | (X64, 191) -> uh "Check whether x64 getxattr syscall matches x86"
+	 | (ARM, 229)
+	 | (X64, 191)
 	 | (X86, 229) -> (* getxattr *)
 	     let (ebx, ecx, edx, esi) = read_4_regs () in
 	     let path_ptr = ebx and
@@ -4590,7 +4764,7 @@ object(self)
 		 Printf.printf "getxattr(\"%s\", \"%s\", 0x%08Lx, %d)"
 		   path name value_ptr size;
 	       self#sys_getxattr path name value_ptr size
-	 | (X64, 192) -> uh "Check whether x64 lgetxattr syscall matches x86"
+	 | (X64, 192)
 	 | ((X86|ARM), 230) -> (* lgetxattr *)
 	     let (arg1, arg2, arg3, arg4) = read_4_regs () in
 	     let path_ptr = arg1 and
@@ -4909,7 +5083,7 @@ object(self)
 		 typ_i = Int64.to_int arg2 and
 		 prot_i = Int64.to_int arg3 in
 	       if !opt_trace_syscalls then
-		 Printf.printf "socket(%d, %d, %d)"
+		 Printf.printf "socket(%d, 0x%x, %d)"
 		   dom_i typ_i prot_i;
 	       self#sys_socket dom_i typ_i prot_i
 	 | (ARM, 282) -> (* bind *)
@@ -4966,7 +5140,19 @@ object(self)
 	 | (ARM, 290) -> (* sendto *)
 	     uh "Unhandled Linux/ARM system call sendto (290)"
 	 | (X64, 44) -> (* sendto *)
-	     uh "Unhandled Linux/x64 system call sendto (44)"
+	     let (arg1, arg2, arg3, arg4, arg5, arg6) = read_6_regs () in
+	     let sockfd = Int64.to_int arg1 and
+		 buf = arg2 and
+		 len = Int64.to_int arg3 and
+		 flags = Int64.to_int arg4 and
+		 addr = arg5 and
+		 addrlen = Int64.to_int arg6
+	     in
+	       if !opt_trace_syscalls then
+		 Printf.printf
+		   "sendto(%d, 0x%08Lx, %d, %d, 0x%08Lx, %d)"
+		   sockfd buf len flags addr addrlen;
+	       self#sys_sendto sockfd buf len flags addr addrlen
 	 | (ARM, 291) -> (* recv *)
 	     uh "Unhandled Linux/ARM system call recv (291)"
 	 | (ARM, 292) -> (* recvfrom *)
@@ -5154,7 +5340,16 @@ object(self)
 	 | (X86, 300) -> (* fstatat64 *)
 	     uh "Unhandled Linux system call fstatat64"
 	 | (X64, 262) -> (* newfstatat *)
-	     uh "Unhandled Linux/x64 system call newfstatat (262)"
+	     let (arg1, arg2, arg3, arg4) = read_4_regs() in
+	     let fd = Int64.to_int (fix_s32 arg1) and
+		 path_buf = arg2 and
+		 struct_buf = arg3 and
+		 flags = Int64.to_int arg4 in
+             let path = fm#read_cstr path_buf in
+	       if !opt_trace_syscalls then
+	         Printf.printf "newfstatat(%d, \"%s\", 0x%08Lx, %d)"
+		   fd path struct_buf flags;
+	       self#sys_fstatat fd path struct_buf flags
 	 | (ARM, 328)    (* unlinkat *)
 	 | (X64, 263)    (* unlinkat *)
 	 | (X86, 301) -> (* unlinkat *)
@@ -5479,7 +5674,18 @@ object(self)
 	 | (ARM, 397)    (* statx *)
 	 | (X64, 332)    (* statx *)
 	 | (X86, 383) -> (* statx *)
-	     uh "Unhandled Linux system call statx"
+	     let (arg1, arg2, arg3, arg4, arg5) = read_5_regs () in
+	     let dirfd = Int64.to_int (fix_s32 arg1) and
+		 path_buf = arg2 and
+		 flags = Int64.to_int arg3 and
+		 mask = Int64.to_int arg4 and
+		 statxbuf = arg5
+	     in
+	     let path = fm#read_cstr path_buf in
+	       if !opt_trace_syscalls then
+		 Printf.printf "statx(%d, \"%s\", %d, %d, 0x%08Lx)"
+		   dirfd path flags mask statxbuf;
+	       self#sys_statx dirfd path flags mask statxbuf
 	 | (ARM, 399)    (* io_pgetevents *)
 	 | (X64, 333)    (* io_pgetevents *)
 	 | (X86, 385) -> (* io_pgetevents *)
@@ -5487,7 +5693,15 @@ object(self)
 	 | (ARM, 398)    (* rseq *)
 	 | (X64, 334)    (* rseq *)
 	 | (X86, 386) -> (* rseq *)
-	     uh "Unhandled Linux system call rseq"
+	     let (arg1, arg2, arg3, arg4) = read_4_regs () in
+	     let rseq = arg1 and
+		 rseq_len = Int64.to_int arg2 and
+		 flags = Int64.to_int arg3 and
+		 sign = arg4 in
+	       if !opt_trace_syscalls then
+		 Printf.printf "rseq(0x%08Lx, %d, %d, 0x%08Lx)"
+		   rseq rseq_len flags sign;
+	       self#put_errno Unix.ENOSYS
 	 | ((ARM|X64|X86), 424) -> (* pidfd_send_signal *)
 	     uh "Unhandled Linux system call pidfd_send_signal"
 	 | ((ARM|X64|X86), 425) -> (* io_uring_setup *)
