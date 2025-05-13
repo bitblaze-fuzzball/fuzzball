@@ -1560,6 +1560,19 @@ struct
       in
       let byte_cond off v =
 	let (c_v, c_str) = self#target_region_byte off in
+          if !opt_learn_branch_preference then
+            if (off mod 8) = 0 && c_str = "m" then
+              (spfm#turn_on_malloc;
+              Printf.printf
+                "Branch Preference for malloc Turned on\n";)
+            else if (off mod 8) = 0 && c_str = "f" then
+              (spfm#turn_on_free;
+              Printf.printf
+                "Branch Preference for free Turned on\n";)
+            else if (off mod 8) = 0 && c_str <> "m" && c_str <> "f" then
+              (spfm#turn_off;
+              Printf.printf
+                "Branch Preference Turned off\n";);
 	  if !opt_trace_target then
 	    Printf.printf
 	      "Store to target string offset %d: %s (vs '%s'):\n"
@@ -1665,7 +1678,7 @@ struct
 
     method private target_solve cond_v ident =
       let (b, choices) = self#push_cond_prefer_true cond_v ident in
-	if !opt_trace_target then
+        if !opt_trace_target then
 	  Printf.printf "%s, %b\n"
 	    (match choices with
 	       | Some true -> "known equal"
@@ -1675,7 +1688,9 @@ struct
 	  (dt#set_heur 0;
 	   self#unfinish_fuzz "Target match failure";
 	   if not !opt_target_no_prune then
-	     raise DisqualifiedPath);
+	     raise DisqualifiedPath)
+        else
+          spfm#update_preference;
 	true
 
     method private target_solve_single offset cond_v wd =
@@ -1905,5 +1920,10 @@ struct
       spfm#reset ();
       List.iter (fun gm -> gm#clear ()) regions;
       Hashtbl.clear concrete_cache
+
+    method finish_path =
+      if !opt_learn_branch_preference then
+        Printf.printf "Learn Branch Preference Turned On\n";
+      spfm#finish_path 
   end
 end
