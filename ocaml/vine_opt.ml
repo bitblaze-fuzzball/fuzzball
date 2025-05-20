@@ -542,19 +542,43 @@ let rec constant_fold ctx e =
     | BinOp((NEQ|LT|SLT), x, y)
 	when x = y ->
 	exp_false
-    (* Repeated shifts of the same type *)
+
+    (* Repeated shifts of the same type, constrained to be within the
+       legal width *)
     | BinOp(LSHIFT, BinOp(LSHIFT, x, Constant(Int(ty1, s1))),
 	    Constant(Int(ty2, s2)))
-	when ty1 = ty2 && s1 >= 0L && s2 >= 0L ->
+	when ty1 = ty2 && s1 >= 0L && s2 >= 0L
+	  && (Int64.to_int (Int64.add s1 s2)) < (bits_of_width ty1) ->
 	BinOp(LSHIFT, x, (Constant(Int(ty1, (Int64.add s1 s2)))))
     | BinOp(RSHIFT, BinOp(RSHIFT, x, Constant(Int(ty1, s1))),
 	    Constant(Int(ty2, s2)))
-	when ty1 = ty2 && s1 >= 0L && s2 >= 0L ->
+	when ty1 = ty2 && s1 >= 0L && s2 >= 0L
+	  && (Int64.to_int (Int64.add s1 s2)) < (bits_of_width ty1) ->
 	BinOp(RSHIFT, x, (Constant(Int(ty1, (Int64.add s1 s2)))))
     | BinOp(ARSHIFT, BinOp(ARSHIFT, x, Constant(Int(ty1, s1))),
 	    Constant(Int(ty2, s2)))
-	when ty1 = ty2 && s1 >= 0L && s2 >= 0L ->
+	when ty1 = ty2 && s1 >= 0L && s2 >= 0L
+	  && (Int64.to_int (Int64.add s1 s2)) < (bits_of_width ty1) ->
 	BinOp(ARSHIFT, x, (Constant(Int(ty1, (Int64.add s1 s2)))))
+    (* Repeated shifts beyond the word width gives 0 *)
+    | BinOp(LSHIFT, BinOp(LSHIFT, x, Constant(Int(ty1, s1))),
+	    Constant(Int(ty2, s2)))
+	when ty1 = ty2 && s1 >= 0L && s2 >= 0L
+	  && (Int64.to_int (Int64.add s1 s2)) >= (bits_of_width ty1) ->
+	Constant(Int(ty1, 0L))
+    | BinOp(RSHIFT, BinOp(RSHIFT, x, Constant(Int(ty1, s1))),
+	    Constant(Int(ty2, s2)))
+	when ty1 = ty2 && s1 >= 0L && s2 >= 0L
+	  && (Int64.to_int (Int64.add s1 s2)) >= (bits_of_width ty1) ->
+	Constant(Int(ty1, 0L))
+    (* Repeated shifts beyond the word width for @>> is the same as
+       the maximum legal @>> *)
+    | BinOp(ARSHIFT, BinOp(ARSHIFT, x, Constant(Int(ty1, s1))),
+	    Constant(Int(ty2, s2)))
+	when ty1 = ty2 && s1 >= 0L && s2 >= 0L
+	  && (Int64.to_int (Int64.add s1 s2)) >= (bits_of_width ty1) ->
+	BinOp(ARSHIFT, x,
+	      (Constant(Int(ty1, (Int64.of_int ((bits_of_width ty1) - 1))))))
     (* Common compiler optimization of x /u 10 *)
     | BinOp(RSHIFT,
 	    Cast(CAST_HIGH, REG_32,
@@ -591,20 +615,18 @@ let rec constant_fold ctx e =
 	    Constant(Int(REG_32, 0xffffff00L)))
 	when (Vine_typecheck.infer_type None e) = REG_8 ->
 	Constant(Int(REG_32, 0L))
-    (* zero-extend shift by at least reg size gives zero *)
-    | BinOp((LSHIFT|RSHIFT), e, Constant(Int(_, amt)))
-	when (Vine_typecheck.infer_type None e) = REG_8 && amt >= 8L ->
-	Constant(Int(REG_8, 0L))
-    | BinOp((LSHIFT|RSHIFT), e, Constant(Int(_, amt)))
-	when (Vine_typecheck.infer_type None e) = REG_16 && amt >= 16L ->
-	Constant(Int(REG_16, 0L))
-    | BinOp((LSHIFT|RSHIFT), e, Constant(Int(_, amt)))
-	when (Vine_typecheck.infer_type None e) = REG_32 && amt >= 32L ->
-	Constant(Int(REG_32, 0L))
+
+    (* Former rule: zero-extend shift by at least reg size gives
+       zero. We had these rules for a while, but it seems better to
+       not be producing such large shift amounts in the first
+       place. The newer rules above combining multiple shifts are
+       intended to provide the same benefit. *)
+    (*
     | BinOp((LSHIFT|RSHIFT), e, Constant(Int(_, amt)))
 	when (Vine_typecheck.infer_type None e) = REG_64 && amt >= 64L ->
-	Constant(Int(REG_64, 0L))
-    (* byte >> amt = 0  when amt >= 8: special case of above within larger word *)
+	Constant(Int(REG_64, 0L)) *)
+    (* byte >> amt = 0  when amt >= 8: special case of above (former)
+       rules within larger word *)
     | BinOp(RSHIFT,
 	    Cast(CAST_UNSIGNED, REG_32, e),
 	    Constant(Int(_, amt)))
