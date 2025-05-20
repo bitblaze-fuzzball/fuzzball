@@ -1217,33 +1217,33 @@ object(self)
               raise End_of_file);
             fd_info.(fd).readdir_eof <- 1;
             let fname = Unix.readdir dirh in
-              fd_info.(fd).readdir_eof <- 0;
-              let reclen = 19 + (String.length fname) + 1 in
-              let next_pos = !written + reclen in
-		if next_pos >= buf_sz then
-		  raise End_of_file
-		else
-		  let oc_st = Unix.stat (dirname ^ "/" ^ fname) in
-		  let d_ino = oc_st.Unix.st_ino in
-		    store_word dirp !written (Int64.of_int d_ino);
-		    written := !written + 4;
-		    store_word dirp !written 0L; (* high bits of d_ino *)
-          written := !written + 4;
-          store_word dirp !written (Int64.of_int next_pos);
-          written := !written + 4;
-          store_word dirp !written 0L; (* high bits of d_off *)
-          written := !written + 4;
-          fm#store_short_conc (lea dirp 0 0 !written) reclen;
-          written := !written + 2;
-          fm#store_byte_conc (lea dirp 0 0 !written) 0; (* d_type *)
-          written := !written + 1;
-          fm#store_cstr dirp (Int64.of_int !written) fname;
-          written := !written + (String.length fname) + 1;
-          fd_info.(fd).dirp_offset <- fd_info.(fd).dirp_offset + 1;
-      done;
-    with End_of_file -> ();
-      Unix.closedir dirh;
-      put_return (Int64.of_int !written)
+            fd_info.(fd).readdir_eof <- 0;
+            let reclen = 19 + (String.length fname) + 1 in
+            let next_pos = !written + reclen in
+	    if next_pos >= buf_sz then
+	      raise End_of_file
+	    else
+	      let oc_st = Unix.stat (dirname ^ "/" ^ fname) in
+	      let d_ino = oc_st.Unix.st_ino in
+		store_word dirp !written (Int64.of_int d_ino);
+		written := !written + 4;
+		store_word dirp !written 0L; (* high bits of d_ino *)
+		written := !written + 4;
+		store_word dirp !written (Int64.of_int next_pos);
+		written := !written + 4;
+		store_word dirp !written 0L; (* high bits of d_off *)
+		written := !written + 4;
+		fm#store_short_conc (lea dirp 0 0 !written) reclen;
+		written := !written + 2;
+		fm#store_byte_conc (lea dirp 0 0 !written) 0; (* d_type *)
+		written := !written + 1;
+		fm#store_cstr dirp (Int64.of_int !written) fname;
+		written := !written + (String.length fname) + 1;
+		fd_info.(fd).dirp_offset <- fd_info.(fd).dirp_offset + 1;
+	  done;
+	with End_of_file -> ();
+	  Unix.closedir dirh;
+	  put_return (Int64.of_int !written)
     with
       | Unix.Unix_error(err, _, _) -> self#put_errno err
 
@@ -2274,23 +2274,45 @@ object(self)
 
   method private sendmsg_throw sockfd msg flags =
     let str = string_of_char_array
-      (self#gather_iovec (load_word (lea msg 0 0 8))
-      (Int64.to_int (load_word (lea msg 0 0 12))))
+      (match !opt_arch with
+	 | X86|ARM ->
+	     (self#gather_iovec (load_word (lea msg 0 0 8))
+		(Int64.to_int (load_word (lea msg 0 0 12))))
+	 | X64 ->
+	     (self#gather_iovec (load_long (lea msg 0 0 16))
+		(Int64.to_int (load_long (lea msg 0 0 24)))))
     and flags = (if (flags land 1) <> 0 then [Unix.MSG_OOB] else []) @
                 (if (flags land 4) <> 0 then [Unix.MSG_DONTROUTE] else []) @
                 (if (flags land 2) <> 0 then [Unix.MSG_PEEK] else [])
-    and addrbuf = load_word (lea msg 0 0 0) in
-    let num_sent = 
-      if addrbuf = 0L then
-        Unix.send (self#get_fd sockfd) str 0 (String.length str) flags
-      else
-        let sockaddr = self#read_sockaddr addrbuf
-          (Int64.to_int (load_word (lea msg 0 0 4)))
-        in
-        Unix.sendto (self#get_fd sockfd) str 0 (String.length str)
-          flags sockaddr
+    and addrbuf =
+      (match !opt_arch with
+	 | X86|ARM -> load_word (lea msg 0 0 0)
+	 | X64 -> load_long (lea msg 0 0 0))
     in
-    num_sent ;
+    (let controlptr =
+      (match !opt_arch with
+	 | X86|ARM -> load_word (lea msg 0 0 16)
+	 | X64 -> load_long (lea msg 0 0 32)) in
+       if controlptr <> 0L then
+	 (* Ancillary data is used for things like sending file
+	    descriptors to other processes. We can't easily implement it
+	    without support in OCaml's Unix module. This is currently
+	    a fatal error because I expect most programs don't know
+	    how to deal with it not being supported. *)
+	 failwith "Ancillary data not supported in sendmsg(2)");
+      let num_sent =
+	if addrbuf = 0L then
+          Unix.send (self#get_fd sockfd) str 0 (String.length str) flags
+	else
+	  let sockaddr_len =
+	    (match !opt_arch with
+	       | X86|ARM -> Int64.to_int (load_word (lea msg 0 0 4))
+	       | X64 -> Int64.to_int (load_long (lea msg 0 0 8))) in
+          let sockaddr = self#read_sockaddr addrbuf sockaddr_len in
+            Unix.sendto (self#get_fd sockfd) str 0 (String.length str)
+              flags sockaddr
+      in
+	num_sent
 
   method sys_sendmsg sockfd msg flags =
     try
@@ -3484,8 +3506,8 @@ object(self)
 	       if !opt_trace_syscalls then
 		 Printf.printf "dup(%d)" fd;
 	       self#sys_dup fd
-	 | (X64, 22) -> uh "Check whether x64 pipe syscall matches x86"
 	 | (ARM, 42) -> uh "Check whether ARM pipe syscall matches x86"
+	 | (X64, 22)
 	 | (X86, 42) -> (* pipe *)
 	     let ebx = read_1_reg () in
 	     let buf = ebx in
@@ -4704,7 +4726,7 @@ object(self)
 	       if !opt_trace_syscalls then
 		 Printf.printf "madvise(0x%08Lx, %Ld, %d)" addr length advice;
 	       self#sys_madvise addr length advice
-	 | (X64, 217) -> uh "Check whether x64 getdents64 syscall matches x86"
+	 | (X64, 217)
 	 | (ARM, 217)
 	 | (X86, 220) -> (* getdents64 *)
 	     let (arg1, arg2, arg3) = read_3_regs () in
@@ -5193,14 +5215,32 @@ object(self)
 	       Printf.printf "setsockopt(%d, %d, %d, 0x%08Lx, %d)"
 		 sockfd level name valp len;
 	     self#sys_setsockopt sockfd level name valp len
-	 | (ARM, 295) -> (* getsockopt *)
-	     uh "Unhandled Linux/ARM system call getsockopt (295)"
+	 | (ARM, 295)
 	 | (X64, 55) -> (* getsockopt *)
-	     uh "Unhandled Linux/x64 system call getsockopt (55)"
+	     let (arg1, arg2, arg3, arg4, arg5) = read_5_regs () in
+	     let sockfd = Int64.to_int arg1 and
+		 level = Int64.to_int arg2 and
+		 name = Int64.to_int arg3 and
+		 valp = arg4 and
+		 lenp = arg5
+	     in
+	       if !opt_trace_syscalls then
+		 Printf.printf
+		   "getsockopt(%d, %d, %d, 0x%08Lx, 0x%08Lx)"
+		   sockfd level name valp lenp;
+	       self#sys_getsockopt sockfd level name valp lenp
 	 | (ARM, 296) -> (* sendmsg *)
 	     uh "Unhandled Linux/ARM system call sendmsg (296)"
 	 | (X64, 46) -> (* sendmsg *)
-	     uh "Unhandled Linux/x64 system call sendmsg (46)"
+	     let (arg1, arg2, arg3) = read_3_regs () in
+	     let sockfd = Int64.to_int arg1 and
+		 msg = arg2 and
+		 flags = Int64.to_int arg3
+	     in
+	       if !opt_trace_syscalls then
+		 Printf.printf "sendmsg(%d, 0x%08Lx, %d)"
+		   sockfd msg flags;
+	       self#sys_sendmsg sockfd msg flags
 	 | (ARM, 297) -> (* recvmsg *)
 	     uh "Unhandled Linux/ARM system call recvmsg (297)"
 	 | (X64,  47) -> (* recvmsg *)
