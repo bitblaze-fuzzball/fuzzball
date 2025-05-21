@@ -149,7 +149,7 @@ http://www.gnu.org/s/binutils/
 
 and compile it with, for instance:
 
-../configure --disable-werror --disable-shared --enable-targets=arm-linux-gnueabi,i486-linux-gnu,x86_64-linux-gnu --prefix=<wherever>/binutils-multiarch
+../configure --disable-werror --disable-shared --enable-targets=arm-linux-gnueabi,i486-linux-gnu,x86_64-linux-gnu --prefix=<wherever>/binutils-multiarch --enable-install-libiberty
 
 and then pass --with-binutils=<wherever>/binutils-multiarch to
 Vine's ./configure. In this case where you're using the Binutils
@@ -160,6 +160,12 @@ space, but they make the build process more complicated because they
 need to be found both at compile time and at runtime. (FuzzBALL's
 build process doesn't currently incorporate libtool, which would be
 the most standard way to automate the linking decisions.)
+"libiberty" is a library of miscellaneous utility functions used by
+different GNU programs including the binutils; binutils compiles
+its own version for its own use, and FuzzBALL also needs to include
+it in linking with the Binutils BFD library. It might also be available
+as a separate OS package (e.g., "libiberty-dev"), but using the same
+one that was compiled with the Binutils is probably most compatible.
 
 4. STP
 
