@@ -1,0 +1,571 @@
+diff --git a/VEX/Makefile-gcc b/VEX/Makefile-gcc
+index 0b94e13c5..5cdd96643 100644
+--- a/VEX/Makefile-gcc
++++ b/VEX/Makefile-gcc
+@@ -20,6 +20,7 @@ PRIV_HEADERS = 	priv/host_x86_defs.h			\
+ 		priv/host_ppc_defs.h			\
+ 		priv/host_s390_defs.h			\
+ 		priv/host_mips_defs.h			\
++		priv/host_nanomips_defs.h		\
+ 		priv/host_generic_maddf.h	        \
+ 		priv/host_generic_regs.h	        \
+ 		priv/host_generic_simd64.h	        \
+@@ -34,6 +35,7 @@ PRIV_HEADERS = 	priv/host_x86_defs.h			\
+ 		priv/guest_arm_defs.h			\
+ 		priv/guest_ppc_defs.h			\
+ 		priv/guest_mips_defs.h			\
++		priv/guest_nanomips_defs.h		\
+ 		priv/mips_defs.h			\
+ 		priv/s390_disasm.h		        \
+ 		priv/s390_defs.h		        \
+@@ -44,7 +46,7 @@ LIB_OBJS = 	priv/ir_defs.o                          \
+ 		priv/ir_match.o			        \
+ 		priv/ir_opt.o				\
+ 		priv/ir_inject.o			\
+-		priv/main_main.o			\
++		priv/multiarch_main_main.o		\
+ 		priv/main_globals.o			\
+ 		priv/main_util.o			\
+ 		priv/s390_disasm.o			\
+@@ -55,6 +57,7 @@ LIB_OBJS = 	priv/ir_defs.o                          \
+ 		priv/host_ppc_defs.o			\
+ 		priv/host_s390_defs.o			\
+ 		priv/host_mips_defs.o			\
++		priv/host_nanomips_defs.o	  	\
+ 		priv/host_x86_isel.o			\
+ 		priv/host_amd64_isel.o			\
+ 		priv/host_arm_isel.o			\
+@@ -62,12 +65,14 @@ LIB_OBJS = 	priv/ir_defs.o                          \
+ 		priv/host_ppc_isel.o			\
+ 		priv/host_s390_isel.o			\
+ 		priv/host_mips_isel.o			\
++		priv/host_nanomips_isel.o	  	\
+ 		priv/host_generic_maddf.o	        \
+ 		priv/host_generic_regs.o	        \
+ 		priv/host_generic_simd64.o	        \
+ 		priv/host_generic_simd128.o	        \
+ 		priv/host_generic_simd256.o	        \
+ 		priv/host_generic_reg_alloc2.o		\
++		priv/host_generic_reg_alloc3.o		\
+ 		priv/guest_generic_x87.o	        \
+ 		priv/guest_generic_bb_to_IR.o		\
+ 		priv/guest_x86_helpers.o		\
+@@ -77,6 +82,7 @@ LIB_OBJS = 	priv/ir_defs.o                          \
+ 		priv/guest_ppc_helpers.o		\
+ 		priv/guest_s390_helpers.o		\
+ 		priv/guest_mips_helpers.o		\
++		priv/guest_nanomips_helpers.o		\
+ 		priv/guest_x86_toIR.o			\
+ 		priv/guest_amd64_toIR.o			\
+ 		priv/guest_arm_toIR.o			\
+@@ -84,7 +90,8 @@ LIB_OBJS = 	priv/ir_defs.o                          \
+ 		priv/guest_ppc_toIR.o                   \
+ 		priv/guest_s390_toIR.o			\
+ 		priv/guest_mipsdsp_toIR.o		\
+-		priv/guest_mips_toIR.o
++		priv/guest_mips_toIR.o			\
++		priv/guest_nanomips_toIR.o
+ 
+ PUB_INCLUDES = -Ipub
+ 
+@@ -120,10 +127,6 @@ CCFLAGS = -Wall -Wmissing-prototypes -Wstrict-prototypes -Wshadow \
+ # (the above are for icc 8.0 -- 8.0.0.55 I think)
+ # 186: pointless comparison of unsigned integer with zero
+ 
+-# kludge: stops V biarch builds screwing up at -j 2 or above
+-# The Right fix is to autoconf/automake-ise vex.
+-.NOTPARALLEL:
+-
+ all: vex
+ 
+ # Empty, needed for Valgrind
+@@ -255,6 +258,10 @@ priv/ir_opt.o: $(ALL_HEADERS) priv/ir_opt.c
+ 	$(CC) $(CCFLAGS) $(ALL_INCLUDES) -o priv/ir_opt.o \
+ 					 -c priv/ir_opt.c
+ 
++priv/multiarch_main_main.o: $(ALL_HEADERS) priv/multiarch_main_main.c
++	$(CC) $(CCFLAGS) $(ALL_INCLUDES) -o priv/multiarch_main_main.o \
++					 -c priv/multiarch_main_main.c
++
+ priv/main_main.o: $(ALL_HEADERS) priv/main_main.c
+ 	$(CC) $(CCFLAGS) $(ALL_INCLUDES) -o priv/main_main.o \
+ 					 -c priv/main_main.c
+@@ -295,6 +302,10 @@ priv/host_mips_defs.o: $(ALL_HEADERS) priv/host_mips_defs.c
+ 	$(CC) $(CCFLAGS) $(ALL_INCLUDES) -o priv/host_mips_defs.o \
+ 					 -c priv/host_mips_defs.c
+ 
++priv/host_nanomips_defs.o: $(ALL_HEADERS) priv/host_nanomips_defs.c
++	$(CC) $(CCFLAGS) $(ALL_INCLUDES) -o priv/host_nanomips_defs.o \
++					 -c priv/host_nanomips_defs.c
++
+ priv/host_x86_isel.o: $(ALL_HEADERS) priv/host_x86_isel.c
+ 	$(CC) $(CCFLAGS) $(ALL_INCLUDES) -o priv/host_x86_isel.o \
+ 					 -c priv/host_x86_isel.c
+@@ -323,6 +334,10 @@ priv/host_mips_isel.o: $(ALL_HEADERS) priv/host_mips_isel.c
+ 	$(CC) $(CCFLAGS) $(ALL_INCLUDES) -o priv/host_mips_isel.o \
+ 					 -c priv/host_mips_isel.c
+ 
++priv/host_nanomips_isel.o: $(ALL_HEADERS) priv/host_nanomips_isel.c
++	$(CC) $(CCFLAGS) $(ALL_INCLUDES) -o priv/host_nanomips_isel.o \
++					 -c priv/host_nanomips_isel.c
++
+ priv/host_generic_maddf.o: $(ALL_HEADERS) priv/host_generic_maddf.c
+ 	$(CC) $(CCFLAGS) $(ALL_INCLUDES) -o priv/host_generic_maddf.o \
+ 					 -c priv/host_generic_maddf.c
+@@ -347,6 +362,10 @@ priv/host_generic_reg_alloc2.o: $(ALL_HEADERS) priv/host_generic_reg_alloc2.c
+ 	$(CC) $(CCFLAGS) $(ALL_INCLUDES) -o priv/host_generic_reg_alloc2.o \
+ 					 -c priv/host_generic_reg_alloc2.c
+ 
++priv/host_generic_reg_alloc3.o: $(ALL_HEADERS) priv/host_generic_reg_alloc3.c
++	$(CC) $(CCFLAGS) $(ALL_INCLUDES) -o priv/host_generic_reg_alloc3.o \
++					 -c priv/host_generic_reg_alloc3.c
++
+ priv/guest_x86_toIR.o: $(ALL_HEADERS) priv/guest_x86_toIR.c
+ 	$(CC) $(CCFLAGS) $(ALL_INCLUDES) -o priv/guest_x86_toIR.o \
+ 					 -c priv/guest_x86_toIR.c
+@@ -411,6 +430,10 @@ priv/guest_mips_helpers.o: $(ALL_HEADERS) priv/guest_mips_helpers.c
+ 	$(CC) $(CCFLAGS) $(ALL_INCLUDES) -o priv/guest_mips_helpers.o \
+ 					 -c priv/guest_mips_helpers.c
+ 
++priv/guest_nanomips_helpers.o: $(ALL_HEADERS) priv/guest_nanomips_helpers.c
++	$(CC) $(CCFLAGS) $(ALL_INCLUDES) -o priv/guest_nanomips_helpers.o \
++					 -c priv/guest_nanomips_helpers.c
++
+ priv/guest_mipsdsp_toIR.o: $(ALL_HEADERS) priv/guest_mipsdsp_toIR.c
+ 	$(CC) $(CCFLAGS) $(ALL_INCLUDES) -o priv/guest_mipsdsp_toIR.o \
+ 					 -c priv/guest_mipsdsp_toIR.c
+@@ -418,3 +441,7 @@ priv/guest_mipsdsp_toIR.o: $(ALL_HEADERS) priv/guest_mipsdsp_toIR.c
+ priv/guest_mips_toIR.o: $(ALL_HEADERS) priv/guest_mips_toIR.c
+ 	$(CC) $(CCFLAGS) $(ALL_INCLUDES) -o priv/guest_mips_toIR.o \
+ 					 -c priv/guest_mips_toIR.c
++
++priv/guest_nanomips_toIR.o: $(ALL_HEADERS) priv/guest_nanomips_toIR.c
++	$(CC) $(CCFLAGS) $(ALL_INCLUDES) -o priv/guest_nanomips_toIR.o \
++					 -c priv/guest_nanomips_toIR.c
+diff --git a/VEX/priv/config.h b/VEX/priv/config.h
+new file mode 100644
+index 000000000..ada417de0
+--- /dev/null
++++ b/VEX/priv/config.h
+@@ -0,0 +1 @@
++/* Placeholder because we don't run configure */
+diff --git a/VEX/priv/guest_arm_toIR.c b/VEX/priv/guest_arm_toIR.c
+index 6027d477e..cb00e24b9 100644
+--- a/VEX/priv/guest_arm_toIR.c
++++ b/VEX/priv/guest_arm_toIR.c
+@@ -19105,7 +19105,7 @@ DisResult disInstr_THUMB_WRK (
+       vassert(0 == (pc & 1));
+ 
+       UInt pageoff = pc & 0xFFF;
+-      if (pageoff >= 18) {
++      if (0 && pageoff >= 18) {
+          /* It's safe to poke about in the 9 halfwords preceding this
+             insn.  So, have a look at them. */
+          guaranteedUnconditional = True; /* assume no 'it' insn found,
+diff --git a/VEX/priv/guest_x86_toIR.c b/VEX/priv/guest_x86_toIR.c
+index 5d6e6dc64..0119347d3 100644
+--- a/VEX/priv/guest_x86_toIR.c
++++ b/VEX/priv/guest_x86_toIR.c
+@@ -2819,6 +2819,11 @@ UInt dis_Grp3 ( UChar sorb, Bool locked, Int sz, Int delta, Bool* decode_OK )
+ 
+    if (epartIsReg(modrm)) {
+       switch (gregOfRM(modrm)) {
++         case 1: /* Undocumented synonym of 0 */
++           /* The Intel docs imply this insn is undefined and binutils
++              agrees.  Unfortunately Core 2 will run it (with who
++              knows what result?)  sandpile.org reckons it's an alias
++              for case 0.  We live dangerously. */
+          case 0: { /* TEST */
+             delta++; d32 = getUDisp(sz, delta); delta += sz;
+             dst1 = newTemp(ty);
+@@ -2830,13 +2835,6 @@ UInt dis_Grp3 ( UChar sorb, Bool locked, Int sz, Int delta, Bool* decode_OK )
+                                       nameIReg(sz, eregOfRM(modrm)));
+             break;
+          }
+-         case 1: /* UNDEFINED */
+-           /* The Intel docs imply this insn is undefined and binutils
+-              agrees.  Unfortunately Core 2 will run it (with who
+-              knows what result?)  sandpile.org reckons it's an alias
+-              for case 0.  We play safe. */
+-           *decode_OK = False;
+-           break;
+          case 2: /* NOT */
+             delta++;
+             putIReg(sz, eregOfRM(modrm),
+@@ -2890,6 +2888,8 @@ UInt dis_Grp3 ( UChar sorb, Bool locked, Int sz, Int delta, Bool* decode_OK )
+       delta += len;
+       assign(t1, loadLE(ty,mkexpr(addr)));
+       switch (gregOfRM(modrm)) {
++         case 1: /* Undocumented synonym of 0 */
++           /* See comment above on R case */
+          case 0: { /* TEST */
+             d32 = getUDisp(sz, delta); delta += sz;
+             dst1 = newTemp(ty);
+@@ -2899,10 +2899,6 @@ UInt dis_Grp3 ( UChar sorb, Bool locked, Int sz, Int delta, Bool* decode_OK )
+             DIP("test%c $0x%x, %s\n", nameISize(sz), d32, dis_buf);
+             break;
+          }
+-         case 1: /* UNDEFINED */
+-           /* See comment above on R case */
+-           *decode_OK = False;
+-           break;
+          case 2: /* NOT */
+             dst1 = newTemp(ty);
+             assign(dst1, unop(mkSizedOp(ty,Iop_Not8), mkexpr(t1)));
+@@ -6242,7 +6238,6 @@ UInt dis_SHLRD_Gv_Ev ( UChar sorb,
+       mkpair   = Iop_32HLto64;
+       getres   = left_shift ? Iop_64HIto32 : Iop_64to32;
+       shift    = left_shift ? Iop_Shl64 : Iop_Shr64;
+-      mask     = mkU8(31);
+    } else {
+       /* sz == 2 */
+       tmpL     = newTemp(Ity_I32);
+@@ -6251,9 +6246,16 @@ UInt dis_SHLRD_Gv_Ev ( UChar sorb,
+       mkpair   = Iop_16HLto32;
+       getres   = left_shift ? Iop_32HIto16 : Iop_32to16;
+       shift    = left_shift ? Iop_Shl32 : Iop_Shr32;
+-      mask     = mkU8(15);
+    }
+ 
++   /* Note that we keep 5 bits of the shift amount even for 16-bit
++      operands. The manual says the result is undefined when the
++      shift amount is greater than the operand size, but that means
++      we still need to handle the case of shift_amt = 16 for 16-bit
++      operands. Luckily because we're doing the shift at double width,
++      this is compatible with the primops' restrictions. */
++   mask     = mkU8(31);
++
+    /* Do the shift, calculate the subshift value, and set 
+       the flag thunk. */
+ 
+@@ -7621,7 +7623,8 @@ static IRExpr* mk64from16s ( IRTemp t3, IRTemp t2,
+ 
+ /* Generate IR to set the guest %EFLAGS from the pushfl-format image
+    in the given 32-bit temporary.  The flags that are set are: O S Z A
+-   C P D ID AC.
++   C P D ID AC, except that ID and AC are not set if this was a 16-bit
++   popw.
+ 
+    In all cases, code to set AC is generated.  However, VEX actually
+    ignores the AC value and so can optionally emit an emulation
+@@ -7635,9 +7638,11 @@ static IRExpr* mk64from16s ( IRTemp t3, IRTemp t2,
+ static 
+ void set_EFLAGS_from_value ( IRTemp t1, 
+                              Bool   emit_AC_emwarn,
++			     Int    sz,
+                              Addr32 next_insn_EIP )
+ {
+    vassert(typeOfIRTemp(irsb->tyenv,t1) == Ity_I32);
++   vassert(sz == 2 || sz == 4);
+ 
+    /* t1 is the flag word.  Mask out everything except OSZACP and set
+       the flags thunk to X86G_CC_OP_COPY. */
+@@ -7669,6 +7674,7 @@ void set_EFLAGS_from_value ( IRTemp t1,
+                mkU32(1)))
+        );
+ 
++   if (sz > 2) {
+    /* Set the ID flag */
+    stmt( IRStmt_Put( 
+             OFFB_IDFLAG,
+@@ -7707,6 +7713,7 @@ void set_EFLAGS_from_value ( IRTemp t1,
+          )
+       );
+    }
++   }
+ }
+ 
+ 
+@@ -13093,6 +13100,7 @@ DisResult disInstr_X86_WRK (
+          of iret.  All it really does is: 
+             popl %EIP; popl %CS; popl %EFLAGS.
+          %CS is set but ignored (as it is in (eg) popw %cs)". */
++      if (sz != 4) goto decode_failure; /* iretw is not yet supported */
+       t1 = newTemp(Ity_I32); /* ESP */
+       t2 = newTemp(Ity_I32); /* new EIP */
+       t3 = newTemp(Ity_I32); /* new CS */
+@@ -13106,7 +13114,8 @@ DisResult disInstr_X86_WRK (
+       /* set %CS (which is ignored anyway) */
+       putSReg( R_CS, unop(Iop_32to16, mkexpr(t3)) );
+       /* set %EFLAGS */
+-      set_EFLAGS_from_value( t4, False/*!emit_AC_emwarn*/, 0/*unused*/ );
++      set_EFLAGS_from_value( t4, False/*!emit_AC_emwarn*/, 4/*sz*/,
++			     0/*unused*/ );
+       /* goto new EIP value */
+       jmp_treg(&dres, Ijk_Ret, t2);
+       vassert(dres.whatNext == Dis_StopHere);
+@@ -13114,11 +13123,13 @@ DisResult disInstr_X86_WRK (
+       break;
+ 
+    case 0xE8: /* CALL J4 */
++      if (sz != 4) goto decode_failure;
+       d32 = getUDisp32(delta); delta += 4;
+       d32 += (guest_EIP_bbstart+delta); 
+       /* (guest_eip_bbstart+delta) == return-to addr, d32 == call-to addr */
+       if (d32 == guest_EIP_bbstart+delta && getIByte(delta) >= 0x58 
+-                                         && getIByte(delta) <= 0x5F) {
++                                         && getIByte(delta) <= 0x5F
++	  && 0) {
+          /* Specially treat the position-independent-code idiom 
+                  call X
+               X: popl %reg
+@@ -13907,7 +13918,7 @@ DisResult disInstr_X86_WRK (
+ 
+       /* Generate IR to set %EFLAGS{O,S,Z,A,C,P,D,ID,AC} from the
+ 	 value in t1. */
+-      set_EFLAGS_from_value( t1, True/*emit_AC_emwarn*/,
++      set_EFLAGS_from_value( t1, True/*emit_AC_emwarn*/, sz,
+                                  ((Addr32)guest_EIP_bbstart)+delta );
+ 
+       DIP("popf%c\n", nameISize(sz));
+diff --git a/VEX/pub/libvex_guest_x86.h b/VEX/pub/libvex_guest_x86.h
+index fabafe113..6a9740c28 100644
+--- a/VEX/pub/libvex_guest_x86.h
++++ b/VEX/pub/libvex_guest_x86.h
+@@ -185,18 +185,22 @@ typedef
+       U128  guest_XMM7;
+ 
+       /* Segment registers. */
+-      UShort guest_CS;
++      UShort guest_CS;        /* 288 */
+       UShort guest_DS;
+       UShort guest_ES;
+       UShort guest_FS;
+       UShort guest_GS;
+-      UShort guest_SS;
++      UShort guest_SS;        /* 298 */
++      /* At this point the offsets in 64-bit hosts get out of sync
++	 with the x86-32 ones: even though all the member sizes are
++	 the same, a ULong requires 8-byte alignment on AMD64, versus
++	 only 4 on x86-32. */
+       /* LDT/GDT stuff. */
+-      ULong  guest_LDT; /* host addr, a VexGuestX86SegDescr* */
+-      ULong  guest_GDT; /* host addr, a VexGuestX86SegDescr* */
++      ULong  guest_LDT; /* host addr, a VexGuestX86SegDescr* */ /* 300 */
++      ULong  guest_GDT; /* host addr, a VexGuestX86SegDescr* */ /* 308 */
+ 
+       /* Emulation notes */
+-      UInt   guest_EMNOTE;
++      UInt   guest_EMNOTE;    /* 316 */
+ 
+       /* For clflush/clinval: record start and length of area */
+       UInt guest_CMSTART;
+@@ -217,12 +221,20 @@ typedef
+          EIP at the last syscall insn (int 0x80/81/82, sysenter,
+          syscall).  Used when backing up to restart a syscall that has
+          been interrupted by a signal. */
+-      UInt guest_IP_AT_SYSCALL;
++      UInt guest_IP_AT_SYSCALL; /* 336 */
+ 
+       /* Padding to make it have an 16-aligned size */
+-      UInt padding1;
++      UInt padding1;            /* 340 */
+       UInt padding2;
+-      UInt padding3;
++      UInt padding3;            /* 348 */
++      /* Total size on x86 is 352 bytes = 22*16 */
++#if defined(__x86_64__)
++      /* On 64-bit host platforms, add extra padding to go with the
++	 alignment padding before guest_LDT. */
++      UInt padding4;
++      UInt padding5;
++      UInt padding6;
++#endif
+    }
+    VexGuestX86State;
+ 
+diff --git a/VEX/switchback/Makefile b/VEX/switchback/Makefile
+index 3fa514671..999ab9fc0 100644
+--- a/VEX/switchback/Makefile
++++ b/VEX/switchback/Makefile
+@@ -1,12 +1,12 @@
+ 
+-CC=aarch64-linux-gnu-gcc
++#CC=aarch64-linux-gnu-gcc
+ 
+ all: switchback.c linker.c linker.h
+-	$CC -m64 -Wall -O -g -o switchback switchback.c linker.c \
+-		../libvex_ppc64_linux.a
++	$(CC) -m64 -Wall -O -g -o switchback switchback.c linker.c \
++		../libvex.a test_hello.c
+ 
+ test_ppc:
+-	$CC -Wall -m64  -mregnames -O -c test_ppc_jm1.c
++	$(CC) -Wall -m64  -mregnames -O -c test_ppc_jm1.c
+ 
+ clean:
+ 	rm -f switchback switchback.o linker.o
+diff --git a/VEX/switchback/linker.c b/VEX/switchback/linker.c
+index 8a4ed35a3..ec1d9ad58 100644
+--- a/VEX/switchback/linker.c
++++ b/VEX/switchback/linker.c
+@@ -64,7 +64,7 @@ static UInt  mymalloc_used = 0;
+ void* mymalloc ( Int n )
+ {
+    void* p;
+-#if defined(__powerpc64__) || defined(__aarch64__)
++#if defined(__powerpc64__) || defined(__aarch64__) || defined(__x86_64__)
+    while ((ULong)(mymalloc_area+mymalloc_used) & 0xFFF)
+ #else
+    while ((UInt)(mymalloc_area+mymalloc_used) & 0xFFF)
+diff --git a/VEX/switchback/switchback.c b/VEX/switchback/switchback.c
+index f3603d189..da5361990 100644
+--- a/VEX/switchback/switchback.c
++++ b/VEX/switchback/switchback.c
+@@ -62,6 +62,14 @@ static Int   n_translations_made = 0;
+ #  define GuestPC                   guest_PC
+ #  define CacheLineSize             0/*irrelevant*/
+ 
++#elif defined(__x86_64__)
++#  define VexGuestState             VexGuestAMD64State
++#  define LibVEX_Guest_initialise   LibVEX_GuestAMD64_initialise
++#  define VexArch                   VexArchAMD64
++#  define VexSubArch                VexSubArch_NONE
++#  define GuestPC                   guest_RIP
++#  define CacheLineSize             0/*irrelevant*/
++
+ #else
+ #   error "Unknown arch"
+ #endif
+@@ -106,11 +114,13 @@ ULong*          trans_tableP[N_TRANS_TABLE];
+ Int trans_cache_used = 0;
+ Int trans_table_used = 0;
+ 
+-static Bool chase_into_ok ( void* opaque, Addr64 dst ) {
++static Bool chase_into_ok ( void* opaque, Addr dst ) {
+    return False;
+ }
+ 
+-static UInt needs_self_check ( void* opaque, const VexGuestExtents* vge ) {
++static UInt needs_self_check ( void* opaque,
++			       VexRegisterUpdates* pxControl,
++			       const VexGuestExtents* vge ) {
+    return 0;
+ }
+ 
+@@ -140,6 +150,7 @@ static HWord serviceFn ( HWord arg1, HWord arg2 )
+ }
+ 
+ 
++#if defined(__aarch64__)
+ // needed for arm64 ?
+ static void invalidate_icache(void *ptr, unsigned long nbytes)
+ {
+@@ -258,6 +269,7 @@ static void invalidate_icache(void *ptr, unsigned long nbytes)
+    );
+ 
+ }
++#endif
+ 
+ 
+ /* -------------------- */
+@@ -291,6 +303,34 @@ void switchback ( void )
+    switchback_asm(); // never returns
+ }
+ 
++#elif defined(__x86_64__)
++
++extern void switchback_asm(void);
++asm(
++"switchback_asm:\n"
++"   mov sb_helper1, %rax\n"  // eax = guest state ptr
++"   mov  16(%rax), %rsp\n"   // switch stacks
++"   push 56(%rax)\n"         // push continuation addr
++"   mov sb_helper2, %rbx\n"  // get eflags
++"   push %rbx\n"             // eflags:CA
++"   push 0(%rax)\n"          //  EAX:eflags:CA
++"   mov 8(%rax), %rcx\n" 
++"   mov 16(%rax), %rdx\n" 
++"   mov 24(%rax), %rbx\n" 
++"   mov 32(%rax), %rbp\n"
++"   mov 40(%rax), %rsi\n"
++"   mov 48(%rax), %rdi\n"
++"   pop %rax\n"
++"   popf\n"
++"   ret\n"
++);
++void switchback ( void )
++{
++   sb_helper1 = (HWord)&gst;
++   sb_helper2 = LibVEX_GuestAMD64_get_rflags(&gst);
++   switchback_asm(); // never returns
++}
++
+ #elif defined(__aarch64__)
+ 
+ extern void switchback_asm(HWord x0_gst, HWord x1_pstate);
+@@ -452,6 +492,7 @@ void switchback ( void )
+ // gp   holds the guest state pointer to use
+ // res  is to hold the result.  Or some such.
+ static HWord block[2]; // f, gp;
++HWord f, gp, res;
+ extern HWord run_translation_asm(void);
+ 
+ extern void disp_chain_assisted(void);
+@@ -499,6 +540,19 @@ asm(
+ "   ret\n"
+ );
+ 
++#elif defined(__x86_64__)
++
++asm(
++"run_translation_asm:\n"
++"   mov gp, %rbp\n"
++"   mov f, %rax\n"
++"   call *%rax\n"
++"   mov %rax, res\n"
++"   ret\n"
++);
++
++void disp_chain_assisted(void) { abort(); }
++
+ #else
+ # error "Unknown arch"
+ #endif
+@@ -578,6 +632,9 @@ void make_translation ( Addr guest_addr, Bool verbose )
+    LibVEX_default_VexArchInfo(&vex_archinfo);
+    //vex_archinfo.subarch = VexSubArch;
+    //vex_archinfo.ppc_icache_line_szB = CacheLineSize;
++#ifdef __x86_64__
++   vex_archinfo.endness = VexEndnessLE;
++#endif
+ 
+    /* */
+    vta.arch_guest       = VexArch;
+@@ -659,7 +716,7 @@ void failure_exit ( void )
+ }
+ 
+ static
+-void log_bytes ( HChar* bytes, Int nbytes )
++void log_bytes ( const HChar* bytes, SizeT nbytes )
+ {
+    fwrite ( bytes, 1, nbytes, stdout );
+    fflush ( stdout );
+@@ -690,6 +747,14 @@ static void run_simulator ( void )
+             gst.guest_ESP = esp+4;
+             next_guest = gst.guest_EIP;
+          }
++#        elif defined(__x86_64__)
++         {
++            HWord rsp = gst.guest_RSP;
++            gst.guest_RIP = *(ULong*)(rsp+0);
++            gst.guest_RAX = serviceFn( *(ULong*)(rsp+8), *(ULong*)(rsp+16) );
++            gst.guest_RSP = rsp+8;
++            next_guest = gst.guest_RIP;
++         }
+ #        elif defined(__aarch64__)
+          {
+             gst.guest_X0 = serviceFn( gst.guest_X0, gst.guest_X1 );
+@@ -781,6 +846,12 @@ int main ( Int argc, HChar** argv )
+    *(UInt*)(gst.guest_ESP+4) = (UInt)serviceFn;
+    *(UInt*)(gst.guest_ESP+0) = 0x12345678;
+ 
++#  elif defined(__x86_64__)
++   gst.guest_RIP = (ULong)entryP;
++   gst.guest_RSP = (ULong)&gstack[32000];
++   *(ULong*)(gst.guest_RSP+8) = (ULong)serviceFn;
++   *(ULong*)(gst.guest_RSP+0) = 0x12345678;
++
+ #  elif defined(__aarch64__)
+    gst.guest_PC = (ULong)entryP;
+    gst.guest_SP = (ULong)&gstack[32000];

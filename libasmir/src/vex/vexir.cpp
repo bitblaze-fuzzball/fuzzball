@@ -234,8 +234,12 @@ void translate_init()
 #endif
     vc.iropt_unroll_thresh          = 0;
     vc.guest_max_insns              = 1;    // By default, we translate 1 instruction at a time
+#if VEX_VERSION < 3538
     vc.guest_chase_thresh           = 0;    
-#if VEX_VERSION >= 1957
+#else
+    vc.guest_chase                  = False;
+#endif
+#if VEX_VERSION >= 1957 && VEX_VERSION < 3539
     vc.guest_chase_cond             = False;
 #endif
 
