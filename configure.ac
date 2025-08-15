@@ -153,6 +153,8 @@ fi
 # Checks for libraries: Binutils:
 AC_CHECK_LIB([bfd], [bfd_init])
 AC_CHECK_LIB([iberty], [xmalloc])
+AC_CHECK_LIB([sframe], [sframe_encode])
+AC_CHECK_LIB([zstd], [ZSTD_decompress])
 
 AC_COMPILE_IFELSE([AC_LANG_PROGRAM(
         [#include <bfd.h>
@@ -167,6 +169,20 @@ AC_COMPILE_IFELSE([AC_LANG_PROGRAM(
         [disassembler_ftype d = disassembler(0, 0, 0, 0);])],
     [AC_DEFINE([HAVE_FUNC_DISASSEMBLER_4], [1],
                [Define to 1 if your libopcodes disassembler() takes four arguments.])])
+
+AC_COMPILE_IFELSE([AC_LANG_PROGRAM(
+        [#include <bfd.h>
+#include <dis-asm.h>],
+	[init_disassemble_info(0, 0, 0);])],
+    [AC_DEFINE([HAVE_FUNC_INIT_DISASSEMBLE_INFO_3], [1],
+	       [Define to 1 if your libopcodes init_disassemble_info takes three arguments.])])
+
+AC_COMPILE_IFELSE([AC_LANG_PROGRAM(
+        [#include <bfd.h>
+#include <dis-asm.h>],
+        [init_disassemble_info(0, 0, 0, 0);])],
+    [AC_DEFINE([HAVE_FUNC_INIT_DISASSEMBLE_INFO_4], [1],
+               [Define to 1 if your libopcodes init_disassemble_info takes three arguments.])])
 
 AC_CHECK_HEADER([bfd.h])
 
@@ -196,6 +212,7 @@ echo "VEX_DIR=${VEX_DIR}" >> libasmir/makefile.inc
 echo "LIBASMIR_CXXFLAGS=-I${VEX_DIR}/pub -I`pwd`/src/include $CXXFLAGS" >> libasmir/makefile.inc
 echo "LIBASMIR_LDFLAGS=-L${VEX_DIR} -L`pwd`/src $LDFLAGS" >> libasmir/makefile.inc
 echo "LIBASMIR_LIBS=-lasmir -lvex -lbfd -liberty" >> libasmir/makefile.inc
+echo "LIBASMIR_EXTRA_LIBS=${LIBS}" | perl -pe 's/-l//g' >> libasmir/makefile.inc
 echo "OCAML_UNSAFE_STRING=${ocaml_unsafe_string}" >> libasmir/makefile.inc
 
 # Checks for header files.

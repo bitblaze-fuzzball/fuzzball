@@ -1,4 +1,5 @@
 #include <errno.h>
+#include <stdarg.h>
 #include "debug.h"
 #include "asm_program.h"
 #include "objdump.h"
@@ -236,9 +237,17 @@ int get_instr_length(asm_program_t *prog, bfd_vma addr)
   disassembler_ftype disas = wrap_get_disassembler(prog->abfd);
   fprintf_ftype old_fprintf_func = prog->disasm_info.fprintf_func;
   prog->disasm_info.fprintf_func = (fprintf_ftype)ignore;
+#ifdef HAVE_FUNC_INIT_DISASSEMBLE_INFO_4
+  fprintf_styled_ftype old_fprintf_styled_func
+    = prog->disasm_info.fprintf_styled_func;
+  prog->disasm_info.fprintf_styled_func = (fprintf_styled_ftype)ignore;
+#endif
   assert(disas);
   int len = disas(addr, &prog->disasm_info);
   prog->disasm_info.fprintf_func = old_fprintf_func;
+#ifdef HAVE_FUNC_INIT_DISASSEMBLE_INFO_4
+  prog->disasm_info.fprintf_styled_func = old_fprintf_styled_func;
+#endif
   return len;
 }
 
@@ -442,9 +451,29 @@ void set_disasm_format_intel(bool is_intel)
     disassembler_options = disasm_options_att;
 }
 
+#ifdef HAVE_FUNC_INIT_DISASSEMBLE_INFO_4
+int fprintf_ignore_style(FILE *fh, enum disassembler_style style,
+			 const char *fmt, ...) {
+  va_list ap;
+  int n;
+  va_start(ap, fmt);
+  (void)style;
+  n = vfprintf(fh, fmt, ap);
+  va_end(ap);
+  return n;
+}
+#endif
+
 void init_disasm_info(bfd *abfd, struct disassemble_info *disasm_info)
 {
+#ifdef HAVE_FUNC_INIT_DISASSEMBLE_INFO_3
   init_disassemble_info (disasm_info, stdout, (fprintf_ftype) fprintf);
+#elif defined(HAVE_FUNC_INIT_DISASSEMBLE_INFO_4)
+  init_disassemble_info (disasm_info, stdout, (fprintf_ftype) fprintf,
+		         (fprintf_styled_ftype) fprintf_ignore_style);
+#else
+#error Unsupported number of argumnets to init_disassemble_info?
+#endif
   disasm_info->flavour = bfd_get_flavour (abfd);
   disasm_info->arch = bfd_get_arch (abfd);
   disasm_info->mach = bfd_get_mach (abfd);
@@ -871,15 +900,15 @@ struct bprintf_buffer {
   size_t size; // the size of str
 };
 
-int bprintf(struct bprintf_buffer *dest, const char *fmt, ...) {
-  va_list ap;
+int vbprintf(struct bprintf_buffer *dest, const char *fmt, va_list ap) {
+  va_list ap2;
   size_t ret;
   size_t size_left = dest->size - (dest->end - dest->str);
-  va_start(ap, fmt);
+  va_copy(ap2, ap);
   ret = vsnprintf(dest->end, size_left, fmt, ap);
   va_end(ap);
   if (ret >= size_left) {
-    // we seem to need to call va_start again... is this legal?
+    // we need to call vsnprintf again, so use the copy of ap.
     dest->size = dest->size+ret+1-size_left;
     char *str = (char*)realloc(dest->str, dest->size);
 
@@ -888,14 +917,36 @@ int bprintf(struct bprintf_buffer *dest, const char *fmt, ...) {
     dest->end = str + (dest->end - dest->str);
     dest->str = str;
     size_left = dest->size - (dest->end - dest->str);
-    va_start(ap, fmt);
-    ret = vsnprintf(dest->end, size_left, fmt, ap);
-    va_end(ap);
+    ret = vsnprintf(dest->end, size_left, fmt, ap2);
+    va_end(ap2);
     assert(ret == size_left-1 && ret > 0);
   }
   dest->end += ret;
   return (int)ret;
 }
+
+int bprintf(struct bprintf_buffer *dest, const char *fmt, ...) {
+  va_list ap;
+  int ret;
+  va_start(ap, fmt);
+  ret = vbprintf(dest, fmt, ap);
+  va_end(ap);
+  return ret;
+}
+
+#ifdef HAVE_FUNC_INIT_DISASSEMBLE_INFO_4
+int bprintf_ignore_style(struct bprintf_buffer *dest,
+			 enum disassembler_style style,
+			 const char *fmt, ...) {
+  va_list ap;
+  int ret;
+  va_start(ap, fmt);
+  (void)style;
+  ret = vbprintf(dest, fmt, ap);
+  va_end(ap);
+  return ret;
+}
+#endif
 
 static const char *disasm_options_thumb = "force-thumb";
 static const char *disasm_options_nonthumb = "no-force-thumb";
@@ -907,9 +958,17 @@ char* string_of_insn(asm_program_t *prog, Instruction *inst)
 
   disassembler_ftype disas = wrap_get_disassembler(prog->abfd);
   fprintf_ftype old_fprintf_func = prog->disasm_info.fprintf_func;
+#ifdef HAVE_FUNC_INIT_DISASSEMBLE_INFO_4
+  fprintf_styled_ftype old_fprintf_styled_func
+    = prog->disasm_info.fprintf_styled_func;
+#endif
   void *oldstream = prog->disasm_info.stream;
   const char *old_opts = prog->disasm_info.disassembler_options;
   prog->disasm_info.fprintf_func = (fprintf_ftype)bprintf;
+#ifdef HAVE_FUNC_INIT_DISASSEMBLE_INFO_4
+  prog->disasm_info.fprintf_styled_func
+    = (fprintf_styled_ftype)bprintf_ignore_style;
+#endif
   prog->disasm_info.stream = &bits;
 
   bool change_opts = (bfd_get_arch(prog->abfd) == bfd_arch_arm);
@@ -924,6 +983,9 @@ char* string_of_insn(asm_program_t *prog, Instruction *inst)
   disas(inst->address, &prog->disasm_info);
 
   prog->disasm_info.fprintf_func = old_fprintf_func;
+#ifdef HAVE_FUNC_INIT_DISASSEMBLE_INFO_4
+  prog->disasm_info.fprintf_styled_func = old_fprintf_styled_func;
+#endif
   prog->disasm_info.stream = oldstream;
   
   if (change_opts) {

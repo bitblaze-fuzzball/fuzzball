@@ -66,7 +66,7 @@ export PACKS = str extlib unix
 export YFLAGS = -v
 
 
-export CLIBS = asmir vex opcodes bfd iberty z stdc++ 
+export CLIBS = asmir vex opcodes bfd iberty z stdc++ $(LIBASMIR_EXTRA_LIBS)
 export CFLAGS = -g
 export LDFLAGS = $(LIBASMIR_LDFLAGS) 
 export CLIBFLAGS= $(LDFLAGS)
