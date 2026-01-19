@@ -61,6 +61,8 @@ sig
 
     method eval_ite : D.t -> D.t -> D.t -> Vine.typ -> (D.t * Vine.typ)
 
+    method update_preference : unit
+
     method on_missing_random : unit
 
     method on_missing_zero : unit
@@ -81,6 +83,12 @@ sig
     method random_byte : int
 
     method reset : unit -> unit
+
+    method turn_on_malloc : unit
+    
+    method turn_on_free : unit
+
+    method turn_off : unit
 
     method after_exploration : unit
 
